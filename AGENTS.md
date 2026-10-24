@@ -3,6 +3,8 @@
 写给任何要在这个仓库里改代码的人或模型。目标：读完这一页，不用通读源码就能动手，且不会踩已经踩过的坑。
 
 > 约定：这份文件只写**稳定事实**和**判断依据**。具体的坑与解法在 [docs/ROADMAP.md](./docs/ROADMAP.md)，组件协议在 [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md)，取舍论证在 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)，代码签名的取舍在 [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md)，agent 接入的协议与威胁模型在 [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md)。它们与本文冲突时，以代码为准，并顺手修文档。
+>
+> **要写新文档先看 [docs/README.md](./docs/README.md)**：哪份该读、哪份该改、新内容该放哪（四类归属 + "一份事实只有一个家"）。还没做的事在动手前的推理放 [docs/design/](./docs/design/README.md)，写完的结论要沉回 ROADMAP 一行。
 
 ---
 
