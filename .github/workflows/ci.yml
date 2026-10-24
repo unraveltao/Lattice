@@ -31,6 +31,10 @@ jobs:
       - run: npm run test:sdk
       # agent CLI：起一个假端点，测请求形状和退出码。不需要应用在跑
       - run: npm run test:agent
+      # region 组件的贴图规格：先测检查器本身（合成的干净图要放行），
+      # 再拿它量仓库里所有 shape:"region" 的组件（现在一个都没有，所以是空跑）
+      - run: npm run test:art
+      - run: npm run check:art
 
   browser:
     runs-on: ubuntu-latest

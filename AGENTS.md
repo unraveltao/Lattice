@@ -124,6 +124,8 @@ src-tauri/src/
   wallpaper.rs            截壁纸（宿主页底板的第一层）
   metrics.rs              系统指标（sysmon 组件用）：整机 + 逐核 CPU、内存与提交量、磁盘、网络、开机时长 / 进程计数，直接调 Win32 不引 crate
   metrics_policy.rs       上面那道的纯逻辑：累计计数 → 占用率、核数变了返回空而不是错位（5 条 rustc --test）
+  llm.rs                  模型对话代理（桥方法 llm.chat）：密钥 DPAPI 落盘、端点与模型由平台定死、条数/字符/token 上限、700ms 节流 —— 组件拿不到 key，也决定不了发给谁
+  llm_policy.rs           上面那道的纯逻辑：上限常量（前端抄了同一组，tests/llm.html 逐字比）、角色白名单、超长拒绝不截断、失败文案（12 条 rustc --test）
   media.rs                SMTC 媒体会话：读当前播放 + playPause/next/previous/stop（WinRT）
   audio.rs                声音高低：默认输出设备的 WASAPI 回环采集，一个后台线程写、命令只读（只出一个 0..1）
   audio_policy.rs         上面那道的纯逻辑：RMS → 分贝 → 0..1、释放曲线、包络（6 条 rustc --test）
@@ -393,6 +395,7 @@ public/widgets/<id>/
 | 缺口 | 影响 | 需要的动作 |
 | --- | --- | --- |
 | **agent 端点：只差一次 CLI 往返** | 真机已经确认到的：端点只在开关打开时才 bind（关着时 `agent/` 目录下连 `endpoint.json` 都没有）、绑定的是回环地址加系统分配端口、退出时打 `agent endpoint on 127.0.0.1:<port> stopped` 并擦掉 `endpoint.json`、看板每 2 秒一次的 `agent.activity` 在调试面板里稳定往返。**没验的**：从 CLI 真发一条 `state` / `act` / `say`（那需要端点开着的时候正好在跑命令），以及"关掉之后端口释放"的实测 | 起一次 `tauri:dev`，设置里打开 → `npm run agent -- say "hello"` → `state` → `act theme.set` → 关掉再 `state`（应该报端点文件没了）。**起之前先确认没有残留的 `lattice.exe`** —— 孤儿进程会用内存里那份盖掉 `state.json` |
+| **region 组件的贴图还不合规** | 窗口裁形（`shape: "region"`）和 `llm.chat` 两个平台能力已经落地并有断言（`tests/region.html` 24 条 / `tests/llm.html` 35 条 / `llm_policy.rs` 12 条）。但 `lattice.pet` 那六张图是六张**表情贴纸**，不是一套 sprite：连通块 16–141 个（字和水印各是一块）、两两轮廓只重合 47–62%。`npm run check:art` 会把它们全部拦下 —— 这是规格在起作用，不是脚本坏了 | 换一套统一的图（同角色、同画风、无字、无画框、紧裁到 8px 以内），跑到 `npm run check:art` 全绿再谈发版。规格见 `docs/WIDGET_SPEC.md` 2.5 |
 | **安装包没有代码签名** | 第一次运行被 SmartScreen 拦成"未知发布者"，点"仍要运行"才装得上。用户流失基本都发生在这一步 | 买 OV/EV 证书（EV 能立刻建立信誉，OV 要攒），或走 winget / Microsoft Store 分发绕开 |
 | **平台更新只走 GitHub Releases** | `plugins.updater.endpoints` 写死一条 GitHub 地址。国内网络环境下 `github.com` 和 `objects.githubusercontent.com` 都可能连不上，更新会失败 | 加第二个 endpoint（自建静态站 / 对象存储），更新器按顺序试。注意**两个地址要放同一份 `latest.json`**，否则两边版本会飘 |
 | **底板透不出后面的窗口** | 磨砂层是"壁纸"，不是"压在组件后面的浏览器窗口"——系统的模糊半径写死，做不成滑杆，二者只能选一个 | 要么接受，要么换 `SetWindowCompositionAttribute` 并放弃连续滑杆（见 ROADMAP 被推翻的决定 7） |

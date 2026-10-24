@@ -19,6 +19,8 @@
     "test:injection": "node --test scripts/widget-diagnostics.test.mjs",
     "test:sdk": "node --test scripts/sdk.test.mjs",
     "test:agent": "node --test scripts/lattice-agent.test.mjs",
+    "test:art": "node --test scripts/check-region-art.test.mjs",
+    "check:art": "node scripts/check-region-art.mjs",
     "agent": "node scripts/lattice-agent.mjs",
     "tauri": "tauri",
     "tauri:dev": "node scripts/tauri.mjs dev",
