@@ -62,6 +62,8 @@ interface HostConfig {
   minH: number;
   layer: "desktop" | "top";
   clickThrough: boolean;
+  /** `rect` = 平台圆角卡片；`region` = 组件上报轮廓（桌宠），不画底板与窗饰 */
+  shape: "rect" | "region";
   appearance: Appearance;
   /** 已经合并过出厂值的实例配置（见 runtime/config.ts） */
   config: ConfigValues;
@@ -955,32 +957,44 @@ async function boot() {
   enableMirror();
 
   /*
+   * `shape: region`：这块窗口不是卡片，是"只有宠物那几块像素存在"的一个洞。
+   *
+   * 所以底板三层一层都不画 —— 画了也是白画：区域外（包括整块底板）都被
+   * `SetWindowRgn` 裁掉了，剩下的只有宠物身上那几块。背景改成透明，
+   * 是为了让"还没上报区域"的那几百毫秒什么都不露（Rust 那边同时用空区域兜底）。
+   */
+  const regionShape = config.shape === "region";
+  document.documentElement.dataset.shape = regionShape ? "region" : "rect";
+
+  /*
    * 底板三层，从下往上：
    *   canvas  壁纸（模糊半径由 CSS filter 给，脚本只管截）
    *   veil    底色 rgba(tint, alpha)
    *   iframe  组件内容
    * 卡片本体（body 的底色、圆角、描边）还是由 widget-host.html 负责。
    */
-  wallpaperCanvas = document.createElement("canvas");
-  wallpaperCanvas.className = "lw-wallpaper";
-  wallpaperVeil = document.createElement("div");
-  wallpaperVeil.className = "lw-veil";
-  document.body.append(wallpaperCanvas, wallpaperVeil);
-  applyAppearance(normalizeAppearance(config.appearance));
-  // 上次退出时就是磨砂底的话，建窗口这一刻就得把壁纸补上
-  void refreshWallpaper();
-
-  /*
-   * 尺寸变了要重铺壁纸：canvas 的 CSS 盒子是按窗口大小算的，缩小时它多出来
-   * 一截（无所谓，被圆角裁掉），放大时就会露出没铺到的边 —— 得重新截一张，
-   * 因为"窗口背后那块桌面"也跟着变大了。
-   */
-  window.addEventListener("resize", () => {
-    if (!wallpaperCanvas) return;
-    wallpaperCanvas.style.width = `${window.innerWidth + WALLPAPER_PAD * 2}px`;
-    wallpaperCanvas.style.height = `${window.innerHeight + WALLPAPER_PAD * 2}px`;
+  if (!regionShape) {
+    wallpaperCanvas = document.createElement("canvas");
+    wallpaperCanvas.className = "lw-wallpaper";
+    wallpaperVeil = document.createElement("div");
+    wallpaperVeil.className = "lw-veil";
+    document.body.append(wallpaperCanvas, wallpaperVeil);
+    applyAppearance(normalizeAppearance(config.appearance));
+    // 上次退出时就是磨砂底的话，建窗口这一刻就得把壁纸补上
     void refreshWallpaper();
-  });
+
+    /*
+     * 尺寸变了要重铺壁纸：canvas 的 CSS 盒子是按窗口大小算的，缩小时它多出来
+     * 一截（无所谓，被圆角裁掉），放大时就会露出没铺到的边 —— 得重新截一张，
+     * 因为"窗口背后那块桌面"也跟着变大了。
+     */
+    window.addEventListener("resize", () => {
+      if (!wallpaperCanvas) return;
+      wallpaperCanvas.style.width = `${window.innerWidth + WALLPAPER_PAD * 2}px`;
+      wallpaperCanvas.style.height = `${window.innerHeight + WALLPAPER_PAD * 2}px`;
+      void refreshWallpaper();
+    });
+  }
 
   const granted = new Set<Permission>(config.permissions as Permission[]);
 
@@ -1043,7 +1057,10 @@ async function boot() {
   document.body.appendChild(iframe);
   widgetFrame = iframe;
 
-  buildChrome(config);
+  // 窗饰是画在卡片右上角的，`region` 形状下那块位置根本不存在（被裁掉了），
+  // 留着只会让"✕ 消失了"变成一个谜。桌宠自己给退出口（双击 → window.close），
+  // 真正的删除仍然在组件库 / 画布的"收回"里 —— 那是用户数据，不经组件。
+  if (!regionShape) buildChrome(config);
 
   const post = (payload: unknown) => iframe.contentWindow?.postMessage(payload, "*");
   pushTheme = () => post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
@@ -1107,6 +1124,13 @@ async function boot() {
         // 组件自己要退出：关窗口，但不删用户的 placement
         void invoke("widget_close", { reason: "widget" });
       },
+      // 只有 `shape: region` 的窗口认这个；Rust 侧还会再核一遍清单
+      setRegion:
+        config.shape === "region"
+          ? async (parts) => {
+              await invoke("widget_set_region", { parts });
+            }
+          : undefined,
       trace: (entry) => {
         trace({
           kind: "call",

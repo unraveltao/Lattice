@@ -80,6 +80,7 @@ npm run pack:widget -- examples/counter --out out/  # 指定目录
 | `permissions` | 否 | `[]` | 申请的平台权限，见下表 |
 | `network` | 否 | `{ "hosts": [] }` | 联网白名单，只有授予 `network` 时才起作用，见 §3.2 |
 | `interactive` | 否 | `true` | 要不要键盘输入。纯展示的组件设 `false`，见下 |
+| `shape` | 否 | `rect` | `rect` = 平台圆角卡片；`region` = 轮廓由组件上报（桌宠、挂件），见 §2.5 |
 | `appearance` | 否 | `{ "tint": "auto", "alpha": 1, "blur": 0 }` | 底板外观的出厂值，见 §2.2 |
 | `config` | 否 | `[]` | 可配置项，平台据此渲染属性面板表单，见 §2.3 |
 | `sdk` | 否 | `^0.1` | 依赖的 SDK 版本区间 |
@@ -96,6 +97,60 @@ npm run pack:widget -- examples/counter --out out/  # 指定目录
 * `false`：挂 WorkerW、保持 `WS_EX_NOACTIVATE`，是真正的"桌面背景"，最省事也最不打扰。
 
 **纯展示的组件（时钟、倒计时、天气）建议显式写 `false`**：少一次激活，也就不会在点桌面的时候抢焦点。
+
+### 2.5 `shape: "region"`：不是一张卡片的组件
+
+时钟、便签、待办都是**卡片**：底板、圆角、右上角那排窗饰都由平台画。但桌宠、
+悬浮挂件不是卡片 —— 它只有"身体那几块像素"存在，其余位置应该像桌面本身一样。
+
+清单里写 `"shape": "region"`，窗口就不再是矩形：
+
+```json
+"shape": "region",
+"layer": "top",
+"interactive": false
+```
+
+三件事同时发生：
+
+| 变化 | 含义 |
+| --- | --- |
+| 平台不裁圆角、不画底板、不画窗饰 | 一块被裁成宠物形状的窗口没有"卡片"可画 |
+| 可见性由 `window.setRegion` 决定 | 没上报之前窗口是**空的**（不是一块色块） |
+| 点击命中跟着区域走 | 区域外点下去，点到的是桌面或后面的窗口 |
+
+**画出来的形状必须等于上报的区域。** 这是这条路上唯一一条硬规矩，因为：
+
+- 画得比区域大 → 看得见的那一块点不到（"透明但能点"的反面：看得见、点不到）
+- 画得比区域小 → 没画的地方仍然会挡住桌面上的点击
+
+`lattice.pet` 的做法可以参考：形状和区域读**同一份 `PARTS` 数组**，两边不可能对不上。
+
+**美术约束（很重要）：**
+
+- **硬边缘**。区域外的像素不存在，投影、外发光、半透明羽化都会被切掉，边缘看着像刀切的。
+- **轮廓即包围盒**。别在身体四周留大片透明留白 —— 留白就是"能收到点击但看不见"的死区。
+- **动作用整体位移，不用形变**。拉伸 / 旋转会让区域和画面错位。走路 = 平移；眨眼这类不改变轮廓的动作随便做。
+
+**上报。** 坐标是**物理像素**、相对客户区左上角（和圆角裁剪同一个口径），
+所以要乘 `devicePixelRatio`：
+
+```js
+await call("window.setRegion", {
+  parts: [
+    { kind: "ellipse", x: 22, y: 14, w: 114, h: 92 },   // 头
+    { kind: "rect", x: 120, y: 108, w: 32, h: 13 },     // 尾巴
+  ],
+});
+```
+
+- `kind` 只有 `rect` / `ellipse` 两种；`w` / `h` 是宽高，不是右下角坐标
+- 最多 **64 块**（一块宠物十来块够了；几千块说明算错了，Rust 会拒）
+- 返回 `{ ok: true, applied: true }`；画布预览里是 `applied: false` —— 那里没有窗口，别继续报
+- 窗口尺寸变了（`resize`）要**重新上报**：平台不会替组件重算轮廓
+
+代价要说清楚：**区域边缘没有抗锯齿**（系统裁剪不做羽化），而且一旦开始上报，
+右上角的 ✕ 就不存在了 —— 组件得自己给退出口（桌宠用的是右键 → `window.close`）。
 
 ### 2.1 `icon`：组件图标
 
@@ -274,6 +329,7 @@ if (data.type === "config-changed") {
 | `network` | `network.fetch`（还要求清单里列了目标主机） | 可用 |
 | `media:control` | `media.get` / `media.control`（系统媒体会话，见 §4.4） | 可用 |
 | `agent:activity` | `agent.activity`（本机 agent 做过的操作，读的是审计日志） | 可用 |
+| `llm` | `llm.chat`（让平台替你问一次模型，密钥在平台侧，见 §3.3） | 可用 |
 
 只申请你真正用到的。申请一堆用不上的权限，用户会直接不装。
 
@@ -336,6 +392,42 @@ if (data.type === "config-changed") {
 写坏的条目只丢那一条，不让整包加载失败 —— 和图标同一个理由。丢掉的后果是那个主机连不上（明确的拒绝），而不是悄悄放宽。
 
 
+### 3.3 `llm`：让平台替你说话
+
+组件**拿不到模型密钥**，也不该拿到：它跑在不透明源里，密钥只要进过组件的手，
+就等于同时进了 `storage`（组件自己那份数据，别的实例也读得到）和任何一次
+`network.fetch` 的请求体。所以这条路是反过来的 —— 密钥留在平台，组件只递话：
+
+```js
+const reply = await call("llm.chat", {
+  messages: [
+    { role: "system", content: "你是一只住在桌面上的猫，回答不超过 40 字。" },
+    { role: "user", content: "今天写点什么好？" },
+  ],
+});
+bubble.textContent = reply.text;
+```
+
+| 项 | 规则 |
+| --- | --- |
+| 密钥 | 用户在设置里填，平台用 **Windows DPAPI** 加密后落盘（`llm.bin`），只有本机这个账户能解。组件永远看不到，桥也不返回 |
+| 地址 | 只来自平台设置。**组件指定不了 base URL** —— 否则一个拿到 `llm` 权限的组件把地址指到自己的服务器，密钥和整段对话就一起寄过去了 |
+| 模型 | 平台设置里二选一：`deepseek-chat` / `deepseek-reasoner`。组件指定不了 |
+| 条数 | 每次最多 12 条消息；单条 4000 字符；合计 12000 字符 |
+| 回复 | 最多 300 token。超出的部分模型自己截断，不是平台丢的 |
+| 频率 | 一次一条，两次之间至少 700ms。平台排队，不并发 |
+| 失败 | 返回结构化错误（`permission_denied` / `bad_params` / 文本），401 会明说"密钥被拒"，不要用 try/catch 吞掉然后显示"暂无数据" |
+
+**先问一句 `llm.status`。** 没配密钥的机器上，直接 `llm.chat` 只会拿到一句
+`no assistant key is configured`—— 而那句话是给开发者看的。正确的做法是打开
+界面之前问一次，没配就显示"去设置里填一个"，别再发请求。
+
+> 这一条和 `agent:activity`（读 agent 做过什么）是**两件事**：那条问的是
+> "外面的 agent 动了我的桌面什么"，这条问的是"我能不能替用户说话"。
+> 别合并权限，也别合并界面入口。
+
+---
+
 ## 4. 桥 API
 
 ### 消息格式
@@ -376,7 +468,10 @@ parent.postMessage(
 | `media.get` | `media:control` | — | 当前媒体会话，没有播放器时返回 `null`（不是错误），见 §4.4 |
 | `media.control` | `media:control` | `{ action }` | `{ ok }`；`action` 是 `playPause` / `next` / `previous` / `stop` |
 | `agent.activity` | `agent:activity` | `{ limit? }` | `{ enabled, entries }`；`entries` 是审计日志最后几条，新的在**后**（组件自己倒序） |
+| `llm.chat` | `llm` | `{ messages, temperature? }` | `{ text, model, usage }`，见 §3.3 |
+| `llm.status` | — | — | `{ configured, model, base }`；**不含密钥** |
 | `window.close` | — | — | 关闭当前组件实例的窗口，**但不删用户的 placement** |
+| `window.setRegion` | — | `{ parts: [{ kind?, x, y, w, h }] }` | `{ ok, applied, parts }`；只有 `shape: "region"` 的窗口认，见 §2.5 |
 
 **`window.close` 只是关窗，不是删组件。** 调用之后窗口消失，但用户摆在画布 / 桌面上的那个 placement 还在 `state.json` 里，下次启动照样回来；本次运行内不会再自动冒出来（平台记着"它自己退出了"）。真正删掉用户布局的只有用户自己按宿主页那颗 ✕。所以组件别把这个方法当"自毁"用 —— 它是"我先歇着"。
 

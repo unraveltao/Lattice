@@ -1,0 +1,170 @@
+:root {
+  --fg: #ecebe6;
+  --muted: #97978f;
+  --accent: #5dcaa5;
+  --surface: #15151a;
+  --border: rgba(255, 255, 255, 0.12);
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/*
+ * 窗口按图片的不透明像素裁出来，所以 body 不能有任何底色 ——
+ * 有一点颜色，区域边缘就会露出一圈。
+ */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: var(--font);
+  user-select: none;
+  cursor: default;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+}
+
+/*
+ * 图片本身。位置和尺寸由 pet.js 算（居中贴底），
+ * 这里只保证不被拖动、不被选中。
+ */
+#sprite {
+  position: absolute;
+  left: 0;
+  top: 0;
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: auto;
+}
+
+/*
+ * 气泡。必须是直角矩形、必须不透明：区域只有 rect/ellipse 两种，
+ * 圆角会在四角留下"区域里有、画面上没有"的缺口；半透明会露出窗口底色。
+ */
+#panel {
+  position: absolute;
+  display: none;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg);
+}
+
+#panel.is-open {
+  display: flex;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 20px;
+  flex: none;
+  padding: 0 6px 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.panel-head button {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.panel-head button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+}
+
+#log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px;
+  scrollbar-width: thin;
+}
+
+#log .msg {
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+#log .msg.is-user {
+  color: var(--muted);
+}
+
+#log .msg.is-user::before {
+  content: "你 · ";
+  opacity: 0.6;
+}
+
+#log .msg.is-pet {
+  color: var(--fg);
+}
+
+#log .msg.is-hint {
+  color: var(--muted);
+  font-style: italic;
+}
+
+#composer {
+  display: flex;
+  gap: 6px;
+  flex: none;
+  padding: 6px;
+  border-top: 1px solid var(--border);
+}
+
+#prompt {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+#prompt:focus {
+  border-color: var(--accent);
+}
+
+#composer button {
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  background: var(--accent);
+  color: #0b0d10;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#composer button:hover {
+  filter: brightness(1.08);
+}

@@ -71,6 +71,8 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_NetworkManagement_Ndis",
   "Win32_Networking_WinHttp",
   "Win32_Security",
+  # DPAPI：助手密钥要加密落盘，只有当前 Windows 账户能解（llm.rs）
+  "Win32_Security_Cryptography",
   "Win32_Storage_FileSystem",
   "Win32_System_IO",
   "Win32_System_Registry",

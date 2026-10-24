@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>大肥鱼</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      窗口是按图片的不透明像素裁出来的（pet.js 里从 alpha 生成区域）。
+      所以：图放在哪、多大，决定宠物在哪、多大；气泡打开时它的矩形也会并进区域。
+    -->
+    <div id="stage">
+      <img id="sprite" alt="" draggable="false" />
+      <div id="panel">
+        <div class="panel-head">
+          <span>大肥鱼</span>
+          <button id="close-panel" type="button" title="关闭（Esc）">×</button>
+        </div>
+        <div id="log"></div>
+        <form id="composer">
+          <input id="prompt" type="text" placeholder="说点什么…" autocomplete="off" spellcheck="false" />
+          <button type="submit" title="发送（Enter）">发送</button>
+        </form>
+      </div>
+    </div>
+    <!-- 轮廓表：构建期从 art/*.png 的 alpha 算出来，用 script 带进来（fetch 会被 sandbox 的 CORS 挡掉） -->
+    <script src="art/masks.js"></script>
+    <script src="pet.js"></script>
+  </body>
+</html>

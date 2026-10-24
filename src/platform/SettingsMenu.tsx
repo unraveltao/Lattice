@@ -22,7 +22,24 @@ import { keyFingerprint } from "../runtime/catalogue";
 import { useLattice, isOfficialCatalogue, OFFICIAL_CATALOGUE_SOURCE, OFFICIAL_CATALOGUE_URL, type ThemeMode } from "./store";
 import { appVersion, checkForUpdate, installUpdate, type UpdateState } from "./updater";
 
-type View = "menu" | "signin" | "profile" | "catalogue";
+type View = "menu" | "signin" | "profile" | "catalogue" | "assistant";
+
+/**
+ * 助手（`llm.chat`）的状态。**不含密钥本体** —— Rust 只回"配没配"和模型名。
+ *
+ * 界面上永远不显示已存的密钥：它是给组件用的，不是给人抄的；摊在设置面板里，
+ * 截一张图就泄露了。想换就整把换，想清就点 Remove。
+ */
+interface AssistantStatus {
+  configured: boolean;
+  model: string;
+  base: string;
+}
+
+const ASSISTANT_MODELS = [
+  { value: "deepseek-chat", label: "deepseek-chat" },
+  { value: "deepseek-reasoner", label: "deepseek-reasoner" },
+];
 
 /**
  * 设置里"目录从哪儿来"的三档。
@@ -109,6 +126,16 @@ export function SettingsMenu({ installedCount, placementCount, onQuit }: Setting
   const [draftKind, setDraftKind] = useState<CatalogueDraftKind>("official");
   const [draftUrl, setDraftUrl] = useState("");
   /**
+   * 助手设置。和目录那页同一个形状：草稿 + 保存。
+   *
+   * `assistant === null` = 还不知道（浏览器预览 / 读取失败），整行画成禁用。
+   */
+  const [assistant, setAssistant] = useState<AssistantStatus | null>(null);
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
+  const [draftKey, setDraftKey] = useState("");
+  const [draftModel, setDraftModel] = useState(ASSISTANT_MODELS[0].value);
+  /**
    * 平台自身的更新状态。**不进 store**：它是一次性的、跟这台机器这一次
    * 会话有关，重启之后"上次检查过"没有任何意义 —— 存下来只会让菜单里
    * 一直挂着一条过期的 "Up to date"。
@@ -140,6 +167,56 @@ export function SettingsMenu({ installedCount, placementCount, onQuit }: Setting
     setView("catalogue");
   }, [catalogueSource]);
 
+  const startAssistant = useCallback(() => {
+    setAssistantError(null);
+    // 已经存过的密钥不回填：界面里永远不出现它，要换就整把换
+    setDraftKey("");
+    setDraftModel(assistant?.model || ASSISTANT_MODELS[0].value);
+    setView("assistant");
+  }, [assistant]);
+
+  /**
+   * 存助手设置。
+   *
+   * `apiKey` 传 `null` = 不动已经存着的那把；传空串 = 清掉。
+   * 这两种"空"必须分开：输入框本来就是空的，把"没改"当成"清空"的话，
+   * 用户只想换个模型，结果把密钥一起删了。
+   */
+  const saveAssistant = useCallback(async () => {
+    if (assistantBusy) return;
+    setAssistantBusy(true);
+    setAssistantError(null);
+    try {
+      const trimmed = draftKey.trim();
+      const status = await invoke<AssistantStatus>("llm_set_config", {
+        apiKey: trimmed === "" ? null : trimmed,
+        model: draftModel,
+      });
+      setAssistant(status);
+      setDraftKey("");
+      setView("menu");
+    } catch (error) {
+      setAssistantError(String(error));
+    } finally {
+      setAssistantBusy(false);
+    }
+  }, [assistantBusy, draftKey, draftModel]);
+
+  const clearAssistant = useCallback(async () => {
+    if (assistantBusy) return;
+    setAssistantBusy(true);
+    setAssistantError(null);
+    try {
+      const status = await invoke<AssistantStatus>("llm_set_config", { apiKey: "" });
+      setAssistant(status);
+      setDraftKey("");
+    } catch (error) {
+      setAssistantError(String(error));
+    } finally {
+      setAssistantBusy(false);
+    }
+  }, [assistantBusy]);
+
   const saveCatalogue = useCallback(() => {
     setCatalogueSource(
       draftKind === "bundled"
@@ -154,6 +231,22 @@ export function SettingsMenu({ installedCount, placementCount, onQuit }: Setting
   useEffect(() => {
     void appVersion().then(setVersion);
   }, []);
+
+  /*
+   * 助手状态在打开菜单时读一次。
+   *
+   * 不在挂载时读：主窗口一直开着，而用户可能在这中间去 Rust 那边改了配置
+   * （比如换了 key）。每开一次菜单读一次，代价只有一次 IPC。
+   */
+  useEffect(() => {
+    if (!open || !("__TAURI_INTERNALS__" in window)) return;
+    void invoke<AssistantStatus>("llm_status")
+      .then((status) => {
+        setAssistant(status);
+        setDraftModel(status.model || ASSISTANT_MODELS[0].value);
+      })
+      .catch(() => setAssistant(null));
+  }, [open]);
 
   /**
    * 一颗按钮两种含义：没查过就查，查到了就装。
@@ -482,6 +575,27 @@ export function SettingsMenu({ installedCount, placementCount, onQuit }: Setting
                   </label>
                 </div>
 
+                {/*
+                  助手：平台替组件问模型。
+                  和上面那条 Agent access 是**相反方向**的两件事，别合并：
+                  那条是"外面的 agent 能动我的桌面"，这条是"组件能替我说话"。
+                  密钥存在 Rust 侧（DPAPI），这里不显示、不回填、不落进 state.json。
+                */}
+                <button
+                  type="button"
+                  className="lattice-menu-row"
+                  onClick={startAssistant}
+                  disabled={assistant === null}
+                  title="The key is stored encrypted by Windows (DPAPI) and never leaves the app"
+                >
+                  <Glyph d={ICON.chat} />
+                  <span className="lattice-menu-label">AI assistant</span>
+                  <span className="lattice-menu-note">
+                    {assistant === null ? "…" : assistant.configured ? assistant.model : "No key"}
+                  </span>
+                  <Glyph d={ICON.chevron} />
+                </button>
+
                 {autostartHint ? (
                   <p className={`lattice-menu-hint${autostartError ? " is-error" : ""}`}>{autostartHint}</p>
                 ) : null}
@@ -752,6 +866,86 @@ export function SettingsMenu({ installedCount, placementCount, onQuit }: Setting
                   type="submit"
                   className="lattice-btn is-small is-primary"
                   disabled={draftKind === "url" && !draftUrl.trim()}
+                >
+                  Save
+                </button>
+              </footer>
+            </form>
+          )}
+          {view === "assistant" && (
+            <form
+              className="lattice-account-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveAssistant();
+              }}
+            >
+              <header className="lattice-account-form-head">
+                <button type="button" className="lattice-icon-btn" onClick={() => setView("menu")}>
+                  <Glyph d={ICON.back} />
+                  <span className="lattice-sr-only">Back</span>
+                </button>
+                <span>AI assistant</span>
+              </header>
+
+              <div className="lattice-account-form-body">
+                <label className="lattice-textfield">
+                  <span>API key</span>
+                  <input
+                    type="password"
+                    value={draftKey}
+                    onChange={(event) => setDraftKey(event.target.value)}
+                    placeholder={assistant?.configured ? "•••• (saved — leave empty to keep)" : "sk-…"}
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                </label>
+
+                <label className="lattice-textfield">
+                  <span>Model</span>
+                  <select
+                    value={draftModel}
+                    onChange={(event) => setDraftModel(event.target.value)}
+                  >
+                    {ASSISTANT_MODELS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <p className="lattice-account-hint">
+                  Widgets never see this key. They ask the platform to send a few sentences and get the
+                  answer back — they cannot pick the model or the address, so a widget with the AI chat
+                  permission can spend your credit but cannot take the key anywhere.
+                  {assistant?.base ? ` Endpoint: ${assistant.base}.` : ""}
+                </p>
+
+                {assistantError ? (
+                  <p className="lattice-account-hint is-error">{assistantError}</p>
+                ) : null}
+              </div>
+
+              <footer className="lattice-account-form-foot">
+                {assistant?.configured ? (
+                  <button
+                    type="button"
+                    className="lattice-btn is-small"
+                    onClick={() => void clearAssistant()}
+                    disabled={assistantBusy}
+                  >
+                    Remove key
+                  </button>
+                ) : (
+                  <button type="button" className="lattice-btn is-small" onClick={() => setView("menu")}>
+                    Cancel
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="lattice-btn is-small is-primary"
+                  disabled={assistantBusy || (draftKey.trim() === "" && !assistant?.configured)}
                 >
                   Save
                 </button>

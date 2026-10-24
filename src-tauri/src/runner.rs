@@ -29,7 +29,7 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
-use crate::desktop::{self, WindowLayer};
+use crate::desktop::{self, RegionPart, WindowLayer, WindowShape};
 use crate::egress;
 use crate::visibility;
 
@@ -57,6 +57,10 @@ pub struct WidgetWindowSpec {
     /// 组件要不要键盘焦点。false 的窗口带 `WS_EX_NOACTIVATE`，点了不抢焦点；
     /// true 的窗口可以激活，便签/待办才打得进字
     pub interactive: bool,
+    /// 窗口轮廓：`rect`（默认，平台圆角）或 `region`（组件用 `window.setRegion` 上报）。
+    /// 桌宠这类"不是一张卡片"的组件用后者，见 `docs/WIDGET_SPEC.md`
+    #[serde(default)]
+    pub shape: WindowShape,
     /// 别针：锁住位置与大小，宿主页把拖拽/缩放手柄收掉
     pub pinned: bool,
     /// 平台当前解析出来的明暗，桌面窗口据此上色，
@@ -156,6 +160,9 @@ pub struct HostConfig {
     pub layer: WindowLayer,
     pub click_through: bool,
     pub interactive: bool,
+    /// 窗口轮廓来源。`region` 的窗口不画底板、不画窗饰，背景透明，
+    /// 可见像素全部由组件上报的区域决定
+    pub shape: WindowShape,
     /// 底板外观，宿主页拿它上色与糊背景
     pub appearance: Appearance,
     /// 实例配置（已合并出厂值），宿主页原样交给组件
@@ -214,6 +221,12 @@ pub struct Runner {
     /// 只活在内存里：暂停是"现在别动"，不是配置。重启之后该恢复 ——
     /// 用户开机的期待是"组件在那儿"，不是"上次点了暂停所以还是空的"。
     paused: AtomicBool,
+    /// 最后一次由组件上报的轮廓，按窗口 label 索引。
+    ///
+    /// 为什么要在这里留一份：窗口改尺寸 / 切层级时会重新走一遍
+    /// `apply_to`，那时必须把组件报过的区域**重新贴回去**，
+    /// 否则宠物会变回一块圆角矩形，直到它下一次上报才恢复。
+    regions: Mutex<HashMap<String, Vec<RegionPart>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -225,6 +238,7 @@ struct Applied {
     layer: WindowLayer,
     click_through: bool,
     interactive: bool,
+    shape: WindowShape,
 }
 
 /// 这次同步相对上次真正写进 Win32 的状态，哪些维度变了
@@ -379,6 +393,26 @@ impl Runner {
         false
     }
 
+    /// 记下组件最新上报的轮廓（并返回之前那份，调用方可以据此跳过重复的 Win32 写入）
+    fn remember_region(&self, label: &str, parts: Vec<RegionPart>) -> Vec<RegionPart> {
+        let mut map = match self.regions.lock() {
+            Ok(map) => map,
+            Err(_) => return Vec::new(),
+        };
+        let previous = map.get(label).cloned().unwrap_or_default();
+        map.insert(label.to_string(), parts);
+        previous
+    }
+
+    /// 这个窗口最后一次上报的轮廓（没报过就是空 = 什么都不显示）
+    fn region_of(&self, label: &str) -> Vec<RegionPart> {
+        self.regions
+            .lock()
+            .ok()
+            .and_then(|map| map.get(label).cloned())
+            .unwrap_or_default()
+    }
+
     /// 比对并记录：返回 None 表示这一轮什么都不用做。
     ///
     /// 只写变化的部分不只是省开销 —— 用户在桌面上拖动组件时，
@@ -394,7 +428,10 @@ impl Runner {
                     size: prev.w != next.w || prev.h != next.h,
                     layer: prev.layer != next.layer
                         || prev.click_through != next.click_through
-                        || prev.interactive != next.interactive,
+                        || prev.interactive != next.interactive
+                        // 轮廓变了要重走一遍 `apply_to`：`rect` 的窗口得补回圆角，
+                        // `region` 的窗口得把组件报过的区域重新贴上去
+                        || prev.shape != next.shape,
                 };
                 map.insert(label.to_string(), next);
                 Some(change)
@@ -450,6 +487,7 @@ fn create(app: &AppHandle, spec: &WidgetWindowSpec, runner: &Runner) -> Result<(
             layer: spec.layer,
             click_through: spec.click_through,
             interactive: spec.interactive,
+            shape: spec.shape,
             appearance: spec.appearance.clone(),
             config: spec.config.clone(),
             network: spec.network.clone(),
@@ -485,14 +523,20 @@ fn create(app: &AppHandle, spec: &WidgetWindowSpec, runner: &Runner) -> Result<(
 
     // 缩放时窗口尺寸变了，圆角裁剪区域得跟着重算。
     // 放在 Rust 里做，省掉"上报前端 → 存 store → 再同步回来"这一圈，拖动边缘才跟手。
+    //
+    // `shape: region` 的窗口例外：区域是组件按自己的身形算的，这里既不知道
+    // 它长什么样，也不该替它重算 —— 宿主页会收到 resize，组件自己再报一次。
     if let Ok(handle) = window.window_handle() {
         if let RawWindowHandle::Win32(win32) = handle.as_raw() {
             let hwnd = win32.hwnd.get();
             let radius = desktop::CORNER_RADIUS * window.scale_factor().unwrap_or(1.0);
+            let shape = spec.shape;
 
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::Resized(size) = event {
-                    let _ = desktop::clip_rounded(hwnd, size.width, size.height, radius);
+                    if shape == WindowShape::Rect {
+                        let _ = desktop::clip_rounded(hwnd, size.width, size.height, radius);
+                    }
                 }
             });
         }
@@ -509,10 +553,29 @@ fn create(app: &AppHandle, spec: &WidgetWindowSpec, runner: &Runner) -> Result<(
     // 组件窗口也会被藏起来（同步时删掉的那批、主窗口收回时），
     // 藏起来之后它自己的心跳就该停 —— 可见性由窗口自己报给它自己的页面
     visibility::watch(&window);
-    if let Err(error) = desktop::apply_to(&window, spec.layer, spec.click_through, spec.interactive) {
+    if let Err(error) = desktop::apply_to(
+        &window,
+        spec.layer,
+        spec.click_through,
+        spec.interactive,
+        spec.shape,
+    ) {
         // 层级失败不该让整个同步失败：窗口已经建好了，至少先让人看见
         eprintln!("[lattice] failed to apply window layer ({label}): {error}");
     } else {
+        // `shape: region` 的窗口在组件第一次上报之前必须是"不可见"的：
+        // 窗口本身不透明，不裁就是一张实心卡片，加载那几百毫秒会先闪一块色块。
+        // 空区域正好表达"什么都不显示"，而且不用等组件 —— 它上报了才出现。
+        if spec.shape == WindowShape::Region {
+            if let Ok(handle) = window.window_handle() {
+                if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+                    let parts = runner.region_of(&label);
+                    if let Err(error) = desktop::set_region(win32.hwnd.get() as isize, &parts) {
+                        eprintln!("[lattice] failed to apply the initial region ({label}): {error}");
+                    }
+                }
+            }
+        }
         runner.remember(
             &label,
             Applied {
@@ -523,6 +586,7 @@ fn create(app: &AppHandle, spec: &WidgetWindowSpec, runner: &Runner) -> Result<(
                 layer: spec.layer,
                 click_through: spec.click_through,
                 interactive: spec.interactive,
+                shape: spec.shape,
             },
         );
     }
@@ -641,6 +705,7 @@ pub async fn sync_widget_windows(
                     layer: spec.layer,
                     click_through: spec.click_through,
                     interactive: spec.interactive,
+                    shape: spec.shape,
                 };
                 if let Some(change) = runner.diff(&label, next) {
                     if change.pos {
@@ -655,8 +720,20 @@ pub async fn sync_widget_windows(
                             spec.layer,
                             spec.click_through,
                             spec.interactive,
+                            spec.shape,
                         ) {
                             eprintln!("[lattice] failed to update window layer ({label}): {error}");
+                        }
+                        // 换了层级 / 轮廓方式之后，组件报过的区域要原样贴回去：
+                        // `apply_to` 对 `region` 窗口不碰区域，但改尺寸可能让
+                        // 上一次的区域失效，这里补一刀是幂等的
+                        if spec.shape == WindowShape::Region {
+                            if let Ok(handle) = window.window_handle() {
+                                if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+                                    let parts = runner.region_of(&label);
+                                    let _ = desktop::set_region(win32.hwnd.get() as isize, &parts);
+                                }
+                            }
                         }
                     }
                 }
@@ -723,10 +800,24 @@ pub fn apply_pause(app: &AppHandle, runner: &Runner, paused: bool) -> bool {
         } else {
             let _ = window.show();
             if let Some(config) = runner.get(&label) {
-                if let Err(error) =
-                    desktop::apply_to(&window, config.layer, config.click_through, config.interactive)
-                {
+                if let Err(error) = desktop::apply_to(
+                    &window,
+                    config.layer,
+                    config.click_through,
+                    config.interactive,
+                    config.shape,
+                ) {
                     eprintln!("[lattice] failed to re-apply the layer after resuming ({label}): {error}");
+                }
+                // 恢复之后 `apply_to` 对 `region` 窗口不碰区域，但窗口刚被 show() 过，
+                // 把组件报过的轮廓贴回去是幂等的保险
+                if config.shape == WindowShape::Region {
+                    if let Ok(handle) = window.window_handle() {
+                        if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+                            let parts = runner.region_of(&label);
+                            let _ = desktop::set_region(win32.hwnd.get() as isize, &parts);
+                        }
+                    }
                 }
             }
         }
@@ -818,6 +909,7 @@ pub fn widget_report_rect(
             layer: config.layer,
             click_through: config.click_through,
             interactive: config.interactive,
+            shape: config.shape,
         },
     );
 
@@ -875,7 +967,7 @@ pub fn widget_set_layer(
     runner.put(window.label(), config.clone());
 
     // 立即落到 Win32，不等主窗口那一圈同步，点完马上就能看到效果
-    desktop::apply_to(&window, layer, config.click_through, config.interactive)?;
+    desktop::apply_to(&window, layer, config.click_through, config.interactive, config.shape)?;
     runner.patch_layer(window.label(), layer, config.click_through);
 
     let _ = app.emit_to(
@@ -888,6 +980,59 @@ pub fn widget_set_layer(
     );
     Ok(())
 }
+
+/// 组件上报自己的轮廓（桥方法 `window.setRegion`）。
+///
+/// 只有清单里写了 `"shape": "region"` 的窗口认这条：别的窗口轮廓是平台的
+/// 圆角矩形，允许组件随便改会让"卡片"这个概念当场失效（而用户按 ✕ 的那个
+/// 位置是画在卡片右上角的，形状没了就点不到）。
+///
+/// 坐标是物理像素、相对客户区左上角 —— 和 `clip_rounded` 同一个口径，
+/// 所以组件那边要自己乘 `devicePixelRatio`（宿主页会把比例告诉它）。
+#[tauri::command]
+pub fn widget_set_region(
+    window: tauri::WebviewWindow,
+    runner: State<'_, Runner>,
+    parts: Vec<RegionPart>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let config = runner
+        .get(&label)
+        .ok_or_else(|| "this window is not a registered widget window".to_string())?;
+    if config.shape != WindowShape::Region {
+        return Err(
+            "this widget does not declare \"shape\": \"region\" in its manifest".to_string(),
+        );
+    }
+
+    // 一块宠物撑死十来块，几百块说明组件算错了 —— 限流而不是照单全收：
+    // 每块都要 CreateXxxRgn + CombineRgn，几千块会明显卡住消息循环
+    if parts.len() > MAX_REGION_PARTS {
+        return Err(format!(
+            "too many region parts ({} > {MAX_REGION_PARTS})",
+            parts.len()
+        ));
+    }
+
+    let handle = window.window_handle().map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    {
+        if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+            desktop::set_region(win32.hwnd.get() as isize, &parts)?;
+            runner.remember_region(&label, parts);
+            return Ok(());
+        }
+        Err("could not obtain the Win32 window handle".to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (handle, parts);
+        Err("window regions are only implemented on Windows".to_string())
+    }
+}
+
+/// 一次上报最多认多少块。桌宠是十来块，留足余量
+const MAX_REGION_PARTS: usize = 256;
 
 /// 那一下点击的来路，由宿主页在调用时一并送来。
 ///

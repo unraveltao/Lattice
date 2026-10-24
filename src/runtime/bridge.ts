@@ -38,6 +38,23 @@ export interface BridgeResponseMessage {
 
 export type BridgeErrorCode = "unknown_method" | "permission_denied" | "bad_params" | "internal";
 
+/**
+ * 窗口轮廓里的一块。
+ *
+ * 坐标是**物理像素**、相对客户区左上角 —— 和 `desktop::clip_rounded` 同一个口径，
+ * 所以组件要自己乘 `devicePixelRatio`。`w` / `h` 是宽高，不是右下角坐标。
+ */
+export interface RegionPart {
+  kind?: "rect" | "ellipse";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** 一次上报最多认多少块（Rust 侧同一上限）。图片轮廓按 6px 网格合并后会到 100 上下 */
+export const MAX_REGION_PARTS = 256;
+
 export interface BridgeContext {
   /** 组件实例 id：同一个组件可以同时放多个实例 */
   instanceId: string;
@@ -69,6 +86,15 @@ export interface BridgeContext {
   egress: readonly string[];
   /** 组件请求关闭自己 */
   close: () => void;
+  /**
+   * 把窗口裁成组件上报的形状（只有 `shape: "region"` 的窗口认）。
+   *
+   * 做成注入的回调而不是直接 `invoke`，理由和 `close` 一样：画布上的实例
+   * **不是窗口**，没有轮廓可裁。画布那边不传这个字段，于是 `window.setRegion`
+   * 回 `{ ok: true, applied: false }` —— 组件据此知道"这里只有预览"，
+   * 不用 try/catch，也不会把桌面那条路当成坏了。
+   */
+  setRegion?: (parts: RegionPart[]) => Promise<void> | void;
   /**
    * 桥调用的观察者（调试面板用）。
    *
@@ -353,6 +379,152 @@ defineMethod("window.close", null, (_params, ctx) => {
   ctx.close();
   return { ok: true };
 });
+
+/*
+ * 把窗口裁成组件自己的形状（桌宠 / 悬浮挂件）。
+ *
+ * 为什么这是"组件能碰自己的窗口"的唯一一处：形状只影响**它自己**的可见像素与
+ * 点击命中，碰不到别的窗口，所以不需要权限。而清单里的 `shape: "region"` 是
+ * 一道门 —— 没写这一项的组件调用会被 Rust 拒掉，卡片不会因为一次误调用
+ * 变成一块看不懂的剪影（右上角那颗 ✕ 是画在卡片上的，形状没了就点不到）。
+ *
+ * 返回 `applied: false` 表示"这里不是桌面窗口"（画布预览）。组件据此降级，
+ * 不用 catch —— 画布上显示一只不透明的宠物是正常的，那不是错误。
+ */
+defineMethod("window.setRegion", null, async (params, ctx) => {
+  const parts = normalizeRegionParts(
+    (params as { parts?: unknown } | undefined)?.parts,
+  );
+  if (!ctx.setRegion) return { ok: true, applied: false, parts: parts.length };
+  await ctx.setRegion(parts);
+  return { ok: true, applied: true, parts: parts.length };
+});
+
+/*
+ * 和模型说一句话。
+ *
+ * 组件**拿不到密钥**：密钥存在平台侧（DPAPI 加密，只有本机这个 Windows 账户能解），
+ * 请求由 Rust 代发。组件能决定的只有"说什么"—— 模型、地址、温度上限都在平台那边定。
+ *
+ * 为什么地址不让组件决定：密钥就在 `Authorization` 头里。一个能指定 URL 的
+ * `llm.chat` 等于"把密钥和整段对话一起寄到我指定的服务器"，而它在界面上
+ * 只表现为一行 `AI chat` 权限。
+ *
+ * 每次调用最多 12 条消息、单条 4000 字符、共 12000 字符，回复上限 300 token，
+ * 两次请求之间平台会自己排队 —— 这些都是平台侧兜的，组件不必也不能改。
+ */
+defineMethod("llm.chat", "llm", async (params) => {
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "talking to the assistant only works in the desktop app");
+  }
+  const request = normalizeChatRequest(params);
+  return await invoke("llm_chat", { request });
+});
+
+/**
+ * 助手配好了没有。
+ *
+ * 不需要权限，也不返回密钥本身 —— 组件据此决定显示"去设置里填个 key"
+ * 还是直接开口说话。不带这一步的话，没配密钥的机器上宠物只会一遍遍
+ * 报错，而错误文案是给开发者看的。
+ */
+defineMethod("llm.status", null, async () => {
+  if (!bridgeInTauri()) return { configured: false, model: "", base: "" };
+  return await invoke("llm_status");
+});
+
+export interface LlmMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export const MAX_LLM_MESSAGES = 12;
+export const MAX_LLM_MESSAGE_CHARS = 4_000;
+
+/**
+ * 对话请求的校验。上限和 Rust 侧一致，但**两处都要留**：
+ * 这里挡的是"组件一提交就让宿主白跑一趟 IPC"，那边挡的是"任何绕过前端的调用"。
+ */
+export function normalizeChatRequest(raw: unknown): { messages: LlmMessage[]; temperature?: number } {
+  const input = (raw ?? {}) as Record<string, unknown>;
+  const list = input.messages;
+  if (!Array.isArray(list) || list.length === 0) {
+    throw new BridgeError("bad_params", "llm.chat requires a non-empty \"messages\" array");
+  }
+  if (list.length > MAX_LLM_MESSAGES) {
+    throw new BridgeError(
+      "bad_params",
+      `llm.chat accepts at most ${MAX_LLM_MESSAGES} messages, got ${list.length}`,
+    );
+  }
+  const messages: LlmMessage[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== "object") {
+      throw new BridgeError("bad_params", "every message must be an object");
+    }
+    const message = item as Record<string, unknown>;
+    const role = message.role;
+    const content = message.content;
+    if (role !== "system" && role !== "user" && role !== "assistant") {
+      throw new BridgeError("bad_params", "message roles are system / user / assistant");
+    }
+    if (typeof content !== "string" || content.trim() === "") {
+      throw new BridgeError("bad_params", "every message needs a non-empty \"content\" string");
+    }
+    if (content.length > MAX_LLM_MESSAGE_CHARS) {
+      throw new BridgeError(
+        "bad_params",
+        `a single message may be at most ${MAX_LLM_MESSAGE_CHARS} characters`,
+      );
+    }
+    messages.push({ role, content });
+  }
+  const temperature = input.temperature;
+  if (temperature !== undefined && (typeof temperature !== "number" || !Number.isFinite(temperature))) {
+    throw new BridgeError("bad_params", "\"temperature\" must be a number");
+  }
+  return temperature === undefined ? { messages } : { messages, temperature };
+}
+
+/**
+ * 轮廓条目校验。坏数据一律 `bad_params`，不做"尽量理解"：
+ * 一个 NaN 坐标交给 GDI 的结果是整个窗口区域失效，症状是"宠物突然变成
+ * 一张实心卡片"，比一条明确的错误难查得多。
+ */
+export function normalizeRegionParts(raw: unknown): RegionPart[] {
+  if (!Array.isArray(raw)) {
+    throw new BridgeError("bad_params", "window.setRegion requires an array in \"parts\"");
+  }
+  if (raw.length > MAX_REGION_PARTS) {
+    throw new BridgeError(
+      "bad_params",
+      `window.setRegion accepts at most ${MAX_REGION_PARTS} parts, got ${raw.length}`,
+    );
+  }
+  const parts: RegionPart[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      throw new BridgeError("bad_params", "every region part must be an object");
+    }
+    const part = item as Record<string, unknown>;
+    const kind = part.kind === "ellipse" ? "ellipse" : "rect";
+    const x = part.x;
+    const y = part.y;
+    const w = part.w;
+    const h = part.h;
+    if (
+      typeof x !== "number" || typeof y !== "number" ||
+      typeof w !== "number" || typeof h !== "number" ||
+      !Number.isFinite(x) || !Number.isFinite(y) ||
+      !Number.isFinite(w) || !Number.isFinite(h) ||
+      w < 1 || h < 1
+    ) {
+      throw new BridgeError("bad_params", "region parts need finite x / y and w / h >= 1");
+    }
+    parts.push({ kind, x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) });
+  }
+  return parts;
+}
 
 /*
  * 媒体控制：读当前播放、按一下播放/暂停、上一首/下一首。

@@ -39,6 +39,21 @@
         pointer-events: none;
         box-shadow: inset 0 0 0 1px var(--lattice-border, rgb(255 255 255 / 10%));
       }
+
+      /*
+       * `shape: region` 的窗口（桌宠）：这里没有卡片。
+       *
+       * 背景必须透明 —— 窗口区域由组件上报，区域外的像素根本不存在，
+       * 但只要窗口还有一块底色，"还没上报"那几百毫秒就会闪一块色块。
+       * 描边同理：它画在整块窗口的内沿，而内沿在宠物身上是不存在的。
+       */
+      html[data-shape="region"] body {
+        background: transparent;
+      }
+
+      html[data-shape="region"] body::after {
+        display: none;
+      }
     </style>
   </head>
   <body>

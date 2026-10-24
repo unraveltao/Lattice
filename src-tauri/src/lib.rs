@@ -22,6 +22,7 @@ pub mod desktop;
 pub mod diagnostics;
 pub mod egress;
 pub mod instance;
+pub mod llm;
 pub mod media;
 pub mod metrics;
 pub mod network;
@@ -76,6 +77,7 @@ pub fn run() {
         // 后台轮询一个只发布几次的项目，等于每台机器每天替你发一次请求
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(runner::Runner::default())
+        .manage(llm::Llm::default())
         // agent 端点：默认关，开关在设置菜单里。它要转发请求给主窗口，
         // 所以状态得先 manage 好（见 agent.rs 的模块注释）
         .manage(agent::Agent::default())
@@ -121,12 +123,16 @@ pub fn run() {
             widget_store::widget_store_write,
             widget_store::widget_store_update,
             widget_store::widget_store_clear,
+            llm::llm_status,
+            llm::llm_set_config,
+            llm::llm_chat,
             runner::sync_widget_windows,
             runner::close_widget_windows,
             runner::widget_host_config,
             runner::widget_report_rect,
             runner::widget_set_pinned,
             runner::widget_set_layer,
+            runner::widget_set_region,
             runner::widget_close,
             runner::widget_reload,
             runner::widget_set_theme,

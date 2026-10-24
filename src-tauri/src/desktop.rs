@@ -46,6 +46,57 @@ pub enum WindowLayer {
     Top,
 }
 
+/// 窗口轮廓从哪儿来。
+///
+/// `Rect` 是平台自己的圆角矩形（`clip_rounded`）；`Region` 表示轮廓由组件
+/// 通过 `window.setRegion` 上报，平台不再碰区域，也不画底板 —— 桌宠、
+/// 悬浮挂件这类"不是一张卡片"的东西走这条。
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowShape {
+    #[default]
+    Rect,
+    Region,
+}
+
+/// 轮廓里的一块。坐标是**物理像素**、相对客户区左上角，和 `clip_rounded` 同一个口径。
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionPart {
+    #[serde(default)]
+    pub kind: RegionKind,
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RegionKind {
+    #[default]
+    Rect,
+    Ellipse,
+}
+
+/// 把窗口裁成若干块矩形 / 椭圆的并集。
+///
+/// 空切片表示"什么都不显示"：建窗口到组件第一次上报之间那几百毫秒用它兜底，
+/// 否则会先闪一块不透明的矩形（窗口是不透明的，不裁就是一张实心卡片）。
+///
+/// 成功后区域归系统所有，不能再删 —— 和 `clip_rounded` 同一条规矩。
+pub fn set_region(hwnd: isize, parts: &[RegionPart]) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        imp::set_region(hwnd, parts)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (hwnd, parts);
+        Err("window regions are only implemented on Windows".to_string())
+    }
+}
+
 /// 把窗口裁成圆角矩形。区域坐标是物理像素
 pub fn clip_rounded(hwnd: isize, width: u32, height: u32, radius: f64) -> Result<(), String> {
     #[cfg(windows)]
@@ -113,6 +164,7 @@ pub fn apply_to(
     layer: WindowLayer,
     click_through: bool,
     interactive: bool,
+    shape: WindowShape,
 ) -> Result<(), String> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -136,7 +188,14 @@ pub fn apply_to(
             set_sink(target, guard);
 
             apply_layer(hwnd, layer, click_through, interactive)?;
-            imp::clip_rounded(hwnd, size.width, size.height, CORNER_RADIUS * scale)?;
+
+            // 轮廓归组件管的时候一根手指都别碰区域：`clip_rounded` 会把
+            // 宠物身上那块非矩形区域换成圆角矩形，动物当场变成一张卡片。
+            // 空区域留到窗口真正建完之后由 `runner::create` 补（那里才知道
+            // 实例是 shape: region），这里只管"不覆盖"。
+            if shape == WindowShape::Rect {
+                imp::clip_rounded(hwnd, size.width, size.height, CORNER_RADIUS * scale)?;
+            }
 
             // 子类化必须在窗口自己的线程上做：跨线程调 SetWindowSubclass
             // 不报错，只是返回 0（实测就是这样，守卫静默失效）。
@@ -164,15 +223,27 @@ pub fn apply_window_layer(
     layer: WindowLayer,
     click_through: bool,
     interactive: bool,
+    // 老调用方不带这个字段：默认 `rect`，行为和加这个参数之前一模一样
+    #[allow(unused_variables)] shape: Option<WindowShape>,
 ) -> Result<(), String> {
-    apply_to(&window, layer, click_through, interactive)
+    apply_to(
+        &window,
+        layer,
+        click_through,
+        interactive,
+        shape.unwrap_or_default(),
+    )
 }
 
 #[cfg(windows)]
 mod imp {
     use super::WindowLayer;
     use windows_sys::Win32::Foundation::{HANDLE, HWND, LPARAM};
-    use windows_sys::Win32::Graphics::Gdi::{CreateRoundRectRgn, DeleteObject, SetWindowRgn};
+    use windows_sys::Win32::Graphics::Gdi::{
+        CombineRgn, CreateEllipticRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject,
+        RedrawWindow, SetWindowRgn, RGN_OR, RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE,
+        RDW_UPDATENOW,
+    };
     use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GetParent, GetPropW,
@@ -221,6 +292,78 @@ mod imp {
 
     fn wide(value: &str) -> Vec<u16> {
         value.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// 若干块矩形 / 椭圆的并集 → 窗口区域。
+    ///
+    /// 逐块 `CombineRgn(RGN_OR)`：一块桌宠通常由"头 + 两只耳朵 + 身体 + 尾巴"
+    /// 五六块拼出来，`SetWindowRgn` 只吃一个区域，所以并集这一步躲不掉。
+    /// 实测（`桌宠P0/webview2-region`）一次 6 块的区域 0.77 ms，
+    /// 走路时按 30 Hz 上报也只花掉 2% 的帧预算。
+    pub fn set_region(hwnd: isize, parts: &[super::RegionPart]) -> Result<(), String> {
+        if hwnd == 0 {
+            return Err("window handle is null".to_string());
+        }
+
+        // 先建一个空区域：没有任何一块时它就是"什么都不显示"，
+        // 比 SetWindowRgn(hwnd, 0) 强 —— 后者会**清掉**区域，窗口变回整块矩形
+        let region = unsafe { CreateRectRgn(0, 0, 0, 0) };
+        if region.is_null() {
+            return Err("failed to create the window region".to_string());
+        }
+
+        for part in parts {
+            if part.w <= 0 || part.h <= 0 {
+                continue;
+            }
+            let right = part.x.saturating_add(part.w);
+            let bottom = part.y.saturating_add(part.h);
+            let one = unsafe {
+                match part.kind {
+                    super::RegionKind::Ellipse => {
+                        CreateEllipticRgn(part.x, part.y, right, bottom)
+                    }
+                    super::RegionKind::Rect => CreateRectRgn(part.x, part.y, right, bottom),
+                }
+            };
+            if one.is_null() {
+                continue;
+            }
+            // dest 与 src1 同一个句柄是允许的（区域是就地并集）
+            unsafe {
+                CombineRgn(region, region, one, RGN_OR);
+                DeleteObject(one);
+            }
+        }
+
+        let ok = unsafe { SetWindowRgn(hwnd as HWND, region, 1) };
+        if ok == 0 {
+            unsafe {
+                DeleteObject(region);
+            }
+            return Err("failed to apply the window region".to_string());
+        }
+
+        /*
+         * 区域变了以后必须**强制重绘一次**。
+         *
+         * `SetWindowRgn` 第三个参数虽然叫 redraw，但它只让系统重画"区域"这件事
+         * 本身；WebView2 的合成层是 DirectComposition 挂在窗口上的，它不知道
+         * 区域改了，于是新区域里没被重绘到的横条会留着上一帧 —— 表现就是
+         * 宠物被切成一条一条。实测从"整块矩形"切到"按轮廓的 36 块"就会这样。
+         *
+         * RDW_ALLCHILDREN 是重点：WebView2 的渲染窗口是子窗口。
+         */
+        unsafe {
+            RedrawWindow(
+                hwnd as HWND,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_ERASE,
+            );
+        }
+
+        Ok(())
     }
 
     struct Search {

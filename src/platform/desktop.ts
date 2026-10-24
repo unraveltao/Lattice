@@ -35,6 +35,8 @@ export interface WidgetWindowSpec {
   layer: "desktop" | "top";
   /** 组件要不要键盘焦点，见 manifest.interactive */
   interactive: boolean;
+  /** 窗口轮廓来源：rect = 平台圆角，region = 组件上报（见 manifest.shape） */
+  shape: "rect" | "region";
   clickThrough: boolean;
   pinned: boolean;
   /** 平台当前解析出的明暗，桌面窗口据此上色 */
@@ -109,6 +111,7 @@ export function buildSpecs(
       minH: record.manifest.size.minH,
       layer: placement.layer,
       interactive: record.manifest.interactive,
+      shape: record.manifest.shape,
       clickThrough: placement.clickThrough,
       pinned: placement.pinned ?? false,
       theme,

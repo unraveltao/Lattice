@@ -110,6 +110,24 @@ pub(crate) fn send(
     body: Option<&[u8]>,
     limit: usize,
 ) -> Result<RawResponse, String> {
+    // 组件的请求都短命：5s 解析 / 5s 连接 / 10s 发送 / 15s 收——超时短一点，
+    // 一张卡住的主机不该把整个桥拖到 30 秒
+    send_with_timeouts(target, method, headers, body, limit, (5_000, 5_000, 10_000, 15_000))
+}
+
+/// 同 `send`，但能指定超时。
+///
+/// 只为 LLM 那条路加的：一次对话生成可能要十几秒才吐第一个字节，
+/// 用组件那套 15s 收超时会把它误判成断网。四个值分别是
+/// 解析 / 连接 / 发送 / 接收（毫秒），和 `WinHttpSetTimeouts` 的顺序一致。
+pub(crate) fn send_with_timeouts(
+    target: &Target,
+    method: &str,
+    headers: &[(String, String)],
+    body: Option<&[u8]>,
+    limit: usize,
+    timeouts: (u32, u32, u32, u32),
+) -> Result<RawResponse, String> {
     let agent = wide("Lattice/0.1");
     // SAFETY: 字符串以 NUL 结尾；AUTOMATIC_PROXY 用系统代理设置（企业环境常见）
     let session = Handle(unsafe {
@@ -126,7 +144,9 @@ pub(crate) fn send(
     }
 
     // SAFETY: 句柄有效。四个超时都设，缺一个就可能在 DNS 上挂住十几秒
-    unsafe { WinHttpSetTimeouts(session.0, 5_000, 5_000, 10_000, 15_000) };
+    unsafe {
+        WinHttpSetTimeouts(session.0, timeouts.0 as i32, timeouts.1 as i32, timeouts.2 as i32, timeouts.3 as i32)
+    };
 
     let host = wide(&target.host);
     // SAFETY: 同上

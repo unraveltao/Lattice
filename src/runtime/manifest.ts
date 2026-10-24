@@ -14,6 +14,16 @@ import { normalizeChangelog, normalizeHelp, type ChangelogEntry, type WidgetHelp
 export type WidgetLayer = "desktop" | "top";
 
 /**
+ * 窗口轮廓从哪儿来。
+ *
+ * `rect`（默认）是平台画的圆角卡片。`region` 表示"这不是一张卡片"：
+ * 可见像素和点击命中都由组件通过 `window.setRegion` 上报，平台不画底板、
+ * 不画窗饰、不裁圆角 —— 桌宠、悬浮挂件走这条。代价是组件必须自己算
+ * 轮廓，而且硬边缘（区域外的像素根本不存在，投影和半透明羽化都会被切掉）。
+ */
+export type WidgetShape = "rect" | "region";
+
+/**
  * 组件可申请的权限。
  * 平台默认全拒，用户在组件详情里逐项授予；未授予时桥调用直接返回错误。
  */
@@ -24,6 +34,7 @@ export type Permission =
   | "network" // 发起网络请求
   | "system:monitor" // 读取 CPU / 内存 / 磁盘等指标
   | "media:control" // 控制正在播放的媒体
+  | "llm" // 让平台替你问一次模型（密钥在平台手里，组件拿不到）
   | "agent:activity"; // 读 agent 在本机做过的操作（审计日志）
 
 export interface WidgetSize {
@@ -78,6 +89,13 @@ export interface WidgetManifest {
    * 换回"点了不打扰你"的行为。
    */
   interactive: boolean;
+  /**
+   * 窗口轮廓由谁决定：`rect`（平台圆角，默认）或 `region`（组件上报）。
+   *
+   * 写 `region` 等于同时声明三件事：不画底板、不画窗饰、背景透明。
+   * 三者是同一个决定 —— 一块被裁成宠物形状的窗口没有"卡片"可画。
+   */
+  shape: WidgetShape;
   permissions: Permission[];
   /**
    * 联网白名单，只有授予 `network` 时才起作用。
@@ -170,6 +188,9 @@ export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest
   // 只有显式写 false 才关掉：第三方组件忘了声明时，宁可抢一次焦点，
   // 也不要让人对着输入框敲半天没反应
   const interactive = input.interactive !== false;
+  // 只有显式写 "region" 才换轮廓：默认必须是卡片，
+  // 否则一个笔误就让组件变成一块看不见的剪影（组件没上报区域时窗口是空的）
+  const shape: WidgetShape = input.shape === "region" ? "region" : "rect";
 
   return {
     id,
@@ -182,6 +203,7 @@ export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest
     size,
     layer,
     interactive,
+    shape,
     permissions: normalizePermissions(input.permissions),
     network: normalizeNetwork(input.network),
     sdk: optionalString(input.sdk) || SUPPORTED_SDK,
@@ -261,6 +283,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   network: "Network access",
   "system:monitor": "System metrics",
   "media:control": "Media control",
+  llm: "AI chat",
   "agent:activity": "Agent activity",
 };
 
@@ -293,6 +316,7 @@ export const PERMISSION_READY: ReadonlySet<Permission> = new Set<Permission>([
   "system:monitor",
   "network",
   "media:control",
+  "llm",
   "agent:activity",
 ]);
 
