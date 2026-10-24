@@ -570,3 +570,18 @@ public/widgets/<id>/
 - **托盘在不在，不用点菜单**：`EnumWindows` 枚举该进程的窗口，出现 `tray_icon_app` 这个类名就说明图标建成了（菜单项本身调的就是 `toggle_paused` / `show_main` / `app.exit`，那三个另有验法）。
 - 抓真机窗口用 `PrintWindow(hwnd, hdc, 2 /*PW_RENDERFULLCONTENT*/)`，被别的窗口盖住也能抓到；配合 `ShowWindow(h, 4 /*SHOWNOACTIVATE*/)` 不抢用户焦点。
 - 提交信息用 `feat:` / `fix:` / `docs:` / `chore:` 前缀，一句话说清"改了什么"，不写"update file"。
+
+---
+
+## 12. 这个仓库现在是多 agent 同时改的
+
+一个工作区里可能同时有几个 agent（和一个人）在动同一份文件。下面这些不是礼貌，是**防止互相把活干掉**的最小规则：
+
+1. **动代码前先 `git status`。** 有别人的未提交改动时，只 `git add <自己改的那几个文件>`；**永远不要** `git add -A` / `git stash` / `git reset --hard` / `git checkout -- .` —— 这四个命令都会静默吃掉别人还没提交的工作。
+2. **改之前重读文件。** 你记忆里的那份可能已经过期。用精确的 `old_string` 替换，替换失败就重读再试，**不要整文件覆盖**（`Write` 全量写一个别人刚改过的文件 = 无声回滚）。
+3. **不要杀不是自己起的进程。** `lattice.exe`、1420 端口上的 vite、`cargo` 都可能属于另一个 agent。要独占端口就换一个（`npm run dev -- --port 1421`），别 `taskkill /IM node.exe`。
+4. **`cargo` 会锁 `target/`。** 别人在编的时候起第二个 build 只会排队等到超时，看起来像"卡住"。真机验界面优先用已经编好的 `src-tauri/target/debug/lattice.exe`，先比一下它的时间戳和源码谁新。
+5. **生成物由脚本写，但别和别人抢。** `public/widgets/index.json` 和 `public/store/registry.json` 分别是 `widgets:index` / `store:index` 的产物；`registry.json` 是**跟踪文件**，跑完看一眼 `git diff` 是不是只多了自己那一条。别人正在发版（改了版本号、正要 `store:index`）时不要跑。
+6. **`state.json` 是整份覆盖的。** 两个进程同时开着应用，谁后退出谁把内存那份盖上去（孤儿进程那条坑就是这么来的）。真机验一个人验，验完从备份还原，别两个 agent 各开一个实例。
+7. **冲突高发区改完立刻提交。** `AGENTS.md`、`docs/ROADMAP.md`、`src/styles.css`、`src/runtime/bridge.ts`、`src-tauri/src/lib.rs` —— 这几处几乎每个改动都会碰。别攒着，改完就 `git add <这几个文件> && git commit`。
+8. **提交粒度按"一件事"算。** 一个提交只做一件事，写清范围和理由；别把别人的改动顺手带进来（`git diff --cached` 过一眼再提交）。
