@@ -77,9 +77,16 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_Security",
   "Win32_Storage_FileSystem",
   "Win32_System_IO",
+  # GetPerformanceInfo：提交量、进程/线程/句柄计数
+  "Win32_System_ProcessStatus",
   "Win32_System_Registry",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
+  # SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION：每个核的累计计数
+  "Win32_System_WindowsProgramming",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
+  # NtQuerySystemInformation(SystemProcessorPerformanceInformation)：逐核占用
+  # 只有 Wdk 命名空间里才有这条绑定，Win32 那边只给了整机的 GetSystemTimes
+  "Wdk_System_SystemInformation",
 ] }

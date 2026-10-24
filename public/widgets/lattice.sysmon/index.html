@@ -9,32 +9,48 @@
     <main class="sys">
       <header class="sys-head">
         <h1 class="sys-title">System</h1>
-        <span class="sys-meta" id="meta"></span>
+        <span class="sys-meta" id="uptime"></span>
       </header>
 
-      <section class="sys-row">
+      <section class="sys-metric">
         <div class="sys-line">
-          <span class="sys-label">CPU</span>
+          <span class="sys-label"><i class="sys-dot is-cpu"></i>CPU</span>
           <span class="sys-value" id="cpu">—</span>
         </div>
-        <div class="sys-bar"><i id="cpu-bar"></i></div>
       </section>
 
-      <section class="sys-row">
+      <!-- 折线：CPU 带填充、内存一条虚线。宽度按像素量，1 用户单位 = 1px -->
+      <figure class="sys-trend" id="trend">
+        <svg id="trend-svg" viewBox="0 0 200 48" preserveAspectRatio="none" aria-hidden="true">
+          <polygon id="trend-area" points="" />
+          <polyline id="trend-cpu" points="" />
+          <polyline id="trend-mem" points="" />
+        </svg>
+      </figure>
+
+      <section class="sys-metric">
         <div class="sys-line">
-          <span class="sys-label">Memory</span>
+          <span class="sys-label"><i class="sys-dot is-mem"></i>Memory</span>
           <span class="sys-value" id="mem">—</span>
         </div>
-        <div class="sys-bar"><i id="mem-bar"></i></div>
-        <p class="sys-sub" id="mem-sub"></p>
+        <div class="sys-sub">
+          <span id="mem-sub"></span>
+          <span id="mem-commit"></span>
+        </div>
       </section>
 
+      <!-- 逐核占用：一根竖条一个逻辑核，横着排一排 -->
+      <div class="sys-cores" id="cores" hidden></div>
+
       <footer class="sys-foot">
-        <span class="sys-disk" id="disk">—</span>
-        <span class="sys-net">
-          <span id="down">—</span>
-          <span id="up">—</span>
-        </span>
+        <div class="sys-foot-row">
+          <span class="sys-cell" id="disk">—</span>
+          <span class="sys-cell" id="procs">—</span>
+        </div>
+        <div class="sys-foot-row">
+          <span class="sys-cell" id="down">—</span>
+          <span class="sys-cell" id="up">—</span>
+        </div>
       </footer>
 
       <p class="sys-hint" id="hint"></p>

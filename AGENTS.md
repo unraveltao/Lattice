@@ -122,7 +122,8 @@ src-tauri/src/
   agent.rs                Agent 端点：只绑 127.0.0.1 的 HTTP、令牌、审计、转发给主窗口（默认关）
   agent_policy.rs         上面那道的纯逻辑：HTTP 三态解析、Bearer 常量时间比对、动作白名单、`say` 的单行化与超长拒绝（26 条 rustc --test）
   wallpaper.rs            截壁纸（宿主页底板的第一层）
-  metrics.rs              系统指标（sysmon 组件用），直接调 Win32 不引 crate
+  metrics.rs              系统指标（sysmon 组件用）：整机 + 逐核 CPU、内存与提交量、磁盘、网络、开机时长 / 进程计数，直接调 Win32 不引 crate
+  metrics_policy.rs       上面那道的纯逻辑：累计计数 → 占用率、核数变了返回空而不是错位（5 条 rustc --test）
   media.rs                SMTC 媒体会话：读当前播放 + playPause/next/previous/stop（WinRT）
   audio.rs                声音高低：默认输出设备的 WASAPI 回环采集，一个后台线程写、命令只读（只出一个 0..1）
   audio_policy.rs         上面那道的纯逻辑：RMS → 分贝 → 0..1、释放曲线、包络（6 条 rustc --test）

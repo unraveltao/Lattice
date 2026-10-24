@@ -1,13 +1,21 @@
 /*
  * 系统监视器
  *
- * 三条约束决定了这里的写法：
+ * 四条约束决定了这里的写法：
  *   1. 心跳走 `schedule.every`，不用 setInterval。平台会在窗口不可见时把整条
  *      时间轴停掉 —— 自己开定时器就没有这层保护，卡片藏起来照样每秒烧一次 IPC。
  *   2. 顶上留 22px 给窗饰。桌面窗口右上角那排图标浮在卡片上方，不留位置就会
  *      压在 "System" 标题上。
  *   3. 颜色全部取 `--lattice-*` 令牌。底板变浅时平台会把令牌整体翻一遍，
  *      写死的深色数字会看不见。
+ *   4. **默认高度是算出来的，不是试出来的**：
+ *
+ *        12 上内边距 + 22 标题 + 6 + 20 CPU 行 + 6 + 折线(自适应) + 6
+ *      + 38 内存块(20 行 + 4 + 14 副标题) + 6 + 16 逐核条 + 6 + 40 底栏
+ *      + 12 下内边距 = 190 + 折线
+ *
+ *      所以 240 高时折线拿 50px，缩到最小 210 时还有 20px。下面每条
+ *      padding / gap / height 都是按这个等式配的，改一个就要重算一遍。
  */
 
 :root {
@@ -40,7 +48,7 @@ body {
   flex-direction: column;
   height: 100%;
   padding: 12px;
-  gap: 10px;
+  gap: 6px;
 }
 
 /* ---------- 标题栏（同时给窗饰让位） ---------- */
@@ -76,13 +84,23 @@ body {
   white-space: nowrap;
 }
 
+/*
+ * 卡片缩到最窄（220）时，标题栏扣掉窗饰只剩 76px：先牺牲开机时长，
+ * 别把 "System" 截成 "Sy…" —— 名字被截比少一个数更像坏了。
+ */
+@media (max-width: 244px) {
+  .sys-meta {
+    display: none;
+  }
+}
+
 /* ---------- 指标行 ---------- */
 
-.sys-row {
+.sys-metric {
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 .sys-line {
@@ -90,74 +108,179 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+  height: 20px;
 }
 
 .sys-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   letter-spacing: 0.04em;
   color: var(--muted);
 }
 
+/* 标签前的小圆点就是折线图例：颜色和对应那条线一致 */
+.sys-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.sys-dot.is-cpu {
+  background: var(--accent);
+}
+
+.sys-dot.is-mem {
+  background: color-mix(in srgb, var(--fg) 42%, transparent);
+}
+
 .sys-value {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
+  line-height: 1.1;
   /* 等宽数字：每秒重画时数字不会左右跳 */
   font-variant-numeric: tabular-nums;
   color: var(--fg);
 }
 
-.sys-bar {
-  height: 5px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
-  overflow: hidden;
-}
-
-.sys-bar > i {
-  display: block;
-  width: 0;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--accent);
-  /* 每秒一帧，过渡比心跳略短一点，看起来是"滑过去"而不是"跳过去" */
-  transition: width 0.45s ease, background 0.3s ease;
-}
-
 /* 高负载换色：这三档是语义色，写死中间调，深浅底板上都压得住 */
-.sys-bar > i.is-high {
-  background: #d9a12a;
+.sys-value.is-high,
+.sys-cell.is-high {
+  color: #d9a12a;
 }
 
-.sys-bar > i.is-critical {
-  background: #e2564d;
+.sys-value.is-critical,
+.sys-cell.is-critical {
+  color: #e2564d;
 }
+
+/* ---------- 折线 ---------- */
+
+.sys-trend {
+  flex: 1 1 auto;
+  min-height: 20px;
+  margin: 0;
+  /* 折线是"装饰"，不该吃掉点击 / 拖拽 */
+  pointer-events: none;
+}
+
+.sys-trend svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* 描边在 x=0 和 x=width 处各有一半在外，裁掉就成了断头线 */
+  overflow: visible;
+}
+
+#trend-area {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke: none;
+}
+
+#trend-cpu,
+#trend-mem {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+#trend-cpu {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+
+/* 内存线画成虚线：它比 CPU 慢得多，两条实线会看成"两条都在抖" */
+#trend-mem {
+  stroke: color-mix(in srgb, var(--fg) 42%, transparent);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+
+/* ---------- 内存副标题 ---------- */
 
 .sys-sub {
-  margin: 0;
-  font-size: 10px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ---------- 底栏 ---------- */
-
-.sys-foot {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
+  gap: 6px;
+  height: 14px;
+  font-size: 10px;
+  line-height: 14px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.sys-net {
+.sys-sub > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 逐核占用 ---------- */
+
+.sys-cores {
+  flex: none;
   display: flex;
-  gap: 10px;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+
+.sys-cores[hidden] {
+  display: none;
+}
+
+.sys-cores > i {
+  flex: 1 1 0;
+  min-width: 1px;
+  height: 0;
+  border-radius: 1px;
+  background: var(--accent);
+  /* 一秒一拍，过渡比心跳短一点，看着是"长过去"而不是"跳过去" */
+  transition: height 0.45s ease, background 0.3s ease;
+}
+
+.sys-cores > i.is-high {
+  background: #d9a12a;
+}
+
+.sys-cores > i.is-critical {
+  background: #e2564d;
+}
+
+/* ---------- 底栏 ---------- */
+
+.sys-foot {
+  flex: none;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sys-foot-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  height: 14px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.sys-foot-row + .sys-foot-row {
+  margin-top: 3px;
+}
+
+.sys-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- 提示 ---------- */

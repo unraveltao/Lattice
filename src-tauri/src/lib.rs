@@ -26,6 +26,7 @@ pub mod egress;
 pub mod instance;
 pub mod media;
 pub mod metrics;
+pub mod metrics_policy;
 pub mod network;
 pub mod package;
 pub mod package_policy;

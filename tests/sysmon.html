@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>sysmon render test</title>
+    <title>sysmon widget test</title>
     <style>
       body {
         background: #111;
@@ -19,8 +19,8 @@
       iframe {
         position: absolute;
         left: -9999px;
-        width: 240px;
-        height: 200px;
+        width: 268px;
+        height: 240px;
       }
     </style>
   </head>
@@ -28,41 +28,89 @@
     <pre id="out">running…</pre>
     <script type="module">
       /*
-       * 系统监视器的渲染。这里盯的是"数字怎么变成字"：
+       * 系统监视器的数字、折线与逐核条。
        *
-       *   1. 单位换算在 100 以上时不能掉类型 —— `Math.round` 返回数字，
-       *      接着 `.replace` 就抛，底栏整行永远停在占位符上（真撞过：
-       *      磁盘 226 GB 恰好每次都走这条分支，网络那行一直不显示）
-       *   2. 0 和缺失值不能显示成 `NaN` / `undefined`
-       *   3. 没有 system:monitor 时要说人话，不是静默空白
+       * 这页钉五件事：
+       *
+       *   1. 单位换算在 100 以上时不能掉类型 —— `Math.round` 返回数字，接着
+       *      `.replace` 就抛，底栏整行永远停在占位符上（真撞过：磁盘 226 GB
+       *      恰好每次都走这条分支）
+       *   2. 0 和缺失值不能显示成 `NaN` / `undefined`，也不许抛
+       *   3. 折线的几何：0..1 → 像素、右端对齐、点数不够就不画
+       *   4. 第一拍只建基线（后端没有前值，占用一定是 0），**不进历史** ——
+       *      否则折线最左边永远挂着一个假的坑
+       *   5. 逐核数组为空 / 后端还是老版本（没有 `system` 字段）时，卡片
+       *      少几行但不崩
+       *
+       * 时间相关的断言都用真实 setTimeout，整页一秒多跑完。
        */
       const lines = [];
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+      /*
+       * 抛异常也要留一行红字。
+       *
+       * 不接这两个事件的话，页面里任何一处 `await` 抛出都表现为"#out 停在
+       * running…"，而运行器把它读成"0 条断言"—— 和"这页没写断言"一模一样。
+       */
+      const bail = (reason) => {
+        lines.push("FAIL 页面抛异常：" + (reason && reason.stack ? reason.stack : String(reason)));
+        document.getElementById("out").innerHTML = lines
+          .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+          .join("\n");
+        window.__done = true;
+      };
+      window.addEventListener("error", (event) => bail(event.error ?? event.message));
+      window.addEventListener("unhandledrejection", (event) => bail(event.reason));
+
       const GiB = 1024 * 1024 * 1024;
 
       const METRICS = {
-        cpu: { usage: 0.42, cores: 16 },
-        memory: { used: 13 * GiB, total: 16 * GiB, usage: 0.81 },
-        // 226 GB 会走 ">= 100 不留小数" 那条分支，正是出过 bug 的地方
-        disk: { mount: "C:", used: 226 * GiB, total: 500 * GiB, usage: 0.45 },
+        cpu: {
+          usage: 0.42,
+          cores: 16,
+          // 一个核跑满（99%）、一个核闲着（0%），整机只有 42% —— 这正是逐核条的意义
+          perCore: [
+            0.05, 0.12, 0.3, 0.42, 0.08, 0, 0.66, 0.99, 0.15, 0.22, 0.07, 0.03, 0.51, 0.88, 0.19,
+            0.26,
+          ],
+        },
+        memory: {
+          used: 13 * GiB,
+          total: 16 * GiB,
+          usage: 0.81,
+          commitUsed: Math.round(15.2 * GiB),
+          commitLimit: 24 * GiB,
+        },
+        // 剩余 226 GB 会走 ">= 100 不留小数" 那条分支，正是出过 bug 的地方
+        disk: { mount: "C:", used: 274 * GiB, total: 500 * GiB, usage: 0.548 },
         network: {
           rxPerSec: 12883,
           txPerSec: 38351,
           rxTotal: 137 * GiB,
           txTotal: 35 * GiB,
         },
+        system: {
+          // 3d 4h
+          uptimeSec: 273600,
+          processes: 142,
+          threads: 2143,
+          handles: 61234,
+        },
         sampledAt: 1792751479549,
       };
 
-      function mount({ metrics, denied = false } = {}) {
+      /** 装一份组件，返回句柄。`metrics` 可以缺字段（模拟老后端） */
+      function mount({ metrics = METRICS, denied = false } = {}) {
         const frame = document.createElement("iframe");
         frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
         frame.src = "/widgets/lattice.sysmon/index.html";
         document.body.appendChild(frame);
 
         const calls = [];
+        let scheduleId = 0;
+
         const ready = new Promise((resolve) => {
           window.addEventListener("message", function handler(event) {
             if (event.source !== frame.contentWindow) return;
@@ -83,7 +131,8 @@
               );
 
             if (data.method === "schedule.every") {
-              reply({ ok: true, result: { id: 7, every: data.params.every } });
+              scheduleId = 7;
+              reply({ ok: true, result: { id: scheduleId, every: data.params.every } });
               return;
             }
             if (data.method === "system.metrics") {
@@ -103,12 +152,83 @@
           });
         });
 
-        return { frame, calls, ready };
+        /** 手动打一拍心跳。组件自己认 `payload.id`，认不上就当没发生 */
+        const tick = async () => {
+          frame.contentWindow.postMessage(
+            { __lattice: 1, type: "tick", payload: { id: scheduleId } },
+            "*",
+          );
+          await sleep(60);
+        };
+
+        return {
+          frame,
+          calls,
+          ready,
+          tick,
+          /** 组件里的纯函数（`window.__latticeSysmon`）：断言直接调真身，不抄一份 */
+          pure: () => frame.contentWindow.__latticeSysmon,
+        };
       }
 
       const text = (doc, id) => doc.getElementById(id)?.textContent;
 
-      // ---- 场景 1：正常渲染 ----
+      // ---- 1. 纯逻辑 ----
+
+      {
+        const view = mount({ metrics: METRICS });
+        await view.ready;
+        await sleep(120);
+        const lib = view.pure();
+
+        log(lib.bytes(0) === "0 B", `0 字节显示「${lib.bytes(0)}」`);
+        log(lib.bytes(1536) === "1.5 KB", `1536 字节显示「${lib.bytes(1536)}」`);
+        log(lib.bytes(13 * GiB) === "13 GB", `13 GiB 显示「${lib.bytes(13 * GiB)}」`);
+        log(
+          lib.bytes(226 * GiB) === "226 GB",
+          `226 GiB 显示「${lib.bytes(226 * GiB)}」（三位数那条分支曾经抛 replace）`,
+        );
+        log(lib.bytes(-5) === "0 B", `负数夹成「${lib.bytes(-5)}」`);
+        log(lib.bytes(undefined) === "0 B", `undefined 显示「${lib.bytes(undefined)}」`);
+
+        log(lib.percent(0.42) === 42, `0.42 → ${lib.percent(0.42)}%`);
+        log(lib.percent(1.7) === 100, `超界夹到 ${lib.percent(1.7)}%`);
+        log(lib.percent(NaN) === 0, `NaN → ${lib.percent(NaN)}%`);
+        log(lib.rate(12883) === "12.6 KB/s", `12883 B/s 显示「${lib.rate(12883)}」`);
+
+        log(lib.duration(45) === "45s", `45 秒 →「${lib.duration(45)}」`);
+        log(lib.duration(600) === "10m", `10 分钟 →「${lib.duration(600)}」`);
+        log(lib.duration(12000) === "3h 20m", `3 小时 20 分 →「${lib.duration(12000)}」`);
+        log(lib.duration(273600) === "3d 4h", `3 天 4 小时 →「${lib.duration(273600)}」`);
+        log(lib.duration(-1) === "", `负数时长 →「${lib.duration(-1)}」`);
+
+        // 折线几何：0 在底、1 在顶，上下各留 1.5px
+        log(lib.trendPoints([], 60, 100, 40) === "", "没有采样就不画线");
+        log(lib.trendPoints([0.5], 60, 100, 40) === "", "只有一个点也不画线（连不成折线）");
+        log(
+          lib.trendPoints([0, 1], 2, 100, 40) === "0.0,38.5 100.0,1.5",
+          `两个点画到两端（得到「${lib.trendPoints([0, 1], 2, 100, 40)}」）`,
+        );
+        const partial = lib.trendPoints([0.5, 0.5], 60, 100, 40);
+        log(
+          partial === "98.3,20.0 100.0,20.0",
+          `缓冲没满时从右端排（得到「${partial}」，60 个槽的间距是 1.69px）`,
+        );
+        log(
+          lib.trendPoints([-1, 2], 2, 100, 40) === lib.trendPoints([0, 1], 2, 100, 40),
+          "越界值被夹到 0..1，不画出卡片外",
+        );
+        log(
+          lib.areaPoints("0.0,10.0 100.0,20.0", 40) === "0.0,38.5 0.0,10.0 100.0,20.0 100.0,38.5",
+          `填充多边形闭合到基线（得到「${lib.areaPoints("0.0,10.0 100.0,20.0", 40)}」）`,
+        );
+        log(lib.areaPoints("", 40) === "", "没有折线就没有填充");
+
+        view.frame.remove();
+      }
+
+      // ---- 2. 正常渲染 ----
+
       {
         const view = mount({ metrics: METRICS });
         await view.ready;
@@ -117,28 +237,124 @@
 
         log(view.calls.includes("schedule.every"), `心跳注册走了调度器（${view.calls.join(", ")}）`);
         log(text(doc, "cpu") === "42%", `CPU 显示「${text(doc, "cpu")}」`);
-        log(doc.getElementById("cpu-bar").style.width === "42%", `CPU 条宽 ${doc.getElementById("cpu-bar").style.width}`);
         log(text(doc, "mem") === "81%", `内存显示「${text(doc, "mem")}」`);
-        log(text(doc, "mem-sub") === "13 GB of 16 GB", `内存副标题「${text(doc, "mem-sub")}」`);
-        log(text(doc, "disk") === "C: 45%", `磁盘显示「${text(doc, "disk")}」`);
+        log(text(doc, "mem-sub") === "13 GB / 16 GB", `内存副标题「${text(doc, "mem-sub")}」`);
         log(
-          text(doc, "disk").length > 0 && doc.getElementById("disk").title.includes("226 GB"),
-          `磁盘 title 没有抛（「${doc.getElementById("disk").title}」）`,
+          text(doc, "mem-commit") === "commit 15.2 GB / 24 GB",
+          `提交量「${text(doc, "mem-commit")}」`,
+        );
+        log(text(doc, "disk") === "C: 226 GB free", `磁盘显示剩余空间「${text(doc, "disk")}」`);
+        log(
+          doc.getElementById("disk").title.includes("274 GB") &&
+            doc.getElementById("disk").title.includes("55%"),
+          `磁盘 title 带上了用量（「${doc.getElementById("disk").title}」）`,
+        );
+        log(text(doc, "procs") === "142 processes", `进程数「${text(doc, "procs")}」`);
+        log(
+          doc.getElementById("procs").title.includes("2143 threads"),
+          `进程 title 带上线程 / 句柄（「${doc.getElementById("procs").title}」）`,
         );
         log(text(doc, "down") === "↓ 12.6 KB/s", `下行「${text(doc, "down")}」`);
         log(text(doc, "up") === "↑ 37.5 KB/s", `上行「${text(doc, "up")}」`);
+        log(text(doc, "uptime") === "3d 4h up", `开机时长「${text(doc, "uptime")}」`);
         log(
           !doc.getElementById("hint").classList.contains("is-visible"),
           "没有权限问题时不留提示",
         );
 
-        // 高负载要换色，不然 95% 和 45% 看起来一样
-        doc.getElementById("cpu-bar").classList.contains("is-high");
-        log(true, "（颜色分档见 CSS，这里只确认没有异常）");
+        // 逐核条
+        const cores = doc.getElementById("cores");
+        log(!cores.hidden, "有逐核数据时这一行露出来");
+        log(cores.childElementCount === 16, `逐核条 16 根（得到 ${cores.childElementCount}）`);
+        log(
+          cores.children[7].classList.contains("is-critical"),
+          "99% 那个核标红（整机 42% 看不出来，逐核条看得出来）",
+        );
+        log(
+          cores.children[5].style.height === "max(2px, 0%)",
+          `闲着的核也留 2px（得到「${cores.children[5].style.height}」）`,
+        );
+        log(cores.children[3].title === "Core 4 · 42%", `逐核 title「${cores.children[3].title}」`);
+
+        /*
+         * 第一拍只建基线：后端第一次调用没有前值，占用一定是 0，
+         * 这一拍不该进历史 —— 否则折线最左边永远挂着一个假的坑。
+         */
+        log(
+          doc.getElementById("trend-cpu").getAttribute("points") === "",
+          "第一拍不进历史，折线是空的",
+        );
+
+        // 折线画布按像素量，1 用户单位 = 1px
+        const viewBox = doc.getElementById("trend-svg").getAttribute("viewBox").split(" ");
+        log(viewBox[2] === "244" && viewBox[3] === "50", `折线画布 ${viewBox[2]}×${viewBox[3]}（268−24 × 240−190）`);
+
+        // ---- 3. 打两拍，历史才够两个点 ----
+        await view.tick();
+        log(
+          doc.getElementById("trend-cpu").getAttribute("points") === "",
+          "第二拍只有 1 个采样，还是连不成线",
+        );
+
+        await view.tick();
+        const cpuPoints = doc.getElementById("trend-cpu").getAttribute("points");
+        const pairs = cpuPoints ? cpuPoints.split(" ") : [];
+        log(pairs.length === 2, `第三拍有 2 个点（得到 ${pairs.length}）`);
+        log(
+          pairs.length > 0 && pairs[pairs.length - 1].split(",")[0] === "244.0",
+          `最新那个点贴右端（得到「${pairs[pairs.length - 1]}」）`,
+        );
+        log(
+          pairs.length === 2 && pairs[0].split(",")[0] === "239.9",
+          `老的那个点退一格（得到「${pairs[0]}」，244/59 = 4.14px）`,
+        );
+        log(
+          (doc.getElementById("trend-area").getAttribute("points") || "").split(" ").length === 4,
+          "填充多边形跟着两个点闭合",
+        );
+        // 两条线共用一套横坐标（内存 81% 比 CPU 42% 高，所以 y 更小）
+        const memPairs = (doc.getElementById("trend-mem").getAttribute("points") || "").split(" ");
+        log(
+          memPairs.length === pairs.length &&
+            memPairs.every((pair, index) => pair.split(",")[0] === pairs[index].split(",")[0]),
+          "内存线和 CPU 线横坐标对齐（同一套坐标，不是两张图叠在一起）",
+        );
+        log(
+          memPairs.length === 2 &&
+            Number(memPairs[1].split(",")[1]) < Number(pairs[1].split(",")[1]),
+          `内存 81% 画在 CPU 42% 上方（y ${memPairs[1]?.split(",")[1]} < ${pairs[1]?.split(",")[1]}）`,
+        );
+
         view.frame.remove();
       }
 
-      // ---- 场景 2：没授权 ----
+      // ---- 4. 后端没给逐核 / 没给整机概况（老版本或刚唤醒） ----
+
+      {
+        const legacy = {
+          cpu: { usage: 0.1, cores: 8, perCore: [] },
+          memory: { used: GiB, total: 8 * GiB, usage: 0.125, commitUsed: 0, commitLimit: 0 },
+          disk: { mount: "C:", used: 0, total: 0, usage: 0 },
+          network: { rxPerSec: 0, txPerSec: 0, rxTotal: 0, txTotal: 0 },
+          sampledAt: 1792751479549,
+        };
+        const view = mount({ metrics: legacy });
+        await view.ready;
+        await sleep(150);
+        const doc = view.frame.contentDocument;
+
+        log(doc.getElementById("cores").hidden, "逐核数组是空的就收起那一行，不画错位的图");
+        log(text(doc, "procs") === "—", `没有整机概况时进程数保持占位符「${text(doc, "procs")}」`);
+        log(text(doc, "uptime") === "", `没有开机时长时不留半截文字「${text(doc, "uptime")}」`);
+        log(text(doc, "mem-commit") === "", "提交量是 0 时不显示「commit 0 B / 0 B」");
+        log(text(doc, "disk") === "—", `磁盘总量是 0 时显示占位符「${text(doc, "disk")}」`);
+        log(text(doc, "cpu") === "10%", `CPU 照常显示「${text(doc, "cpu")}」`);
+
+        view.frame.remove();
+      }
+
+      // ---- 5. 没授权 ----
+
       {
         const view = mount({ denied: true });
         await view.ready;

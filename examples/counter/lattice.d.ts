@@ -58,10 +58,52 @@ export interface AudioLevel {
 }
 
 export interface SystemMetrics {
-  cpu: { usage: number; cores: number };
-  memory: { total: number; used: number; usage: number };
-  disk: { total: number; free: number; usage: number };
-  network: { rxPerSec: number; txPerSec: number; rxTotal: number; txTotal: number };
+  cpu: {
+    /** 0–1，整机。第一次采样没有前值，返回 0 */
+    usage: number;
+    /** 逻辑核数 */
+    cores: number;
+    /**
+     * 每个逻辑核的占用，0–1，长度等于 `cores`。
+     * 第一拍、或者核数刚变过（休眠唤醒 / 热插拔）时是**空数组**，
+     * 别按索引硬对 —— 那会把 A 核的计数减到 B 核头上。
+     */
+    perCore: number[];
+  };
+  memory: {
+    used: number;
+    total: number;
+    /** 0–1 */
+    usage: number;
+    /** 已提交量（含页面文件），字节 */
+    commitUsed: number;
+    /** 提交上限，字节。撞到它系统会直接拒绝分配 */
+    commitLimit: number;
+  };
+  disk: {
+    /** 系统盘盘符，例如 `C:` */
+    mount: string;
+    used: number;
+    total: number;
+    /** 0–1 */
+    usage: number;
+  };
+  network: {
+    /** 每秒字节数。第一次采样没有前值，返回 0 */
+    rxPerSec: number;
+    txPerSec: number;
+    /** 开机以来的累计字节数 */
+    rxTotal: number;
+    txTotal: number;
+  };
+  system: {
+    /** 开机至今的秒数 */
+    uptimeSec: number;
+    processes: number;
+    threads: number;
+    handles: number;
+  };
+  /** 采样时刻（Unix 毫秒）。据此判断这份数据有多旧 */
   sampledAt: number;
 }
 

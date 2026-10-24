@@ -1,12 +1,12 @@
 {
   "id": "lattice.sysmon",
   "name": "System",
-  "version": "0.1.0",
-  "description": "CPU, memory, disk and network throughput, sampled once a second by the platform",
+  "version": "0.2.0",
+  "description": "CPU and memory with a one-minute trace, per-core load, commit charge, disk space, network and uptime",
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
-  "size": { "w": 240, "h": 200, "minW": 200, "minH": 168 },
+  "size": { "w": 268, "h": 240, "minW": 220, "minH": 210 },
   "layer": "top",
   "permissions": ["system:monitor"],
   "help": {
@@ -14,16 +14,35 @@
       {
         "title": "What it reads",
         "items": [
-          "CPU usage, memory as used-of-total, the system disk, and network down / up per second.",
-          "The platform samples once a second; the card only draws what it is handed.",
-          "Network numbers are what moved during the last second, not a running average."
+          "CPU and memory as a percentage, plus a trace of the last minute for both.",
+          "One bar per logical core, so a single pegged core is visible on a 16-core machine.",
+          "Memory also shows commit — used against the limit, which includes the page file.",
+          "Free space on the system volume, network down and up per second, process count, and how long the machine has been up.",
+          "The platform samples once a second; the card only draws what it is handed."
+        ]
+      },
+      {
+        "title": "Reading the trace",
+        "items": [
+          "The line is history, newest on the right. It fills in from the right as samples arrive, so a card you just opened shows a short line, not a flat one.",
+          "CPU is the filled line; memory is the dashed one. Both use the same 0–100% scale, so you can compare them directly.",
+          "A tall spike with a flat memory line is a burst; a slowly rising memory line is a leak.",
+          "The trace covers one minute and is kept in the card — nothing is written to disk."
+        ]
+      },
+      {
+        "title": "Reading the core bars",
+        "items": [
+          "One bar per logical core, left to right, height is that core's load.",
+          "A whole-machine figure of 6% on a 16-core machine can mean one core at 100% or all of them idle. The bars tell the two apart.",
+          "They disappear for a tick if the core count changes — waking from sleep or a hot-plug — rather than drawing the wrong core's load."
         ]
       },
       {
         "title": "Why the numbers look low",
         "items": [
           "CPU is the total across all cores — one busy core on a 16-core machine reads about 6%.",
-          "Memory is physical RAM in use, so a machine with a lot of cache can sit high and still be fine.",
+          "Memory is physical RAM in use, so a machine with a lot of cache can sit high and still be fine. Watch commit for the number that actually fails allocations.",
           "Disk is the system volume only; other drives are not counted."
         ]
       },
@@ -44,6 +63,16 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.2.0",
+      "changes": [
+        "A one-minute trace of CPU and memory, so a burst and a slow climb look different.",
+        "One bar per logical core — a single pegged core no longer hides behind a low whole-machine average.",
+        "Memory gained the commit charge against its limit, and free space replaces the bare disk percentage.",
+        "Uptime and the process count join the footer; threads and handles are one hover away.",
+        "The card grew to 268×240 to fit the trace; it still works down to 220×210."
+      ]
+    },
     {
       "version": "0.1.0",
       "changes": [

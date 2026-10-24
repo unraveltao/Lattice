@@ -370,7 +370,7 @@ parent.postMessage(
 | `storage.set` | `storage` | `{ key, value }` | `{ ok: true }`；`value` 为 `null` 等同于删除 |
 | `storage.remove` | `storage` | `{ key }` | `{ ok: true }` |
 | `clipboard.write` | `clipboard:write` | `{ text }` | `{ ok: true }` |
-| `system.metrics` | `system:monitor` | — | `{ cpu, memory, disk, network, sampledAt }`，见 4.1 |
+| `system.metrics` | `system:monitor` | — | `{ cpu, memory, disk, network, system, sampledAt }`，见 4.2 |
 | `schedule.every` | — | `{ every }` | `{ id, every }`；`every` 会被夹到 250ms–24h，订阅满 8 条返回 `bad_params` |
 | `schedule.clear` | — | `{ id }` | `{ ok: true }` |
 | `config.get` | — | — | 这个实例的配置，已按清单 schema 合并出厂值，见 §2.3 |
@@ -422,10 +422,12 @@ await call("schedule.clear", { id: grant.id });
 
 ```json
 {
-  "cpu":     { "usage": 0.41, "cores": 16 },
-  "memory":  { "usage": 0.82, "used": 27311403008, "total": 33648160768 },
+  "cpu":     { "usage": 0.41, "cores": 16, "perCore": [0.05, 0.12, 0.99, 0.31] },
+  "memory":  { "usage": 0.82, "used": 27311403008, "total": 33648160768,
+               "commitUsed": 32000000000, "commitLimit": 48000000000 },
   "disk":    { "mount": "C:", "usage": 0.45, "used": 121899466752, "total": 268435456000 },
   "network": { "rxPerSec": 3342, "txPerSec": 812, "rxTotal": 918273645, "txTotal": 12837465 },
+  "system":  { "uptimeSec": 273600, "processes": 142, "threads": 2143, "handles": 61234 },
   "sampledAt": 1792747537787
 }
 ```
@@ -433,6 +435,10 @@ await call("schedule.clear", { id: grant.id });
 - `usage` 是 0–1 的比例，不是百分数。
 - 字节数一律是 `u64`，自己格式化成 KB / MB / GB。
 - **`rxPerSec` / `txPerSec` 第一次调用一定是 0**：速率要两次采样做差，没有前值就编不出来。所以启动时先调一次建基线，第一次心跳拿到的才是真数。
+- **`cpu.perCore` 第一拍是空数组**，核数刚变过（休眠唤醒 / CPU 热插拔）时也是空数组。**别按索引硬对上一次的数组** —— 那会把 A 核的计数减到 B 核头上，画出来是一条看着合理、其实全错的曲线。空数组时把逐核那一条收起来，下一拍自然恢复。长度等于 `cores`。
+- `cpu.usage` 是**整机**的平均（一个核跑满，16 核机器上是 6% 左右）。想知道"是哪个核在忙"只能看 `perCore`。
+- `memory.commitUsed` / `commitLimit` 是提交量，含页面文件。物理内存满了系统只是变慢，撞到提交上限会**直接拒绝分配** —— 后者才是"要出事"的信号，但它不在任务管理器首屏。
+- `disk` 只有**系统盘**（`%SystemDrive%`），`mount` 是盘符（`C:`），别的盘不算。
 - 平台在 Rust 侧有 1 秒缓存，几个组件在同一秒里轮询只会真采一次 —— 但别指望它，心跳间隔比采样间隔更细是没意义的。
 
 ### 4.3 宿主 → 组件的推送
