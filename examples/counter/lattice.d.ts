@@ -16,7 +16,8 @@ export type Permission =
   | "clipboard:write"
   | "network"
   | "system:monitor"
-  | "media:control";
+  | "media:control"
+  | "audio:level";
 
 export declare class LatticeError extends Error {
   constructor(code: BridgeErrorCode, message: string, permission?: Permission);
@@ -47,6 +48,13 @@ export interface MediaSession {
   canPrevious: boolean;
   positionMs: number;
   durationMs: number;
+}
+
+export interface AudioLevel {
+  /** 0..1，已经做过分贝映射和释放曲线 */
+  level: number;
+  /** 采集线程是否在跑。false 时 level 恒为 0（没设备 / 被独占 / 正在重连） */
+  running: boolean;
 }
 
 export interface SystemMetrics {
@@ -133,6 +141,10 @@ export interface Lattice {
     next(): Promise<{ ok: boolean }>;
     previous(): Promise<{ ok: boolean }>;
     stop(): Promise<{ ok: boolean }>;
+  };
+
+  audio: {
+    level(): Promise<AudioLevel>;
   };
 
   network: {

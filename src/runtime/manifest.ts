@@ -24,6 +24,7 @@ export type Permission =
   | "network" // 发起网络请求
   | "system:monitor" // 读取 CPU / 内存 / 磁盘等指标
   | "media:control" // 控制正在播放的媒体
+  | "audio:level" // 读扬声器现在的响度（回环采集，只出一个 0..1）
   | "agent:activity"; // 读 agent 在本机做过的操作（审计日志）
 
 export interface WidgetSize {
@@ -261,6 +262,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   network: "Network access",
   "system:monitor": "System metrics",
   "media:control": "Media control",
+  "audio:level": "Sound level",
   "agent:activity": "Agent activity",
 };
 
@@ -270,8 +272,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
  * `normalizePermissions` 也读这一份 —— 以前那里另抄了一份同样的名单，两处
  * 各改各的，漏一处的表现是"清单里写了、界面上没有"，不报错。
  *
- * 七项现在全齐了（`media:control` 在 v0.4、`agent:activity` 在 v0.8 补上）。
- * 加一项权限要**四处一起改**：
+ * 八项现在全齐了（`media:control` 在 v0.4、`agent:activity` 在 v0.8、
+ * `audio:level` 在 v0.9 补上）。加一项权限要**四处一起改**：
  *
  * 1. `Permission` 联合类型
  * 2. 这个集合
@@ -293,6 +295,7 @@ export const PERMISSION_READY: ReadonlySet<Permission> = new Set<Permission>([
   "system:monitor",
   "network",
   "media:control",
+  "audio:level",
   "agent:activity",
 ]);
 

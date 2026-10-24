@@ -61,6 +61,10 @@ windows = { version = "0.62", features = [
   "Media_Control",
   # WinRT 激活要求调用线程初始化过 COM
   "Win32_System_Com",
+  # 声音高低走 WASAPI 回环采集：IMMDeviceEnumerator / IAudioClient 在这
+  "Win32_Media_Audio",
+  # 上面那个的 Activate 签名里有 PROPVARIANT（我们传 None，但类型要能解析）
+  "Win32_System_Com_StructuredStorage",
 ] }
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",

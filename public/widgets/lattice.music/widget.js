@@ -1,27 +1,37 @@
 /**
- * 正在播放组件
+ * Music 组件
  *
- * 第一个用 `media:control` 的组件：读 Windows 的 SMTC 会话（系统媒体传输控件），
- * 并且能按暂停 / 上一首 / 下一首。
+ * 两件事：读 / 控制 Windows 的媒体会话（SMTC），以及画一条"现在有多响"的折线。
  *
  * 几个决定：
  *
- *   1. **轮询而不是订阅**。WinRT 那边有事件（`MediaPropertiesChanged`），但要走
- *      COM 回调 + 一个活着的 STA 线程，代价远大于收益：这张卡片每两秒问一次
- *      "现在放的是谁"，用户完全看不出差别。间隔可以在属性面板里调。
+ *   1. **媒体是轮询，声音是采样。** 会话走平台调度器（`schedule.every`，间隔可在
+ *      属性面板里调），因为"现在放的是谁的歌"每两秒问一次就够了。声音那条线不一样：
+ *      它要 80ms 一个点，比调度器的下限（250ms）密得多，所以它用自己的
+ *      `setInterval` —— 它要的是"传感器读数"，不是"平台要保持的节奏"。
  *
- *   2. **没会话不是错误**。`media.get` 在没有播放器时返回 `null`，这里显示
+ *   2. **没会话不是错误。** `media.get` 在没有播放器时返回 `null`，这里显示
  *      "Nothing playing" 并把按钮灰掉 —— 桌面上没开播放器是常态，不该红字警告。
  *
- *   3. **按钮按下去立刻自己拨一下**。`media.control` 是异步的，等下一次轮询回来
+ *   3. **按钮按下去立刻自己拨一下。** `media.control` 是异步的，等下一次轮询回来
  *      才更新图标的话，用户会以为没按到。所以先在本地翻转状态，轮询回来再校正。
  *
- *   4. **进度条只做展示**。SMTC 给的位置是"上次报告的时间戳"，播放中它会自己
+ *   4. **进度条只做展示。** SMTC 给的位置是"上次报告的时间戳"，播放中它会自己
  *      走。为了不每秒问一次系统，这里用本地时间插值：拿到位置的那一刻记下
  *      `at`，之后按经过的毫秒自己往前推。
+ *
+ *   5. **播放器名要翻译。** SMTC 的 `source` 是 AUMID（`Spotify.exe`、
+ *      `Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic`），原样摆在卡片上
+ *      就是 "SPOTIFY.EXE" —— 那是最像"这组件坏了"的一处，见 `sourceLabel`。
+ *
+ *   6. **折线滚动靠 rAF，数据靠 80ms 采样。** 每个采样点之间用帧时间插值出
+ *      "最新那个点已经走了多远"，12.5Hz 的数据看上去是连续滚动的。
+ *      窗口藏起来时 rAF 自己会停，回来接着画 —— 正确性不依赖它跑几拍。
  */
 (function () {
   "use strict";
+
+  // ---------- 桥 ----------
 
   var seq = 0;
   var pending = new Map();
@@ -60,7 +70,15 @@
     });
   }
 
-  // ---------- 格式化 ----------
+  // ---------- 纯逻辑（自检页直接调，别在测试里抄一份） ----------
+
+  function clamp01(value) {
+    var number = Number(value);
+    if (!isFinite(number)) return 0;
+    if (number < 0) return 0;
+    if (number > 1) return 1;
+    return number;
+  }
 
   /** 毫秒 → `3:07` / `1:02:03`。超过一小时才出现小时位，卡片窄，能省则省 */
   function clock(ms) {
@@ -76,6 +94,105 @@
     return minutes + ":" + pad(seconds);
   }
 
+  /**
+   * 常见播放器的 AUMID → 人看的名字。
+   *
+   * 键是小写的可执行文件名（去掉 `.exe`）。没列到的走通用清理：砍掉 `!` 后面那段、
+   * 去掉 `.exe`、去掉 `Microsoft.` / `Google.` 这种厂商前缀 —— 宁可显示
+   * "ZuneMusic" 也别显示 "Microsoft.ZuneMusic_8wekyb3d8bbwe!App"。
+   */
+  var PLAYER_NAMES = {
+    spotify: "Spotify",
+    chrome: "Chrome",
+    msedge: "Edge",
+    firefox: "Firefox",
+    brave: "Brave",
+    opera: "Opera",
+    vlc: "VLC",
+    wmplayer: "Media Player",
+    zunemusic: "Media Player",
+    "mpc-hc64": "MPC-HC",
+    "mpc-be64": "MPC-BE",
+    potplayermini64: "PotPlayer",
+    potplayermini: "PotPlayer",
+    foobar2000: "foobar2000",
+    musicbee: "MusicBee",
+    aimp: "AIMP",
+    "qqmusic": "QQ Music",
+    cloudmusic: "NetEase Music",
+    kugou: "Kugou",
+    kuwo: "Kuwo",
+  };
+
+  function sourceLabel(raw) {
+    if (raw === null || raw === undefined) return "";
+    var text = String(raw).trim();
+    if (!text) return "";
+
+    // `App.exe!App` / `Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic`
+    var app = text.split("!").pop();
+    // 完整路径（有些播放器给的是 exe 全路径）
+    app = app.split(/[\\/]/).pop();
+    app = app.replace(/\.exe$/i, "");
+    // `Microsoft.ZuneMusic_8wekyb3d8bbwe` 这种带包族的：砍掉下划线后面那截
+    app = app.split("_")[0];
+    if (!app) return text;
+
+    var known = PLAYER_NAMES[app.toLowerCase()];
+    if (known) return known;
+
+    // 厂商前缀：`Microsoft.ZuneMusic` → `ZuneMusic`
+    var parts = app.split(".");
+    if (parts.length > 1) {
+      var tail = parts[parts.length - 1];
+      var byTail = PLAYER_NAMES[tail.toLowerCase()];
+      if (byTail) return byTail;
+      if (/^(microsoft|google|apple|meta|spotify)$/i.test(parts[0])) app = tail;
+    }
+
+    return app;
+  }
+
+  /**
+   * 环形缓冲 → 一条折线的 `points`。
+   *
+   * `samples` 是老 → 新，值 0..1；`fraction` 是"最新那个点已经往下走了多远"
+   * （0..1），有了它，12.5Hz 的采样看上去是连续往左滚的。
+   *
+   * 上下各留 2px：贴边画的线会被 `overflow` 切掉半个描边。
+   */
+  function tracePoints(samples, width, height, fraction) {
+    if (!samples || !samples.length || !(width > 0) || !(height > 0)) return "";
+    var top = 2;
+    var bottom = height - 2;
+    var y = function (value) {
+      return (bottom - clamp01(value) * (bottom - top)).toFixed(1);
+    };
+
+    // 只有一个点：画一条横线。让第一个 80ms 里也看得见东西
+    if (samples.length === 1) {
+      return "0.0," + y(samples[0]) + " " + width.toFixed(1) + "," + y(samples[0]);
+    }
+
+    var span = width / (samples.length - 1);
+    var offset = clamp01(fraction === undefined ? 0 : fraction) * span;
+    var points = [];
+    for (var i = samples.length - 1; i >= 0; i -= 1) {
+      var x = width - offset - (samples.length - 1 - i) * span;
+      if (x < -0.5) break;
+      points.push(x.toFixed(1) + "," + y(samples[i]));
+    }
+    return points.reverse().join(" ");
+  }
+
+  // 自检页拿这几个跑断言（`tests/music.html`）
+  window.__latticeMusic = {
+    clock: clock,
+    sourceLabel: sourceLabel,
+    tracePoints: tracePoints,
+    clamp01: clamp01,
+  };
+
   // ---------- DOM ----------
 
   var el = {
@@ -86,6 +203,10 @@
     bar: document.getElementById("bar"),
     position: document.getElementById("position"),
     duration: document.getElementById("duration"),
+    wave: document.getElementById("wave"),
+    svg: document.getElementById("wave-svg"),
+    base: document.getElementById("wave-base"),
+    line: document.getElementById("wave-line"),
     prev: document.getElementById("prev"),
     toggle: document.getElementById("toggle"),
     toggleGlyph: document.getElementById("toggle-glyph"),
@@ -122,6 +243,7 @@
     if (!session) {
       el.source.textContent = "";
       el.track.textContent = "Nothing playing";
+      el.track.title = "";
       el.artist.textContent = "";
       // 没有会话就整条收起来：留一条空槽加 "--:--" 看着像还没加载完
       el.progress.hidden = true;
@@ -137,7 +259,7 @@
       return;
     }
 
-    el.source.textContent = session.source || "";
+    el.source.textContent = sourceLabel(session.source);
     el.track.textContent = session.title || "Unknown track";
     el.track.title = session.title || "";
     el.artist.textContent = [session.artist, session.album].filter(Boolean).join(" — ");
@@ -179,12 +301,128 @@
     el.bar.style.width = (shown / durationMs) * 100 + "%";
   }
 
-  // ---------- 轮询 ----------
+  // ---------- 声音高低 ----------
+
+  /** 缓冲里留多少个点：72 × 80ms ≈ 5.8 秒，正好是"一眼看出刚才那段有没有声" */
+  var WAVE_SAMPLES = 72;
+  /** 采样间隔。80ms 比平台调度器的下限（250ms）密，所以用自己的定时器 */
+  var LEVEL_MS = 80;
+
+  var samples = [];
+  var lastSampleAt = 0;
+  var waveBox = { w: 0, h: 0 };
+  var lastPoints = null;
+  var levelTimer = 0;
+  var waveRunning = false;
+  var levelBlocked = false;
+
+  /**
+   * 量一次折线能画多大。
+   *
+   * `viewBox` 直接设成像素尺寸：这样 1 个用户单位 = 1px，描边粗细、圆点半径
+   * 都是所见即所得。用 `preserveAspectRatio="none"` 硬拉的话，横向和纵向
+   * 的缩放比不同，描边会一边粗一边细。
+   */
+  function resizeWave() {
+    var box = el.wave.getBoundingClientRect();
+    // 折线被藏起来时量出来是 0×0：这时候保持上一次的尺寸，别把 viewBox 缩成 1×1
+    if (box.width < 1 || box.height < 1) return;
+    var w = Math.round(box.width);
+    var h = Math.round(box.height);
+    if (w === waveBox.w && h === waveBox.h) return;
+    waveBox = { w: w, h: h };
+    el.svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+    el.base.setAttribute("x1", "0");
+    el.base.setAttribute("y1", String(h - 2));
+    el.base.setAttribute("x2", String(w));
+    el.base.setAttribute("y2", String(h - 2));
+    // 尺寸变了，上一帧那串点不能复用
+    lastPoints = null;
+  }
+
+  function drawWave(fraction) {
+    if (!waveBox.w) return;
+    var points = tracePoints(samples, waveBox.w, waveBox.h, fraction);
+    // 一条平线在空转：别每帧都写一遍属性
+    if (points === lastPoints) return;
+    lastPoints = points;
+    el.line.setAttribute("points", points);
+  }
+
+  function frame(now) {
+    if (!waveRunning) return;
+    // 最新那个点从右端往左走：两次采样之间用帧时间插值，12.5Hz 看着也连续
+    var fraction = lastSampleAt ? Math.min(1, (now - lastSampleAt) / LEVEL_MS) : 0;
+    drawWave(fraction);
+    requestAnimationFrame(frame);
+  }
+
+  function startWave() {
+    if (!showLevel || levelBlocked) return;
+    el.wave.hidden = false;
+    resizeWave();
+    if (!levelTimer) levelTimer = setInterval(sampleLevel, LEVEL_MS);
+    if (!waveRunning) {
+      waveRunning = true;
+      requestAnimationFrame(frame);
+    }
+  }
+
+  function stopWave() {
+    if (levelTimer) {
+      clearInterval(levelTimer);
+      levelTimer = 0;
+    }
+    waveRunning = false;
+    samples = [];
+    lastSampleAt = 0;
+    lastPoints = null;
+    el.wave.hidden = true;
+  }
+
+  function sampleLevel() {
+    call("audio.level")
+      .then(function (result) {
+        var level = result && typeof result.level === "number" ? clamp01(result.level) : 0;
+        samples.push(level);
+        if (samples.length > WAVE_SAMPLES) samples.shift();
+        lastSampleAt = performance.now();
+        /*
+         * 拿到就画一次（fraction 0），不等下一帧。
+         *
+         * rAF 在"窗口没人看"时会被浏览器节流甚至完全不发帧 —— 那时候折线不该
+         * 停在上一帧的样子。滚动平滑靠 rAF 补，**有数据就有线**靠这一句。
+         */
+        if (waveRunning) drawWave(0);
+      })
+      .catch(function (error) {
+        if (error.code === "permission_denied") {
+          // 没授权就整条收起来：画一条永远贴底的线，用户会以为声音坏了
+          levelBlocked = true;
+          stopWave();
+          setHint("Needs the Sound level permission");
+          return;
+        }
+        if (error.code === "internal") {
+          // 浏览器预览（npm run dev）走这条：WebView2 外面没有 WASAPI
+          levelBlocked = true;
+          stopWave();
+          return;
+        }
+        /*
+         * 其它错误（桥超时 / 设备正在重连）不算致命：下一拍接着问。
+         * 设备被别的程序独占时后端会自己重试，这里跟着等就是了。
+         */
+      });
+  }
+
+  // ---------- 轮询媒体会话 ----------
 
   var subscription = 0;
   var denied = false;
   var failures = 0;
   var showProgress = true;
+  var showLevel = true;
   var pollMs = 2000;
 
   function refresh() {
@@ -247,7 +485,19 @@
       var next = Number(config && config.pollMs);
       pollMs = isFinite(next) ? Math.max(1000, Math.min(10000, next)) : 2000;
       showProgress = !config || config.showProgress !== false;
-      el.progress.hidden = !showProgress;
+      showLevel = !config || config.showLevel !== false;
+      /*
+       * 进度条显不显示是**两个条件**：开关开着，**而且**这一轮真的有总时长。
+       *
+       * 这里曾经只写 `= !showProgress` —— 于是宿主在启动后补发一次
+       * `config-changed`（它会），这一行就把 `render(null)` 刚藏起来的进度条又
+       * 翻了出来：卡片上出现一条 0:00 / 0:00 的空槽，看着像"没加载完"。
+       * 老版 268×148 排得满满当当，多出来的这一行直接把按钮顶出了卡片。
+       */
+      el.progress.hidden = !showProgress || durationMs <= 0;
+      // 开关关着的那条线一开始就不该露出来：`startWave` 里那道闸门只是不发采样，
+      // 藏不藏是另一件事
+      el.wave.hidden = !showLevel;
     });
   }
 
@@ -304,12 +554,17 @@
       var config = data.payload && data.payload.config;
       var previousPoll = pollMs;
       var previousShow = showProgress;
+      var previousLevel = showLevel;
       Promise.resolve()
         .then(function () {
           return readConfig();
         })
         .then(function () {
           if (showProgress !== previousShow) render(lastSession);
+          if (showLevel !== previousLevel) {
+            if (showLevel) startWave();
+            else stopWave();
+          }
           // 间隔变了才重挂时间轴：每次改配置都重挂会漏掉一拍
           if (pollMs !== previousPoll) return reschedule(pollMs);
         });
@@ -344,14 +599,28 @@
   setInterval(tickProgress, 250);
 
   /*
-   * 先读配置，再挂时间轴。
+   * 卡片尺寸变了（用户拖右下角）要重新量折线。
+   *
+   * `ResizeObserver` 比 `window.onresize` 准：卡片是窗口内容，窗口变了这里
+   * 一定跟着变，反过来则不一定。
+   */
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(function () {
+      resizeWave();
+    }).observe(el.wave);
+  }
+
+  /*
+   * 先读配置，再挂时间轴、再开折线。
    *
    * 反过来的话第一次轮询用的是默认的 2 秒，而用户可能设的是 10 秒 ——
    * 启动那一下多问一次无害，但订阅的间隔错了就要等下次改配置才纠正。
+   * 折线同理：`showLevel` 关着的时候一个采样都不该发。
    */
   readConfig()
     .catch(function () {})
     .then(function () {
+      startWave();
       return reschedule(pollMs);
     })
     .then(function () {

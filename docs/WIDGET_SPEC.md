@@ -273,11 +273,14 @@ if (data.type === "config-changed") {
 | `system:monitor` | `system.metrics` | 可用 |
 | `network` | `network.fetch`（还要求清单里列了目标主机） | 可用 |
 | `media:control` | `media.get` / `media.control`（系统媒体会话，见 §4.4） | 可用 |
+| `audio:level` | `audio.level`（扬声器现在的响度，见 §4.5） | 可用 |
 | `agent:activity` | `agent.activity`（本机 agent 做过的操作，读的是审计日志） | 可用 |
 
 只申请你真正用到的。申请一堆用不上的权限，用户会直接不装。
 
 `media:control` 一项权限同时管读和按。拆成"读会话"和"控制播放"两行，用户没法凭一行字分清区别，只会多点一次授权。
+
+`audio:level` **故意没有并进 `media:control`**：读会话拿的是歌名歌手，这条线拿的是**正在播出来的声音本身**（WASAPI 回环采集）。并在一起的话，一个组件只要说"我要控制播放"，就顺带拿到了"听你电脑在放什么" —— 授权面板上那行字不该替用户做这个决定。
 
 `network` 是**两道锁**：用户授予权限只是第一道，第二道是清单里的 `network.hosts`（§3.2）。只授权、不列主机，等于哪儿都连不上。
 
@@ -375,6 +378,7 @@ parent.postMessage(
 | `network.fetch` | `network` | `{ url, method?, headers?, body? }` | `{ status, ok, headers, body, truncated }`，见 §3.2 |
 | `media.get` | `media:control` | — | 当前媒体会话，没有播放器时返回 `null`（不是错误），见 §4.4 |
 | `media.control` | `media:control` | `{ action }` | `{ ok }`；`action` 是 `playPause` / `next` / `previous` / `stop` |
+| `audio.level` | `audio:level` | — | `{ level, running }`；`level` 是 0..1，没有设备时 `running: false`，见 §4.5 |
 | `agent.activity` | `agent:activity` | `{ limit? }` | `{ enabled, entries }`；`entries` 是审计日志最后几条，新的在**后**（组件自己倒序） |
 | `window.close` | — | — | 关闭当前组件实例的窗口，**但不删用户的 placement** |
 
@@ -488,11 +492,26 @@ if (!session) return render("Nothing playing");
 - **能力位可能和状态不一致**。有的播放器报 `status: "playing"` 但 `canPlayPause: false`。按钮的可用性看 `can*`，图标看 `status`。
 - **`durationMs` 可能是 0**（直播、某些播放器）。别画一条永远停在 0 的进度条 —— 那看着像坏了。
 
-`media.control` 是**异步**的：`{ ok: true }` 只表示"请求已经交给系统"，播放器真正开始播可能还要几百毫秒。想让按钮立刻响应，就在本地先翻转一次状态，等下一次 `media.get` 回来再校正 —— `public/widgets/lattice.media/` 就是这么做的。
+`media.control` 是**异步**的：`{ ok: true }` 只表示"请求已经交给系统"，播放器真正开始播可能还要几百毫秒。想让按钮立刻响应，就在本地先翻转一次状态，等下一次 `media.get` 回来再校正 —— `public/widgets/lattice.music/` 就是这么做的。
 
 `positionMs` 是"上次报告的位置"。播放中它会自己往前走，但不会实时更新 —— 要画连续进度条的话，拿到位置的那一刻记下时间戳，之后按经过的毫秒自己插值。
 
-### 4.5 用 `@lattice/sdk` 少写点样板
+### 4.5 `audio.level`：扬声器现在有多响
+
+SMTC 只有歌名歌手，**没有音量** —— 想知道"现在有多响"，唯一的办法是自己去听输出设备在放什么。`audio.level` 走的是 WASAPI 的**回环采集**（把正在播给扬声器的那一路复制一份出来），每块只算一个 RMS 就把采样丢掉。
+
+```js
+const { level, running } = await lattice.audio.level();   // 需要 audio:level
+```
+
+- `level` 是 0..1，已经做过分贝映射（-60dB..0dB 铺满）和释放曲线（峰值之后按 120ms 时间常数往下掉）。直接当高度用，别自己再取一次对数。
+- 它**不是**"这首歌的响度"，是"这台机器现在有多响"：游戏、视频、系统提示音都算，没开媒体会话时照样有值。
+- `running: false` 表示采集没跑起来（没有输出设备 / 被独占 / 正在重连），此时 `level` 恒为 0。画一条平线就行，不要提示错误 —— 两秒后它会自己重试。
+- **这是采样，不是订阅**：后端每 40ms 更新一次那个数，你问一次拿一次。要画折线就自己攒一个环形缓冲，80ms 左右一问；问得更密不会更新得更快，只会把桥压满。
+
+后端只保留一个 `f32`：不缓存音频、不落盘、不出进程。所以它不需要任何系统级授权，也不会弹"允许录音"，更拿不到单个应用的音轨。
+
+### 4.6 用 `@lattice/sdk` 少写点样板
 
 上面这套 `postMessage` + 自增 id + 超时 + 权限判断，手写一遍大概六十行。`@lattice/sdk` 把它封好了：
 
@@ -516,7 +535,7 @@ const session = await lattice.media.get();
 
 细节见 `packages/sdk/README.md`。
 
-### 4.6 启动顺序：先画，再问
+### 4.7 启动顺序：先画，再问
 
 `config.get` 和 `storage.get` 都是**往返**，宿主忙的时候要几十毫秒，宿主不在（比如你直接双击打开组件页调样式）要等到超时——`config.get` 3 秒、`storage.get` 3 秒，加起来 6 秒。如果第一帧画在它们后面，卡片就是一块空白，而且空多久由宿主决定。
 
@@ -564,6 +583,7 @@ if (!touched && saved) apply(saved);
 - 顶部通栏的控件（比如待办清单的输入框）要么整体下移一行，要么像 `lattice.todo` 那样先放一条 22px 的标题栏，把这一行让出去。
 - 正文从顶上就开始排的组件最容易栽在这里，而且症状不是"点错"，是"看不见"：打字的人手在键盘上、指针一动不动，窗饰也就一动不动地压着**正在写的那一行**。便签原本就是这样，写到第一行末尾得歪头看。
 - 纯展示的组件（时钟、图片）不用管，那块地方本来就是空的。
+- 卡片第一行就是正文的（曲名、状态值），让**那一行自己**让出 120px（`padding-right: 120px`）比再加一条标题栏省一行高度 —— `lattice.music` 就是这么做的：曲名提前省略，但不会被按钮压住。
 
 `lattice.todo` 的标题栏写法可以直接抄：一行 `22px` 高、`padding-right: 120px`（`120` 减去卡片自己的 `12px` 内边距），左边放标题、右边放计数。视觉上窗饰正好落在这条标题栏的右端，谁也不压谁。
 

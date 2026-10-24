@@ -1,12 +1,16 @@
 /*
- * 正在播放
+ * Music
  *
- * 四条约束：
- *   1. 顶上留 22px 给窗饰，右侧让出 120px。桌面窗口右上角那排图标浮在卡片上，
- *      不留位置就会压在 "Now playing" 上 —— 这也是标题单独占一行的原因。
- *   2. 曲名 / 歌手全部单行省略。ID3 标签的长度不可控，换行会把下面那排按钮顶出卡片。
- *   3. 颜色只取 `--lattice-*` 令牌。底板变浅时平台会把令牌整体翻一遍。
- *   4. 最小尺寸 220×132 是照着"进度条藏起来"那一档量的：少一行也放得下。
+ * 五条约束：
+ *   1. 顶上那 28px 归窗饰（`top:6 right:6`，约 120×28）。第一行曲名自己让出
+ *      120px —— 这张卡没有单独的标题条，让位只能让在曲名那一行上。
+ *   2. 曲名 / 歌手全部单行省略。ID3 标签的长度不可控，换行会把下面那排按钮
+ *      顶出卡片。
+ *   3. 高度按"最小尺寸也放得下"倒着算：9 + 22 + 16 + 18 + 26 + 28 + 9 + 18（间距）
+ *      = 146，所以 minH 是 150；默认 172 时折线拿到 52px。
+ *   4. 颜色只取 `--lattice-*` 令牌。底板变浅时平台会把令牌整体翻一遍。
+ *   5. 折线用 SVG 而不是 canvas：它只是几十个点，矢量不用管 DPR，
+ *      放大缩小时也不会糊。
  */
 
 :root {
@@ -34,48 +38,42 @@ body {
   overflow: hidden;
 }
 
-.mp {
+.mu {
   position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 11px 12px 10px;
-  gap: 7px;
-}
-
-/* ---------- 标题栏（同时给窗饰让位） ---------- */
-
-.mp-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  height: 22px;
-  /* 120px 是窗饰的实际占地，与系统监视器、待办保持一致 */
-  padding-right: 120px;
-}
-
-.mp-title {
-  margin: 0;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--muted);
-  white-space: nowrap;
+  padding: 9px 11px;
+  gap: 6px;
 }
 
 /* ---------- 曲目 ---------- */
 
-.mp-track {
+.mu-track {
   flex: none;
   min-width: 0;
 }
 
-.mp-name {
+/*
+ * 22px 行高是量出来的：窗饰那排图标高 28px、从 6px 开始，所以这一行
+ * （9..31）整个在它的范围内。`padding-right` 让文字提前结束，
+ * 而不是让按钮压在文字上。
+ *
+ * 省略号写在里面那个 span 上、让位写在外面这个 p 上，是有意的：`text-overflow`
+ * 只在自己这一层裁，而这一层的宽度含 padding —— 裁出来的省略号会贴着 120px
+ * 那条线，正好在按钮底下。分开之后，真正带文字的那块只有 126px 宽。
+ */
+.mu-name {
   margin: 0;
+  padding-right: 120px;
   font-size: 15px;
   font-weight: 600;
+  line-height: 22px;
   letter-spacing: -0.01em;
+}
+
+.mu-name-text {
+  display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -85,17 +83,17 @@ body {
  * 歌手和来源抢一行：歌手先省略，来源（播放器名）短且固定，给它 flex: none
  * 让它先拿到自己那点宽度。
  */
-.mp-sub {
+.mu-sub {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  margin: 1px 0 0;
+  margin: 0;
   min-width: 0;
   font-size: 11.5px;
   color: var(--muted);
 }
 
-.mp-artist {
+.mu-artist {
   flex: 1 1 auto;
   min-width: 0;
   white-space: nowrap;
@@ -103,7 +101,7 @@ body {
   text-overflow: ellipsis;
 }
 
-.mp-source {
+.mu-source {
   flex: none;
   font-size: 9.5px;
   letter-spacing: 0.05em;
@@ -115,19 +113,19 @@ body {
 
 /* ---------- 进度 ---------- */
 
-.mp-progress {
+.mu-progress {
   flex: none;
 }
 
 /* 4px 高的槽：再细就点不准（虽然这里也不给点，但视觉上要能读出进度） */
-.mp-bar {
+.mu-bar {
   height: 4px;
   border-radius: 999px;
   background: var(--border);
   overflow: hidden;
 }
 
-.mp-bar i {
+.mu-bar i {
   display: block;
   width: 0;
   height: 100%;
@@ -136,7 +134,7 @@ body {
   transition: width 0.24s linear;
 }
 
-.mp-times {
+.mu-times {
   display: flex;
   justify-content: space-between;
   margin-top: 2px;
@@ -145,22 +143,58 @@ body {
   color: var(--muted);
 }
 
-/* ---------- 控制 ---------- */
+/* ---------- 声音高低 ---------- */
 
 /*
- * 按钮推到最底下：卡片被拉高时，空出来的空间留在曲目和按钮之间，
- * 而不是按钮下面 —— 后者会让人以为卡片没画完。
+ * 折线拿走所有剩下的高度，但至少 26px —— 再矮就看不出"高低"了，
+ * 那就是一条抖动的线。
+ *
+ * `min-height` 和 manifest 的 `minH` 是一对：这里给了 26，下面那排按钮和
+ * 两行文字才不会被挤出卡片（总账见文件头）。
  */
-.mp-controls {
-  display: flex;
-  flex: 1;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 10px;
+.mu-wave {
+  flex: 1 1 auto;
   min-height: 26px;
 }
 
-.mp-btn {
+.mu-wave-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/*
+ * 底噪线：比折线更淡。没有声音时折线就贴在它上面，一眼能看出
+ * "在跑，只是没声音"，而不是"画歪了"。
+ */
+.mu-wave-base {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.mu-wave-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ---------- 控制 ---------- */
+
+.mu-controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 28px;
+}
+
+.mu-btn {
   display: grid;
   place-items: center;
   width: 26px;
@@ -175,41 +209,41 @@ body {
     transform 0.06s ease;
 }
 
-.mp-btn svg {
+.mu-btn svg {
   width: 13px;
   height: 13px;
 }
 
-.mp-btn:hover:not(:disabled) {
+.mu-btn:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.mp-btn:active:not(:disabled) {
+.mu-btn:active:not(:disabled) {
   transform: scale(0.94);
 }
 
-.mp-btn:disabled {
+.mu-btn:disabled {
   opacity: 0.34;
   cursor: default;
 }
 
 /* 中间那颗：实心强调色。它是"现在唯一想按的那颗" */
-.mp-btn.is-main {
-  width: 30px;
-  height: 30px;
+.mu-btn.is-main {
+  width: 28px;
+  height: 28px;
   border-color: transparent;
   background: var(--accent);
   color: #06231b;
 }
 
-.mp-btn.is-main:hover:not(:disabled) {
+.mu-btn.is-main:hover:not(:disabled) {
   background: var(--accent);
   color: #06231b;
   filter: brightness(1.08);
 }
 
-.mp-btn.is-main svg {
+.mu-btn.is-main svg {
   width: 14px;
   height: 14px;
 }
@@ -220,11 +254,11 @@ body {
  * 绝对定位：权限提示是"额外说明"，不该把按钮往下挤 —— 那会让同一个组件在
  * 有权限 / 没权限两种状态下布局不一致，看着像两个组件。
  */
-.mp-hint {
+.mu-hint {
   position: absolute;
-  right: 12px;
-  bottom: 2px;
-  left: 12px;
+  right: 11px;
+  bottom: 1px;
+  left: 11px;
   margin: 0;
   font-size: 10px;
   color: var(--muted);
@@ -236,11 +270,11 @@ body {
   transition: opacity 0.14s ease;
 }
 
-.mp-hint.is-visible {
+.mu-hint.is-visible {
   opacity: 1;
 }
 
-/* 有提示时给底栏让出一点位置，免得字压在按钮圆边上 */
-.mp-controls:has(~ .mp-hint.is-visible) {
-  padding-bottom: 11px;
+/* 有提示时把折线往上收一点，免得字压在按钮圆边上 */
+.mu:has(.mu-hint.is-visible) .mu-wave {
+  margin-bottom: 9px;
 }

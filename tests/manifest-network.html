@@ -94,11 +94,20 @@
       // v0.4 补上了 SMTC，六项权限至此全齐 —— 这条以前断言的是"还没做"，
       // 现在反过来钉住它已经可授权（清单里声明 media:control 的组件能真的用上）
       log(isPermissionReady("media:control"), "media:control 已可授权（桥上有 media.get / media.control）");
+      // v0.9 又补了一项 `audio:level`（声音高低），八项至此全齐
+      log(isPermissionReady("audio:level"), "audio:level 已可授权（桥上有 audio.level）");
       log(
-        ["clock", "storage", "clipboard:write", "network", "system:monitor", "media:control"].every(
-          (name) => isPermissionReady(name),
-        ),
-        "六项权限全部可授权",
+        [
+          "clock",
+          "storage",
+          "clipboard:write",
+          "network",
+          "system:monitor",
+          "media:control",
+          "audio:level",
+          "agent:activity",
+        ].every((name) => isPermissionReady(name)),
+        "八项权限全部可授权",
       );
 
       document.getElementById("out").innerHTML = lines

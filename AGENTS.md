@@ -73,7 +73,7 @@ src/
     screen-fit.ts         纯几何：锚点选屏、夹紧（入参一律物理像素，`tests/screen-fit.html` 钉着）
     close-guard.ts        ✕ 该不该认这一下：指针序列 + 命中测试（纯函数，`tests/close-guard.html` 钉着）
     agent.ts              agent 动作执行器：白名单动作走真 store，回快照（`tests/agent.html` 57 条）
-    align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
+    align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（跨过被拖的那张、夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 单包命中判定（纯函数，`tests/library-search.html` 钉着）
     debug.ts              调试总线：环形缓冲 400 条、攒批镜像到主窗口、过滤 / 统计纯函数
     semver.ts             版本号与范围：解析 / 比较 / `^ ~ >= <= > < =` / 通配 / `||`（纯函数，`tests/semver.html` 钉着）
@@ -102,8 +102,8 @@ src-tauri/src/
   csp.rs                  组件文档的 CSP：一处生成策略，protocol.rs 只负责挂头
   egress.rs               出网闸门：WebView2 层拦帧导航，组件出不去
   guides.rs               桌面参考线：邻居窗口矩形 + 工作区交给前端算吸附，再把线交给叠层窗口
-  guides_overlay.rs       参考线的两条 1px `WS_EX_LAYERED` 窗口 + 专用消息线程（不是透明 WebView2）
-  guide_policy.rs         上面那道的纯逻辑：虚线节拍、端头淡入、颜色解析（9 条 `rustc --test`）
+  guides_overlay.rs       参考线的两条 1px `WS_EX_LAYERED` 窗口 + 专用消息线程（不是透明 WebView2；每帧连尺寸一起改，所以线是局部短段）
+  guide_policy.rs         上面那道的纯逻辑：虚线节拍、亮度、颜色解析（5 条 `rustc --test`）
   network.rs              出网代理（WinHTTP）：权限 → 白名单 → 形状，三道闸
   network_policy.rs       上面那道的纯逻辑：URL 解析 + 主机白名单匹配 + 白名单来源（12 条单测）
   crash.rs                ICoreWebView2::add_ProcessFailed 胶水：认崩溃类型、记账、重载
@@ -124,6 +124,8 @@ src-tauri/src/
   wallpaper.rs            截壁纸（宿主页底板的第一层）
   metrics.rs              系统指标（sysmon 组件用），直接调 Win32 不引 crate
   media.rs                SMTC 媒体会话：读当前播放 + playPause/next/previous/stop（WinRT）
+  audio.rs                声音高低：默认输出设备的 WASAPI 回环采集，一个后台线程写、命令只读（只出一个 0..1）
+  audio_policy.rs         上面那道的纯逻辑：RMS → 分贝 → 0..1、释放曲线、包络（6 条 rustc --test）
   package.rs              .lattice 解包：inflate + 核 CRC + 原子安装（先解到 .incoming 再换名）
   package_policy.rs       上面那道的纯逻辑：读中央目录、路径规则、体积上限（11 条单测）
   signature.rs            ed25519 验签 + sha256（三道校验的前两道，4 条单测含一条跨语言向量）
@@ -379,7 +381,7 @@ public/widgets/<id>/
 
 **守卫是"开关 + 子类化"两件事，顺序不能反。** 开关是一个窗口属性（`set_sink`，任意线程可同步翻转），子类化只能回窗口线程装（`install_guard`，跨线程会静默返回 0）。`apply_to` 里必须**先翻开关再落层级**：否则切"置顶"那一下的 `HWND_TOPMOST` 会被还活着的守卫吃掉，组件永远上不去。
 
-**想往屏幕上画东西，先想清楚能不能用"两条 1px 叠层窗口"。** 桌面拖拽的对齐参考线（`guides_overlay.rs`）就是这条路：`WS_EX_LAYERED | WS_EX_TRANSPARENT` 的 1px 窗口 + `UpdateLayeredWindow` 逐像素 alpha，一条竖的一条横的，**不是**一个透明 WebView2 窗口（逐像素透明的 WebView2 在软件渲染的机器上建不出来，见上面那条 `0x8007139F`）。五条别踩回去：① 窗口归**专用线程**所有、由它泵消息，跨线程 `SetWindowPos` / `UpdateLayeredWindow` 会等窗口线程处理，而窗口线程不泵消息就互相等死；② 位图只跟屏幕尺寸/颜色有关，拖动时只 `UpdateLayeredWindow` 换位置，**别每帧重建全屏位图**（3456×1080×4 是 15MB）；③ 每帧 `SetWindowPos(HWND_TOPMOST)` 提一次 —— 被拖的那扇窗口常常正好压在线上；④ 收线不能只靠前端：宿主页崩了就没人发 `Hide`，叠层线程 4 秒没新坐标要自己收（前端拖动期间每秒补一发心跳，所以"指针停住看对齐"不会误触发）；⑤ 线形和画布用同一套数（中段实线、两端 4px/4px 虚线、62% 亮度），`guide_policy.rs` 是像素规则、`styles.css` 的 `.lattice-guide` 是对应写法 —— 而 CSS 那两层**必须是兄弟伪元素**：`mask-image` 会连子内容一起遮，把实线遮罩写在元素自己身上会把 `::after` 的虚线一起掐掉。
+**想往屏幕上画东西，先想清楚能不能用"两条 1px 叠层窗口"。** 桌面拖拽的对齐参考线（`guides_overlay.rs`）就是这条路：`WS_EX_LAYERED | WS_EX_TRANSPARENT` 的 1px 窗口 + `UpdateLayeredWindow` 逐像素 alpha，一条竖的一条横的，**不是**一个透明 WebView2 窗口（逐像素透明的 WebView2 在软件渲染的机器上建不出来，见上面那条 `0x8007139F`）。五条别踩回去：① 窗口归**专用线程**所有、由它泵消息，跨线程 `SetWindowPos` / `UpdateLayeredWindow` 会等窗口线程处理，而窗口线程不泵消息就互相等死；② 位图只跟屏幕尺寸/颜色有关，拖动时只 `UpdateLayeredWindow` 换位置和尺寸（一次调用同时给目的地和大小），**别每帧重建全屏位图**（3456×1080×4 是 15MB）；③ 每帧 `SetWindowPos(HWND_TOPMOST)` 提一次 —— 被拖的那扇窗口常常正好压在线上；④ 收线不能只靠前端：宿主页崩了就没人发 `Hide`，叠层线程 4 秒没新坐标要自己收（前端拖动期间每秒补一发心跳，所以"指针停住看对齐"不会误触发）；⑤ 线形和画布用同一套数（4px 亮 / 4px 空、62% 亮度、没有中段实线也没有端头淡入），线段长短也只有一个实现（`align-guides.ts::guideLines`：跨过被拖的窗口、两端各留 24px、夹进工作区）—— `guide_policy.rs` 是像素规则、`styles.css` 的 `.lattice-guide` 是对应写法（一个 `repeating-linear-gradient` + `currentColor`，位置和长度走内联 style）。**别往那个元素上加 `mask-image` 或 `filter`**：它们会连子内容一起遮/一起模糊（历史上两端淡入就是这么只剩 5% 亮度的）。线是局部的，所以叠层窗口的**尺寸每帧都在变**，`len` 记得夹到位图那一维以内。
 
 **不要加 `--disable-gpu-compositing`**，它会关掉 DirectComposition，WebView2 建不出来（`HRESULT 0x8007139F`）。GPU 相关的启动参数在 `lib.rs`，用 `LATTICE_GPU=1` 可以恢复默认。
 
@@ -494,7 +496,9 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 同一条规矩还有个"看不见"的版本：**正文从顶上就开始排的组件**（便签）不会"点错"，而是正在写的那一行被压住 —— 打字的人手不离键盘、指针一动不动，窗饰也就不动。所以那 24px 里别留空带，放一条真信息（便签放的是保存状态）。判据是正文起点 `y ≥ 34`（窗饰下沿），`tests/note-layout.html` 直接量这个数。
 
 
-已修（别再改回去）：**组件能读也能控制系统媒体会话**。`media.rs` 走 WinRT 的 SMTC，桥上是 `media.get` / `media.control`，共用 `media:control` 一项权限。四条别踩回去：**每次调用自己 `CoInitializeEx(COINIT_MULTITHREADED)`，返回值故意不看**（已经初始化过会返回 `RPC_E_CHANGED_MODE`，那不是失败；不初始化直接调才是 `RPC_E_NOT_INITIALIZED`）；**没有会话时返回 `null` 而不是错误**（桌面上没开播放器是常态，组件该显示"没在放"）；**`TimeSpan` 是 100ns 单位，除 10000 才是毫秒**；**`IAsyncOperation::join()` 阻塞等、不加超时**（组件侧桥调用本来就有 3 秒超时，再套一层只是多一条失败路径）。唯一用户是 `public/widgets/lattice.media`，`tests/media.html` 33 条断言钉着它的渲染与控制。
+已修（别再改回去）：**组件能读也能控制系统媒体会话**。`media.rs` 走 WinRT 的 SMTC，桥上是 `media.get` / `media.control`，共用 `media:control` 一项权限。四条别踩回去：**每次调用自己 `CoInitializeEx(COINIT_MULTITHREADED)`，返回值故意不看**（已经初始化过会返回 `RPC_E_CHANGED_MODE`，那不是失败；不初始化直接调才是 `RPC_E_NOT_INITIALIZED`）；**没有会话时返回 `null` 而不是错误**（桌面上没开播放器是常态，组件该显示"没在放"）；**`TimeSpan` 是 100ns 单位，除 10000 才是毫秒**；**`IAsyncOperation::join()` 阻塞等、不加超时**（组件侧桥调用本来就有 3 秒超时，再套一层只是多一条失败路径）。唯一用户是 `public/widgets/lattice.music`（v0.9 从 `lattice.media` 改名而来），`tests/music.html` 66 条断言钉着它的渲染与控制。
+
+已修（别再改回去）：**声音高低是"回环采集"，不是问 SMTC**。`audio.rs` 在默认输出设备上开一路 `AUDCLNT_STREAMFLAGS_LOOPBACK`，每块算一个 RMS 就把采样丢掉，桥上是 `audio.level`（权限 `audio:level`，**单独一项、没并进 `media:control`**：读会话拿的是歌名歌手，这条线拿的是正在播出来的声音本身，并在一起等于"我要控制播放"顺带拿到了"听你电脑在放什么"）。六条别踩回去：**采集线程只有一个、常驻**（一次 `Initialize` 十几毫秒，按调用现开现关会让线一顿一顿；命令只锁一个 f32 读一下，所以它是同步命令，不是 `async`）；**`GetMixFormat` 的内存是系统分配的，`wBitsPerSample` / `nChannels` 必须在 `CoTaskMemFree` 之前抄下来**（free 之后再解引用是 use-after-free，编译器不拦）；**`frames` 是帧数不是采样数，要乘声道数**（少乘只是漏读右声道，多乘就越界读）；**静音块看 `AUDCLNT_BUFFERFLAGS_SILENT`，别解引用那个指针**（系统说这段是空的，内存可能根本没写过）；**没有设备 / 被独占时 `running: false` + `level: 0` 不是错误**（两秒后自己重连，组件画平线）；**组件 80ms 一问就够**（后端 40ms 更新一次，问得更密不会更新得更快，只会把桥压满 —— 它比调度器 250ms 的下限密，所以组件用自己的 `setInterval`，不是 `schedule.every`）。纯逻辑在 `audio_policy.rs`（6 条 `rustc --test`），WASAPI 那半边只有真机能验：`audio_policy.rs` 测不到指针，`audio.rs` 编不进壳子。
 
 已修（别再改回去）：**`.lattice` 包能装也能打**。打包在 `scripts/pack-widget.mjs`（手写 ZIP），装在 `package.rs` + `package_policy.rs`。四条别踩回去：**打包必须确定性**（条目排序、DOS 时间戳固定 1980-01-01、UTF-8 名），否则"这个包是不是我发的那个"永远无法回答，以后也没法签名；**zip-slip 要防两道**（`safe_relative_path` 拒 `..`/绝对路径/盘符，`join_inside` 在真正写盘那处再验一次）；**安装要原子**（先解到 `<id>.incoming`，成功了才删旧的、改名），解到一半失败不能留下半个组件；**任何一条不过就整包拒绝**，不做"部分安装"。`install_widget` 的入参是 `source`（目录或 `.lattice` 文件），改名时记得同步 `App.tsx`。
 
@@ -562,7 +566,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
   - 界面上"该不该装"的判断全在 `planInstall` 里，别在 JSX 里再写一份 —— 两份判断的后果是"卡片说能装、点了报错"。
   - 发公共目录：`npm run publish:widget -- <组件目录> --key ../lattice-registry/.keys/publisher.key`。它把打包、签名、写 sidecar、跑 registry 的 `build.mjs` 串成一次执行，最后只说"要提交哪几个文件"。**验收标准是幂等**：同一个目录连跑两次，registry 的 `git status` 必须是空的 —— 第二次不能因为把 sidecar 的 `published` 改成今天而脏一份 `registry.json`。
 - 改了**调试面板**：`tests/debug.html`（43 条，总线 + 过滤 / 统计纯函数）+ `tests/debug-panel.html`（15 条，把真组件挂起来点按钮）。后者**必须 `import "../src/styles.css"`**，否则面板渲染成裸 HTML。它同时也是一张验收图：`--screenshot` 出来的就是面板长什么样。
-- 改了**媒体控制**：`tests/media.html`（33 条）自带假宿主，覆盖"有会话 / 没会话 / 权限被拒 / 直播没时长 / 点按钮 / 改轮询间隔"。它替身的坑记住一条：`setConfig()` 要 `Object.assign` 到 handler 捕获的那个对象上，否则 `config.get` 回的还是启动时那份，用例会假通过。
+- 改了**媒体控制 / 声音折线**：`tests/music.html`（66 条）自带假宿主，覆盖"有会话 / 没会话 / 权限被拒 / 直播没时长 / 点按钮 / 改轮询间隔"。它替身的坑记住一条：`setConfig()` 要 `Object.assign` 到 handler 捕获的那个对象上，否则 `config.get` 回的还是启动时那份，用例会假通过。
 - 改了组件库（列表 / 搜索 / 安装态）：`tests/library-search.html` 钉的是**判定规则**（空查询不筛、大小写与空白归一、多词 AND、权限名算命中、不做模糊匹配）。搜索的边界只在 `runtime/library-search.ts` 里写一份，组件里别再复制一遍 —— 复制的后果是"测试过了，界面上还是不对"。
 - 改了错误通道 / 兜底页：`tests/diagnostics.html`（识别边界、两条通道不撞、去重指纹、主错误选择）。注入规则本身跑 `npm run test:injection`（9 条，`node:test`，**不需要 dev server**，fixture 和 Rust 单测是同一批：`<head>` 带属性、`<header>` 别认错、doctype 兜底、幂等、压行后行号不变、多字节安全）。Rust 那边 14 条单测在 `diagnostics.rs` 里，但**这台机器跑不了 `cargo test`**（安全策略拦 `target/debug/deps` 下新写的 exe，见 ROADMAP 坑表）。绕法：写个只有一行的壳子 `#[path = "../src-tauri/src/diagnostics.rs"] mod diagnostics;`，然后 `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe` —— 断言还是模块里那一份，不复制。
 - 改了内置组件的注入：**两条路都要看**。dev 下 `curl -s http://localhost:1420/widgets/lattice.clock/index.html | grep -c 'data-lattice="diagnostics"'` 应该是 `1`（不是 `2`：中间件要幂等，否则 vite 自己把 `public/` 也注一遍就重了）；`npm run build` 之后再看 `dist/widgets/*/index.html`，构建日志末尾会有一行 `[lattice] 错误上报已注入 N 份内置组件文档`，`N` 要等于内置组件个数。**行数也要对**：`wc -l dist/widgets/<id>/index.html` 必须和 `public/widgets/<id>/index.html` 一样多，多一行就是压行失效、行号全错。
@@ -583,9 +587,10 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
   #[path = "../src-tauri/src/network_policy.rs"] mod network_policy;
   ```
   `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe`。**这就是"纯逻辑要单独拆成一个文件"的原因 —— 拆出来才测得到**。断言只有一份（`#[cfg(test)] mod tests` 在模块内部），壳子别复制。
-  能这么跑的现在是 110 条：`agent_policy.rs`（26）、`diagnostics.rs`（14）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`occlusion_policy.rs`（8）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）、`package.rs`（1，跟着 `package_policy` 一起编）。剩下 26 条（`protocol.rs` 6、`widget_store.rs` 5、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1、其余在带 `tauri::` 的胶水里）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
+  能这么跑的现在是 121 条：`agent_policy.rs`（26）、`diagnostics.rs`（14）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`occlusion_policy.rs`（8）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`audio_policy.rs`（6）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）、`package.rs`（1，跟着 `package_policy` 一起编）。剩下 26 条（`protocol.rs` 6、`widget_store.rs` 5、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1、其余在带 `tauri::` 的胶水里）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
   **壳子会过期，过期了要修，不要当它不存在**：`extract-test.rs` 曾经在 `package.rs` 加上验签之后编不过（`extract` 多了第三个参数、还引用了 `signature_policy` 和 `backup`），但 `rustc` 编译失败时旧的 `.exe` 还在，`&&` 串起来的写法会**跑那个旧二进制并显示全绿** —— 那才是最坏的情况。所以：编不过就是红，先看 `rustc` 的退出码，别信后面那行 `test result`。修法是给壳子补 `#[path]` 把 `signature_policy.rs` 编进来，`backup` 依赖 `tauri` 编不进来，就写一个签名对得上的桩（四条用例传的都是 `None`，走不到那条分支）。
   `package.rs` 要用到 `flate2` / `serde_json`，`signature.rs` 要用到 `ed25519_dalek` / `sha2`，壳子得额外指路：`rustc --edition 2024 --test 壳子.rs -L src-tauri/target/debug/deps --extern flate2=<rlib> --extern serde_json=<rlib> -o 壳子.exe`（rlib 从 `target/debug/deps/` 里按 `libflate2-*.rlib` 找）。只给 `--extern` 不给 `-L` 会报 `can't find crate`。`csp.rs` 那个桩的值要抄对（`"lattice-widget"`，不是 `"lattice"`），抄错了单测会红 —— 这次正好被它抓了一下。
+  **raw `rustc` 的默认 edition 是 2015**，不带 `--edition` 编出来的 panic 消息不认内联捕获（`assert!(cond, "{index}")` 会报 unused placeholder，断言本身照样成立）。想安静就照着 crate 的 edition 给一个：`rustc --edition 2024 --test src-tauri/src/guide_policy.rs -o 壳子.exe`。
   **别把纯逻辑塞回带依赖的模块里**：`watch.rs` / `autostart.rs` 的解析和拼串本来就是搬出去的，搬回去等于这 10 条断言从此没人跑。
 - **CDP 选 target 必须认"完全相等"，不能只认"包含"**：主窗口是 `http://127.0.0.1:1420/`，宿主页是 `http://127.0.0.1:1420/widget-host.html` —— 后者**包含**前者的前缀，`url.includes(selector)` 会把主窗口的探针静默跑到宿主页上，返回空值也不报错（真踩过：以为桥坏了，其实是在一个已经卸载的页面上 `evaluate`）。所以先 `t.url === selector`，找不到再退到 `includes`。
 - **宿主页在 CDP 里没有唯一 URL**：所有桌面窗口都是同一个 `widget-host.html`，靠 URL 分不出是谁。按 `host:<widgetId>` 取的办法是先连上每个 `widget-host.html` target，`evaluate("document.querySelector('iframe')?.getAttribute('src')")`，再按里面的组件 id 挑。想验崩溃隔离就 `Page.crash` 那个 target（组件 iframe 是 `type: "iframe"`，宿主页才是 `type: "page"`）。

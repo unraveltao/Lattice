@@ -11,6 +11,8 @@
 
 pub mod agent;
 pub mod agent_policy;
+pub mod audio;
+pub mod audio_policy;
 pub mod autostart;
 pub mod autostart_policy;
 pub mod backup;
@@ -135,6 +137,7 @@ pub fn run() {
             metrics::system_metrics,
             media::media_session,
             media::media_control,
+            audio::audio_level,
             runner::set_widgets_paused,
             runner::widgets_paused,
             autostart::autostart_get,

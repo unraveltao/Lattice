@@ -383,6 +383,27 @@ defineMethod("media.control", "media:control", async (params) => {
 });
 
 /*
+ * 扬声器现在有多响。
+ *
+ * **单独一项权限，不搭 `media:control` 的便车。** 读会话拿的是"歌名 / 歌手"，
+ * 而这条线拿的是**正在播出来的声音本身**（WASAPI 回环采集，见 `audio.rs`）。
+ * 两者绑在一起的话，一个组件只要说"我要控制播放"，就顺带拿到了"听你电脑在放什么"
+ * —— 授权面板上那行字不该替用户做这个决定。
+ *
+ * 回环采集**不需要系统级授权**：它采的是本机自己的输出混音，不弹"允许录音"，
+ * 也拿不到单个应用的音轨。后端只算一个 RMS 就丢掉采样，不缓存、不落盘。
+ *
+ * 没有设备 / 设备被独占时返回 `running: false` + `level: 0`，**不是错误**：
+ * 那正是"现在没声音"，组件该画平线。
+ */
+defineMethod("audio.level", "audio:level", async () => {
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "sound level is only available in the desktop app");
+  }
+  return await invoke("audio_level");
+});
+
+/*
  * agent 在本机做过什么。
  *
  * 读的是 `agent/audit.log`（一行一条 JSON），所以它**跨重启还在** —— 这正是

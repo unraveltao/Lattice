@@ -1,15 +1,15 @@
 {
-  "id": "lattice.media",
-  "name": "Now Playing",
-  "version": "0.1.0",
-  "description": "Whatever Windows is playing, with play/pause, previous and next — reads and controls the system media session",
+  "id": "lattice.music",
+  "name": "Music",
+  "version": "0.2.0",
+  "description": "What Windows is playing, with play/pause, previous and next — plus a live trace of how loud it is",
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
-  "size": { "w": 268, "h": 148, "minW": 220, "minH": 132 },
+  "size": { "w": 268, "h": 172, "minW": 220, "minH": 152 },
   "layer": "top",
   "interactive": true,
-  "permissions": ["media:control"],
+  "permissions": ["media:control", "audio:level"],
   "config": [
     {
       "key": "showProgress",
@@ -17,6 +17,13 @@
       "label": "Show progress bar",
       "default": true,
       "help": "Off keeps just the title and the buttons — some players report no duration at all."
+    },
+    {
+      "key": "showLevel",
+      "type": "toggle",
+      "label": "Show sound level",
+      "default": true,
+      "help": "The wavy line at the bottom. Off gives that space back to the controls and stops sampling."
     },
     {
       "key": "pollMs",
@@ -38,6 +45,15 @@
           "Play / pause, previous and next act on that session — not on one particular app.",
           "The card shows the track, the artist and album, and the app that is playing it.",
           "A greyed-out previous or next means that player says it cannot skip — not that the widget is stuck."
+        ]
+      },
+      {
+        "title": "The wavy line is how loud it is",
+        "items": [
+          "It taps what your speakers are playing right now, so it moves with any sound — a game or a video too, not just the track above.",
+          "It only keeps a number: no audio is recorded, stored or sent anywhere.",
+          "Nothing playing means a flat line on the baseline. That is the honest reading, not a fault.",
+          "No sound device, or one held by another app, also gives a flat line — the widget retries every two seconds."
         ]
       },
       {
@@ -72,6 +88,15 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.2.0",
+      "changes": [
+        "Renamed from Now Playing to Music, with the id lattice.music.",
+        "New: a sound-level trace along the bottom, like an ECG — it follows whatever your speakers are playing.",
+        "The card is taller and the layout no longer runs out of room at the bottom.",
+        "The player name is cleaned up: Spotify.exe now reads Spotify."
+      ]
+    },
     {
       "version": "0.1.0",
       "changes": [

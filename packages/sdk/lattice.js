@@ -358,6 +358,19 @@ export function createLattice(options = {}) {
       stop: () => call("media.control", { action: "stop" }),
     },
 
+    audio: {
+      /**
+       * 扬声器现在有多响，`{ level, running }`。要 `audio:level`（**不是**
+       * `media:control`：这条线读的是声音本身，不是歌名）。
+       *
+       * `level` 是 0..1，已经做过分贝映射和释放曲线 —— 直接当高度画就行。
+       * 没有设备 / 设备被独占时 `running` 是 false、`level` 是 0，那不是错误。
+       *
+       * 这是**采样**：80ms 一问，自己攒一串再画折线。问得比这还密没有意义。
+       */
+      level: () => call("audio.level"),
+    },
+
     network: {
       /**
        * 代发一个 HTTP 请求。要 `network`，而且目标主机必须列在清单的
