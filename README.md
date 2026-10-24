@@ -1,322 +1,287 @@
-# Lattice
+<div align="center">
 
-[![ci](https://github.com/unraveltao/lattice/actions/workflows/ci.yml/badge.svg)](https://github.com/unraveltao/lattice/actions/workflows/ci.yml)
+<h1>棂 · Lattice</h1>
 
-An extensible desktop widget platform for Windows. Third parties write widgets in plain HTML / CSS / JS; the platform puts them safely onto the desktop.
+<p><strong>Widgets for the Windows desktop, written in plain HTML.</strong><br>
+The platform does the parts a web page cannot: real windows, a sandbox, permissions, install and update.<br>
+No server anywhere in the loop.</p>
 
-> 棂 (líng) is the wooden lattice in a window pane. Every pane on your desktop is a widget that can grow there on its own.
+<p>
+<a href="https://github.com/unraveltao/lattice/actions/workflows/ci.yml"><img src="https://github.com/unraveltao/lattice/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
+<a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b82f6.svg" alt="MIT license"></a>
+<a href="#install-and-build"><img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D4.svg" alt="Windows 10 / 11"></a>
+</p>
 
-English · [中文](./README.zh-CN.md)
+<p>English · <a href="./README.zh-CN.md">中文</a></p>
 
-## Status
+<p><a href="docs/screenshot-desktop.png"><img src="docs/screenshot-desktop.png" width="900" alt="Three widgets on a plain desktop: clock, to-do list and bookmarks"></a></p>
 
-v0.5 is the **distributable** version: writing a widget, installing one and updating one all have a real path now. The platform ships empty: install the official pack, place widgets on the canvas, and each one runs for real inside a sandboxed iframe, calling platform capabilities over an RPC bridge with permissions granted one by one. Hit "Send to desktop" and every widget becomes a frameless window while the main window steps aside.
+<p><sub>Three of the widgets that ship with the platform — clock, to-do and bookmarks — captured from a running build<br>
+at 2× and placed on a plain wallpaper. Nothing from a real desktop is in the frame.</sub></p>
 
-Once they are out there, windows can be dragged, resized and pinned, and both the layout and the widget data survive a restart. Closing the main window just tucks it away while widgets are on the desktop — `Quit Lattice` in the settings menu or on the tray is the real exit, and launching the app again brings the window back (single instance: the second launch wakes the first one instead of starting a duplicate). The avatar in the top-right opens settings: appearance, snap-to-grid, restore-on-launch, start-with-Windows, pause-all, and a local profile — signing in only writes to the local `state.json`, nothing is uploaded.
+</div>
 
-It also behaves like something that is supposed to stay running:
+---
 
-- **A tray icon**, so the app is reachable when the main window is hidden — open it, pause every widget, or quit
-- **Start with Windows** (an opt-in `Run` entry, removed again on uninstall)
-- **Pause all widgets** hides every desktop window in one click; the heartbeat stops with it, it does not just become invisible
-- **A renderer crash reloads itself** — up to three times in a minute, then it stops trying and offers you a `Try again` bar instead of spinning
-- **Saving a widget's files reloads it** in place, no restart, no clicking the reload button
+## What it is
 
-Third-party widgets work too: drop a folder into the window and it is installed, copied into `%APPDATA%` and served over the `lattice-widget` protocol. [`examples/counter`](./examples/counter) is a sample you can drag straight in.
+棂 (*líng*) is the wooden lattice inside a window pane — the frame that every pane is set into.
 
-Both side panels collapse to a 40px rail when you want the whole canvas, and every package can ship its own icon: the library card, the canvas title bar and the inspector all draw it instead of a letter tile.
+Lattice is a shell for widgets you write yourself. A widget is a folder: `index.html`, a stylesheet, a script, and a `manifest.json` that says what it is allowed to ask for. Drop the folder into the window and it is installed, copied under `%APPDATA%` and served from its own protocol. Drag it onto the canvas to see it live, then **Send to desktop** and it becomes a frameless window that stays there across restarts.
 
-v0.4 is about the people writing widgets rather than the people using them:
+The important part is the sentence above "it becomes a window". A widget never touches Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are nine permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
 
-- **`@lattice/sdk`** — a zero-dependency ES module that wraps the bridge (request pairing, timeouts, typed errors, theme tokens, storage, scheduling). It is a plain file you copy next to your widget, not an `npm install`: "no build step" stays true
-- **`npm run create:widget -- demo.mine`** — a scaffold that produces a running widget, with the 22px reserved for the window chrome already accounted for
-- **`npm run pack:widget -- <dir>`** — packs a folder into a `.lattice` file (a deterministic zip) that anyone can drag into their window
-- **Media control** — widgets can read and drive the Windows media session (SMTC): what is playing, play/pause, next, previous
-- **A debug panel** (`Ctrl+Shift+D`) — every bridge call with its duration and error code, plus every `console.log` from inside the sandbox, live in one drawer
+**The platform ships empty.** The 15 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
 
-v0.5 is about **distribution**. There is no server, so the answer is not "build a store backend" but "the catalogue is a static JSON file and the packages are signed":
+So is the absence of a server. The catalogue is a static `registry.json`, the packages are signed files, the hosting is GitHub Pages, and updates are a release asset. When a design starts to need a backend, the design is wrong — that constraint is argued out in [docs/ROADMAP.md](./docs/ROADMAP.md), not assumed.
 
-- **A widget catalogue** — one `registry.json` plus a set of `.lattice` packages. The app reads the official catalogue by default (a static file on GitHub Pages) and the source is switchable in settings; the copy bundled with the app is only an **offline fallback**, and the UI says so when it is used
-- **Three checks, in order** — the package digest matches the catalogue → its ed25519 signature verifies against `publisher.key` → that key equals **the one pinned locally the first time this widget was installed**. The first two catch corruption and forgery; only the third catches "start a new key and swap the catalogue too". A key change needs the user's explicit nod, with both fingerprints on screen
-- **Update and roll back** — the old version is copied to a single backup slot before an overwrite, and the card grows a `Back to x.y.z`. Rolling back **swaps** the two directories rather than copying, so the button works in both directions
-- **Ratings and reports** — five stars, plus a report written to a local file. With no server there is no "submitted": the dialog tells you where the file is and you send it to the author yourself
-- **New permissions are re-confirmed** — a version that asks for more does not get it silently, and the widget is not disabled either: it keeps working, and a banner that does not auto-dismiss stays until you pick `Allow` or `×`
+## Where it stands
 
-```bash
-npm run store:index                              # pack + sign + write the catalogue
-npm run sign:widget -- --gen-key --out my.key    # your own publishing key
-```
+v0.9 is the current version: **sound you can see, links that get out.** The music widget was renamed from `lattice.media` to `lattice.music` (it reads *what is playing* before it reads *how loud*), the player name is translated from AUMID into something a person recognises, the card was re-laid-out for its real 268 × 172 budget, and two capabilities landed: `audio:level` — a WASAPI loopback tap on the default output device that returns one number in `0..1` — and `shell:open`, which hands an http/https URL to the default browser and nothing else. `lattice.bookmarks` is the widget that proves it.
 
-The current UI, with the settings menu open:
-
-![The platform UI](docs/screenshot-settings.png)
-
-## Widgets really sit on the desktop
-
-![Widgets floating on the desktop](docs/screenshot-desktop.png)
-
-A real screenshot: the note on the left, hidden behind a normal window, is `layer: desktop`; the to-do list in the middle, on top of that window, is `layer: top`; the countdown is on the right.
-
-After "Send to desktop":
-
-- Every Placement becomes its own `WebviewWindow` loading `widget-host.html`, which then hosts a sandboxed iframe — **the desktop window and the canvas preview run the same bridge and the same permission checks**, so there is no "works in preview, breaks on the desktop" fork
-- `layer: desktop` widgets are parented to WorkerW (falling back to `HWND_BOTTOM`), below normal windows; `layer: top` widgets use `HWND_TOPMOST`
-- Windows are frameless, stay out of the taskbar, use `WS_EX_NOACTIVATE` so they never steal focus, and are clipped to rounded corners with `SetWindowRgn`
-- Dragging or re-layering on the canvas still moves the real window (120 ms debounced incremental sync)
-
-## Desktop windows you can handle directly
-
-![Desktop widget with its chrome](docs/screenshot-chrome.png)
-
-Hover a widget on the desktop and a row of controls fades in at its top-right corner. These are **drawn by the host page, not by the widget** — a widget never has to think about how it gets moved:
-
-| Icon | What it does |
+| Version | What it added |
 | --- | --- |
-| ⣿ Drag | Hold to move the window. Pointer capture keeps the drag alive even outside the window or the screen |
-| ↓ / ↑ Layer | Toggle between "on the desktop" and "on top"; applies to the Win32 z-order immediately |
-| ⚲ Pin | Lock position and size. While pinned, dragging and all eight resize handles are disabled and the cursor turns back to an arrow |
-| ✕ Close | Close the window and remove the placement from the canvas (not just hide it) |
+| **v0.1** | The skeleton: Tauri + React shell, canvas, sandboxed iframes, the bridge |
+| **v0.2** | A real desktop: `desktop` / `top` layers, per-placement windows, chrome, data on disk |
+| **v0.3** | Platform behaviour: tray, start with Windows, pause-all, live reload, crash recovery, occlusion, DPI clamping, snap guides on the canvas *and* the desktop |
+| **v0.4** | Author experience: `@lattice/sdk`, `create:widget`, `pack:widget`, SMTC media, the `Ctrl+Shift+D` debug drawer |
+| **v0.5** | Distribution: static catalogue, three signature checks, update + rollback, local ratings and reports, permission re-review |
+| **v0.6** | The catalogue goes public on GitHub Pages, with a disk cache, `If-None-Match`, and an honest offline fallback |
+| **v0.7** | Delivery: NSIS installer, in-app updater, draft-first releases, and the SmartScreen problem written down instead of hidden |
+| **v0.8** | Agent access: an opt-in loopback HTTP endpoint, a token, an audit log, 8 allowlisted actions, and an activity board widget |
+| **v0.9** | `lattice.music`, `audio:level`, `lattice.bookmarks`, `shell:open` |
 
-Eight resize handles hug the edges, with 18px of clearance at the corners: once the window is clipped to rounded corners, the pixels outside the arc do not belong to the window at all, so the handles have to sit inboard to be clickable.
+**By the numbers**
 
-On release the window rect is reported back to the main window and stored in `desktopRects`, which **takes priority on the next send** instead of recomputing from canvas coordinates.
+| Metric | Value |
+| --- | --- |
+| Official widgets | 15 |
+| Permissions | 9 |
+| Tauri commands | 48 |
+| Browser assertions | 1 357 over 36 pages |
+| Rust tests | 157 |
+| Documented pitfalls | 69 |
 
-## The backplate is yours to tune
+Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 136 `rustc --test` pure-logic cases plus 21 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
-![Three backplates](docs/screenshot-backplate.png)
+## Two hosts, one bridge
 
-Colour, fill and blur are per-instance sliders in the inspector — the widget itself never knows they exist:
+The same widget appears in two places, and the platform refuses to let them drift:
 
-- **Colour** — a swatch (native picker) plus R / G / B sliders, or `Auto` to follow the light / dark theme
-- **Fill** — 0 to 1. Not window transparency: at `1` the card is solid, at `0` you see only frosted wallpaper
-- **Blur** — 0 to 40 px, continuous
+- On the canvas it is an iframe inside the main window (`WidgetFrame.tsx`). On the desktop it is a `WebviewWindow` loading `widget-host.html`, which hosts the *same kind* of sandboxed iframe. Both call the same bridge handler with the same method table and the same permission gates, so there is no "works in preview, breaks on the desktop" fork — that fork is a bug, not a feature.
+- Authorization is by **window reference**, not origin: sandboxed documents all have the origin `"null"`, so `event.source === iframe.contentWindow` is the only thing that distinguishes one instance from another.
+- Permissions are granted per `widgetId` ("do you trust this code?"), configuration is per `instanceId` ("how should *this* copy look?"). Two clocks can show 12 and 24 hour time; you still approve the widget once.
+- Both hosts render the first frame from defaults and *then* ask the bridge. A slow host is a three-second blank card otherwise — the most common way a widget looks broken without being broken.
 
-Text, muted text, borders and the accent colour all flip together based on how bright the resulting card is, so a white backplate gets dark type and a navy one gets light type — without touching widget code.
+<p align="center"><a href="docs/screenshot-editor.png"><img src="docs/screenshot-editor.png" width="900" alt="The main window: widget library, canvas and inspector"></a></p>
 
-Under the hood the host page stacks three layers: a bitmap of the desktop (`PrintWindow(Progman)`, wallpaper and icons only, cropped to the window) blurred with CSS `filter: blur()`, an `rgba(tint, fill)` veil over it, and the widget iframe on top. The chrome pill keeps its own fixed neutral palette instead of following the backplate — it is platform UI, not your canvas.
+<p align="center"><sub>The main window: library on the left, canvas in the middle, inspector on the right, with the clock selected. Canvas previews are an approximation — there is no wallpaper to sample inside a window, so the backplate there is a computed blend.</sub></p>
 
-## Options belong to the copy, not the widget
+## The desktop is a surface, not a preview
 
-![Per-instance options in the inspector](docs/screenshot-options.png)
+<p align="center"><a href="docs/screenshot-chrome.png"><img src="docs/screenshot-chrome.png" width="330" alt="A desktop widget with its window chrome"></a></p>
 
-Anything a widget wants you to tune — 12/24-hour clock, target date, how many rows — is declared in its manifest and rendered by the inspector. The widget draws no settings UI of its own, and each copy on your desktop keeps its own values:
+<p align="center"><sub>A clock on the desktop with the chrome revealed: drag, layer, pin, reload, close — drawn by the host page, never by the widget.</sub></p>
 
-- Two clocks can run in different formats; two countdowns can point at different dates
-- Changing an option updates the running widget in place — no reload, so a half-written note is never thrown away
-- A value the manifest got wrong (out of range, wrong type, a date that does not exist) silently falls back to the shipped default instead of reaching the widget
-- Five field types cover what widgets actually need: `toggle`, `number`, `text`, `select`, `date`
+- **Layers.** `layer: desktop` windows are parented to WorkerW and sit below normal windows; `layer: top` windows use `HWND_TOPMOST`. Both are frameless, absent from the taskbar, and use `WS_EX_NOACTIVATE` so clicking one never steals focus from what you were typing in. Corners are clipped with `SetWindowRgn`, matching the canvas radius.
+- **Chrome that does not steal the card.** The pill reserves 120 px in the top-right corner (96 px on the to-do list), it fades in on hover, and every official widget spends that budget in its CSS — the card size in a manifest is a budget, not a design canvas.
+- **Snap guides, in both places.** Dragging a widget snaps it to its neighbours and to the container edges, one winner per axis. The guide is drawn as a local dashed segment centred on the dragged card, reaching half a card plus 48 px in each direction — no full-screen crosshair. On the desktop those lines are two 1 px layered windows with per-pixel alpha on their own message thread, *not* a transparent WebView2 window, which cannot be created on software-rendered machines.
+- **Invisible means stopped.** Heartbeats live on one schedule; when a window is hidden the whole timeline stops and catches up with a single tick on return. "Hidden" has two sources on purpose: `document.visibilityState` is useless here — a minimised window still reports `visible` — so Rust observes it and pushes `lattice:window-visible`. A third source covers the case nobody notices: every 1.5 s nine points inside the window are asked `WindowFromPoint`, and if all nine land on somebody else's window, a maximised browser counts as hiding your widget.
+- **It stays where you put it.** Positions are clamped to the monitor the widget is on, in physical pixels end to end, so mixed-DPI setups do not lose cards off-screen or shrink them by half.
 
-`Clock` and `Countdown` ship this way — the old in-card `24-hour` button and date picker are gone, and both now tick on the platform scheduler instead of `setInterval`, so they stop when the window is hidden.
+## Backplate: the platform owns the surface
 
-## When a widget breaks, you can see why
+<p align="center"><a href="docs/screenshot-backplate.png"><img src="docs/screenshot-backplate.png" width="860" alt="The same clock in three backplates"></a></p>
 
-![A missing file and a thrown exception](docs/screenshot-diagnostics.png)
+<p align="center"><sub>The same clock three ways: <code>auto</code>, a solid light tint, and 35% fill with blur over the wallpaper. Colour, fill and blur are per-instance sliders in the inspector.</sub></p>
 
-A blank card used to be the only symptom, and it never told you whether the entry file was missing or your first line threw. Now there are two different answers:
+The widget's own CSS never sees the wallpaper. The host window paints three layers behind the iframe — a screenshot of the wallpaper, blurred; a veil tinted from the theme; the widget — and adapts the contrast. Widgets therefore only ever use tokens (`--lattice-text`, `--lattice-accent`, `--lattice-border`), never hard-coded colours, because the platform flips them wholesale when the surface turns light. Under the factory setting (`auto`) it overrides nothing: the default look is pixel-identical to the feature not existing.
 
-- **A readable page instead of a blank body.** `File not found` / `Widget not installed` / `File could not be read`, with the widget id, the requested path, the folder that was searched, and what to fix. Sub-resource requests still get an empty body — handing HTML to `fetch("data.json")` only trades one confusing failure for another.
-- **An error card for anything your script throws.** The host page can't read errors inside a sandboxed iframe (opaque origin), so the reporter is injected into the HTML at delivery time — by the protocol for widgets you install, by the build for the bundled ones. Same reporter source, so bundled and third-party widgets behave identically. Errors come back with message, `file:line:column` and a collapsible stack. Script exceptions outrank missing images — the image usually failed *because* of the exception.
-- **Reload without restarting anything — usually without asking.** Saving a widget's files reloads it on its own: both widget roots are watched with `ReadDirectoryChangesW`, debounced to 300 ms of quiet (one save fires three or four change events, and a fixed timer would turn it into two reloads and a visible flicker). Only the widgets whose files changed are reloaded, so your half-written note is never thrown away. When you want it by hand: fifth button in the chrome pill, plus `Reload` on the error card and on the canvas strip.
+That trade has a visible cost, and it is written down rather than papered over: the blur is the *wallpaper*, not the windows behind the widget, because the system's blur radius is fixed. You can have a continuous slider or a real see-through pane, not both.
 
-The reporter is compressed to a single line before injection, because `event.lineno` counts lines in the document — a multi-line snippet would push every inline script's line numbers down (a real bug here: line 15 reported as `index.html:67:25`).
+## One widget, many copies: per-instance options
 
-## A widget that dies comes back by itself
+<p align="center"><a href="docs/screenshot-inspector.png"><img src="docs/screenshot-inspector.png" width="380" alt="The inspector with one card selected"></a></p>
 
-A sandboxed iframe is still a renderer process, and renderer processes die: a driver reset, an out-of-memory widget, a GPU hiccup. A blank card that stays blank until you notice is the wrong answer for something meant to live on your desktop for weeks.
+<p align="center"><sub>The inspector with one card selected: layer, click-through, backplate, size, the widget's own options, and its permissions.</sub></p>
 
-`ICoreWebView2::add_ProcessFailed` gives the process failure kind, and the decision is deliberately narrow:
+A widget declares its options in its manifest — `toggle`, `number`, `text`, `select`, `date` — and the platform renders them in the inspector, per instance. The widget never draws its own settings UI: a card is a few hundred pixels wide at most, and preferences saved per widget would be shared by every copy of it. Missing values fall back to the declared defaults, and illegal values are rejected, in exactly one place (`resolveConfig`), so the canvas and the desktop cannot disagree. Changing a config value pushes `config-changed` and does **not** reload the widget; only a permission change reloads, because a widget that was denied a capability may have written "permission denied" into its own DOM and has to start over.
 
-- **`render` and `gpu` are reloaded.** Those are the ones where rebuilding the webview actually fixes it
-- **`browser` is not.** That is the whole WebView2 process; reloading would just crash again in place
-- **Everything else is reported once** and left alone — no reload storms
-- **At most three reloads per minute.** A widget that crashes on every load would otherwise become a once-a-second reload loop: CPU pegged, log flooded, and the user unable to work out which widget it is
-- **After giving up, it tells you.** A bar appears at the bottom of the main window — `Clock keeps crashing — its window stopped reloading.` with a `Try again` button, because "silently gone" is the one outcome nobody can debug
+## When a widget breaks
 
-The reload happens on a separate thread 120 ms later; rebuilding the window inside the failure callback deadlocks WebView2.
+Errors are a separate channel from the bridge, deliberately. `__lattice_diag` and `__lattice` are two different messages; both hosts check for an error report before a bridge request, and the report is validated structurally *after* the source check — otherwise a widget could forge an error to win a reply from the host. A missing entry file comes back as a readable page instead of a blank body: `File not found` with the widget id, the path it asked for, the folder that was searched, and the line in `manifest.json` to fix. A renderer crash reloads itself up to three times in a minute, then stops trying and offers a **Try again** bar instead of spinning forever. Saving a widget's files reloads it in place (300 ms of silence, debounced, capped at 2 s, suppressed during installs), so editing CSS does not mean deleting the card and dragging it back.
 
-## The network is opt-in, per widget
+## The sandbox boundary
 
-Sandboxed widgets cannot reach the network by default — not through `fetch`, not by navigating. A widget that genuinely needs it declares hosts in its manifest and the user grants `network`; then every request goes out through the platform over the RPC bridge:
+Every capability is a permission, and every permission is a gate in `runtime/bridge.ts` before a single byte reaches Rust.
 
-```json
-{
-  "permissions": ["network"],
-  "network": { "hosts": ["api.example.com", "127.0.0.1:8787"] }
-}
-```
-
-Three gates in order: the permission, then the host, then the request shape (method, ≤32 headers, ≤256 KB up, ≤1 MB down). Four decisions worth knowing:
-
-- **No wildcards.** `*.example.com` would turn "this one endpoint" into "the whole domain", and the permission panel shows a single word — the user cannot audit what they allowed. List the hosts
-- **The port is part of the identity.** `127.0.0.1:8787` is not `127.0.0.1`. Otherwise "let it reach my local dev server" means "let it reach every port on my machine"
-- **Redirects are not followed** (`WINHTTP_OPTION_REDIRECT_POLICY_NEVER`). Following a 302 hands the whitelist to whoever owns the first host: allow `a.com`, and `a.com` forwards your payload to `evil.com`. The 302 comes back to the widget as a response, and if the widget wants to go there it has to pass the whitelist again
-- **It goes over IPC, not a localhost proxy.** Opening a port on `127.0.0.1` would leave a path the widget can `fetch` directly, with nothing in the way; the bridge is a channel only the host page can speak on
-
-This opens one door; it does not unlock the others. The widget CSP and the navigation intercept still hold, so a widget still cannot stuff data into a URL and navigate away with it.
-
-## The layout is genuinely remembered
-
-The platform does not persist through `localStorage`: on this machine WebView2 keeps it entirely in memory, and it is gone the moment the process exits. So state is written to files:
-
-```
-%APPDATA%\com.iron-tom.lattice\
-  state.json                      placements, installed, grants, theme, desktop rects, catalogue, pinned keys, ratings
-  widget-data\lattice.note.json   per-widget storage, one file per package
-  widget-backups\lattice.clock\   previous generation, one per widget (for rollback)
-  reports\lattice.clock-1712.json ratings and reports, written as files, never uploaded
-```
-
-Writes go through "temp file + atomic replace", so a power cut halfway through cannot leave a truncated JSON behind. Widget storage takes the same path (the `storage.get / set / remove` bridge methods sit on top of Rust file I/O), which is why the note text and the ticked to-dos are still there after a restart.
-
-## How this project grew
-
-From skeleton to genuinely-on-the-desktop in a single day. The code-size steps and every "torn down and rebuilt" are in the [ROADMAP](./docs/ROADMAP.md); here are the conclusions:
-
-| Time | Milestone | Frontend / Rust / CSS (lines) |
+| Permission | What it unlocks | Asked for by |
 | --- | --- | --- |
-| 02:40 | Skeleton: manifest, bridge, permissions, canvas | 1,268 / 358 / 548 |
-| 09:54 | First runnable demo | 1,553 / 358 / 680 |
-| 11:22 | Widgets really on the desktop | 1,782 / 712 / 680 |
-| 12:31 | Window chrome + file-backed state | 2,282 / 1,123 / 868 |
-| v0.2 | Third-party protocol, typing, storage sync, settings, collapsible panels, widget icons | 3,433 / 1,649 / 1,834 |
-| v0.3 | Tray, autostart, pause-all, live reload, crash recovery, network whitelist, mixed-DPI clamp | 6,469 / 5,716 / 2,561 |
-| v0.4 | SDK, scaffold, `.lattice` packing, media control, debug panel | 7,119 / 6,488 / 2,791 |
-| v0.5 | Catalogue, signature checks, update + rollback, ratings and reports, permission re-review | 9,026 / 7,477 / 3,102 |
+| `clock` | The system clock, as an absolute instant | Clock, Countdown |
+| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 10 of the 15 |
+| `clipboard:write` | Put text on the clipboard | Calculator |
+| `network` | HTTP requests to the hosts listed in the manifest | Weather |
+| `system:monitor` | CPU, memory, disk, network, uptime | System monitor |
+| `media:control` | Read and drive the Windows media session (SMTC) | Music |
+| `audio:level` | One number in `0..1`: how loud the output is | Music |
+| `shell:open` | Hand an http/https URL to the default browser | Bookmarks |
+| `agent:activity` | Read the agent's audit log | Agent board |
 
-More interesting than the numbers are the **eight overturned decisions**: per-pixel transparency that could not work, a `localStorage` that never reached disk, `NOACTIVATE` making the note untypeable, the host page building the wrong URL for user widgets, two instances each holding their own list and eating the to-dos, a self-managed window table that deadlocked itself, and so on. Each one records why it was chosen, what knocked it over, how it was fixed, and what it cost.
+<p align="center"><a href="docs/screenshot-permission.png"><img src="docs/screenshot-permission.png" width="380" alt="A card asking for a permission it was not granted"></a></p>
 
-The 67 entries in "Pitfalls" are a by-product of the same process, and the most valuable part of this repository — they record the temper of this particular machine, not general dogma. One of them took an afternoon: `WinHttpSendRequest` takes its header length in **characters** while the registry APIs next door take **bytes**, and passing bytes makes every request with a custom header fail with nothing but `ERROR_INVALID_PARAMETER (87)`.
+<p align="center"><sub>A widget that reaches for a capability it was not granted says so on the card, by name; one <code>Grant</code> covers the set, and the widget re-initialises.</sub></p>
 
-## The platform is empty
+Three of those deserve their own paragraph, because "it has the permission" is never the whole story.
 
-Open it for the first time and the desktop has nothing on it — like a fresh VS Code with no extensions.
+**`network` is an allowlist, not a switch.** A request passes three gates in a fixed order: the permission exists → the target host is listed in `manifest.network.hosts` → the request shape is legal (method, header count, body size). There are no wildcards, on purpose: `*.example.com` turns "I allowed this one endpoint" into "I allowed the whole domain", and the permission panel only shows one line — the user could not review what they approved. A port is part of the host's identity, and redirects are never followed: following a 302 from an allowed host to an unfriendly one would hand the allowlist to whoever controls the first hop. Requests travel over IPC rather than a local HTTP proxy, because a proxy port would be a second, unaudited way out.
 
-- **The core contains no widgets**: canvas, window layer, widget host, permission system, install/uninstall, library, settings
-- **Official widgets get no privileges**: the packages under `public/widgets` go through exactly the same manifest, sandbox and permission bridge as third-party ones. They are "already on your disk", not "compiled into the kernel"
-- **Discovery ≠ installation**: `bundled` packages must be installed explicitly; `user` packages (under `%APPDATA%`) count as installed as soon as they exist on disk
-- **The library is searchable**: one field above the list filters by name, id, description, author or permission — so "which widget can read system metrics?" is one word away
-- **The library folds**: installed, available and catalogue are three collapsible groups, and everything installable is gathered into one "Can be installed" block with a single *Install all* — a dozen packages no longer push the first card off screen
-- **Every widget explains itself**: a widget's own how-to lives in its manifest, so it travels with the package. Read it from the inspector, or from the `?` on its library card, together with a short "what changed" history
+**`shell:open` opens exactly one kind of door.** `tauri-plugin-opener` passes the string straight to `ShellExecuteW`, which does *not* validate schemes — `file:` would hand a local file to its default program, `ms-settings:` would jump to a Windows privacy page. So the protocol allowlist (`http` / `https` only) lives in `open_policy.rs`, in front of the plugin, and the widget's own normalisation of what the user typed is a second, independent check. It does not weaken the navigation block: a widget's document still cannot navigate itself away to smuggle data into a URL.
 
-The full argument is in [ARCHITECTURE](./docs/ARCHITECTURE.md) (Chinese).
+**`audio:level` is one number.** A background thread captures the default output device with WASAPI loopback and computes RMS → decibels → a `0..1` envelope with a release curve. The command only reads the latest value. No buffer, no audio content, nothing to reconstruct — the only version of "show me the sound" that is safe to ship.
 
-## Permissions are visible
-
-When a widget hits a capability it has not been granted, the canvas shows a prompt and grants everything it needs in one go, after which the widget re-initialises:
-
-![Permission prompt](docs/screenshot-permission.png)
-
-The sandboxed iframe **omits `allow-same-origin`**, so widgets get an opaque origin: no access to the host DOM, no usable `localStorage`, and requests go out with `Origin: null`. Apart from the bridge, it can do nothing. The bridge authenticates by comparing `event.source` against the iframe reference rather than `event.origin` — every sandboxed iframe reports the origin string `"null"`, so it cannot tell instances apart.
-
-`network` is the one permission that is not a single yes/no: it also needs a host list in the manifest, and the grant alone gets a widget nowhere (see [above](#the-network-is-opt-in-per-widget)). Every other permission maps to a bridge method, and the inspector greys out anything the platform does not implement yet instead of letting you grant something that would do nothing.
-
-## Stack
-
-| Layer | Choice | Why |
-| --- | --- | --- |
-| Shell / windows | Tauri 2 + `windows-sys` | A resident app is memory-sensitive, and Win32 behaviour has to be called directly |
-| UI | React 19 + TypeScript | Matches the widget ecosystem |
-| Build | Vite 8 | Fast, and aligned with the official Tauri template |
-| State | Zustand + a custom persistence adapter | Platform state is shallow; the storage layer is swapped for files to dodge WebView2's in-memory `localStorage` |
-| Styling | Plain CSS + CSS variables | A bespoke workspace is easier to control with a variable layer than with utility classes |
-| Widget runtime | Sandboxed iframe + postMessage RPC | See [ARCHITECTURE](./docs/ARCHITECTURE.md) (Chinese) |
-
-## Getting started
+## Distribution without a server
 
 ```bash
-npm install
-npm run dev           # browser demo: http://localhost:1420
-npm run tauri:dev     # full desktop app (first run compiles Rust)
-npm run tauri:build   # installer: src-tauri/target/release/bundle/nsis
+npm run store:index                               # pack + sign every widget, write the catalogue
+npm run sign:widget -- --gen-key --out my.key     # your own publisher key
 ```
 
-Requirements: Node ≥ 20, a Rust toolchain, WebView2 (bundled with Windows 11).
+The catalogue is a JSON index. The packages are `.lattice` files — deterministic zips. Installing one runs three checks in this order:
 
-> To just look at the demo, use `npm run dev` — no Rust needed. The desktop build currently needs `windres` (mingw binutils) or an MSVC toolchain; see the environment notes in the ROADMAP.
+1. The SHA-256 of the bytes matches the digest in the catalogue.
+2. The ed25519 signature verifies against `publisher.key`.
+3. That key equals **the one pinned locally the first time this widget was installed**.
 
-## Installing and updating
+The first two catch corruption and forgery. Only the third catches "generate a new key and swap the catalogue too", which is why a key change needs an explicit nod with both fingerprints on screen. The catalogue itself is unsigned — it is an index, and it must stay incapable of driving behaviour.
 
-Releases ship as an NSIS installer. Two things are worth knowing before you run one:
+Updates copy the old version into a single backup slot first, and the card grows a `Back to x.y.z`. Rolling back **swaps** the two directories rather than copying, so the button works in both directions instead of getting stuck after two presses. Ratings and reports are local files: with no server there is no "submitted", so the dialog tells you where the file is and you send it to the author yourself. A new version that asks for more permissions gets neither a silent yes nor a disabled widget — it keeps working, with a banner that does not auto-dismiss until you answer it.
 
-- **Windows will warn you.** The installer is not code-signed yet, so SmartScreen shows "unknown publisher" the first time. That is a missing certificate, not a broken build — [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) (Chinese) explains why this project does not buy one and what it does instead. Until then every release carries a SHA-256 of the installer, so you can check that what you downloaded is what CI built.
-- **Lattice updates itself.** Settings → **Check for updates** asks the release page for `latest.json`, verifies the minisign signature against the public key baked into the binary, downloads, installs, and restarts. There is no background polling — it only checks when you ask.
+The same three ideas carry the default source: `registry.json` on GitHub Pages, fetched with `If-None-Match`, cached to disk, and — when the network is gone — served from the last good copy with a line saying how old it is ("Showing the catalogue from 3 hours ago"). The copy bundled with the app is only the last resort, and the UI says so when it is in use, because its packages are signed with a different key.
 
-Widgets update through a completely separate path (catalogue JSON + signed `.lattice` packages); see the catalogue section above. The two share the "static files + signatures + no server" idea and nothing else.
+## Agent access
 
-To cut a release: bump the version in `package.json` **and** `src-tauri/tauri.conf.json` (they must match the tag), push a `v*` tag, and CI produces a **draft** release on `windows-latest`. Publishing that draft is the moment every installed copy can see it — `/releases/latest` only points at published releases.
+[docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) has the threat model; this is the shape of it.
 
-If you are taking over this repository (or you are a different model / person), read [AGENTS.md](./AGENTS.md) first: a one-page map, sixteen invariants, recipes for common changes, and the "do not half-fix" known gaps. It is written in Chinese, as are the design docs.
+The endpoint is **off by default**. When you switch it on, Lattice binds an HTTP server to `127.0.0.1` on a system-assigned port, writes `endpoint.json` (address plus a token) into `%APPDATA%\com.iron-tom.lattice\agent\`, and deletes that file on exit. Requests need the bearer token, compared in constant time, and every call lands in an audit log — including the rejected ones.
 
-## Layout
+Eight actions are allowlisted, and the list is a test: `placement.add`, `placement.move`, `placement.resize`, `placement.remove`, `placement.pin`, `placement.front`, `theme.set`, `widgets.pause`. Plus `say`, which is not an action but a line of voice: 500 characters, single line, **rejected rather than truncated** when it does not fit.
 
+```bash
+npm run agent -- ping
+npm run agent -- state
+npm run agent -- say "focus mode for the next hour"
+npm run agent -- act theme.set --args '{"theme":"dark"}'
+npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 ```
-AGENTS.md            Onboarding: read this first
-LICENSE              MIT
-src/
-  platform/          Platform shell: canvas, library, store, inspector, settings, autostart, state
-  runtime/           Widget runtime: manifest, registry, RPC bridge, scheduler, screen fit, semver, catalogue
-public/widgets/      Official widget packages (only "available" until installed)
-public/store/        Offline-fallback catalogue (generated at build time: registry.json + signed packages)
-examples/counter/    Third-party sample (drag it in to install)
-tests/               Self-check pages: 34 pages, 1110 assertions, all in the browser (+1 fixture page)
-scripts/             Build helpers (widget index, store index, signing, toolchain PATH, diagnostics injection)
-src-tauri/
-  src/widgets.rs     Widget scanning / install / uninstall
-  src/runner.rs      Runtime: Placement → real window incremental sync, chrome callbacks, pause
-  src/protocol.rs    lattice-widget static file server (user widget HTML/CSS/JS)
-  src/network.rs     Egress proxy over WinHTTP: permission → host whitelist → shape
-  src/signature.rs   ed25519 verification + sha256 (the first two checks when installing)
-  src/backup.rs      Backup before an overwrite and rollback (a swap, one generation only)
-  src/store.rs       Store commands: load catalogue (cached, ETag), download package, verify + install, write report
-  src/catalogue_policy.rs  Catalogue cache format: file name, encode/decode, ETag picking, failure text
-  src/crash.rs       ProcessFailed handling: classify, count, reload, give up, tell the user
-  src/watch.rs       Widget directory watching (ReadDirectoryChangesW, debounced)
-  src/autostart.rs   HKCU Run entry: read, write, repair a stale path
-  src/tray.rs        Tray icon: open / pause all / quit
-  src/desktop.rs     Layering, rounded clipping, click-through, focus, z-order guard (Win32)
-  src/state.rs       Platform state on disk (state.json, atomic replace)
-  src/widget_store.rs Per-widget storage on disk (widget-data/<id>.json)
-  installer-hooks.nsh NSIS hook: remove the Run entry on uninstall
-docs/
-  ARCHITECTURE.md    Architecture and trade-offs
-  WIDGET_SPEC.md     Widget spec (read this to write one; publishing and signing in §9)
-  ROADMAP.md         Progress, iteration timeline, overturned decisions, pitfalls
-  VELA-REUSE.md      What can be borrowed from the sibling project (vela-cleanroom)
-```
+
+The client is a couple hundred lines of zero-dependency Node: it reads that endpoint file and nothing else. The `lattice.agent` widget is the read side — it calls `agent.activity` and renders the latest actions from the log, so you can see what the machine did on your behalf without opening a terminal.
 
 ## Writing a widget
 
-```
-public/widgets/lattice.hello/
-  manifest.json
-  index.html
-  icon.svg
-  widget.js
-```
+Four files and no build step:
 
-```json
-{
-  "id": "lattice.hello",
-  "name": "Hello",
-  "version": "0.1.0",
-  "entry": "index.html",
-  "icon": "icon.svg",
-  "size": { "w": 200, "h": 100, "minW": 120, "minH": 60 },
-  "layer": "desktop",
-  "permissions": ["clock"]
-}
+```
+demo.mine/
+  manifest.json    id (reverse-domain), version (semver), permissions, size, config, help
+  index.html       entry point, transparent background
+  widget.js        your code — the SDK is a copied file, not an npm install
+  style.css        tokens only, no hard-coded colours
 ```
 
-Widgets call platform capabilities with `parent.postMessage({ __lattice: 1, type: "request", id, method, params }, "*")`; the full protocol is in [WIDGET\_SPEC](./docs/WIDGET_SPEC.md). Run `npm run widgets:index` afterwards so the platform discovers the new widget.
+```js
+import { createLattice } from "./sdk/lattice.js";
 
-You can skip the boilerplate: `npm run create:widget -- demo.mine` writes the manifest, a page, a stylesheet, an icon and a widget script that already ticks, and `@lattice/sdk` (`packages/sdk`) wraps the bridge so a storage write is one `await` instead of a `postMessage` plus a promise map. The SDK is optional on purpose — every bundled widget under `public/widgets` is hand-written, and they are the proof.
+const lattice = createLattice();
 
-**Widgets that are not shipped with the app need no repository change**: drag the whole folder from Explorer into a Lattice window and it is installed — files are copied to `%APPDATA%\com.iron-tom.lattice\widgets\<id>\` and loaded over the `lattice-widget` protocol. [`examples/counter`](./examples/counter) is a sample you can drag straight in.
+// First paint from defaults. Never wait for the bridge before drawing.
+render({ text: "New note", size: 16 });
 
-To hand a widget to someone else, pack it first: `npm run pack:widget -- examples/counter` writes `dist-packs/counter.lattice`, and that single file installs the same way when dropped in. The pack is deterministic (sorted entries, fixed timestamp), so the same folder always produces the same bytes — which is what makes "is this the package I shipped?" answerable, and what the signature check is built on.
+const note = await lattice.storage.get("note");
+if (note) render(note);
 
-To publish it in the catalogue, run `npm run store:index`: it packs, signs and writes `registry.json`. For the **public** catalogue (`lattice-registry`), use `npm run publish:widget -- <dir> --key <private key>` — it packs, signs, rebuilds the catalogue and ends by telling you exactly which files to commit. **The version number is what counts** — users only see "update available" when `version` goes up. The signing rules and the key-change flow are in [WIDGET_SPEC](./docs/WIDGET_SPEC.md) §9 (the doc is in Chinese).
+lattice.storage.onChange(async () => render(await lattice.storage.get("note")));
+lattice.on("theme", () => render());   // tokens are already applied to :root
+```
+
+Three habits the platform will punish you for skipping:
+
+- **Use `schedule.every`, never `setInterval`.** A raw timer keeps ticking while the widget is invisible, which defeats the whole pause story, and the schedule is the only thing that knows about visibility.
+- **Respect the chrome budget.** The pill floats over your content and is clickable. Reserve `padding-right: 96px` (or a 24 px status strip) or your first line goes under the close button.
+- **Declare your options in the manifest.** The inspector renders them per instance; a settings UI drawn inside the card is a settings UI nobody can use.
+
+```bash
+npm run create:widget -- demo.mine    # scaffold, already chrome-aware
+npm run pack:widget -- demo.mine      # folder → .lattice, drag straight into the window
+```
+
+[`examples/counter`](./examples/counter) is the reference implementation. [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) is the contract: the full method table, the config field types, the manifest rules, and the traps that only show up once a widget is real — native form controls, a transparent background, the space the chrome eats. The SDK source and its one-page manual live in [`packages/sdk`](./packages/sdk); every widget carries a copy at `sdk/lattice.js`, kept in sync by `npm run sdk:sync` and checked by `npm run test:sdk`.
+
+## Install and build
+
+A build needs Node 20.19+ (or 22.12+), Rust (the `windows-gnu` toolchain) and the WebView2 runtime — all standard [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/).
+
+```bash
+npm install
+npm run dev          # front end only, http://localhost:1420 — everything but "send to desktop"
+npm run tauri:dev    # the real app
+npm run tauri:build  # NSIS installer + updater artifacts
+```
+
+Use the wrapper scripts, not `npx tauri`: `scripts/tauri.mjs` puts the bundled `mingw64` and the `gcc` shim on `PATH`, and compiling around it fails in `resource.rc` instead of telling you why.
+
+The checks, in the order CI runs them:
+
+```bash
+npm run typecheck        # tsc --noEmit
+npm run test:injection   # the diagnostics reporter is injected identically on both paths
+npm run test:sdk         # every embedded SDK copy matches packages/sdk
+npm run test:agent       # the agent client's request shape and exit codes
+npm run test:browser     # 1 357 assertions over 36 pages, real Chrome, real dev server
+```
+
+The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.
+
+Release: push a `v*` tag. Actions builds on `windows-latest`, signs the updater artifacts, appends SHA-256 sums to the notes, and creates a **draft** release — publishing by hand is what keeps a broken build from reaching everyone at once. The installer is not code-signed yet, so the first run is a SmartScreen "unknown publisher" prompt; that is a purchasing problem, not a technical one, and it sits in the known-gaps table instead of being quietly ignored.
+
+## The repository
+
+```
+src/                 React shell, canvas, inspector, settings, store
+  runtime/           manifest · config · bridge · schedule · catalogue · agent · guides (pure logic)
+public/widgets/      the 15 official packages
+public/store/        the bundled catalogue (generated, not committed)
+packages/sdk/        @lattice/sdk — the single source of truth for the widget API
+examples/counter/    a drag-and-drop sample widget
+scripts/             widget index, scaffold, pack, sign, store index, agent CLI, tauri wrapper
+src-tauri/src/       40+ modules, each split into a Win32 shell and a pure-logic policy with tests
+tests/               browser assertion pages
+docs/                architecture, widget spec, roadmap, code signing, agent access
+```
+
+**Code, roughly**
+
+| Area | Lines |
+| --- | --- |
+| TypeScript | 11 500 lines |
+| CSS | 3 444 lines |
+| Rust | 11 108 lines |
+| SDK | 742 lines |
+| Widgets + example | 13 151 lines |
+| Scripts | 2 352 lines |
+
+**Read next**
+
+| Document | What it answers |
+| --- | --- |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | How the pieces fit, and why |
+| [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) | The widget contract |
+| [docs/ROADMAP.md](./docs/ROADMAP.md) | Version history, 69 pitfalls, 8 overturned decisions |
+| [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | The agent endpoint's threat model |
+| [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | Keys, trust anchors, what is *not* signed |
+| [AGENTS.md](./AGENTS.md) | 18 invariants, written for whoever touches this next |
+
+If you read only one thing before changing code, read the invariants in [AGENTS.md](./AGENTS.md). They are not style preferences — each one is a bug that shipped.
 
 ## License
 
-[MIT](./LICENSE)
+MIT — see [LICENSE](./LICENSE).

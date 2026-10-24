@@ -1,330 +1,287 @@
-# 棂 · Lattice
+<div align="center">
 
-[![ci](https://github.com/unraveltao/lattice/actions/workflows/ci.yml/badge.svg)](https://github.com/unraveltao/lattice/actions/workflows/ci.yml)
+<h1>棂 · Lattice</h1>
 
-[English](./README.md) · 中文
+<p><strong>用纯 HTML 写的 Windows 桌面小组件。</strong><br>
+剩下的事平台来做：真窗口、沙箱、权限、安装与更新。<br>
+整条链路上没有一个服务端。</p>
 
-可扩展的 Windows 桌面小组件平台。第三方用 HTML / CSS / JS 写组件，平台负责把它们安全地放到桌面上。
+<p>
+<a href="https://github.com/unraveltao/lattice/actions/workflows/ci.yml"><img src="https://github.com/unraveltao/lattice/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
+<a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b82f6.svg" alt="MIT license"></a>
+<a href="#安装与构建"><img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D4.svg" alt="Windows 10 / 11"></a>
+</p>
 
-> 棂（líng）是窗格上的木格。桌面上的每一个格子，都是一个可以自己长出来的小组件。
+<p><a href="./README.md">English</a> · 中文</p>
 
-## 现状
+<p><a href="docs/screenshot-desktop.png"><img src="docs/screenshot-desktop.png" width="900" alt="干净壁纸上的三个组件：时钟、待办、书签"></a></p>
 
-v0.5 是**能分发**的版本：写组件、装组件、更新组件这三件事现在都有正经的路。平台开箱是空白的，安装官方组件包后把组件摆到画布上，组件在沙箱 iframe 里真实运行，通过 RPC 桥调用平台能力，权限逐项授予。点"投放到桌面"，每个组件变成一个独立的无边框窗口，主窗口最小化退场。
+<p><sub>平台自带的三个组件 —— 时钟、待办、书签 —— 从运行中的应用按 2× 截下来，<br>
+摆在干净的壁纸上。画面里没有任何人真实桌面的东西。</sub></p>
 
-落到桌面上之后，窗口能拖、能缩、能用别针锁住，布局与组件数据重启不丢。顶栏右上角是设置：明暗、网格吸附、重启恢复、开机自启、暂停全部组件、本机档案——登录只写本地 `state.json`，不上传、不联网。
+</div>
 
-它也开始像一个"要一直挂着"的东西了：
+---
 
-- **有托盘**，主窗口收起来之后也找得到——打开、暂停全部组件、退出
-- **开机自启**（写一个 `Run` 注册表项，卸载时删掉）
-- **暂停全部组件**一次把桌面窗口全藏起来；心跳跟着停，不是只把画面藏了
-- **渲染进程崩了自己回来**——一分钟内最多重载三次，之后不再重试，改成在底部弹一条 `Try again`
-- **组件文件存盘即重载**，不用重启、不用点重载按钮
+## 这是什么
 
-第三方组件也能用：把整个文件夹拖进窗口就装好了，文件落在 `%APPDATA%`，经 `lattice-widget` 协议加载。[`examples/counter`](./examples/counter) 是一个可以直接拖进去的样本。
+棂（líng）是窗户里那层木格栅 —— 每一块玻璃都嵌在它里面。
 
-两侧面板都能收成 40px 竖条，把整块画布让出来；每个组件包也可以自带图标——组件库卡片、画布标题条、属性面板画的都是它，不再是"名字首字"的色块。
+Lattice 是给"你自己写的组件"用的外壳。一个组件就是一个目录：`index.html`、一份样式、一份脚本，加一份 `manifest.json` 说明"我可能要什么"。把目录拖进窗口就装好了，拷到 `%APPDATA%` 下，由自己的协议伺服；拖到画布上就能看到它跑起来，点 **投放到桌面**，它变成一个无边框窗口，重启还在原位。
 
-v0.4 补的是**写组件那一侧**，不是用组件那一侧：
+关键在于上面那句"变成一个窗口"。组件从头到尾碰不到 Windows。它跑在一个 `sandbox="allow-scripts allow-forms"` 的 iframe 里，源是不透明的，CSP 把它钉在自己的文件上；它拥有的每一项能力都是一次过桥请求 —— `clock` 拿时间、`storage` 用自己那份小数据库、`network` 访问一份白名单里的主机，等等。一共九项权限，默认一项都不给，**装一个组件也不会顺带给它任何权限**：每项能力由你按组件批一次，撤掉一项对已经开着的窗口当场生效。
 
-- **`@lattice/sdk`** —— 零依赖的 ES module，把桥包起来（请求配对、超时、带 `code` 的错误、主题令牌、存储、心跳）。它是一个**拷到你组件目录里的普通文件**，不是 `npm install`——"组件不用构建"这个前提保住了
-- **`npm run create:widget -- demo.mine`** —— 脚手架，一次生成能跑起来的组件，连窗饰要占的那 22px 都让好了
-- **`npm run pack:widget -- <目录>`** —— 把目录打成一个 `.lattice`（确定性的 zip），谁都能拖进自己窗口装上
-- **媒体控制** —— 组件能读也能按 Windows 的媒体会话（SMTC）：现在在放什么、播放/暂停、上一首、下一首
-- **调试面板**（`Ctrl+Shift+D`）—— 每一次桥调用（耗时、错误码）和沙箱里每一条 `console.log`，实时滚在一条抽屉里
+**平台本身是空的。** 15 个官方组件和第三方组件一样，都是从组件库里显式装进来的普通包 —— 它们没有被编进应用，也不会自动装上。这是"扩展平台"和"桌面小工具"的分界线，也是 [AGENTS.md](./AGENTS.md) 里的第一条不变量。
 
-v0.5 补的是**分发**。这个平台没有服务端，所以答案不是"搭一个商店后台"，而是"目录是一份静态 JSON，包是签名过的文件"：
+没有服务端也是同一件事。目录是一份静态的 `registry.json`，包是签过名的文件，托管是 GitHub Pages，更新是一个 release 附件。一旦某个设计开始需要后端，那说明设计选错了 —— 这条约束在 [docs/ROADMAP.md](./docs/ROADMAP.md) 里论证过，不是默认前提。
 
-- **组件商店** —— 一份 `registry.json` + 一批 `.lattice` 包。默认读线上那份官方目录（就是 GitHub Pages 上的一个静态文件），换源在设置里；随应用发的那份内置目录退成**断网兜底**，界面会写明"这是随应用带的"
-- **签名是三道校验** —— 包的摘要对得上 → ed25519 签名验得过 → 那把钥匙等于**这个组件第一次安装时钉在本地的**。前两道挡损坏和伪造，第三道才挡得住"另起一把钥匙、连目录一起换掉"。换钥匙要用户点头，界面上同时印出两把指纹
-- **更新与回滚** —— 覆盖安装前把旧版本备份成一代，卡片上出现 `Back to x.y.z`。回滚是**交换**不是复制，所以按钮可以按两次、两个方向都成立
-- **评分与举报** —— 五颗星，加一份写在本地的报告文件。没有服务端，所以没有"提交"这回事：对话框直接告诉你文件存在哪儿，你自己发给作者
-- **新权限要重新确认** —— 更新后多出来的权限不自动授予，也不禁用组件：照旧能用，底部弹一条不会自己消失的横幅，直到你点 `Allow` 或 `×`
+## 现在到哪了
 
-```bash
-npm run store:index                              # 打包 + 签名 + 写目录
-npm run sign:widget -- --gen-key --out my.key    # 生成你自己的发布密钥
-```
+当前版本 v0.9：**声音看得见、链接出得去。** 音乐组件从 `lattice.media` 改名为 `lattice.music`（它先回答"在放什么"，再回答"有多响"），播放器名字从 AUMID 翻成人话，卡片按真实的 268 × 172 预算重排；同时落下两项能力：`audio:level`（对默认输出设备做 WASAPI 回环采集，只回一个 `0..1` 的数）和 `shell:open`（把 http/https 地址交给默认浏览器，此外什么都不做）。`lattice.bookmarks` 就是验证它俩的那个组件。
 
-现在的界面（设置菜单展开）：
-
-![平台界面](docs/screenshot-settings.png)
-
-## 组件真的在桌面上
-
-![组件浮在桌面上](docs/screenshot-desktop.png)
-
-上图是实机截图：左边被普通窗口挡住的便签是 `layer: desktop`，中间压在窗口之上的待办是 `layer: top`，右边是倒计时。
-
-"投放到桌面"之后：
-
-- 每个 Placement 变成一个独立的 `WebviewWindow`，加载 `widget-host.html`，再由它套一层沙箱 iframe——**桌面窗口和画布预览跑的是同一套桥、同一套权限校验**，不会出现"预览能用、桌面上不能用"的分叉
-- `layer: desktop` 的组件挂到 WorkerW（拿不到时降级 `HWND_BOTTOM`），沉在普通窗口之下；`layer: top` 的走 `HWND_TOPMOST`
-- 窗口无边框、不进任务栏、`WS_EX_NOACTIVATE` 不抢焦点，形状由 `SetWindowRgn` 裁成圆角
-- 画布上继续拖动、改层级，桌面窗口跟着走（120ms 防抖增量同步）
-
-## 桌面窗口能直接摆弄
-
-![桌面组件与窗饰](docs/screenshot-chrome.png)
-
-组件浮在桌面上之后，把鼠标移到它身上，右上角浮出一排功能图标——这些是**宿主页画的，不是组件画的**，组件完全不用操心自己怎么被搬动：
-
-| 图标 | 做什么 |
+| 版本 | 加了什么 |
 | --- | --- |
-| ⣿ 拖动 | 按住搬窗口。用 `setPointerCapture` 跟踪指针，拖出窗口甚至拖出屏幕都不会断线 |
-| ↓ / ↑ 层级 | 在"贴桌面"与"置顶"之间切换，立刻作用到 Win32 的 z-order |
-| ⚲ 别针 | 锁住位置与大小。锁上之后拖拽和八条缩放手柄整体禁用，光标也跟着变成默认箭头 |
-| ✕ 收回 | 关掉这个窗口，并把 placement 从画布上删掉（不是藏起来） |
+| **v0.1** | 骨架：Tauri + React 外壳、画布、沙箱 iframe、桥 |
+| **v0.2** | 真的桌面：`desktop` / `top` 两层、每份投放一个窗口、窗饰、数据落盘 |
+| **v0.3** | 平台行为：托盘、开机自启、暂停全部、热重载、崩溃恢复、遮挡判定、DPI 夹紧、画布与桌面两套对齐参考线 |
+| **v0.4** | 作者体验：`@lattice/sdk`、`create:widget`、`pack:widget`、SMTC 媒体、`Ctrl+Shift+D` 调试抽屉 |
+| **v0.5** | 分发：静态目录、三道签名校验、更新与回滚、本地评分与举报、新权限复核 |
+| **v0.6** | 目录上公网（GitHub Pages），带磁盘缓存、`If-None-Match`，以及一个会把话说清楚的断网兜底 |
+| **v0.7** | 交付：NSIS 安装包、应用内更新、先出草稿的发布流程，以及把 SmartScreen 这件事写下来而不是藏起来 |
+| **v0.8** | Agent 接入：默认关的回环 HTTP 端点、令牌、审计日志、8 个白名单动作，以及一块看板组件 |
+| **v0.9** | `lattice.music`、`audio:level`、`lattice.bookmarks`、`shell:open` |
 
-八向缩放手柄贴着窗口边，四个角给了 18px 的余量——窗口被裁成圆角之后，圆角弧线外侧那几个像素压根不属于这个窗口，手柄得往里让一截才点得到。
+**几个数字**
 
-松手时窗口矩形会报回主窗口存进 `desktopRects`，**下次投放优先用它**，而不是从画布坐标重新推。
+| 项 | 数值 |
+| --- | --- |
+| 官方组件 | 15 个 |
+| 权限 | 9 项 |
+| Tauri 命令 | 48 条 |
+| 浏览器断言 | 36 个页面、1357 条 |
+| Rust 单测 | 157 条 |
+| 记下来的坑 | 69 个 |
 
-## 底板可以自己调
+每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；157 条 Rust 单测分成 136 条 `rustc --test` 的纯逻辑和 21 条要完整 `cargo test` 的；69 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
 
-![三种底板](docs/screenshot-backplate.png)
+## 两个宿主，一套桥
 
-颜色、浓度、模糊是属性面板里按实例调的三条滑杆 —— 组件本身完全不知道它们存在：
+同一个组件出现在两个地方，而平台不允许这两处飘开：
 
-- **颜色** —— 色块（点开是系统取色器）+ R / G / B 三条滑杆，或者 `Auto` 跟随明暗主题
-- **浓度** —— 0 到 1。不是窗口透明度：`1` 是纯色实心，`0` 只剩糊掉的壁纸
-- **模糊** —— 0 到 40px，连续滑杆
+- 在画布上它是主窗口里的一个 iframe（`WidgetFrame.tsx`）；在桌面上它是一个加载 `widget-host.html` 的 `WebviewWindow`，里面装的是**同一种**沙箱 iframe。两边调的是同一个桥、同一张方法表、同一套权限闸门 —— 所以不存在"预览能用、桌面不能用"的分叉，那种分叉是 bug，不是特性。
+- 鉴权靠**窗口引用**，不靠 origin：沙箱文档的 origin 全是 `"null"`，只有 `event.source === iframe.contentWindow` 能分出是哪一个实例。
+- 权限按 `widgetId` 授予（问的是"你信不信任这段代码"），配置按 `instanceId`（问的是"这一份要怎么显示"）。两个时钟可以一个 12 小时制一个 24 小时制，而你只需要信任这个组件一次。
+- 两个宿主都先按默认值画第一帧，**再**去问桥。反过来的话，宿主慢一点就是三秒钟的空白卡片 —— 这是"组件看着坏了其实没坏"最常见的一种。
 
-字色、次要字色、描边和强调色会按"这块卡片最后有多亮"一起翻转：白底板配深字，藏青底板配浅字，组件代码一行都不用改。
+<p align="center"><a href="docs/screenshot-editor.png"><img src="docs/screenshot-editor.png" width="900" alt="主窗口：组件库、画布与属性面板"></a></p>
 
-底下是三层叠出来的：桌面层截图（`PrintWindow(Progman)`，只有壁纸和图标，按窗口位置裁一块）用 CSS `filter: blur()` 糊开，上面盖一层 `rgba(底色, 浓度)`，最上面才是组件 iframe。右上角那排按钮不吃底板的色 —— 它是平台的界面，不是你的画布。
+<p align="center"><sub>主窗口：左边组件库、中间画布、右边属性面板，选中的是时钟。画布上的预览只是近似 —— 窗口里没有壁纸可采样，那里的底板是算出来的合成色。</sub></p>
 
-## 配置属于这一份，不属于这个组件
+## 桌面是画布，不是预览
 
-![属性面板里的每实例配置](docs/screenshot-options.png)
+<p align="center"><a href="docs/screenshot-chrome.png"><img src="docs/screenshot-chrome.png" width="330" alt="桌面上的组件和它的窗饰"></a></p>
 
-组件想让你调的东西（12/24 小时制、目标日期、显示几条……）都写在清单里，由属性面板渲染表单。组件自己一行设置 UI 都不用画，而且桌面上每一份的值各归各的：
+<p align="center"><sub>桌面上的时钟，窗饰已经露出来：拖动、层级、钉住、重载、关闭 —— 全部由宿主页画，组件自己一概不碰。</sub></p>
 
-- 两个时钟可以一个 24 小时制、一个 12 小时制；两个倒计时可以指向不同的日子
-- 改一项配置，正在跑的组件当场跟着变 —— **不重载**，所以写了一半的便签不会被冲掉
-- 清单写坏了的值（越界、类型不对、不存在的日期）静默退回出厂值，不会递到组件手里
-- 五类字段够用：`toggle` / `number` / `text` / `select` / `date`
+- **两个层级。** `layer: desktop` 的窗口挂到 WorkerW 下、压在普通窗口之下；`layer: top` 用 `HWND_TOPMOST`。两者都无边框、不进任务栏、带 `WS_EX_NOACTIVATE`，点它不会把你正在打字的地方抢走；圆角用 `SetWindowRgn` 裁，半径和画布上的卡片一致。
+- **窗饰不抢卡片。** 胶囊在右上角占掉 120px（待办是 96px），悬停淡入，每个官方组件都在 CSS 里把这笔预算花掉了 —— 清单里的卡片尺寸是预算，不是设计稿。
+- **两套对齐参考线。** 拖动时吸附到邻居和容器边界，每条轴只挑一条获胜线；参考线画成一段以被拖卡片为中心的局部虚线，两端各伸出"半个卡 + 48px"，而不是整屏十字。桌面上那两条线是两个 1px 的叠层窗口，逐像素 alpha，跑在自己的消息线程上 —— **不是**透明 WebView2 窗口，那个在软件渲染的机器上根本建不出来。
+- **看不见就别跑。** 心跳全挂在同一条时间轴上，窗口藏起来整条轴停摆，回来只补一拍。"藏起来"故意有两个来源：`document.visibilityState` 在这里没用 —— 窗口最小化之后它照样报 `visible` —— 所以由 Rust 观测再推 `lattice:window-visible`。还有第三个来源，管的是没人会想到的那种：每 1.5 秒在窗口里取九个点问 `WindowFromPoint`，九个点全落在别人的窗口上，浏览器最大化也算把你的组件挡住了。
+- **摆哪儿就在哪儿。** 位置锚在组件所在的那块屏上、全程物理像素，混合 DPI 下既不会把卡片丢到屏幕外，也不会把它缩掉一半。
 
-`Clock` 和 `Countdown` 已经这么发了：卡片上那颗 `24-hour` 按钮和原生日期控件都没了，两个组件同时从 `setInterval` 迁到了平台调度器 —— 窗口收起来就停。
+## 底板：界面归平台
 
-## 每个组件自己会说怎么用
+<p align="center"><a href="docs/screenshot-backplate.png"><img src="docs/screenshot-backplate.png" width="860" alt="同一个时钟的三种底板"></a></p>
 
-组件总有点自己的脾气：待办的优先级圆点要连点三下才转一圈、专注计时器关盖十分钟回来时间还是对的、天气断网了为什么还显示数字。这些写不进一行配置说明里。
+<p align="center"><sub>同一个时钟的三种样子：<code>auto</code>、纯色浅底板、35% 浓度加模糊压在壁纸上。颜色、浓度、模糊都是属性面板里按实例的滑杆。</sub></p>
 
-所以清单多了两段：`help`（分节正文）和 `changelog`（面向用户的变更记录）。它出现在两个地方，内容只有一份 —— 属性面板里一段可折叠的 `How to use · 5`，组件库卡片右上角一颗 `?`（没写说明的组件不画这颗按钮）。
+组件自己的 CSS 永远看不到壁纸。宿主窗口在 iframe 后面画三层 —— 壁纸截图加模糊、跟主题走的底色遮罩、组件本体 —— 并跟着调对比度。所以组件里只用令牌（`--lattice-text`、`--lattice-accent`、`--lattice-border`），不写死颜色：底板一变浅，平台会把这些整体翻一遍。出厂外观（`auto`）下平台**什么都不覆盖**，默认样子和没有这个功能时一像素不差。
 
-- **放清单，不放 Markdown**：组件是纯静态目录，平台没有 Markdown 渲染器，也没有运行时依赖。写进清单就跟着包走 —— 同目录、同提交、同签名，离线能看，第三方组件一样能用。
-- **写坏了只丢那一条**：一节没标题、一条是空串、版本号不合法，丢它，包照常加载。说明是锦上添花，不该有让组件打不开的权力。
-- **上限是真截断**：6 节 × 6 条 × 160 字。320px 面板里读得完才叫说明。
-- **有测试盯着它别烂掉**：`tests/help.html` 会把每个清单真的读出来，查"没写说明的组件是否正好等于待补名单"、"写了说明的是否有当前版本那一条变更"、"每个配置项是否都被交代过"。
+这个取舍有看得见的代价，而且写下来了：模糊的是**壁纸**，不是组件后面的窗口，因为系统的模糊半径是写死的。想要连续滑杆和真正的透视，只能二选一。
 
-## 组件坏了，你能看出来
+## 一个组件，多份实例：按实例的配置
 
-![缺文件和抛异常两种](docs/screenshot-diagnostics.png)
+<p align="center"><a href="docs/screenshot-inspector.png"><img src="docs/screenshot-inspector.png" width="380" alt="选中一张卡片后的属性面板"></a></p>
 
-以前只有一种表现：白屏。而且它从来不告诉你到底是入口文件没装，还是你的第一行就抛了。现在有两个不同的回答：
+<p align="center"><sub>选中一张卡片后的属性面板：层级、穿透、底板、尺寸、组件自己的配置项，以及它的权限。</sub></p>
 
-- **一页能读的说明，而不是空 body。** `File not found` / `Widget not installed` / `File could not be read`，带上组件 id、请求路径、找过的目录、该怎么修。子资源请求还是空 body —— 往 `fetch("data.json")` 里塞 HTML，只是把一个看不懂的失败换成另一个。
-- **脚本抛什么都有一张错误卡。** 宿主读不到沙箱 iframe 里的异常（不透明源），所以上报脚本是在**发文档的那一刻**注进去的 —— 你装的组件由协议层注，官方组件由构建管线注。两边读的是同一份源码，所以内置和第三方组件的行为一模一样。错误带着消息、`文件:行:列`、可展开的堆栈回来。脚本异常压过图片加载失败 —— 图片通常正是**因为**那个异常才失败的。
-- **重载，不用重启任何东西——通常也不用你开口。** 组件文件一存盘它自己就重载：两个组件根目录都用 `ReadDirectoryChangesW` 盯着，去抖按"安静 300ms"算（存一次盘会连出三四个事件，用固定窗口会变成重载两次、界面闪一下）。**只重载文件变了的那些组件**，所以你写了一半的便签不会被冲掉。想手动来一下：窗饰第 5 颗按钮，加上错误卡和画布错误条上的 `Reload`。
+组件在清单里声明自己的配置项 —— `toggle`、`number`、`text`、`select`、`date` —— 由平台在属性面板按实例渲染。组件不自己画设置界面：卡片最大也就两三百像素宽，而且按组件存的偏好会被每一份实例共享。缺的字段补出厂值、非法值退回出厂值，只在 `resolveConfig` 一处合并，所以画布和桌面不可能显示出两套。改配置推 `config-changed`，**不重载**组件；只有权限变化才重载 —— 因为一个被拒过权限的组件很可能已经把"没有权限"写进了自己的 DOM，必须从头来过。
 
-上报脚本在注入前会被压成一行：`event.lineno` 数的是文档里的行，多占一行就会把组件里所有内联脚本的行号整体推后（这里真踩过 —— 第 15 行抛的错报成了 `index.html:67:25`）。
+## 组件坏掉的时候
 
-## 组件崩了自己回来
+错误通道和桥是两条，这是故意的。`__lattice_diag` 和 `__lattice` 是两种消息；两个宿主都是**先认错误、再认桥**，而结构校验排在来源校验**之后** —— 顺序反了，组件就能靠伪造一条"错误"骗到宿主的一次回话。入口文件没了不会留一块白：给的是能读的一页 `File not found`，写着组件 id、它要的路径、找过的目录，以及 `manifest.json` 里该改的那一行。渲染进程崩了自己重载，一分钟内最多三次，之后不再试，改给一条 **Try again** 的横幅，而不是一直转圈。存一下组件的文件就原地重载（静默 300ms 去抖、上限 2s、安装期间抑制），所以改 CSS 不用删掉卡片再拖一次。
 
-沙箱 iframe 说到底还是一个渲染进程，而渲染进程是会死的：显卡驱动重置、组件把内存吃光、GPU 抽一下。对"要在桌面上挂几个星期"的东西来说，"白着一张卡片等你发现"是错的答案。
+## 沙箱的边界
 
-`ICoreWebView2::add_ProcessFailed` 会给出失败类型，判定故意做得很窄：
+每一项能力都是一项权限，每一项权限都是 `runtime/bridge.ts` 里的一道闸，一个字节都到不了 Rust。
 
-- **`render` 和 `gpu` 才重载**，这两种重建 webview 是真的能修好
-- **`browser` 不重载**，那是整个 WebView2 进程，重载只会原地再崩
-- **其余类型只上报一次**，然后不动——不会变成重载风暴
-- **一分钟最多三次**，否则一个"每次加载都崩"的组件会变成每秒一次的重载循环：CPU 打满、日志刷屏，用户还看不出来是哪个组件
-- **放弃之后要告诉人**：主窗口底部弹一条 `Clock keeps crashing — its window stopped reloading.`，带一个 `Try again`。因为"静默消失"是唯一没法查的结果
-
-重载在另一个线程上延 120ms 做——在崩溃回调里同步重建窗口会把 WebView2 卡死。
-
-## 联网是按组件的白名单
-
-沙箱组件默认上不了网，`fetch` 不行、导航也不行。真需要联网的组件在清单里声明主机，用户再授予 `network`，之后每个请求都经 RPC 桥由平台代发：
-
-```json
-{
-  "permissions": ["network"],
-  "network": { "hosts": ["api.example.com", "127.0.0.1:8787"] }
-}
-```
-
-三道闸按顺序过：权限、主机、请求形状（方法、≤32 个头、上行 ≤256 KB、下行 ≤1 MB）。四个决定值得记一下：
-
-- **没有通配符。** `*.example.com` 会把"我允许这一个接口"变成"我允许整个域"，而权限面板只显示一个词——用户没法审阅自己到底放行了什么。要几个就列几个
-- **端口算身份的一部分。** `127.0.0.1:8787` 不等于 `127.0.0.1`。否则"允许它访问我本地的调试服务"就等于"允许它访问我机器上所有端口"
-- **不跟随重定向**（`WINHTTP_OPTION_REDIRECT_POLICY_NEVER`）。跟随 302 等于把白名单交给第一个主机的主人：放行 `a.com`，`a.com` 把你的数据转到 `evil.com`。现在 302 原样交回组件，组件真要去那儿，就得再过一遍白名单
-- **走 IPC，不搭本地 HTTP 代理。** 在 `127.0.0.1` 上开个端口，等于给组件留了一条它能直接 `fetch` 的路，中间什么都没有；桥只有宿主页能说话
-
-这是**加了一扇门，不是拆了别的门**：组件的 CSP 和导航拦截照旧生效，组件仍然不能把数据拼进 URL 导航出去。
-
-## 布局是真的记住了
-
-平台的落盘不用 `localStorage`：这台机器上的 WebView2 把它整个放在内存里，进程一退就没了。改成显式写文件：
-
-```
-%APPDATA%\com.iron-tom.lattice\
-  state.json                  摆放、已安装、授权、主题、桌面矩形、目录地址、钉住的发布者钥匙、评分
-  widget-data\lattice.note.json   组件私有存储，一个包一个文件
-  widget-backups\lattice.clock\   上一代（回滚用），一个组件一代
-  reports\lattice.clock-1712.json 举报与评分，存成文件，不会自动上传
-```
-
-写入走"临时文件 + 原子替换"，写到一半断电也不会留下半截 JSON。组件私有存储也走同一条路（`storage.get / set / remove` 三个桥方法背后是 Rust 的文件读写），所以便签里的字、待办里的勾，重启之后都还在。
-
-## 这个项目是怎么长出来的
-
-一天之内，从骨架到真的贴在桌面上。代码量的台阶和每次"推翻重来"都记在 [ROADMAP](./docs/ROADMAP.md) 里，这里只放结论：
-
-| 时间 | 里程碑 | 前端 / Rust / 样式（行） |
+| 权限 | 换到什么 | 谁在用 |
 | --- | --- | --- |
-| 02:40 | 骨架：清单、桥、权限、画布 | 1 268 / 358 / 548 |
-| 09:54 | 第一个能跑的 demo | 1 553 / 358 / 680 |
-| 11:22 | 组件真的贴到桌面 | 1 782 / 712 / 680 |
-| 12:31 | 窗饰 + 状态落盘 | 2 282 / 1 123 / 868 |
-| v0.2 | 用户组件协议、可输入、存储同步、设置、面板收起与组件图标 | 3 433 / 1 649 / 1 834 |
-| v0.3 | 托盘、自启、暂停全部、存盘即重载、崩溃自恢复、联网白名单、混合 DPI 夹紧 | 6 469 / 5 716 / 2 561 |
-| v0.4 | SDK、脚手架、`.lattice` 打包、媒体控制、调试面板 | 7 119 / 6 488 / 2 791 |
-| v0.5 | 商店目录、签名校验、更新与回滚、评分与举报、新权限复核 | 9 026 / 7 477 / 3 102 |
+| `clock` | 系统时钟，给的是绝对时刻 | 时钟、倒计时 |
+| `storage` | 一份私有的键值文件 `widget-data/<widgetId>.json` | 15 个里的 10 个 |
+| `clipboard:write` | 往剪贴板写文本 | 计算器 |
+| `network` | 向清单里列出的主机发 HTTP 请求 | 天气 |
+| `system:monitor` | CPU、内存、磁盘、网络、开机时长 | 系统监控 |
+| `media:control` | 读并驱动 Windows 媒体会话（SMTC） | 音乐 |
+| `audio:level` | 一个 `0..1` 的数：输出有多响 | 音乐 |
+| `shell:open` | 把 http/https 地址交给默认浏览器 | 书签 |
+| `agent:activity` | 读 agent 的审计日志 | Agent 看板 |
 
-比数字更有意思的是**八个被推翻的决定**：逐像素透明做不出来、`localStorage` 不落盘、`NOACTIVATE` 让便签打不了字、宿主页拼不对用户组件的路径、两个实例各持一份列表把待办吃掉、自己维护窗口表把自己锁死……每一个都写着当初为什么这么选、被什么撞翻、现在怎么补、代价是什么。
+<p align="center"><a href="docs/screenshot-permission.png"><img src="docs/screenshot-permission.png" width="380" alt="卡片在要一项没被授予的权限"></a></p>
 
-那 67 条「踩过的坑」是同一个过程的副产品，也是这个仓库最值钱的部分——它记的是这台机器的脾气，不是通用教条。其中有一条花了一个下午：`WinHttpSendRequest` 的头长度收的是**字符数**，而隔壁那几个注册表 API 收的是**字节数**；传成字节数，每个带自定义头的请求都失败，`GetLastError()` 只给一个 `ERROR_INVALID_PARAMETER (87)`。
+<p align="center"><sub>卡片碰到一项没被授予的能力，会当场把名字说出来；一次 <code>Grant</code> 覆盖整套，然后组件重新初始化。</sub></p>
 
-## 平台是空白的
+其中三项值得单独说一段，因为"它有这个权限"从来不是全部故事。
 
-装好第一次打开，桌面上什么都没有——像刚装好的 VS Code 没有插件。
+**`network` 是白名单，不是开关。** 一次请求按固定顺序过三道闸：有 `network` 权限 → 目标主机在 `manifest.network.hosts` 里 → 请求形状合法（方法、头数量、体积）。**故意没有通配符**：`*.example.com` 会把"我允许了这一个接口"变成"我允许了整个域"，而权限面板只显示一行字 —— 用户根本没法审阅自己批准了什么。端口算主机身份的一部分；重定向一律不跟随，因为从放行的域名 302 到别的域名，等于把白名单交给第一跳的主人。请求走 IPC 而不是本地 HTTP 代理，因为一个代理端口就是第二条没人审查的出路。
 
-- **核心不含任何组件**：画布、窗口层、组件宿主、权限系统、安装卸载、组件库、设置
-- **官方组件没有特权**：`public/widgets` 下的包走和第三方完全相同的 manifest、沙箱、权限桥，只是"已经在你硬盘上"，不是"编译进了内核"
-- **发现 ≠ 安装**：`bundled` 来源必须显式安装；`user` 来源（`%APPDATA%` 下的包）在磁盘上就算已装
-- **组件库能搜**：列表上方那一格按名字、id、描述、作者、权限名过滤 —— "哪个组件能读系统指标"打一个词就够了
+**`shell:open` 只开一扇门。** `tauri-plugin-opener` 把字符串原样丢给 `ShellExecuteW`，而它**不认协议** —— `file:` 会把本地文件交给默认程序打开，`ms-settings:` 能直接翻到系统隐私页。所以协议白名单（只放 http / https）写在 `open_policy.rs` 里，卡在插件前面；组件侧把用户输入收拾干净是第二道独立的检查。这不削弱导航拦截：组件的文档仍然不能自己跳走，把数据拼进 URL 送出去。
 
-这条原则的完整论述见 [ARCHITECTURE](./docs/ARCHITECTURE.md#零内置原则)。
+**`audio:level` 只有一个数。** 后台线程对默认输出设备做 WASAPI 回环采集，算出 RMS → 分贝 → 带释放曲线的 `0..1` 包络；命令只读最新那个值。没有缓冲区、没有音频内容、没有能反推的东西 —— "把声音显示出来"只有这一版是可以发出去的。
 
-## 权限是看得见的
-
-组件撞到未授权的能力时，画布上直接弹出提示，一次授予全部所需权限，组件随即重新初始化：
-
-![权限提示](docs/screenshot-permission.png)
-
-沙箱 iframe **不含 `allow-same-origin`**，所以组件拿到的是不透明源：读不到宿主 DOM、没有可用的 `localStorage`、发出的请求带 `Origin: null`。它除了走桥，什么都做不了。桥的鉴权用 `event.source` 比对窗口引用而非 `event.origin`——沙箱 iframe 的 origin 都是字符串 `"null"`，靠它区分不出实例。
-
-`network` 是唯一不是"一个开关"的权限：除了授予，还要在清单里给出主机列表，光授权它哪儿也去不了（见[上面](#联网是按组件的白名单)）。其余权限一一对应一个桥方法，平台还没实现的那几项，属性面板会置灰并打上 `soon`，而不是让你授一个什么也不会发生的权限。
-
-## 技术栈
-
-| 层       | 选型                          | 为什么                                      |
-| ------- | --------------------------- | ---------------------------------------- |
-| 外壳 / 窗口 | Tauri 2 + `windows-sys`     | 常驻应用对内存敏感；Win32 行为要直调                    |
-| UI      | React 19 + TypeScript       | 与组件生态一致                                  |
-| 构建      | Vite 8                      | 快，且与 Tauri 官方模板对齐                        |
-| 状态      | Zustand + 自定义落盘适配器           | 平台状态很浅，不需要更重的东西；存储层换成文件，避开 WebView2 的 localStorage 内存化    |
-| 样式      | 纯 CSS + CSS 变量              | 定制工作台，变量层比工具类更可控                         |
-| 组件运行时   | 沙箱 iframe + postMessage RPC | 见 [ARCHITECTURE](./docs/ARCHITECTURE.md) |
-
-## 快速开始
+## 没有服务端的分发
 
 ```bash
-npm install
-npm run dev           # 浏览器里跑 demo：http://localhost:1420
-npm run tauri:dev     # 完整桌面应用（首次要编译 Rust）
-npm run tauri:build   # 出安装包：src-tauri/target/release/bundle/nsis
+npm run store:index                               # 打包 + 签名所有组件，写目录
+npm run sign:widget -- --gen-key --out my.key     # 生成你自己的发布者钥匙
 ```
 
-环境要求：Node ≥ 20、Rust 工具链、WebView2（Win11 自带）。
+目录是一份 JSON 索引，包是 `.lattice` 文件 —— 确定性的 zip。装一个包要按顺序过三道：
 
-> 只想看 demo 的话用 `npm run dev`，不需要 Rust。桌面端目前需要 `windres`（mingw binutils）或 MSVC 工具链，见 ROADMAP 的环境说明。
+1. 字节的 SHA-256 等于目录里写的那个摘要；
+2. ed25519 签名能被 `publisher.key` 验过；
+3. 这把钥匙等于**这个组件第一次安装时钉在本地的那把**。
 
-## 安装与更新
+前两道挡传输损坏和伪造，只有第三道挡得住"另起一把钥匙、连目录一起换掉" —— 所以换钥匙必须由你点头，界面上要同时印出两把指纹。目录自己是不签名的：它只是索引，必须保持"改坏它也驱动不了行为"。
 
-发布出去的是 NSIS 安装包。装之前有两件事值得知道：
+更新前先把旧版本拷进唯一一个备份位，卡片上长出 `Back to x.y.z`。回滚是**交换**两个目录而不是复制回来，所以那个按钮两个方向都能用，不会点两下就卡住。评分和举报都是本地文件：没有服务端就没有"已提交"这回事，对话框会告诉你文件在哪，由你自己发给作者。新版本多要权限，既不会静默同意，也不会停用组件 —— 它照旧能用，配一条不会自己消失、等你处理的横幅。
 
-- **Windows 会拦一下。** 安装包还没有代码签名证书，第一次运行 SmartScreen 会显示"未知发布者"，要手动点"仍要运行"。这是缺一张证书，不是打包坏了——为什么这个项目不买那张证书、改走哪条路，写在 [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) 里。在那之前，每个 release 都附安装包的 SHA-256，你可以自己核对下到的东西是不是 CI 产出的那一份。
-- **Lattice 会自己更新。** 设置菜单里的 **Check for updates** 去 release 页取 `latest.json`，用编译进二进制的公钥验 minisign 签名，下载、安装、重启。**没有后台轮询**——你不点，它就不查。
+默认源是同一套想法：GitHub Pages 上的 `registry.json`，带 `If-None-Match`、落磁盘缓存，断网时退回上一次成功读到的那份，并在界面上说清它有多旧（"显示的是 3 小时前读到的目录"）。随应用带的那份只是最后的兜底，用上它时界面会写明 —— 因为那份里的包是另一把钥匙签的。
 
-组件的更新走的是完全另一条路（目录 JSON + 签名过的 `.lattice` 包），见上面组件商店那一节。两者共用的只有"静态文件 + 签名 + 没有服务端"这个思路，代码路径一行都不重叠。
+## Agent 接入
 
-发一个版本：把 `package.json` 和 `src-tauri/tauri.conf.json` 里的版本号一起改（必须和 tag 一致），推一个 `v*` tag，CI 在 `windows-latest` 上产出一条**草稿** release。点发布的那一刻，所有装过的机器才看得见——`/releases/latest` 只指向已发布的 release。
+威胁模型在 [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md)，这里只说形状。
 
-接手这个仓库（或者换个模型 / 换个人接手）先读 [AGENTS.md](./AGENTS.md)：一页纸的项目地图、十六条不变量、常见改动的配方、以及"别修一半"的已知缺口。
+端点是**默认关的**。打开之后，Lattice 在 `127.0.0.1` 上绑一个系统分配端口的 HTTP 服务，把 `endpoint.json`（地址加令牌）写进 `%APPDATA%\com.iron-tom.lattice\agent\`，退出时删掉它。请求必须带 Bearer 令牌，比对是常量时间的，**每一次调用都进审计日志**，包括被拒的那些。
 
-## 目录
+白名单是 8 个动作，而这份名单本身就是一条测试：`placement.add`、`placement.move`、`placement.resize`、`placement.remove`、`placement.pin`、`placement.front`、`theme.set`、`widgets.pause`。另外还有 `say`，它不是动作而是一句话：500 字、单行，超了**直接拒掉而不是截断**。
 
+```bash
+npm run agent -- ping
+npm run agent -- state
+npm run agent -- say "接下来一小时专注模式"
+npm run agent -- act theme.set --args '{"theme":"dark"}'
+npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 ```
-AGENTS.md            接手文档：换模型 / 换人时先读这一页
-LICENSE              MIT
-src/
-  platform/          平台外壳：画布、组件库、商店、属性面板、设置、自启、平台状态
-  runtime/           组件运行时：manifest 校验、注册表、RPC 桥、调度器、屏幕夹紧、版本号、目录解析
-public/widgets/      官方组件包（未安装前只是"可安装"）
-public/store/        断网兜底的目录（构建期生成：registry.json + 签名过的包）
-examples/counter/    第三方组件样本（拖进窗口即安装）
-tests/               自检页：34 页、1110 条断言，全在浏览器里跑（另有 1 个夹具页）
-scripts/             构建辅助（组件索引、商店索引、签名、补工具链 PATH、注入上报脚本）
-src-tauri/
-  src/widgets.rs     组件包扫描 / 安装 / 卸载
-  src/runner.rs      运行态：Placement → 真实窗口的增量同步、窗口控件回传、暂停开关
-  src/protocol.rs    lattice-widget:// 静态文件服务（用户组件的 HTML/CSS/JS）
-  src/network.rs     出网代理（WinHTTP）：权限 → 主机白名单 → 请求形状
-  src/signature.rs   ed25519 验签 + sha256（装包时的前两道闸）
-  src/backup.rs      覆盖安装前的备份与回滚（回滚是交换，只留一代）
-  src/store.rs       商店命令：取目录、下载包、验签安装、写举报
-  src/crash.rs       进程失败处理：认类型、记账、重载、放弃、告诉用户
-  src/watch.rs       组件目录监听（ReadDirectoryChangesW + 去抖）
-  src/autostart.rs   HKCU Run 注册表项：读、写、修路径漂移
-  src/tray.rs        托盘图标：打开 / 暂停全部 / 退出
-  src/desktop.rs     窗口层级、圆角裁剪、鼠标穿透、焦点行为、底层守卫（Win32）
-  src/state.rs       平台状态落盘（state.json，原子替换）
-  src/widget_store.rs 组件私有存储落盘（widget-data/<id>.json）
-  installer-hooks.nsh NSIS 钩子：卸载时删掉 Run 注册表项
-docs/
-  ARCHITECTURE.md    架构与取舍
-  WIDGET_SPEC.md     组件规范（写组件看这个，发布与签名见 §9）
-  ROADMAP.md         进度、迭代时间线、被推翻的决定、踩过的坑
-  VELA-REUSE.md      邻仓 vela-cleanroom 有哪些东西能搬过来用
-```
+
+客户端是两百来行零依赖 Node：只读那个端点文件，别的不碰。`lattice.agent` 组件是读的那一侧 —— 它调 `agent.activity`，把日志里最近的动作画出来，所以不用开终端也能看见这台机器替你做了什么。
 
 ## 写一个组件
 
-```
-public/widgets/lattice.hello/
-  manifest.json
-  index.html
-  icon.svg
-  widget.js
-```
+四个文件，没有构建步骤：
 
-```json
-{
-  "id": "lattice.hello",
-  "name": "你好",
-  "version": "0.1.0",
-  "entry": "index.html",
-  "icon": "icon.svg",
-  "size": { "w": 200, "h": 100, "minW": 120, "minH": 60 },
-  "layer": "desktop",
-  "permissions": ["clock"]
-}
+```
+demo.mine/
+  manifest.json    id（反向域名）、version（语义化版本）、权限、尺寸、config、help
+  index.html       入口，背景透明
+  widget.js        你的代码 —— SDK 是拷过来的一个文件，不是 npm install
+  style.css        只用令牌，不写死颜色
 ```
 
-组件里用 `parent.postMessage({ __lattice: 1, type: "request", id, method, params }, "*")` 调平台能力，完整协议见 [WIDGET\_SPEC](./docs/WIDGET_SPEC.md)。改完执行 `npm run widgets:index` 让平台发现新组件。
+```js
+import { createLattice } from "./sdk/lattice.js";
 
-这些样板可以不写：`npm run create:widget -- demo.mine` 会一次写好清单、页面、样式、图标和已经带心跳的组件脚本；`@lattice/sdk`（`packages/sdk`）把桥包成 `await`——写一次存储不用再自己维护一张 promise 表。SDK **是可选的**，`public/widgets` 下的官方组件全部手写，它们就是"不装 SDK 也能写"的证明。
+const lattice = createLattice();
 
-写完了要发出去：`npm run pack:widget -- <目录>` 打成一个 `.lattice`（确定性 zip，谁都能拖进自己窗口装上）；要进商店就 `npm run store:index`，它会打包、签名、写目录。发到**公共目录**（`lattice-registry`）用 `npm run publish:widget -- <目录> --key <私钥>` —— 打包、签名、重建目录一次做完，最后只告诉你该提交哪几个文件。**版本号决定一切** —— 抬了 `version` 用户才会看到"可更新"，签名和换钥匙的规矩见 [WIDGET_SPEC §9](./docs/WIDGET_SPEC.md#9-发布版本与签名)。
+// 先按默认值画第一帧，绝不等桥。
+render({ text: "新便签", size: 16 });
 
-**不随应用分发的组件不用改仓库**：把整个目录从资源管理器拖进棂的窗口就装好了，文件会复制到 `%APPDATA%\com.iron-tom.lattice\widgets\<id>\`，由自定义协议 `lattice-widget://` 直接加载。[`examples/counter`](./examples/counter) 是一个可以直接拖进去的样本。
+const note = await lattice.storage.get("note");
+if (note) render(note);
 
-要发给别人，先打包：`npm run pack:widget -- examples/counter` 产出 `dist-packs/counter.lattice`，把这一个文件拖进窗口效果一样。包是**确定性**的（条目排序、时间戳固定），同一个目录打多少次字节都一样——"你手上这个包是不是我发出去的那个"才是个能回答的问题，也是以后做签名校验的前提。
+lattice.storage.onChange(async () => render(await lattice.storage.get("note")));
+lattice.on("theme", () => render());   // 令牌已经写到 :root 上了
+```
+
+三个习惯，不做就会被平台教训：
+
+- **用 `schedule.every`，不要用 `setInterval`。** 自己开的定时器在组件看不见的时候照样跑，等于把"暂停"这件事废掉一半；时间轴是唯一知道可见性的那个东西。
+- **给窗饰留位置。** 胶囊浮在你的内容上，而且**能点**。留出 `padding-right: 96px`（或者顶上一条 24px 状态条），否则第一行字就压在关闭按钮底下。
+- **配置写进清单。** 属性面板会按实例渲染它们；画在卡片里的设置界面，是没人用得上的设置界面。
+
+```bash
+npm run create:widget -- demo.mine    # 脚手架，已经给窗饰让好位置
+npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖回窗口
+```
+
+[`examples/counter`](./examples/counter) 是参考实现。[docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) 是契约：完整方法表、配置字段类型、清单规则，以及那些只有组件真的跑起来才会咬人的坑 —— 原生表单控件、透明背景、窗饰吃掉的那块地方。SDK 的源码和那一页说明在 [`packages/sdk`](./packages/sdk)；每个组件里都有一份 `sdk/lattice.js` 副本，由 `npm run sdk:sync` 同步、`npm run test:sdk` 校对所有副本一致。
+
+## 安装与构建
+
+构建需要 Node 20.19+（或 22.12+）、Rust（`windows-gnu` 工具链）和 WebView2 运行时 —— 就是标准的 [Tauri 2 前置条件](https://v2.tauri.app/start/prerequisites/)。
+
+```bash
+npm install
+npm run dev          # 只跑前端，http://localhost:1420 —— 除了"投放到桌面"都能验
+npm run tauri:dev    # 完整桌面应用
+npm run tauri:build  # NSIS 安装包 + 更新产物
+```
+
+用包装脚本，不要 `npx tauri`：`scripts/tauri.mjs` 会把自带的 `mingw64` 和 `gcc` shim 塞进 `PATH`，绕开它编译会在 `resource.rc` 上失败，而且不告诉你为什么。
+
+自检按 CI 的顺序：
+
+```bash
+npm run typecheck        # tsc --noEmit
+npm run test:injection   # 上报脚本在两条发文档的路上注入得一模一样
+npm run test:sdk         # 每份内嵌 SDK 副本都和 packages/sdk 一致
+npm run test:agent       # agent 客户端的请求形状与退出码
+npm run test:browser     # 36 个页面、1357 条断言，真 Chrome、真 dev server
+```
+
+浏览器那套是里面最有意思的。每个 `tests/*.html` 都是一张真的断言页 —— 纯逻辑（semver、config、目录、参考线、关闭守卫、屏幕夹紧）、布局预算、组件行为 —— 由 dev server 伺服，Chrome 驱动。它存在的原因是"我这儿是好的"这句话反复地说错：书签第六行实测 36px，而它的注释写着 30px，就这么被 `overflow: hidden` 静默切掉，直到有人去量。
+
+发布：推一个 `v*` 标签。Actions 在 `windows-latest` 上构建、给更新产物签名、把 SHA-256 追加到发布说明，并生成一个**草稿** release —— 手动点发布，是为了让一次坏构建不会一次性推到所有人面前。安装包还没有代码签名，所以第一次运行会被 SmartScreen 拦成"未知发布者"；这是采购问题不是技术问题，它躺在已知缺口那张表里，而不是被悄悄忽略。
+
+## 仓库
+
+```
+src/                 React 外壳、画布、属性面板、设置、状态
+  runtime/           manifest · config · bridge · schedule · catalogue · agent · guides（纯逻辑）
+public/widgets/      15 个官方组件包
+public/store/        内置目录（构建期生成，不进仓库）
+packages/sdk/        @lattice/sdk —— 组件 API 的唯一真源
+examples/counter/    一个可以直接拖进去的示例组件
+scripts/             组件索引、脚手架、打包、签名、目录生成、agent CLI、tauri 包装
+src-tauri/src/       40 多个模块，每个拆成"Win32 胶水 + 带单测的纯逻辑"
+tests/               浏览器断言页
+docs/                架构、组件规范、路线图、代码签名、agent 接入
+```
+
+**代码量，大致**
+
+| 部分 | 行数 |
+| --- | --- |
+| TypeScript | 11 500 行 |
+| CSS | 3 444 行 |
+| Rust | 11 108 行 |
+| SDK | 742 行 |
+| 官方组件 + 示例 | 13 151 行 |
+| 脚本 | 2 352 行 |
+
+**接着读**
+
+| 文档 | 它回答什么 |
+| --- | --- |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 各块怎么拼起来，以及为什么 |
+| [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) | 组件契约 |
+| [docs/ROADMAP.md](./docs/ROADMAP.md) | 版本历史、69 个坑、被推翻的 8 个决定 |
+| [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | agent 端点的威胁模型 |
+| [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | 钥匙、信任锚点、哪些东西**没有**签名 |
+| [AGENTS.md](./AGENTS.md) | 18 条不变量，写给下一个动这份代码的人 |
+
+改代码之前只读一样东西的话，读 [AGENTS.md](./AGENTS.md) 里那 18 条不变量。它们不是风格偏好 —— 每一条背后都是一个发出去过的 bug。
 
 ## 许可
 
-[MIT](./LICENSE)
+MIT —— 见 [LICENSE](./LICENSE)。
