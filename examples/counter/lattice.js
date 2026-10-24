@@ -28,6 +28,15 @@
 
 export const BRIDGE_TAG = "__lattice";
 
+/**
+ * `llm.chat` 的单次超时。
+ *
+ * 默认的 3 秒是给"宿主本地算一下"的调用用的；模型回一句话要几秒，按 3 秒
+ * 会在答到一半时先报超时 —— 而那时候请求其实已经成功，钱也花了。
+ * 比 Rust 侧的接收超时（60 秒）再宽一点，让平台先报错。
+ */
+const LLM_CHAT_TIMEOUT = 70_000;
+
 /** 桥返回的结构化错误。`code` 取值见 WIDGET_SPEC 4.4。 */
 export class LatticeError extends Error {
   constructor(code, message, permission) {
@@ -129,19 +138,26 @@ export function createLattice(options = {}) {
   /**
    * 调一个桥方法。失败一律 reject 一个 `LatticeError`，**不抛裸 Error** ——
    * 组件要靠 `code` 决定是降级还是提示授权。
+   *
+   * @param {string} method
+   * @param {object} [params]
+   * @param {number} [callTimeout] 这一次的超时，覆盖构造时的 `timeout`。
+   *   只有 `llm.chat` 这种"对面是人"的调用才需要它：模型回一句话要几秒，
+   *   按 3 秒的默认值会在答到一半时先报超时。
    */
-  function call(method, params) {
+  function call(method, params, callTimeout) {
     if (!hosted) {
       return Promise.reject(
         new LatticeError("internal", "this document is not running inside a Lattice host"),
       );
     }
+    const wait = Number.isFinite(callTimeout) ? callTimeout : timeout;
     return new Promise((resolve, reject) => {
       const id = ++sequence;
       const timer = setTimeout(() => {
         pending.delete(id);
         reject(new LatticeError("internal", "bridge call timed out: " + method));
-      }, timeout);
+      }, wait);
 
       pending.set(id, { resolve, reject, timer, method });
       post({ type: "request", id, method, params });
@@ -387,6 +403,49 @@ export function createLattice(options = {}) {
 
     /** 写剪贴板。要 `clipboard:write`。 */
     copy: (text) => call("clipboard.write", { text }),
+
+    /**
+     * 把自己这个窗口裁成这些块。**只有清单里写了 `"shape": "region"` 的组件能用**，
+     * 别的组件调了会被宿主拒（`bad_params`）。
+     *
+     * 坐标是**物理像素**、相对客户区左上角 —— 自己乘 `devicePixelRatio`。
+     * 返回 `{ ok, applied, parts }`：`applied: false` 说明这里没有窗口
+     * （主窗口画布上的预览），别再继续报。
+     *
+     * 画出来的形状必须等于上报的区域：画得比区域大 = 看得见点不到，
+     * 画得比区域小 = 没画的地方仍然挡着桌面。窗口尺寸变了要重新报。
+     *
+     * @param {Array<{kind?: "rect"|"ellipse", x: number, y: number, w: number, h: number}>} parts
+     *   最多 256 块；`w` / `h` 是宽高，不是右下角
+     */
+    setRegion: (parts) => call("window.setRegion", { parts: parts || [] }),
+
+    llm: {
+      /**
+       * 助手配好了没有。**不要权限**，也不含密钥 —— 组件据此决定显示
+       * "去设置里填个 key"还是直接开口说话。
+       *
+       * @returns {Promise<{configured: boolean, model: string}>}
+       */
+      status: () => call("llm.status"),
+
+      /**
+       * 问模型一句话。要 `llm`。
+       *
+       * 密钥留在平台侧（DPAPI），组件拿不到也传不了；地址和模型也由平台定，
+       * 组件只能决定"说什么"。上限：12 条消息 / 单条 4000 字符 / 合计 12000
+       * 字符 / 回复 300 token —— **超了是 `bad_params`，不会截断**。
+       *
+       * 超时给到 70 秒：模型回一句话本来就要几秒，按默认的 3 秒会在答到一半
+       * 时先报超时，而那时候请求其实成功了（钱也花了）。
+       *
+       * @param {Array<{role: "system"|"user"|"assistant", content: string}>} messages
+       * @param {{temperature?: number}} [options]
+       * @returns {Promise<{text: string, model: string, usage: {promptTokens: number, completionTokens: number}}>}
+       */
+      chat: (messages, options) =>
+        call("llm.chat", Object.assign({ messages }, options || {}), LLM_CHAT_TIMEOUT),
+    },
 
     /** 关掉自己这个窗口（桌面窗口）或这张卡片对应的 placement 不会被删 */
     close: () => call("window.close"),

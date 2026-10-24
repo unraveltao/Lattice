@@ -29,17 +29,12 @@ use crate::network_policy;
 
 /// 官方地址。用户可以在设置里换（镜像、代理），但**组件不能**。
 const DEFAULT_BASE: &str = "https://api.deepseek.com";
-const DEFAULT_MODEL: &str = "deepseek-chat";
-/// 只认这两个；用户换模型走设置，组件换不了
-const ALLOWED_MODELS: [&str; 2] = ["deepseek-chat", "deepseek-reasoner"];
 
-/// 一次对话的上限。这些不是"建议"——它们挡的是"一个跑飞的组件把余额刷空"
-const MAX_MESSAGES: usize = 12;
-const MAX_MESSAGE_CHARS: usize = 4_000;
-const MAX_TOTAL_CHARS: usize = 12_000;
-const MAX_TOKENS: u32 = 300;
-/// 两次请求之间至少隔这么久。宠物连着被点也只会排队，不会并发烧钱
-const MIN_INTERVAL: Duration = Duration::from_millis(700);
+// 上限、模型白名单、失败文案都在 `llm_policy` 里 —— 那部分不依赖运行时，
+// 能用 `rustc --test` 单独跑。这里只留"必须连到真实世界才能做"的事。
+use crate::llm_policy::{
+    is_allowed_model, DEFAULT_MODEL, MAX_MESSAGES, MAX_TOKENS, MIN_INTERVAL_MS,
+};
 
 const CHAT_PATH: &str = "/chat/completions";
 /// 生成类的响应允许慢一点：解析 / 连接 / 发送 / 接收
@@ -162,7 +157,7 @@ fn load(app: &AppHandle) -> Result<LlmConfig, String> {
     if config.base.trim().is_empty() {
         config.base = DEFAULT_BASE.to_string();
     }
-    if !ALLOWED_MODELS.contains(&config.model.as_str()) {
+    if !is_allowed_model(&config.model) {
         config.model = DEFAULT_MODEL.to_string();
     }
     Ok(config)
@@ -310,7 +305,7 @@ pub fn llm_set_config(
     }
 
     if let Some(model) = model {
-        if !ALLOWED_MODELS.contains(&model.as_str()) {
+        if !is_allowed_model(&model) {
             return Err(format!("unsupported model \"{model}\""));
         }
         config.model = model;
@@ -347,15 +342,6 @@ fn endpoint(config: &LlmConfig) -> String {
     format!("{}{CHAT_PATH}", base.trim_end_matches('/'))
 }
 
-fn bounded_content(value: &str) -> String {
-    let trimmed = value.trim();
-    // 逐字符截断，别让 UTF-8 边界把中文切成半个字
-    if trimmed.chars().count() <= MAX_MESSAGE_CHARS {
-        return trimmed.to_string();
-    }
-    trimmed.chars().take(MAX_MESSAGE_CHARS).collect()
-}
-
 /// 一次对话。**阻塞**在 HTTP 上，所以是 async 命令（Tauri 会把它丢到运行时线程池）。
 #[tauri::command]
 pub async fn llm_chat(
@@ -378,25 +364,23 @@ pub async fn llm_chat(
     let mut total = 0usize;
     let mut messages = Vec::with_capacity(request.messages.len());
     for message in &request.messages {
-        if !matches!(message.role.as_str(), "system" | "user" | "assistant") {
-            return Err(format!("unknown message role \"{}\"", message.role));
-        }
-        let content = bounded_content(&message.content);
+        let role = llm_policy::parse_role(&message.role)
+            .ok_or_else(|| format!("unknown message role \"{}\"", message.role))?;
+        // 只有空白就跳过（不是错误）；超长则**拒绝**，和前端一个行为
+        let content = llm_policy::trimmed(&message.content);
         if content.is_empty() {
             continue;
         }
+        llm_policy::check_message_chars(content)?;
         total += content.chars().count();
-        messages.push(serde_json::json!({ "role": message.role, "content": content }));
+        messages.push(serde_json::json!({ "role": role, "content": content }));
     }
     if messages.is_empty() {
         return Err("every message was empty".to_string());
     }
-    if total > MAX_TOTAL_CHARS {
-        return Err(format!("the conversation is longer than {MAX_TOTAL_CHARS} characters"));
-    }
+    llm_policy::check_total_chars(total)?;
 
-    // 节流：一次一条，两次之间至少 MIN_INTERVAL。
-    // 组件是被动调用的，做一个防抖就够；真正的上限在平台的余额页上
+    // 一次只许一条在飞。组件连点两下不该变成两条并发的请求
     {
         let mut in_flight = llm.in_flight.lock().map_err(|_| "the assistant is busy")?;
         if *in_flight {
@@ -415,13 +399,19 @@ pub async fn llm_chat(
     }
     let _guard = InFlight(&llm.in_flight);
 
-    if let Ok(last) = llm.last_call.lock() {
-        if let Some(last) = *last {
-            let elapsed = last.elapsed();
-            if elapsed < MIN_INTERVAL {
-                std::thread::sleep(MIN_INTERVAL - elapsed);
-            }
-        }
+    // 节流：两次请求之间至少 MIN_INTERVAL。
+    // 组件是被动调用的，做一个防抖就够；真正的上限在平台的余额页上。
+    //
+    // 这里的 `sleep` 必须搬到阻塞线程池：这是一个 `async fn`，在它里面直接
+    // `std::thread::sleep` 会把 tokio 的一个 worker 线程按住 —— 0.7 秒内所有
+    // 定时器、别的命令都跟着晚。锁也只在这段里拿，不能跨 `.await`。
+    let wait = match llm.last_call.lock() {
+        Ok(last) => last.map(|at| at.elapsed()),
+        Err(_) => None,
+    };
+    if let Some(elapsed) = wait.filter(|elapsed| *elapsed < Duration::from_millis(MIN_INTERVAL_MS)) {
+        let remaining = Duration::from_millis(MIN_INTERVAL_MS).saturating_sub(elapsed);
+        let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(remaining)).await;
     }
 
     let url = endpoint(&config);
@@ -483,22 +473,16 @@ pub async fn llm_chat(
     })
 }
 
-/// 把服务端的 `{"error":{"message":...}}` 翻成一句人能读的话。
+/// 把服务端的 `{"error":{"message":...}}` 摘出来，交给 `llm_policy` 措辞。
 ///
-/// 401 单独说清楚：那是最常见的一类失败，而"你的 key 不对"和"网络不通"
-/// 在界面上的下一步动作完全不同。
+/// 拆成两半是因为：摘 JSON 要 serde（`rustc --test` 跑不起来），措辞不要 ——
+/// 而措辞才是会被改来改去、会被产品挑毛病的那一半。401 的措辞单独说清楚：
+/// 那是最常见的一类失败，而"你的 key 不对"和"网络不通"在界面上的下一步动作
+/// 完全不同。
 fn describe_failure(status: u16, body: &str) -> String {
     let message = serde_json::from_str::<serde_json::Value>(body)
         .ok()
         .and_then(|value| value["error"]["message"].as_str().map(str::to_string))
-        .unwrap_or_else(|| body.chars().take(200).collect());
-
-    match status {
-        401 => "the API key was rejected (401) — check it in Settings".to_string(),
-        402 => format!("the account is out of balance (402): {message}"),
-        429 => format!("rate limited by the provider (429): {message}"),
-        400..=499 => format!("the provider rejected the request ({status}): {message}"),
-        500..=599 => format!("the provider is having trouble ({status}): {message}"),
-        _ => format!("the request failed ({status}): {message}"),
-    }
+        .unwrap_or_else(|| llm_policy::clip_detail(body));
+    llm_policy::failure_message(status, &message)
 }

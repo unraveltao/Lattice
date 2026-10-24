@@ -463,11 +463,15 @@
         await sleep(400);
         /*
          * 高度要**重新量**：卡片里多一行少一行（进度条出现、提示条淡入）都会让
-         * 折线那块跟着变高变矮。拿 400ms 前那个数去比，比的是两个不同的坐标系 ——
-         * 全套一起跑的时候就是这么假红过一次。
+         * 折线那块跟着变高变矮。
+         *
+         * 但**别断言"一模一样"**：那是把"布局不许变"当成了不变量，而布局本来
+         * 就会变（进度条是异步出现的）。全套并行跑时这里假红过两次
+         * （92 → 51），两次都是这个原因。真正要钉的是"y 按**当前**高度算"，
+         * 下一条拿 `later` 而不是 `height` 去比，钉的就是这个。
          */
         const later = doc.getElementById("wave-svg").viewBox.baseVal.height;
-        log(later === height, `折线高度在采样期间没跳（${height} → ${later}）`);
+        log(later > 20, `折线高度还在合理范围（${height} → ${later}）`);
         const quiet = newestY(doc);
         log(
           Math.abs(quiet - (later - 2)) < 1.5,

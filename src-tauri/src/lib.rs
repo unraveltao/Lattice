@@ -25,6 +25,7 @@ pub mod diagnostics;
 pub mod egress;
 pub mod instance;
 pub mod llm;
+pub mod llm_policy;
 pub mod media;
 pub mod metrics;
 pub mod metrics_policy;

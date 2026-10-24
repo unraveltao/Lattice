@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>llm test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      import {
+        handleBridgeRequest,
+        normalizeChatRequest,
+        publicStatus,
+        MAX_LLM_MESSAGES,
+        MAX_LLM_MESSAGE_CHARS,
+        MAX_LLM_TOTAL_CHARS,
+      } from "/src/runtime/bridge.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+
+      const bail = (error) => {
+        document.getElementById("out").innerHTML =
+          `<span class="bad">FAIL 抛错：${String((error && error.stack) || error)}</span>`;
+      };
+      window.addEventListener("error", (event) => bail(event.error));
+      window.addEventListener("unhandledrejection", (event) => bail(event.reason));
+
+      /** 抛出的 BridgeError 的 code（没抛就返回 null） */
+      function codeOf(fn) {
+        try {
+          fn();
+          return null;
+        } catch (error) {
+          return error && error.code ? error.code : String(error);
+        }
+      }
+
+      /** 走真的 handleBridgeRequest，拿回执 */
+      function callLlm(method, params, granted = []) {
+        return new Promise((resolve) => {
+          handleBridgeRequest(
+            { __lattice: 1, type: "request", id: 1, method, params },
+            {
+              instanceId: "test",
+              widgetId: "lattice.__test",
+              granted: new Set(granted),
+              config: {},
+              reply: resolve,
+              close: () => {},
+            },
+          );
+        });
+      }
+
+      // ---- 1. 上限和 Rust 侧是同一组数字 ----
+
+      {
+        // 这四个数在 src-tauri/src/llm_policy.rs 里也有一份，那边用 rustc --test 钉着。
+        // 改一边不改另一边 = "前端放行、后端拒"，所以这里逐字比。
+        log(MAX_LLM_MESSAGES === 12, `一次最多 12 条消息（实测 ${MAX_LLM_MESSAGES}）`);
+        log(MAX_LLM_MESSAGE_CHARS === 4_000, `单条最多 4000 字符（实测 ${MAX_LLM_MESSAGE_CHARS}）`);
+        log(MAX_LLM_TOTAL_CHARS === 12_000, `合计最多 12000 字符（实测 ${MAX_LLM_TOTAL_CHARS}）`);
+      }
+
+      // ---- 2. 正常请求 ----
+
+      {
+        const request = normalizeChatRequest({
+          messages: [
+            { role: "system", content: "be brief" },
+            { role: "user", content: "hi" },
+          ],
+          temperature: 0.7,
+        });
+        log(request.messages.length === 2, "两条消息原样通过");
+        log(request.messages[0].role === "system", "角色保留");
+        log(request.temperature === 0.7, "temperature 透传");
+      }
+
+      {
+        const request = normalizeChatRequest({ messages: [{ role: "user", content: "hi" }] });
+        log(!("temperature" in request), "没给 temperature 时不下发这个字段（让平台用默认值）");
+      }
+
+      // ---- 3. 条数 ----
+
+      {
+        const many = (count) => ({
+          messages: Array.from({ length: count }, () => ({ role: "user", content: "x" })),
+        });
+        log(codeOf(() => normalizeChatRequest(many(MAX_LLM_MESSAGES))) === null, "正好 12 条能过");
+        log(
+          codeOf(() => normalizeChatRequest(many(MAX_LLM_MESSAGES + 1))) === "bad_params",
+          "13 条 → bad_params",
+        );
+        log(codeOf(() => normalizeChatRequest({ messages: [] })) === "bad_params", "空数组 → bad_params");
+        log(codeOf(() => normalizeChatRequest({})) === "bad_params", "没给 messages → bad_params");
+      }
+
+      // ---- 4. 角色 ----
+
+      {
+        const role = (value) =>
+          codeOf(() => normalizeChatRequest({ messages: [{ role: value, content: "x" }] }));
+        log(role("system") === null && role("user") === null && role("assistant") === null, "三种角色都放行");
+        log(role("tool") === "bad_params", "tool 角色拒掉（那是另一套协议）");
+        log(role("function") === "bad_params", "function 角色拒掉");
+        log(role("System") === "bad_params", "大小写敏感");
+      }
+
+      // ---- 5. 空内容 ----
+
+      {
+        log(
+          codeOf(() => normalizeChatRequest({ messages: [{ role: "user", content: "   \n\t " }] })) ===
+            "bad_params",
+          "只有空白的内容 → bad_params（Rust 那边是跳过，两边都不会发出去）",
+        );
+        log(
+          codeOf(() => normalizeChatRequest({ messages: [{ role: "user", content: 42 }] })) ===
+            "bad_params",
+          "content 不是字符串 → bad_params",
+        );
+      }
+
+      // ---- 6. 长度：按码点数，不是 UTF-16 单元 ----
+
+      {
+        const one = (content) => codeOf(() => normalizeChatRequest({ messages: [{ role: "user", content }] }));
+        log(one("字".repeat(MAX_LLM_MESSAGE_CHARS)) === null, "4000 个汉字能过");
+        log(one("字".repeat(MAX_LLM_MESSAGE_CHARS + 1)) === "bad_params", "4001 个汉字被拒");
+
+        // 这一条是重点：`"🐟".length` 是 2，按 UTF-16 数会把 2000 个 emoji 当成 4000。
+        // Rust 的 chars() 数是 1，两边必须用同一把尺子
+        log(one("🐟".repeat(MAX_LLM_MESSAGE_CHARS)) === null, "4000 个 emoji 能过（按码点算）");
+        log(one("🐟".repeat(MAX_LLM_MESSAGE_CHARS + 1)) === "bad_params", "4001 个 emoji 被拒");
+      }
+
+      // ---- 7. 合计 ----
+
+      {
+        const four = (size) => ({
+          messages: Array.from({ length: 4 }, () => ({ role: "user", content: "a".repeat(size) })),
+        });
+        log(
+          codeOf(() => normalizeChatRequest(four(MAX_LLM_MESSAGE_CHARS))) === "bad_params",
+          "4×4000=16000 合计超限 → bad_params（单条都合法，超的是总数）",
+        );
+        log(codeOf(() => normalizeChatRequest(four(3_000))) === null, "4×3000=12000 正好卡在上限上能过");
+      }
+
+      // ---- 8. temperature ----
+
+      {
+        const temp = (value) =>
+          codeOf(() => normalizeChatRequest({ messages: [{ role: "user", content: "x" }], temperature: value }));
+        log(temp(0) === null && temp(2) === null, "0 和 2 都能过");
+        log(temp("0.7") === "bad_params", "字符串 temperature → bad_params");
+        log(temp(NaN) === "bad_params", "NaN temperature → bad_params");
+      }
+
+      // ---- 9. 权限闸门 ----
+
+      {
+        const denied = await callLlm("llm.chat", { messages: [{ role: "user", content: "hi" }] });
+        log(denied.ok === false && denied.code === "permission_denied", "没有 llm 权限 → permission_denied");
+        log(denied.permission === "llm", `回执里说清是哪个权限（${denied.permission}）`);
+
+        const granted = await callLlm(
+          "llm.chat",
+          { messages: [{ role: "user", content: "hi" }] },
+          ["llm"],
+        );
+        // 浏览器里没有 Tauri，所以走到"环境不对"那一支 —— 这正好证明权限过了
+        log(granted.ok === false && granted.code === "internal", "有权限但不在桌面端 → internal（不是崩溃）");
+      }
+
+      // ---- 10. 参数校验在权限之后、IPC 之前 ----
+
+      {
+        const bad = await callLlm("llm.chat", { messages: [] }, ["llm"]);
+        log(bad.ok === false && bad.code === "bad_params", "参数不合法时不白跑一趟 IPC");
+      }
+
+      // ---- 11. llm.status：不要权限，且不含 base ----
+
+      {
+        const status = await callLlm("llm.status", undefined, []);
+        log(status.ok === true, "llm.status 不要权限");
+        log(status.result && "base" in status.result === false, "回执里没有 base 字段");
+        log(typeof status.result.configured === "boolean", "configured 是布尔");
+
+        // Tauri 那一支走的是 publicStatus，这里直接钉它：多一个字段都不许带出去
+        const leaked = publicStatus({ configured: true, model: "deepseek-chat", base: "https://api.deepseek.com" });
+        log(Object.keys(leaked).join(",") === "configured,model", `publicStatus 只留两个字段（${Object.keys(leaked).join(",")}）`);
+        log(!("base" in leaked), "publicStatus 丢掉 base");
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+    </script>
+  </body>
+</html>

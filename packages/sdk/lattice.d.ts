@@ -140,6 +140,45 @@ export interface TimerHandle {
   stop(): Promise<void>;
 }
 
+/**
+ * 窗口轮廓的一块。
+ *
+ * 坐标是**物理像素**（自己乘 `devicePixelRatio`），相对客户区左上角；
+ * `w` / `h` 是宽高，不是右下角坐标。
+ */
+export interface RegionPart {
+  kind?: "rect" | "ellipse";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface RegionResult {
+  ok: true;
+  /** `false` 表示这里没有窗口（主窗口画布上的预览），别再继续报 */
+  applied: boolean;
+  parts: number;
+}
+
+export type LlmRole = "system" | "user" | "assistant";
+
+export interface LlmMessage {
+  role: LlmRole;
+  content: string;
+}
+
+export interface LlmStatus {
+  configured: boolean;
+  model: string;
+}
+
+export interface LlmReply {
+  text: string;
+  model: string;
+  usage: { promptTokens: number; completionTokens: number };
+}
+
 export interface Lattice {
   /** 是否真的在宿主页里（顶层窗口为 false） */
   readonly hosted: boolean;
@@ -191,6 +230,19 @@ export interface Lattice {
 
   network: {
     fetch(input: NetworkRequest): Promise<NetworkResponse>;
+  };
+
+  /**
+   * 把自己的窗口裁成这些块。只有清单里写了 `"shape": "region"` 的组件能用，
+   * 别的组件调了会被宿主拒。最多 256 块。
+   */
+  setRegion(parts: RegionPart[]): Promise<RegionResult>;
+
+  llm: {
+    /** 助手配好了没有。不要权限，也不含密钥 */
+    status(): Promise<LlmStatus>;
+    /** 问一句。要 `llm`；超限是 `bad_params`，不会截断 */
+    chat(messages: LlmMessage[], options?: { temperature?: number }): Promise<LlmReply>;
   };
 
   now(): Promise<ClockInfo>;

@@ -414,23 +414,40 @@ defineMethod("window.setRegion", null, async (params, ctx) => {
  * 两次请求之间平台会自己排队 —— 这些都是平台侧兜的，组件不必也不能改。
  */
 defineMethod("llm.chat", "llm", async (params) => {
+  // 先校验参数，再判环境：参数错就是参数错，在画布预览里调试时也该看到
+  // `bad_params`（"你的 messages 写错了"），而不是一句"这里没有桌面端"
+  const request = normalizeChatRequest(params);
   if (!bridgeInTauri()) {
     throw new BridgeError("internal", "talking to the assistant only works in the desktop app");
   }
-  const request = normalizeChatRequest(params);
   return await invoke("llm_chat", { request });
 });
 
 /**
+ * 组件能看到的那部分状态。
+ *
+ * 只挑 `configured` / `model` 两个字段：`base` 是平台设置，组件不需要知道
+ * 密钥要发给谁。挑字段而不是"删一个字段"，是为了以后 `LlmStatus` 再加字段时
+ * 默认不外泄 —— 加字段的人得主动往这里加一行，而不是忘了一个 `delete`。
+ */
+export function publicStatus(status: { configured: boolean; model: string }): {
+  configured: boolean;
+  model: string;
+} {
+  return { configured: status.configured, model: status.model };
+}
+
+/**
  * 助手配好了没有。
  *
- * 不需要权限，也不返回密钥本身 —— 组件据此决定显示"去设置里填个 key"
- * 还是直接开口说话。不带这一步的话，没配密钥的机器上宠物只会一遍遍
- * 报错，而错误文案是给开发者看的。
+ * 不需要权限，也**不返回 `base`** —— 见 `publicStatus`。`llm.status` 是任何
+ * 组件都能调的（它不要权限），把端点摆在这里等于免费告诉所有组件"这台机器
+ * 的 key 是发给哪个服务的"。设置页要显示地址，走的是自己的
+ * `invoke("llm_status")`，不经过这座桥。
  */
 defineMethod("llm.status", null, async () => {
-  if (!bridgeInTauri()) return { configured: false, model: "", base: "" };
-  return await invoke("llm_status");
+  if (!bridgeInTauri()) return { configured: false, model: "" };
+  return publicStatus(await invoke<{ configured: boolean; model: string }>("llm_status"));
 });
 
 export interface LlmMessage {
@@ -440,6 +457,18 @@ export interface LlmMessage {
 
 export const MAX_LLM_MESSAGES = 12;
 export const MAX_LLM_MESSAGE_CHARS = 4_000;
+export const MAX_LLM_TOTAL_CHARS = 12_000;
+
+/**
+ * 按**码点**数长度。
+ *
+ * `content.length` 数的是 UTF-16 单元：一个 emoji 是 2，Rust 那边 `chars()`
+ * 数的是 1。两边用不同的尺子量同一个上限，结果就是"前端放行、后端拒"，
+ * 而报错发生在一次 IPC 之后 —— 组件只会看到一句没头没尾的话。
+ */
+export function charCount(value: string): number {
+  return [...value].length;
+}
 
 /**
  * 对话请求的校验。上限和 Rust 侧一致，但**两处都要留**：
@@ -458,6 +487,7 @@ export function normalizeChatRequest(raw: unknown): { messages: LlmMessage[]; te
     );
   }
   const messages: LlmMessage[] = [];
+  let total = 0;
   for (const item of list) {
     if (!item || typeof item !== "object") {
       throw new BridgeError("bad_params", "every message must be an object");
@@ -471,13 +501,22 @@ export function normalizeChatRequest(raw: unknown): { messages: LlmMessage[]; te
     if (typeof content !== "string" || content.trim() === "") {
       throw new BridgeError("bad_params", "every message needs a non-empty \"content\" string");
     }
-    if (content.length > MAX_LLM_MESSAGE_CHARS) {
+    const chars = charCount(content);
+    if (chars > MAX_LLM_MESSAGE_CHARS) {
+      // 拒绝，不截断 —— 截断等于替用户决定哪半句不重要，Rust 那边也是拒绝
       throw new BridgeError(
         "bad_params",
         `a single message may be at most ${MAX_LLM_MESSAGE_CHARS} characters`,
       );
     }
+    total += chars;
     messages.push({ role, content });
+  }
+  if (total > MAX_LLM_TOTAL_CHARS) {
+    throw new BridgeError(
+      "bad_params",
+      `the conversation is longer than ${MAX_LLM_TOTAL_CHARS} characters`,
+    );
   }
   const temperature = input.temperature;
   if (temperature !== undefined && (typeof temperature !== "number" || !Number.isFinite(temperature))) {

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>region test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      import { handleBridgeRequest, MAX_REGION_PARTS, normalizeRegionParts } from "/src/runtime/bridge.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+
+      const bail = (error) => {
+        document.getElementById("out").innerHTML =
+          `<span class="bad">FAIL 抛错：${String((error && error.stack) || error)}</span>`;
+      };
+      window.addEventListener("error", (event) => bail(event.error));
+      window.addEventListener("unhandledrejection", (event) => bail(event.reason));
+
+      /**
+       * 走真的 `handleBridgeRequest`：权限闸门、参数校验、`applied` 语义都在
+       * 那条路上，只测 `normalizeRegionParts` 会漏掉一半。
+       *
+       * `setRegion` 传 null 就是"画布预览"那种没有窗口的宿主。
+       */
+      function callRegion(parts, { setRegion = () => {}, granted = [] } = {}) {
+        return new Promise((resolve) => {
+          const ctx = {
+            instanceId: "test",
+            widgetId: "lattice.__test",
+            granted: new Set(granted),
+            config: {},
+            reply: (payload) => resolve(payload),
+            close: () => {},
+          };
+          if (setRegion) ctx.setRegion = setRegion;
+          handleBridgeRequest(
+            { __lattice: 1, type: "request", id: 1, method: "window.setRegion", params: { parts } },
+            ctx,
+          );
+        });
+      }
+
+      // ---- 1. 正常上报 ----
+
+      {
+        let seen = null;
+        const reply = await callRegion(
+          [
+            { kind: "rect", x: 10, y: 20, w: 30, h: 40 },
+            { kind: "ellipse", x: 50, y: 60, w: 70, h: 80 },
+          ],
+          { setRegion: (parts) => (seen = parts) },
+        );
+        log(reply.ok === true, "上报两块不报错");
+        log(reply.result.applied === true, "宿主有窗口时 applied 是 true");
+        log(reply.result.parts === 2, `回执里带块数，回的是 ${reply.result.parts}`);
+        log(seen && seen[1].kind === "ellipse", "椭圆原样传给宿主");
+        log(seen && seen[0].kind === "rect", "矩形原样传给宿主");
+      }
+
+      // ---- 2. 没有窗口（画布预览）→ applied:false，不报错 ----
+
+      {
+        const reply = await callRegion([{ x: 1, y: 1, w: 2, h: 2 }], { setRegion: null });
+        log(reply.ok === true && reply.result.applied === false, "没有窗口时回 applied:false 而不是报错");
+        log(reply.result.parts === 1, "没有窗口时也回块数，组件据此知道参数是对的");
+      }
+
+      // ---- 3. 坐标取整 ----
+
+      {
+        let seen = null;
+        await callRegion([{ x: 10.4, y: 20.6, w: 30.5, h: 40.4 }], {
+          setRegion: (parts) => (seen = parts),
+        });
+        const p = seen && seen[0];
+        log(p && p.x === 10 && p.y === 21, `坐标四舍五入到整数像素：(${p && p.x}, ${p && p.y})`);
+        log(p && p.w === 31 && p.h === 40, `宽高也取整：${p && p.w}×${p && p.h}`);
+      }
+
+      // ---- 4. 缺 kind 默认矩形 ----
+
+      {
+        let seen = null;
+        await callRegion([{ x: 0, y: 0, w: 5, h: 5 }], { setRegion: (parts) => (seen = parts) });
+        log(seen && seen[0].kind === "rect", "没写 kind 时按矩形处理");
+      }
+
+      // ---- 5. 坏数据一律 bad_params ----
+
+      {
+        const cases = [
+          ["parts 不是数组", { parts: "nope" }],
+          ["宽高是 0", [{ x: 0, y: 0, w: 0, h: 5 }]],
+          ["宽高是负数", [{ x: 0, y: 0, w: -3, h: 5 }]],
+          ["坐标是 NaN", [{ x: NaN, y: 0, w: 5, h: 5 }]],
+          ["坐标是字符串", [{ x: "10", y: 0, w: 5, h: 5 }]],
+          ["坐标是 Infinity", [{ x: Infinity, y: 0, w: 5, h: 5 }]],
+          ["数组里混了 null", [null]],
+        ];
+        for (const [name, params] of cases) {
+          const reply = await new Promise((resolve) => {
+            handleBridgeRequest(
+              { __lattice: 1, type: "request", id: 1, method: "window.setRegion", params },
+              {
+                instanceId: "test",
+                widgetId: "lattice.__test",
+                granted: new Set(),
+                config: {},
+                reply: resolve,
+                close: () => {},
+                setRegion: () => {},
+              },
+            );
+          });
+          log(reply.ok === false && reply.code === "bad_params", `${name} → bad_params（回的是 ${reply.code}）`);
+        }
+      }
+
+      // ---- 6. 上限：正好 256 可以，257 拒 ----
+
+      {
+        const make = (count) => Array.from({ length: count }, (_, i) => ({ x: i, y: 0, w: 2, h: 2 }));
+        const at = await callRegion(make(MAX_REGION_PARTS));
+        log(at.ok === true && at.result.parts === MAX_REGION_PARTS, `正好 ${MAX_REGION_PARTS} 块能过`);
+
+        const over = await callRegion(make(MAX_REGION_PARTS + 1));
+        log(over.ok === false && over.code === "bad_params", `多一块就拒（回 ${over.code}）`);
+        log(
+          typeof over.error === "string" && over.error.includes(String(MAX_REGION_PARTS)),
+          `拒绝文案里带上限数字：${over.error}`,
+        );
+      }
+
+      // ---- 7. 空数组 = 清空窗口（不是错误）----
+
+      {
+        let seen = null;
+        const reply = await callRegion([], { setRegion: (parts) => (seen = parts) });
+        log(reply.ok === true && reply.result.parts === 0, "空数组是合法请求（把窗口清空）");
+        log(Array.isArray(seen) && seen.length === 0, "空数组原样交给宿主");
+      }
+
+      // ---- 8. 不要权限 ----
+
+      {
+        const reply = await callRegion([{ x: 0, y: 0, w: 1, h: 1 }], { granted: [] });
+        log(reply.ok === true, "setRegion 不需要任何权限（granted 是空的也能过）");
+      }
+
+      // ---- 9. 纯函数直测：坐标可以是负数（贴边/出界的块）----
+
+      {
+        const parts = normalizeRegionParts([{ x: -20, y: -5, w: 10, h: 10 }]);
+        log(parts.length === 1 && parts[0].x === -20, "负坐标放行：区域可以由窗口外补进来");
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+    </script>
+  </body>
+</html>
