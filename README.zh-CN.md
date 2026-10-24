@@ -279,14 +279,15 @@ docs/                架构、组件规范、路线图、代码签名、agent �
 
 | 文档 | 它回答什么 |
 | --- | --- |
+| [GLOSSARY.md](./GLOSSARY.md) | 这个词到底指什么（组件 / 卡片 / 实例 / placement / 宿主…） |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 各块怎么拼起来，以及为什么 |
 | [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) | 组件契约 |
 | [docs/ROADMAP.md](./docs/ROADMAP.md) | 版本历史、69 个坑、被推翻的 9 个决定 |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | agent 端点的威胁模型 |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | 钥匙、信任锚点、哪些东西**没有**签名 |
-| [AGENTS.md](./AGENTS.md) | 18 条不变量，写给下一个动这份代码的人 |
+| [AGENTS.md](./AGENTS.md) | 19 条不变量，写给下一个动这份代码的人 |
 
-改代码之前只读一样东西的话，读 [AGENTS.md](./AGENTS.md) 里那 18 条不变量。它们不是风格偏好 —— 每一条背后都是一个发出去过的 bug。
+改代码之前只读一样东西的话，读 [AGENTS.md](./AGENTS.md) 里那 19 条不变量。它们不是风格偏好 —— 每一条背后都是一个发出去过的 bug。
 
 ## 许可
 

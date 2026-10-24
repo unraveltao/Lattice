@@ -8,10 +8,11 @@
 | 你要做的事 | 读这份 | 花多久 |
 | --- | --- | --- |
 | 第一次打开这个仓库 | [`../README.md`](../README.md) → [`ARCHITECTURE.md`](./ARCHITECTURE.md) | 15 分钟 |
+| 想知道某个词到底指什么 | [`../GLOSSARY.md`](../GLOSSARY.md) | 1 分钟 |
 | 写一个组件 | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 30 分钟 |
-| 改平台代码 | [`../AGENTS.md`](../AGENTS.md)（先读第 4 节十八条不变量） | 20 分钟 |
+| 改平台代码 | [`../AGENTS.md`](../AGENTS.md)（先读第 4 节十九条不变量） | 20 分钟 |
 | 加一个能力（桥方法 / 权限 / 窗口行为） | [`AGENTS.md` 第 7 节"常见改动的配方"](../AGENTS.md) + `WIDGET_SPEC` 对应章节 | 按需 |
-| 想知道某个奇怪设计为什么是这样 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的八个决定」 | 按需 |
+| 想知道某个奇怪设计为什么是这样 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的九个决定」 | 按需 |
 | 要动 agent 接入 | [`AGENT_ACCESS.md`](./AGENT_ACCESS.md) | 20 分钟 |
 | 要动签名 / 发布 | [`CODE_SIGNING.md`](./CODE_SIGNING.md) + `ROADMAP` v0.7 | 15 分钟 |
 | **要做一件还没做的事** | [`design/README.md`](./design/README.md) | 按需 |
@@ -20,6 +21,7 @@
 
 | 文件 | 回答的问题 | 时态 | 什么时候改 |
 | --- | --- | --- | --- |
+| `GLOSSARY.md` | 这个词到底指什么（只收跨块共用、组件作者能看见的词） | 现在 | 定下一个术语、或裁掉一个撞名时 |
 | `README.md` / `README.zh-CN.md` | 这是什么、现在到哪一版、数字是多少 | 现在 | **每个版本** |
 | `docs/ARCHITECTURE.md` | 为什么长成这样（分层、沙箱、窗口、数据） | 过去 | 架构真的变了才改 |
 | `docs/WIDGET_SPEC.md` | 组件作者必须遵守的契约 | 现在 | 加桥方法 / 权限 / 清单字段 |
@@ -50,6 +52,8 @@
 
 三个都不命中 → 它大概不该是文档，是代码注释或 `AGENTS.md` 配方节里的一行。
 
+**术语表是这套分类的例外。** 它不属于四类中的任何一类 —— 它是四类**共用**的那套词。定下一个新术语、或裁掉一个撞名，直接改 `GLOSSARY.md`，别为它新开文件，也别在 `WIDGET_SPEC` 里再写一遍定义（那边只写"必须怎样"）。
+
 **反例，别做**：不要新建 `总览.md` / `说明.md` / `开发文档.md`。这类文件名说明作者还没想清楚它属于哪一类，而它一旦存在，就会变成第三个"事实的家"。
 
 ## 四、一份事实只有一个家
@@ -60,6 +64,7 @@
 | --- | --- | --- |
 | 桥方法表、参数校验、权限闸门 | `src/runtime/bridge.ts` | 文档写"有什么、为什么"，**不抄签名** |
 | 权限清单 | `src/runtime/catalogue.ts` 的 `KNOWN_PERMISSIONS` | `WIDGET_SPEC` 写语义，不写代码 |
+| 术语的准确定义 | `GLOSSARY.md` | 别处用同一个词，**不重复定义**，要解释就给链接 |
 | 组件作者契约 | `docs/WIDGET_SPEC.md` | 别处给链接 |
 | 改代码的约束 | `AGENTS.md` | 别处不重复 |
 | 决定与代价 | `docs/ROADMAP.md` | `design/` 只写推理，结论链接过去 |

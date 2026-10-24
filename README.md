@@ -284,7 +284,7 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 | [docs/ROADMAP.md](./docs/ROADMAP.md) | Version history, 69 pitfalls, 9 overturned decisions |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | The agent endpoint's threat model |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | Keys, trust anchors, what is *not* signed |
-| [AGENTS.md](./AGENTS.md) | 18 invariants, written for whoever touches this next |
+| [AGENTS.md](./AGENTS.md) | 19 invariants, written for whoever touches this next |
 
 If you read only one thing before changing code, read the invariants in [AGENTS.md](./AGENTS.md). They are not style preferences — each one is a bug that shipped.
 
