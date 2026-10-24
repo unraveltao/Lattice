@@ -44,13 +44,27 @@ const msysBin = join(toolchain, "msys64", "mingw64", "bin");
  * 放在 `.toolchain/intl`（从 MSYS2 的 gettext 里拿的两个 DLL），PATH 里排最前。
  */
 const intlDir = join(toolchain, "intl");
+/**
+ * `x86_64-w64-mingw32-windres` 的替身（见 `.toolchain/windres-shim/windres-shim.rs`）。
+ *
+ * 有真 gcc 之后 windres 会 spawn **它** 做 `.rc` 预处理，而 MSYS2 gcc 16.2.0 对
+ * 任何 `-x` 都静默退出 1（`gcc -E -x c foo.c` 也是 1，没有一行诊断），windres
+ * 只会说一句 `windres: preprocessing failed.` —— 整个 Rust 编译停在 build script
+ * 上，看着像 windres 装坏了。这一层把 `--preprocessor <gcc-shim>` 塞进去，
+ * 让"原样复制"继续承担 `.rc` 预处理（.rc 里没有 `#include`，复制就是对的）。
+ */
+const windresShimDir = join(toolchain, "windres-shim");
 
 const hasRealGcc = existsSync(join(msysBin, "gcc.exe"));
 
 const prepend = [];
 // 链接器的 DLL 依赖排最前：它和工具链是两回事，缺了连 --version 都跑不起来
 if (existsSync(join(intlDir, "libintl-8.dll"))) prepend.push(intlDir);
-// 真 gcc 排最前：它的 as/ld 和自带 binutils 配套，混用两套 binutils 会出怪问题
+// windres 替身排在真 gcc **之前**：windres 是按名字找 `x86_64-w64-mingw32-windres`
+if (existsSync(join(windresShimDir, "x86_64-w64-mingw32-windres.exe"))) {
+  prepend.push(windresShimDir);
+}
+// 真 gcc 排在前面：它的 as/ld 和自带 binutils 配套，混用两套 binutils 会出怪问题
 if (hasRealGcc) prepend.push(msysBin);
 if (existsSync(join(binDir, "windres.exe"))) prepend.push(binDir);
 if (!hasRealGcc && existsSync(join(shimDir, "gcc.exe"))) prepend.push(shimDir);

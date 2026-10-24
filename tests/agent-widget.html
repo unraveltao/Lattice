@@ -114,6 +114,30 @@
           eq(describe({ op: "act", detail: verbs[index][0] }).text, verbs[index][1], verbs[index][0] + " 有对应的说法");
         }
 
+        // ---- 2b. 内置 assistant 的那几轮（同一个审计文件，同一个 op 前缀） ----
+
+        var assistantMove = describe({
+          at: AT,
+          op: "assistant.chat",
+          detail: "deepseek-v4.1-flash · tools: placement.move",
+        });
+        eq(assistantMove.kind, "act", "assistant 调了工具 → 当成一次改动");
+        eq(assistantMove.text, "assistant · moved a widget", "标出是谁动的，动词短语照旧");
+        eq(assistantMove.action, "placement.move", "原始动作名留着");
+
+        eq(
+          describe({ at: AT, op: "assistant.chat", detail: "glm-5.3 · tools: theme.set, widgets.pause" }).text,
+          "assistant · changed the theme, paused or resumed the widgets",
+          "一轮里几个工具按顺序串起来",
+        );
+        eq(
+          describe({ at: AT, op: "assistant.chat", detail: "deepseek-v4.1-flash · 137 chars" }),
+          null,
+          "只是聊了一句、没动桌面，不占一行",
+        );
+        eq(describe({ at: AT, op: "assistant.chat" }), null, "没有 detail 的 assistant 记录丢掉");
+        eq(describe({ at: AT, op: "assistant.chat", detail: "model · tools: " }), null, "tools: 后面空着也丢掉");
+
         // ---- 3. 读操作必须被滤掉 ----
 
         var reads = ["state", "health", "raw", "tool", "explode"];

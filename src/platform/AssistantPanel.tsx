@@ -17,12 +17,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { WidgetRecord } from "../runtime/registry";
 import {
-  describeDesktop,
   listModels,
+  localSurface,
   readLlmStatus,
+  remoteSurface,
   runAssistantTurn,
   saveLlmKey,
   saveLlmSettings,
+  type AssistantSurface,
   type LlmStatus,
 } from "./assistant";
 import { systemPrompt, type ChatMessage } from "../runtime/assistant";
@@ -43,10 +45,17 @@ const DEFAULTS = {
 export interface AssistantPanelProps {
   open: boolean;
   onClose: () => void;
-  records: Map<string, WidgetRecord>;
+  /**
+   * 主窗口里的抽屉才给这份清单：它自己有画布，快照和动作都在本地跑。
+   * 桌面上那个独立小窗不给 —— 它走 `remoteSurface()`，把活儿转给主窗口，
+   * 因为布局的权威在那儿（见 `platform/assistant.ts` 的 `AssistantSurface`）。
+   */
+  records?: ReadonlyMap<string, WidgetRecord>;
+  /** `window` = 独立小窗：铺满窗口、不要圆角和投影（那些由窗口壳负责） */
+  variant?: "drawer" | "window";
 }
 
-export function AssistantPanel({ open, onClose, records }: AssistantPanelProps) {
+export function AssistantPanel({ open, onClose, records, variant = "drawer" }: AssistantPanelProps) {
   const [status, setStatus] = useState<LlmStatus | null>(null);
   const [view, setView] = useState<"chat" | "setup">("chat");
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -70,8 +79,14 @@ export function AssistantPanel({ open, onClose, records }: AssistantPanelProps) 
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const recordsRef = useRef(records);
-  recordsRef.current = records;
+  const surface = useMemo<AssistantSurface>(
+    () => (records ? localSurface([...records.values()]) : remoteSurface()),
+    [records],
+  );
+
+  // 收进 ref：`send` 的依赖里不放 surface，否则每次清单变化都会重建回调
+  const surfaceRef = useRef(surface);
+  surfaceRef.current = surface;
 
   const syncForm = useCallback((next: LlmStatus) => {
     setBaseUrl(next.baseUrl || DEFAULTS.baseUrl);
@@ -129,20 +144,20 @@ export function AssistantPanel({ open, onClose, records }: AssistantPanelProps) 
     setEntries((list) => [...list, { kind: "user", text }]);
 
     const conversation = messages.current;
-    // 第一条永远是 system：桌面现状每次现拍，模型不该记着"上次的桌面"
-    if (conversation[0]?.role === "system") conversation.shift();
-    conversation.unshift({
-      role: "system",
-      content: systemPrompt(describeDesktop([...recordsRef.current.values()])),
-    });
-    conversation.push({ role: "user", content: text });
-
+    const host = surfaceRef.current;
     setBusy(true);
     stopFlag.current = false;
     try {
+      // 第一条永远是 system：桌面现状每次现拍，模型不该记着"上次的桌面"。
+      // 快照可能是 IPC 往返（独立小窗那条路），所以先 await 再拼
+      const snapshot = await host.snapshot();
+      if (conversation[0]?.role === "system") conversation.shift();
+      conversation.unshift({ role: "system", content: systemPrompt(snapshot) });
+      conversation.push({ role: "user", content: text });
+
       await runAssistantTurn({
         messages: conversation,
-        records: [...recordsRef.current.values()],
+        surface: host,
         shouldStop: () => stopFlag.current,
         onEvent: (event) => {
           if (event.type === "text") {
@@ -237,7 +252,7 @@ export function AssistantPanel({ open, onClose, records }: AssistantPanelProps) 
   if (!open) return null;
 
   return (
-    <aside className="lattice-assistant" aria-label="Assistant">
+    <aside className={`lattice-assistant${variant === "window" ? " is-window" : ""}`} aria-label="Assistant">
       <header className="lattice-assistant-head">
         <span className="lattice-assistant-title">{header}</span>
         <span className="lattice-assistant-actions">

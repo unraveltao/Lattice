@@ -3302,3 +3302,98 @@ button.lattice-chip[aria-pressed="true"] {
   font-size: 10px;
   color: var(--lattice-text-faint);
 }
+
+/* --------------------------------------------------------------------------
+ * assistant 的桌面小窗（assistant.html）
+ *
+ * 窗口本身无边框、圆角由 `desktop::clip_rounded` 裁（和卡片同一个半径），
+ * 所以这里只需要"铺满、别留缝"：一圈 inset 0 的容器 + 一条能拖的标题栏。
+ * 面板还是那个 `AssistantPanel`，`is-window` 只改它自己的容器形态 ——
+ * 抽屉那套圆角/投影/固定定位在窗口里会露出来（窗口已经裁过圆角了）。
+ * ------------------------------------------------------------------------ */
+
+.lattice-assistant-window {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--lattice-surface);
+  /* 窗口自己裁圆角，但边会有一点锯齿；内描边让边缘看起来是"设计过的" */
+  box-shadow: inset 0 0 0 1px var(--lattice-border);
+}
+
+.lattice-assistant-bar {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  height: 34px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--lattice-border);
+  cursor: grab;
+  user-select: none;
+}
+
+.lattice-assistant-bar:active {
+  cursor: grabbing;
+}
+
+.lattice-assistant-bar-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lattice-accent);
+}
+
+.lattice-assistant-bar-title {
+  flex: 1;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--lattice-text-faint);
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lattice-assistant-bar-btn {
+  display: grid;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--lattice-text-faint);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  place-items: center;
+}
+
+.lattice-assistant-bar-btn:hover {
+  color: var(--lattice-text);
+  background: var(--lattice-hover, rgba(127, 127, 127, 0.14));
+}
+
+/* 面板在窗口里的形态：不定位、不裁圆角、不投影，铺满剩下的高度 */
+.lattice-assistant.is-window {
+  position: static;
+  flex: 1;
+  width: auto;
+  max-width: none;
+  min-height: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.lattice-assistant.is-window .lattice-assistant-head {
+  /* 标题已经在窗口那条 bar 上了，面板这一行只留下齿轮和收起 */
+  padding-top: 8px;
+  padding-bottom: 8px;
+}

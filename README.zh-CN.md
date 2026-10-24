@@ -37,7 +37,7 @@ Lattice 是给"你自己写的组件"用的外壳。一个组件就是一个目�
 
 ## 现在到哪了
 
-当前版本 v0.10：**模型你自己带，手仍然归平台。** 平台自带一个 assistant —— `Ctrl+K` 或顶栏那颗按钮：填一次 OpenAI 兼容的 base URL 和 API key，它就在抽屉里、也在组件的对话框里回话。不内置任何模型，中间没有代理：key 落在 Rust 掌管的 `assistant.json`，前端只看得到 `sk-1…cdef` 这样的掩码；模型能"做"的，只有 agent 端点本来就有那 8 个白名单动作。组件要 `llm:chat` 只拿得到文字，永远拿不到工具。
+当前版本 v0.10：**模型你自己带，手仍然归平台。** 平台自带一个 assistant —— `Ctrl+K` 或顶栏那颗按钮，叫出来的是一扇能拖的小窗：填一次 OpenAI 兼容的 base URL 和 API key，它就在小窗里、也在组件的对话框里回话。不内置任何模型，中间没有代理：key 落在 Rust 掌管的 `assistant.json`，前端只看得到 `sk-1…cdef` 这样的掩码；模型能"做"的，只有 agent 端点本来就有那 8 个白名单动作。组件要 `llm:chat` 只拿得到文字，永远拿不到工具。
 
 v0.9 加了**声音看得见、链接出得去。** 音乐组件从 `lattice.media` 改名为 `lattice.music`（它先回答"在放什么"，再回答"有多响"），播放器名字从 AUMID 翻成人话，卡片按真实的 268 × 172 预算重排；同时落下两项能力：`audio:level`（对默认输出设备做 WASAPI 回环采集，只回一个 `0..1` 的数）和 `shell:open`（把 http/https 地址交给默认浏览器，此外什么都不做）。`lattice.bookmarks` 就是验证它俩的那个组件。
 
@@ -60,12 +60,12 @@ v0.9 加了**声音看得见、链接出得去。** 音乐组件从 `lattice.med
 | --- | --- |
 | 官方组件 | 15 个 |
 | 权限 | 10 项 |
-| Tauri 命令 | 54 条 |
-| 浏览器断言 | 39 个页面、1533 条 |
+| Tauri 命令 | 59 条 |
+| 浏览器断言 | 39 个页面、1540 条 |
 | Rust 单测 | 178 条 |
-| 记下来的坑 | 69 个 |
+| 记下来的坑 | 72 个 |
 
-每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；178 条 Rust 单测分成 157 条 `rustc --test` 的纯逻辑和 21 条要完整 `cargo test` 的；69 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
+每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；178 条 Rust 单测分成 157 条 `rustc --test` 的纯逻辑和 21 条要完整 `cargo test` 的；72 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
 
 ## 两个宿主，一套桥
 
@@ -242,7 +242,7 @@ npm run typecheck        # tsc --noEmit
 npm run test:injection   # 上报脚本在两条发文档的路上注入得一模一样
 npm run test:sdk         # 每份内嵌 SDK 副本都和 packages/sdk 一致
 npm run test:agent       # agent 客户端的请求形状与退出码
-npm run test:browser     # 39 个页面、1533 条断言，真 Chrome、真 dev server
+npm run test:browser     # 39 个页面、1540 条断言，真 Chrome、真 dev server
 ```
 
 浏览器那套是里面最有意思的。每个 `tests/*.html` 都是一张真的断言页 —— 纯逻辑（semver、config、目录、参考线、关闭守卫、屏幕夹紧）、布局预算、组件行为 —— 由 dev server 伺服，Chrome 驱动。它存在的原因是"我这儿是好的"这句话反复地说错：书签第六行实测 36px，而它的注释写着 30px，就这么被 `overflow: hidden` 静默切掉，直到有人去量。
@@ -282,7 +282,7 @@ docs/                架构、组件规范、路线图、代码签名、agent �
 | [GLOSSARY.md](./GLOSSARY.md) | 这个词到底指什么（组件 / 卡片 / 实例 / placement / 宿主…） |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 各块怎么拼起来，以及为什么 |
 | [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) | 组件契约 |
-| [docs/ROADMAP.md](./docs/ROADMAP.md) | 版本历史、69 个坑、被推翻的 9 个决定 |
+| [docs/ROADMAP.md](./docs/ROADMAP.md) | 版本历史、72 个坑、被推翻的 9 个决定 |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | agent 端点的威胁模型 |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | 钥匙、信任锚点、哪些东西**没有**签名 |
 | [AGENTS.md](./AGENTS.md) | 19 条不变量，写给下一个动这份代码的人 |

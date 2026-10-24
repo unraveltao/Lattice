@@ -149,6 +149,33 @@
     if (op === "act") {
       return { kind: "act", text: VERBS[detail] || detail, action: detail, time: timeOf(entry.at) };
     }
+    /*
+     * 内置 assistant 走的是同一条审计日志（`llm.rs` 里 `assistant.chat`）。
+     * 只有**调了工具**的那几轮才值得画：detail 形如
+     * `deepseek-v4.1-flash · tools: placement.move`，而"问了一句、什么都没改"
+     * 的那一轮和 `state` 读一样是噪声 —— 板子的用途是"谁动了我的桌面"。
+     */
+    if (op === "assistant.chat") {
+      var at = detail.indexOf("tools: ");
+      if (at < 0) return null;
+      var names = detail
+        .slice(at + 7)
+        .split(",")
+        .map(function (name) {
+          return name.trim();
+        })
+        .filter(Boolean);
+      if (names.length === 0) return null;
+      var verbs = names.map(function (name) {
+        return VERBS[name] || name;
+      });
+      return {
+        kind: "act",
+        text: "assistant · " + verbs.join(", "),
+        action: names[0],
+        time: timeOf(entry.at),
+      };
+    }
     return null;
   }
 

@@ -11,6 +11,7 @@
 
 pub mod agent;
 pub mod agent_policy;
+pub mod assistant_window;
 pub mod audio;
 pub mod audio_policy;
 pub mod autostart;
@@ -168,6 +169,11 @@ pub fn run() {
             agent::agent_activity,
             agent::agent_set_enabled,
             agent::agent_reply,
+            agent::assistant_snapshot,
+            agent::assistant_act,
+            assistant_window::assistant_window_toggle,
+            assistant_window::assistant_window_hide,
+            assistant_window::assistant_window_save_pos,
             quit_app,
             show_main_window,
             restart_app,
@@ -196,6 +202,8 @@ fn guard_main_close(app: &tauri::AppHandle) {
                 // hide() 不动尺寸、不触发 Resized：画布上的组件得靠这一句才知道
                 // 自己已经不在屏幕上了（否则定时器照跑）
                 visibility::sync(&window);
+                // assistant 小窗跟着收起来。它不销毁（对话还在里面），只是藏起来
+                assistant_window::hide(&handle);
             }
         }
     });

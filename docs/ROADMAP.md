@@ -23,24 +23,24 @@
 | v0.7 | 交付 | 🟡 进行中 | NSIS 安装包 + 自动更新（见 v0.7 一节） |
 | v0.8 | Agent 接入 | 🟡 进行中 | 默认关的回环端点：只绑 127.0.0.1、令牌、审计日志、8 个白名单动作、一块看板组件；还差一次 CLI 往返的真机验收 |
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
-| v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；假端点全链路已通，真厂商 key 的往返没走 |
+| v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通 |
 
 **当前规模**（截至本次改动，2026-10-25）：
 
 | 指标 | 数值 | 备注 |
 | --- | --- | --- |
-| 前端 TS/TSX | 12 862 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉 + agent 执行器 |
-| 样式 CSS | 3 651 行 | 纯手写，无 UI 库 |
-| Rust | 12 845 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略 |
+| 前端 TS/TSX | 13 057 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 |
+| 样式 CSS | 3 746 行 | 纯手写，无 UI 库 |
+| Rust | 13 125 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗 |
 | 组件 SDK | 742 行 | 零依赖 ES module + 类型声明 |
-| 官方组件 + 示例 | 13 151 行 | 15 个官方包 + 1 个示例（复制进去的 SDK 副本不计） |
-| 构建脚本 | 2 352 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试 |
-| 浏览器断言 | 1533 条 | 39 个自检页，跑一遍的真实计数（0 failed） |
+| 官方组件 + 示例 | 13 467 行 | 15 个官方包 + 1 个示例（复制进去的 SDK 副本不计） |
+| 构建脚本 | 2 376 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试 |
+| 浏览器断言 | 1540 条 | 39 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 25 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条，都不依赖 dev server |
 | Rust 单测 | 178 条 | 157 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 21 条），21 条要 `cargo test`（本机跑不了），见 AGENTS §11 |
-| Tauri 命令 | 54 个 | |
+| Tauri 命令 | 59 个 | |
 | 权限 | 10 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 在 v0.10 补齐 |
-| 踩过的坑 | 69 条 | 见 v0.2 文末那张表 |
+| 踩过的坑 | 72 条 | 见 v0.2 文末那张表 |
 
 ---
 
@@ -289,6 +289,9 @@
 | 下载 16MB 的组件包，sha256 永远对不上，报"下载损坏" | 中间那一层顺手 `String::from_utf8_lossy` 转了一道字符串：非 UTF-8 的字节全变成 U+FFFD，二进制当场报废。上传下载这类管道里，**任何一次"顺手转成字符串"都是不可逆的** | `network::send` 改成返回 `Vec<u8>`，上限由调用方给（目录 2MB / 包 16MB）；`network_fetch` 只在最后一步转字符串。同一个函数服务两种用途时，最底层那个类型要选得够宽 |
 | 画布参考线改成"中间实线、两头虚线"之后，端头的虚线几乎看不见（实测只剩 5% 亮度），像"线没画出来" | `mask-image` 遮的是**元素和它的全部子内容**。实线的遮罩（两端透明）写在 `.lattice-guide` 上，同一元素里的 `::after` 虚线被它一起遮掉了 —— 两层变成了两层遮罩的乘积 | 两层都改成伪元素（`::before` 实线 / `::after` 虚线），元素自己不带遮罩；兄弟之间的遮罩互不影响。这条是截屏取像素比出来的（Chrome headless + `System.Drawing` 采样），肉眼只会觉得"线有点淡"。**后来那两层遮罩连同渐隐端头一起删掉了**（线改成局部虚线之后不再需要淡入淡出，一个 `repeating-linear-gradient` 就够），但坑本身留着 —— 往那个元素上加 `mask-image` 或 `filter` 会连它的子内容一起遮/一起模糊 |
 | 系统卡片的逐核条偶尔全部归零，或者显示成一排和实际负载对不上的高度，下一拍又自己好了 | 逐核数据是"这一拍每个核的累计计数"，要和**上一拍的数组按索引相减**。休眠唤醒 / CPU 热插拔会让核数变（8 → 16），按索引对上去就是拿 A 核的计数减 B 核的 | `metrics_policy::per_core` 发现长度不一致就返回**空数组**，组件把那一行收起来，下一拍自然恢复。宁可不画，也别画一条看着合理、其实全错的曲线 |
+| 刚给这台机器装了真的 gcc（`ring` 要它），Rust 这边反而编不动了 —— 停在 `resource.rc` 上，只有一句 `windres: preprocessing failed.` | 预处理 `.rc` 时 windres 会自己 spawn `gcc -E -xc-header`，而 MSYS2 的 gcc 16.2.0 对**任何** `-x` 都静默退出 1（`gcc -E -x c foo.c` 一样是 1，一个字的诊断都没有）。装真 gcc 之前这里走的是 `gcc-shim`，它不认参数、也就不碰 `-x`，所以同一个故障是"修好一个坏掉另一个" | `.toolchain/windres-shim/x86_64-w64-mingw32-windres.exe`：往参数里塞一句 `--preprocessor <.toolchain>/gcc-shim/gcc.exe` 再转发给真 windres（棂的 `resource.rc` 没有 `#include` / `#ifdef`，"原样复制"就是正确的预处理结果），`-V` / `--version` 的探测请求原样转发（`embed-resource` 靠它认编译器种类）；`scripts/tauri.mjs` 发现这个目录就把它排到 PATH 最前。**两个 shim 各管一件事**：`windres-shim` 管"谁来预处理"，`gcc-shim` 管"预处理怎么做" —— `ring` 的 `.c` 仍然必须走真 gcc |
+| assistant 小窗一开，整个应用（连托盘）都僵住，Ctrl+K 也没反应，只能去任务管理器 | 三个 `assistant_window_*` 命令写成了同步 `fn`：同步命令跑在主线程，而建窗口的 `build()` 要把活投递回主线程再等结果 —— 命令占着主线程等自己 | 三个全改成 `pub async fn`，和 `sync_widget_windows` / `widget_close` 同一条规矩（AGENTS §5）。这类死锁 v0.2 就撞过一次，那条记的是"建窗口的命令必须 async"；这次是**新加的命令**又忘了一遍 —— 加任何碰窗口的命令之前，先回去看那三条 |
+| 在小窗里让它"把这个组件挪一下"，挪完主窗口里的布局像退回到启动那一刻（新摆的组件没了、主题也换回去了） | `state.json` 不是状态本身，它只是主窗口那份 store 的**磁盘副本**。小窗是第二个 webview、也是第二个 store：它拿启动时的快照跑执行器、再把整份状态写回磁盘，等于把主窗口这一段时间的所有改动整块盖掉 | 执行器只留在主窗口。`platform/assistant.ts` 抽出 `AssistantSurface`：抽屉 `localSurface(records)` 本地跑，小窗 `remoteSurface()` 把 `assistant_snapshot` / `assistant_act` 交给 `agent.rs`，走 agent 端点**同一条** `call_frontend` 通道，动作照旧先过 `agent_policy` 的白名单。**判据**：凡是"要改桌面"的东西只能在持有 store 的那个窗口里发生，别的窗口最多转发 |
 | 提交量显示成"15 MB / 24 MB"，比任务管理器小 4096 倍 | `PERFORMANCE_INFORMATION` 里的 `CommitTotal` / `CommitLimit` / `SystemCache` 单位是**页**，不是字节 | 乘 `PageSize` 再用。同一个结构体里 `ProcessCount` / `ThreadCount` / `HandleCount` 是**计数**、不用乘 —— 一个结构体里混着两种单位，抄字段的时候要一个字段一个字段看 |
 
 ### 环境与构建（windows-gnu）
@@ -299,10 +302,14 @@
 `scripts/tauri.mjs` 在启动 `tauri` 之前把目录塞进 `PATH`：
 
 ```
+.toolchain/intl                 # ld 的两个 DLL（libintl-8 / libiconv-2），排最前
+.toolchain/windres-shim         # 替身 windres：预处理改用 gcc-shim（有真 gcc 时必须用它）
 .toolchain/msys64/mingw64/bin   # 完整 mingw-w64 工具链（gcc + as + ld + binutils）
 .toolchain/mingw64/bin          # 只有 binutils（windres.exe 在这里）
 .toolchain/gcc-shim             # 只做透传的 gcc.exe —— 没有真 gcc 时才用它
 ```
+
+顺序是这四条规矩：**`intl` 在最前**（它和工具链不是一回事，缺了 `ld` 连 `--version` 都跑不起来）、**`windres-shim` 在真 gcc 之前**（windres 是按名字找 `x86_64-w64-mingw32-windres`）、**真 gcc 在 `mingw64/bin` 之前**（它的 as/ld 要和自带 binutils 配套，混用两套会出怪问题）、**`gcc-shim` 只在没有真 gcc 时才出现**。
 
 `npm run tauri:dev` / `tauri:build` 都走这个包装脚本，所以直接跑就行。  
 换到 MSVC 工具链（`rustup default stable-x86_64-pc-windows-msvc`）就不需要这一套了。
@@ -310,6 +317,8 @@
 **为什么后来必须装一个真的 gcc。** 加了自动更新之后依赖里第一次出现 `ring`（更新器的 TLS 用它），它有一批 `.c` 文件要现编。而 `gcc-shim` 只会**把 `.c` 原样拷成 `.o`** —— 它本来只服务 `windres` 的预处理。结果是一堆"内容其实是 C 源码"的目标文件，链接时几百行 `undefined reference to ring_core_0_17_14__…`，看着像 ABI 或 LTO 问题，实际是根本没编译过。诊断方法很简单：`od -An -tx1 -N8 <ring 的 .o>`，正常目标文件开头是机器码，这里是 `2f 2f 20 43`（`// C`）。
 
 装法（不需要 pacman，也不动系统 PATH）：从 MSYS2 镜像取 `gcc` / `crt` / `headers` / `winpthreads` / `isl` / `gmp` / `mpfr` / `mpc` / `zlib` / `zstd` / `libgcc` / `libstdc++` 这批 `.pkg.tar.zst`，用系统自带的 `bsdtar`（`C:\Windows\System32\tar.exe`，带 libzstd）直接解到 `.toolchain/msys64/`。包装脚本发现 `.toolchain/msys64/mingw64/bin/gcc.exe` 就把它排在最前、并且**不再**放 `gcc-shim`。
+
+**装了真 gcc 之后还多一层 `windres-shim`。** windres 预处理 `.rc` 时会自己 spawn `gcc -E -xc-header`，而 MSYS2 gcc 16.2.0 对**任何** `-x` 都静默退出 1（没有一个字的诊断），windres 于是只报一句 `windres: preprocessing failed.`。替身做的事只有一件：把 `--preprocessor <.toolchain>/gcc-shim/gcc.exe` 塞进参数再转发给真 windres（`.rc` 里没有 `#include` / `#ifdef`，"原样复制"就是正确的预处理结果），`-V` / `--version` 的探测请求原样转发。改了它要重编，命令在 `windres-shim.rs` 的文件头。
 
 **`cargo test` 在这台机器上跑不了。** 本机安全策略禁止写 `target\debug\deps\*.exe`，而测试二进制正好生成在那里 —— 表现是链接出来的 exe 不完整，一跑就 `0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND`（看着像链接错误，其实是文件没写全）。同一个策略也是"dev 任务莫名挂掉、报 `beforeDevCommand terminated with a non-zero status code`"的真正原因：`cargo` 想写 `deps\lattice-*.exe` 被拒。
 
@@ -723,7 +732,12 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 - [x] **手仍然是那八个动作，而且只有平台能用**。工具表在 `runtime/assistant.ts`（名字、参数名、类型、`required`），执行仍是 `runtime/agent.ts` 的 `AGENT_ACTIONS` —— 两张表由 `tests/assistant.html` 钉着"名字集合相等、参数键与执行器的 `EXECUTOR_KEYS` 对得上"。循环上限 6 步（Rust 侧还有 8 步的硬闸），每步把执行器回的 JSON 当 `tool` 消息回填，用户点停止立刻断。**授权、安装、卸载、改配置、写存储一律不在工具表里**：让模型能改权限，等于让一段提示词决定"信不信任这段代码"。
 - [x] **组件只有嘴：`llm.chat` 一律 `tools: null`**。第十项权限 `llm:chat`（"Use my AI model"）换到的是一段文字，不是一双手 —— 模型真回一个工具调用，桥把它变成 `internal` 错误。桌宠是第一个用它的人（`lattice.pet` 0.6.0）：她能在自己的气泡里说话，但她动不了自己的位置。这条是不变量 2 的延伸：**能改变桌面的是平台，不是组件。**
 - [x] **错误要分得清是谁的错**。401/403 → "provider 拒了这把 key（HTTP 401），去 Assistant settings 换一把"；404 → 提一句 `/v1` 大概是漏了；429 → 配额。统一说"网络问题"是拿更新器换来的教训（不变量 16），这里不重犯。响应体上限 512KB、请求节流 300ms、消息 60 条 / 单条 12k 字 / 合计 60k 字，都是为了"用户手滑粘一整本书"和"provider 收钱按 token"。
-- 验证：`llm_policy.rs` **21 条** `rustc --test`（归一化、回环、请求体、消息与工具校验、应答解析、401/404/429 的话）、`tests/assistant.html` **83 条**、`npm run typecheck` 干净、全量自检 **39 页 / 1533 条 / 0 failed**。真机（假端点）走通了整条链路：抽屉里填地址 + key → 测试连接列出模型 → 发一句 → 模型调 `placement.move` → 卡片真的从 (32,40) 挪到 (300,120) → 回一句话；换成错误 key 得到上面那句 401；桌宠两个 iframe 调 `llm.chat` 都拿回文字。**没走的**是真厂商的 key（本机只有假端点），以及"断网时那句话对不对" —— 前者只能拿一把真 key 验，后者要拔网线。
+- [x] **从"主窗口的抽屉"变成"桌面上的一扇小窗"**。抽屉的前提是你正看着平台；可 assistant 要做的事恰恰是"我不看平台的时候让它动一下"。现在 Ctrl+K 叫出来的是一扇无边框、400×580、能拖的独立窗口（独立入口 `assistant.html`，**不加载平台外壳也就不加载 store**），不置顶 —— 叫它出来而不是永远压着你；✕ 只是 `hide()`，webview 和那一轮对话都留着；位置在拖动结束时才写 `assistant-window.json`。三条撞出来的：
+  - **三个窗口命令必须是 `async fn`**。同步命令跑在主线程，而 `build()` 要把建窗口投递回主线程再等结果 —— 表现是整个应用卡死（连托盘都不响应），不是"窗口没出来"。
+  - **小窗不能自己跑执行器**。`state.json` 不是状态，它是主窗口那份 store 的磁盘副本；小窗拿启动时的快照跑一遍 `AGENT_ACTIONS` 再写回去，等于把主窗口期间的所有改动（新摆的组件、换过的主题）整块盖掉。所以 `platform/assistant.ts` 抽出 `AssistantSurface`：抽屉 `localSurface(records)` 本地跑，小窗 `remoteSurface()` 把 `assistant_snapshot` / `assistant_act` 交给 `agent.rs`，走 agent 端点**同一条** `call_frontend` 通道，动作照旧先过 `agent_policy` 的白名单。工具循环一行没分叉。
+  - **capability 里要显式开 `start-dragging`**，否则标题栏拖不动，而且失败是静默的（`startDragging()` 的 Promise 直接 reject）。
+- [x] **看板不再把 assistant 那几行当成看不懂的行**。`lattice.agent` 0.2.0 的 `describe()` 开始认 `op === "assistant.chat"`：从审计的 `detail` 里取出 `tools: placement.move` 这类字段，翻译成 "assistant · moved a widget"，没有工具的那几轮仍按 `say` 显示。改之前这些行被整条滤掉 —— 而"谁动了桌面"正是这块看板存在的理由，滤掉它等于把内置 assistant 做的事藏起来。`tests/agent-widget.html` +7 条钉着。
+- 验证：`llm_policy.rs` **21 条** `rustc --test`（归一化、回环、请求体、消息与工具校验、应答解析、401/404/429 的话）、`tests/assistant.html` **83 条**、`npm run typecheck` 干净、全量自检 **39 页 / 1540 条 / 0 failed**。真机走过两条：先是假端点（卡片从 (32,40) 挪到 (300,120)、错的 key 得到那句 401），再是**真厂商** —— 天枢 Dubhe 的 OpenAI 兼容根是 `…/v1/8686/v1`（`/v1/8686` 本身返回一张 HTML SPA，少写那截 `/v1` 会得到 404 而不是"地址不对"）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受。**没走的**："断网时那句话对不对"（要拔网线），以及 agent 端点的 CLI 往返（见 §8 已知缺口）。
 
 ## 长期要盯的风险
 

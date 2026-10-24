@@ -37,7 +37,7 @@ So is the absence of a server. The catalogue is a static `registry.json`, the pa
 
 ## Where it stands
 
-v0.10 is the current version: **a model you bring, hands that stay ours.** The platform has an assistant of its own — `Ctrl+K`, or the button in the top bar: paste an OpenAI-compatible base URL and an API key once, and it answers in the drawer *and* in a widget's bubble. There is no model bundled and no proxy in between: the key lives in `assistant.json` under Rust's control, the frontend only ever sees `sk-1…cdef`, and the only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had. A widget that asks for `llm:chat` gets text back, never tools.
+v0.10 is the current version: **a model you bring, hands that stay ours.** The platform has an assistant of its own — `Ctrl+K`, or the button in the top bar, brings up a small draggable window: paste an OpenAI-compatible base URL and an API key once, and it answers there *and* in a widget's bubble. There is no model bundled and no proxy in between: the key lives in `assistant.json` under Rust's control, the frontend only ever sees `sk-1…cdef`, and the only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had. A widget that asks for `llm:chat` gets text back, never tools.
 
 v0.9 added **sound you can see, links that get out.** The music widget was renamed from `lattice.media` to `lattice.music` (it reads *what is playing* before it reads *how loud*), the player name is translated from AUMID into something a person recognises, the card was re-laid-out for its real 268 × 172 budget, and two capabilities landed: `audio:level` — a WASAPI loopback tap on the default output device that returns one number in `0..1` — and `shell:open`, which hands an http/https URL to the default browser and nothing else. `lattice.bookmarks` is the widget that proves it.
 
@@ -60,10 +60,10 @@ v0.9 added **sound you can see, links that get out.** The music widget was renam
 | --- | --- |
 | Official widgets | 15 |
 | Permissions | 10 |
-| Tauri commands | 54 |
-| Browser assertions | 1 533 over 39 pages |
+| Tauri commands | 59 |
+| Browser assertions | 1 540 over 39 pages |
 | Rust tests | 178 |
-| Documented pitfalls | 69 |
+| Documented pitfalls | 72 |
 
 Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 157 `rustc --test` pure-logic cases plus 21 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
@@ -242,7 +242,7 @@ npm run typecheck        # tsc --noEmit
 npm run test:injection   # the diagnostics reporter is injected identically on both paths
 npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
-npm run test:browser     # 1 533 assertions over 39 pages, real Chrome, real dev server
+npm run test:browser     # 1 540 assertions over 39 pages, real Chrome, real dev server
 ```
 
 The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.
@@ -281,7 +281,7 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 | --- | --- |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | How the pieces fit, and why |
 | [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) | The widget contract |
-| [docs/ROADMAP.md](./docs/ROADMAP.md) | Version history, 69 pitfalls, 9 overturned decisions |
+| [docs/ROADMAP.md](./docs/ROADMAP.md) | Version history, 72 pitfalls, 9 overturned decisions |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | The agent endpoint's threat model |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | Keys, trust anchors, what is *not* signed |
 | [AGENTS.md](./AGENTS.md) | 19 invariants, written for whoever touches this next |

@@ -12,7 +12,7 @@
 
 **棂 / Lattice** —— 可扩展的 Windows 桌面小组件平台。第三方用纯 HTML/CSS/JS 写组件，平台负责把它们安全地放到桌面上。
 
-当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志 + 一块看板组件），数据平面（组件把能力声明成工具）还没做；平台另外自带一个 **assistant**（`Ctrl+K`：自备 OpenAI 兼容地址与 key，key 只在 Rust 里，工具调用只走同一套 8 个动作，组件那侧只有 `llm:chat`）。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
+当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志 + 一块看板组件），数据平面（组件把能力声明成工具）还没做；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，key 只在 Rust 里，工具调用只走同一套 8 个动作，组件那侧只有 `llm:chat`）。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
 
 想先知道"为什么现在是这样"，读 [ROADMAP 的「被推翻的九个决定」](./docs/ROADMAP.md#被推翻的九个决定)——每个决定都写着当初怎么选、被什么撞翻、现在怎么补。
 
@@ -42,7 +42,8 @@ npm run store:index  # 打包 + 签名内置组件，写 public/store/（dev / b
 ```
 src/
   App.tsx                 平台外壳：顶栏、编排、桌面窗口回传事件的处理
-  main.tsx                React 入口
+  main.tsx                React 入口（平台外壳）
+  assistantMain.tsx       React 入口（assistant 小窗）：只挂 `AssistantWindow`，**不加载 store**
   styles.css              平台样式层（CSS 变量 + 语义类，不引 Tailwind）
   widgetHost.ts           桌面窗口的宿主页：装 iframe、画窗饰、处理拖拽缩放
   widgetHost.css          窗饰与缩放手柄样式
@@ -62,8 +63,9 @@ src/
     autostart.ts          开机自启的读写与"路径漂移"判定（`Run` 注册表项）
     catalogue.ts          商店客户端：读目录（内置走 fetch / 远端走 IPC）、下载安装、备份与回滚、写举报
     DebugPanel.tsx        调试面板：桥调用与组件 console 的实时抽屉（Ctrl+Shift+D）
-    assistant.ts          assistant 的 IPC 面：读写模型设置、列模型（测试连接）、跑一轮对话（工具循环 ≤6 步，动作交给 `runtime/agent.ts`）
-    AssistantPanel.tsx    assistant 抽屉（Ctrl+K）：模型设置 + 对话；工具结果一行一个
+    assistant.ts          assistant 的 IPC 面：读写模型设置、列模型（测试连接）、跑一轮对话（工具循环 ≤6 步）；动作交给 surface —— 主窗口本地跑，小窗转给主窗口（`AssistantSurface`）
+    AssistantPanel.tsx    assistant 的面板：模型设置 + 对话，工具结果一行一个（抽屉与小窗共用这一个组件）
+    AssistantWindow.tsx   assistant 小窗的壳：一条能拖的标题栏 + 面板；**没有 store**，动作走 `remoteSurface()`
   runtime/
     manifest.ts           清单校验与归一化；Permission 类型与中文标签（唯一真源）
     config.ts             每实例配置：清单 schema（5 类字段）、归一化、值合并
@@ -83,6 +85,7 @@ src/
     debug.ts              调试总线：环形缓冲 400 条、攒批镜像到主窗口、过滤 / 统计纯函数
     semver.ts             版本号与范围：解析 / 比较 / `^ ~ >= <= > < =` / 通配 / `||`（纯函数，`tests/semver.html` 钉着）
     catalogue.ts          目录解析与安装计划：三道校验、挑版本、权限差集（纯函数，`tests/catalogue.html` 钉着）
+assistant.html            assistant 小窗的宿主页（vite 第三个 input；独立入口 = 小窗不加载平台外壳与 store）
 public/widgets/           官方组件包（未安装前只是"可发现"）
 public/store/             内置商店目录（`npm run store:index` 生成：registry.json + packages/*.lattice，**不进仓库**）
 examples/counter/         第三方组件的参考实现（用 SDK），拖进窗口即可安装
@@ -126,10 +129,11 @@ src-tauri/src/
   occlusion_policy.rs     遮挡的纯逻辑：采样点怎么取、几个没命中算挡住（8 条 rustc --test）
   open.rs                 打开外链：把 shell.open 交给系统默认浏览器（协议由 open_policy 卡）
   open_policy.rs          上面那道的纯逻辑：只放 http/https、像地址栏一样补协议头（5 条 rustc --test）
-  agent.rs                Agent 端点：只绑 127.0.0.1 的 HTTP、令牌、审计、转发给主窗口（默认关）
+  agent.rs                Agent 端点：只绑 127.0.0.1 的 HTTP、令牌、审计、转发给主窗口（默认关）；小窗要的 `assistant_snapshot` / `assistant_act` 也复用这条转发
   agent_policy.rs         上面那道的纯逻辑：HTTP 三态解析、Bearer 常量时间比对、动作白名单、`say` 的单行化与超长拒绝（26 条 rustc --test）
   llm.rs                  内置 assistant 的模型面：`assistant.json` 读写、环境变量覆盖、llm_status / llm_save / llm_set_key / llm_models / llm_chat 五个命令、出网走 `network::send`、审计只记模型与字数
   llm_policy.rs           上面那道的纯逻辑：base URL 归一化与回环判定、请求体拼装、消息与工具校验、`/chat/completions` 与 `/models` 的应答解析、401/404/429 的给人看的话（21 条 `rustc --test`，**不引 crate**）
+  assistant_window.rs     assistant 的桌面小窗：建 / 开关 / 藏、拖完存位置（`assistant-window.json`）；三个命令都是 `async fn`（同步会死锁）
   wallpaper.rs            截壁纸（宿主页底板的第一层）
   metrics.rs              系统指标（sysmon 组件用）：整机 + 逐核 CPU、内存与提交量、磁盘、网络、开机时长 / 进程计数，直接调 Win32 不引 crate
   metrics_policy.rs       上面那道的纯逻辑：累计计数 → 占用率、核数变了返回空而不是错位（5 条 rustc --test）
@@ -150,6 +154,7 @@ src-tauri/installer-hooks.nsh  NSIS 钩子：卸载时删掉 Run 注册表项（
 src-tauri/capabilities/
   default.json            主窗口权限
   widget.json             组件窗口权限（widget-* 标签）
+  assistant.json          assistant 小窗权限（window "assistant"；含 `start-dragging`）
 tests/                    纯逻辑与布局的浏览器断言（tests/*.html，跑在 dev server 上）
 docs/                     架构、组件规范、路线图与踩坑、代码签名取舍
 ```
@@ -298,6 +303,7 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 | 摆放、已安装、授权、主题、网格吸附、本机档案、桌面矩形、目录地址、钉住的发布者钥匙、评分、待复核的权限 | `%APPDATA%\com.iron-tom.lattice\state.json` | `store.ts` → `state_write` |
 | 组件私有数据 | `%APPDATA%\com.iron-tom.lattice\widget-data\<widgetId>.json` | `bridge.ts` → `widget_store_write` |
 | assistant 的模型设置与 **API key** | `%APPDATA%\com.iron-tom.lattice\assistant.json`（`{baseUrl, model, temperature, apiKey}`，临时文件 + 原子替换） | `llm.rs`（**只有 Rust 读得到明文 key**，前端只见掩码） |
+| assistant 小窗的位置 | `%APPDATA%\com.iron-tom.lattice\assistant-window.json`（`{x, y}` 屏幕坐标，临时文件 + 原子替换） | `assistant_window.rs`（**拖完才写**，文件坏了退回右下角默认位） |
 | 用户安装的组件 | `%APPDATA%\com.iron-tom.lattice\widgets\<id>\` | `widgets.rs` |
 | 上一代的组件（回滚用） | `%APPDATA%\com.iron-tom.lattice\widget-backups\<id>\` | `backup.rs`（只留一代，卸载时一起删） |
 | 举报与评分 | `%APPDATA%\com.iron-tom.lattice\reports\<widgetId>-<unix>.json` | `store.rs::store_report`（**不发送**，只是文件） |
@@ -348,7 +354,8 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 6. **错误话要分得清是谁的错**。`describe_status` 把 401/403 说成"provider 拒了这把 key（HTTP 401）—— 去 Assistant settings 换一把"、404 提 `/v1`、429 说配额。别统一成"网络问题"——那条教训是拿更新器换来的（见不变量 16）。
 7. **审计只记形状不记内容**：`assistant.chat` 记模型名与字符数，`assistant.models` 记主机。`agent.rs::audit` 已改成 `pub(crate)`，只此一处复用。
 8. **`llm_policy.rs` 必须保持不引 crate**。它要能在写不了 `target/debug/deps` 的机器上用 `rustc --test` 单独跑（把文件 `#[path]` 进一个壳子即可）——所以 JSON 读取是手写的（深度上限 32），`llm.rs` 才引 `serde_json` 拼返回值。往 `llm_policy.rs` 里加 `use serde::…` 会让那 21 条测试整批失去可运行性。
-9. **UI 只有两处**：`AssistantPanel.tsx` 一个抽屉两态（对话 / 设置），快捷键 Ctrl+K 写在 `App.tsx`；样式只追加 `.lattice-assistant*` 到 `styles.css`。设置里"测试连接"打的是 `llm_models`，它同时是唯一一处验证 key 的地方。
+9. **一个面板，两块画布**。`AssistantPanel.tsx` 是唯一实现（两态：对话 / 设置），主窗口拿它当右下角抽屉（`variant="drawer"`，浏览器里也走这条），桌面小窗拿它当整块内容（`variant="window"`，壳是 `AssistantWindow.tsx` + 独立入口 `assistant.html` / `src/assistantMain.tsx`）。Ctrl+K 在 `App.tsx` 里只做一件事：Tauri 下 `invoke("assistant_window_toggle")`，浏览器下落回抽屉。样式只追加 `.lattice-assistant*`（`.is-window` 修饰类给窗内布局）。设置里"测试连接"打的是 `llm_models`，它同时是唯一一处验证 key 的地方。
+10. **动作只有一个执行者，小窗只是转发**。`store` 只活在主窗口里（`state.json` 是它的磁盘副本）；小窗若自己跑 `AGENT_ACTIONS`，就会拿读到的旧快照写回磁盘 —— 两份 store 互相盖。所以 `platform/assistant.ts` 抽出 `AssistantSurface`：主窗口 `localSurface(records)` 直接跑真执行器，小窗 `remoteSurface()` → `assistant_snapshot` / `assistant_act`（`agent.rs`，和 agent 端点同一条 `call_frontend` 通道）→ 主窗口执行、把结果和压缩后的快照回传。**加新动作两边都不用改**，只要还走 `AGENT_ACTIONS`。三条连带事实：① `assistant_window_*` 三个命令必须是 `async fn` —— 同步命令占着主线程等 `build()`，而 `build()` 要把建窗口投递回主线程，直接死锁（真机撞过）；② 小窗的 ✕ 是 `hide()` 不是 `close()`，webview 和对话都留着，再按 Ctrl+K 回来还是那一轮；③ 位置只在拖完存（`startDragging().then(save_pos)`），拖的过程中不写盘。
 
 ### 改三栏布局
 

@@ -11,12 +11,13 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [react(), widgetDiagnostics()],
 
-  // 两个入口：主窗口的平台外壳，以及每个桌面组件窗口用的宿主页
+  // 三个入口：主窗口的平台外壳、每个桌面组件窗口用的宿主页，以及 assistant 小窗
   build: {
     rollupOptions: {
       input: {
         main: "index.html",
         widgetHost: "widget-host.html",
+        assistant: "assistant.html",
       },
     },
   },

@@ -256,7 +256,7 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 | | 谁在说话 | 手从哪来 | 入口 |
 | --- | --- | --- | --- |
 | A 控制平面 | 外部 agent（Claude Desktop / CLI） | HTTP `POST /rpc` + 八个动作 | `127.0.0.1:<port>` |
-| D 内置 assistant | **平台自己**带模型 | 同一个执行器（`runAgentAction`） | 主窗口抽屉（Ctrl+K） |
+| D 内置 assistant | **平台自己**带模型 | 同一个执行器（`runAgentAction`） | 桌面小窗（Ctrl+K，能拖；浏览器里退回主窗口抽屉） |
 
 两条路的执行器**是同一个**（`platform/agent.ts`）。这不是省事，是安全模型：白名单只有一份，
 "agent 能改什么"的答案不会因为入口不同而不同。区别只在"谁在说"和"谁在听"。
@@ -302,6 +302,32 @@ DeepSeek / OpenAI / Kimi / Qwen / Ollama / LM Studio —— 而"再多支持一�
 3. **错误要说人话。** 401 是"key 被拒"，404 是"base URL 多了或少了 `/v1`"，429 是"额度/频率"。
    统一说"检查你的网络"是更新器踩过的坑（见 ROADMAP）。
 
+### 4.6 小窗不是第二个执行者
+
+assistant 现在是一个**独立窗口**（`assistant.html` 这个单独入口，不加载平台外壳，也就不加载
+store）。这里有个必须想清楚的地方：**`state.json` 不是状态，它是主窗口那份 store 的磁盘副本。**
+小窗要是自己跑一遍 `AGENT_ACTIONS`，它读到的快照是启动时那份，写回去就是把主窗口期间的所有
+改动（用户新摆的组件、改过的主题）整块盖掉 —— 两份 store 互相盖，丢的是用户的布局。
+
+所以动作只有一个执行者：
+
+```
+小窗 AssistantWindow ── invoke("assistant_snapshot") ──► agent.rs ──{op:"state"}──► 主窗口
+                     ── invoke("assistant_act", …)   ──►          ──{op:"act", …}──► 主窗口执行
+                                                                   ◄── 结果 + 压缩后的快照
+```
+
+- 走的是 agent 端点**同一条** `call_frontend` 通道（同一个 5 秒超时、同一个审计点），不是新开一条路。
+- 动作仍然先过 `agent_policy::parse_action` 的白名单 —— 小窗不是特权入口，它只是另一个壳。
+- 抽屉和小窗共用 `AssistantPanel.tsx`，两者的差别只有 `AssistantSurface` 一个对象
+  （`localSurface(records)` / `remoteSurface()`），工具循环本身一行都没分叉。
+- 三个窗口命令必须是 `async fn`：同步命令占着主线程等 `build()`，而 `build()` 要把建窗口投递回
+  主线程 —— 真机上这一条表现为整个应用卡死，连托盘都不响应。
+
+窗本身的取舍：**不置顶**（Ctrl+K 会把它提到前面，符合"叫它出来"而不是"永远压着你"）、
+✕ 只是 `hide()`（webview 和那轮对话都留着）、位置只在拖动结束时写
+`assistant-window.json`（拖的过程中不碰盘）。
+
 ## 5. 明确不做（v1）
 
 **后台自主调控。** 比如"每天按天气自动换主题"——那需要一个常驻订阅，而人在环（用户说
@@ -314,8 +340,9 @@ DeepSeek / OpenAI / Kimi / Qwen / Ollama / LM Studio —— 而"再多支持一�
 | `agent_policy.rs`（HTTP 解析 / 令牌 / 白名单 / `say`） | 26 条 `rustc --test`，见 `.scratch/agent-test.rs` |
 | `platform/agent.ts`（动作执行器） | `tests/agent.html` 57 条，跑的是**真 store** |
 | `scripts/lattice-agent.mjs`（客户端） | `npm run test:agent`，14 条，起假端点测请求形状、`say` 的整句传递与退出码 |
-| `lattice.agent`（看板组件） | `tests/agent-widget.html` 50 条，iframe 里加载真组件，调 `window.__latticeAgentFeed` |
+| `lattice.agent`（看板组件） | `tests/agent-widget.html` 57 条，iframe 里加载真组件，调 `window.__latticeAgentFeed`；含"内置 assistant 那几轮在日志里怎么显示" |
 | `llm_policy.rs`（地址 / 请求体 / 响应 / 工具调用 / 错误翻译） | 21 条 `rustc --test`，见 `.scratch/llm-test.rs` |
 | `runtime/assistant.ts`（工具表 / 历史裁剪 / 快照预算） | `tests/assistant.html` 83 条 |
-| `llm.rs` + 工具循环 + 组件那条路 | **2026-10-25 实机验过**：起一个假的 OpenAI 兼容服务（`.scratch/fake-llm.mjs`），真点开抽屉、真打字、真回车 —— 卡片从 (32,40) 挪到 (300,120)，气泡里出现"✓ 移动 lattice.pet#demo01"和回复；两个 pet iframe 的 `llm.chat` 都回到 `{ok:true,text:"…"}`；把 key 换成错的之后 `listModels` 报"the provider rejected the API key (HTTP 401)" |
-| Rust 监听器 + Tauri 往返 | **没验过** —— 要起 `tauri:dev`。起之前先确认没有残留的 `lattice.exe`（孤儿进程会用内存里那份盖掉 `state.json`） |
+| `assistant_window.rs` + 小窗那条转发 | **2026-10-25 实机验过**：`assistant_window_toggle` 回 `true`，CDP 查到 `assistant.html` 的 DOM（标题栏、面板、`Assistant · deepseek-v4.1-flash`、跟随主题），窗口里说一句 → 工具真的挪了桌宠（`lattice.pet#demo01` → 60,80）并回话；藏起来再叫回来还是同一个 webview、同一轮对话；拖完 `assistant-window.json` 落成 `{x:1300.0,y:444.0}` |
+| `llm.rs` + 工具循环 + 组件那条路 | **2026-10-25 实机验过**：先起一个假的 OpenAI 兼容服务（`.scratch/fake-llm.mjs`），真点开、真打字 —— 卡片从 (32,40) 挪到 (300,120)，气泡里出现"✓ 移动 lattice.pet#demo01"和回复；两个 pet iframe 的 `llm.chat` 都回到 `{ok:true,text:"…"}`；把 key 换成错的之后 `listModels` 报"the provider rejected the API key (HTTP 401)"。**之后换成了真厂商**（天枢 Dubhe 网关，OpenAI 兼容根是 `…/v1/8686/v1`）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受 |
+| agent 端点的 CLI 往返 | **没验过** —— 要起 `tauri:dev` 并在端点开着的时候正好敲命令。起之前先确认没有残留的 `lattice.exe`（孤儿进程会用内存里那份盖掉 `state.json`） |

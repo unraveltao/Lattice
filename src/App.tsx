@@ -174,6 +174,27 @@ export default function App() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
 
+  /**
+   * 开 / 关 assistant。
+   *
+   * 桌面应用里它是一个**独立窗口**（`assistant_window_toggle`）—— 主窗口收起
+   * 之后它还得能用。浏览器里没有窗口可开，退回抽屉：那种情况下 `isTauri()`
+   * 是 false，`npm run dev` 里还能看见这块界面长什么样。
+   */
+  const toggleAssistant = useCallback(() => {
+    if (!isTauri()) {
+      setAssistantOpen((value) => !value);
+      return;
+    }
+    void invoke<boolean>("assistant_window_toggle")
+      .then((open) => setAssistantOpen(open))
+      .catch((error) => {
+        // 窗口建不出来时别把功能吞掉：落在抽屉里，至少还能聊
+        console.error("failed to toggle the assistant window", error);
+        setAssistantOpen((value) => !value);
+      });
+  }, []);
+
   /*
    * 组件目录（商店）。
    *
@@ -249,17 +270,20 @@ export default function App() {
    *
    * 不用 Ctrl+Space（输入法会吃掉）、不用 Ctrl+/（编辑器里太常见）。Ctrl+K 是
    * 聊天框的肌肉记忆，而这台机器上它没有被别的东西占用。
+   *
+   * 桌面上那个独立小窗优先：它能在主窗口收起来之后继续用（"一边干别的、
+   * 一边让它改桌面"才是这东西的用途）。浏览器里没有窗口可开，退回抽屉预览。
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.ctrlKey || event.shiftKey || event.altKey) return;
       if (event.key.toLowerCase() !== "k") return;
       event.preventDefault();
-      setAssistantOpen((value) => !value);
+      void toggleAssistant();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [toggleAssistant]);
 
   useEffect(() => {
     if (notice?.kind !== "ok") return;
@@ -948,8 +972,8 @@ export default function App() {
           <button
             type="button"
             className={`lattice-icon-btn is-large${assistantOpen ? " is-active" : ""}`}
-            onClick={() => setAssistantOpen((value) => !value)}
-            title="Assistant — 说一句就能改桌面（Ctrl+K）"
+            onClick={toggleAssistant}
+            title="Assistant — 说一句就能改桌面（Ctrl+K，独立小窗）"
             aria-label="Toggle assistant"
           >
             <Glyph d={ICON.agent} />
@@ -991,7 +1015,7 @@ export default function App() {
             onQuit={() => {
               if (isTauri()) void invoke("quit_app");
             }}
-            onOpenAssistant={() => setAssistantOpen(true)}
+            onOpenAssistant={toggleAssistant}
           />
         </div>
       </header>
@@ -1042,12 +1066,18 @@ export default function App() {
       */}
       <DebugPanel open={debugOpen} onClose={() => setDebugOpen(false)} />
 
-      {/* 抽屉式：它改的是画布上的东西，用户得看得见 */}
-      <AssistantPanel
-        open={assistantOpen}
-        onClose={() => setAssistantOpen(false)}
-        records={records}
-      />
+      {/*
+        抽屉只在**浏览器预览**里出现：桌面应用里 assistant 住在一个独立小窗
+        （`assistant_window_toggle`），主窗口这颗按钮和 Ctrl+K 只是开关它。
+        两边共用同一个 `AssistantPanel`，区别只在 surface —— 见 platform/assistant.ts。
+      */}
+      {!isTauri() && (
+        <AssistantPanel
+          open={assistantOpen}
+          onClose={() => setAssistantOpen(false)}
+          records={records}
+        />
+      )}
 
       {/*
         删除是可以反悔的。

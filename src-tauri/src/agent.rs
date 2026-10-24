@@ -568,3 +568,46 @@ pub fn agent_reply(app: AppHandle, id: String, payload: String) {
         let _ = tx.send(payload);
     }
 }
+
+// ---------------------------------------------------------------------------
+// assistant 小窗用的那两条
+// ---------------------------------------------------------------------------
+//
+// 桌面上那个 assistant 窗口和主窗口是**两个 webview、两份内存状态**。布局的
+// 权威在主窗口那份 `useLattice` 里（`state.json` 只是它的落盘副本），所以小窗
+// 里的工具调用不能自己跑执行器 —— 那会直接`state_write`一份出去，主窗口的
+// 画布却停在旧位置（这个项目被"两套真相"咬过一次，见 platform/agent.ts 的
+// 模块注释）。
+//
+// 所以小窗借的是**同一条通道**：把 op 转给主窗口，主窗口用自己的 store 执行，
+// 结果原样回来。`call_frontend` 因此对 crate 内可见 —— 它不是给端口用的，
+// 是"平台自己的第二个界面"用的。
+
+/// 桌面现状（给 assistant 的 system prompt）。走主窗口，因为只有它手握权威状态
+#[tauri::command]
+pub async fn assistant_snapshot(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || call_frontend(&app, json!({ "op": "state" })))
+        .await
+        .map_err(|error| format!("the snapshot task failed: {error}"))?
+}
+
+/// 执行一条动作。白名单在 `agent_policy` 里，这里再挡一次 ——
+/// 小窗是平台自己的界面，但"平台自己的界面"不该是跳过校验的理由
+#[tauri::command]
+pub async fn assistant_act(
+    app: AppHandle,
+    action: String,
+    args: Value,
+) -> Result<String, String> {
+    if agent_policy::parse_action(&action).is_none() {
+        return Err(format!("unknown action {action:?}"));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        call_frontend(
+            &app,
+            json!({ "op": "act", "action": action, "args": args }),
+        )
+    })
+    .await
+    .map_err(|error| format!("the action task failed: {error}"))?
+}

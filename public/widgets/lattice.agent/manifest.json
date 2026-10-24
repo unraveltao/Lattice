@@ -1,7 +1,7 @@
 {
   "id": "lattice.agent",
   "name": "Agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "What the local agent just did — the last few things it said and changed on your desktop",
   "author": "Lattice",
   "entry": "index.html",
@@ -45,6 +45,7 @@
         "items": [
           "Plain lines are what the agent said, in its own words.",
           "Lines with a name like placement.move are what it actually changed. Those are recorded by the app, not written by the agent, so they cannot be faked.",
+          "The built-in assistant (Ctrl+K) writes to the same log; its changes say \"assistant · …\" so you can tell the two apart.",
           "Reads are hidden on purpose — an agent that checks the desktop ten times would otherwise bury the one thing it changed."
         ]
       },
@@ -66,6 +67,14 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.2.0",
+      "date": "2026-10-25",
+      "changes": [
+        "Also shows what the built-in assistant did: a line like \"assistant · moved a widget\" whenever a round actually changed something.",
+        "One round with several tools becomes one line, in the order they ran."
+      ]
+    },
     {
       "version": "0.1.0",
       "date": "2026-10-24",
