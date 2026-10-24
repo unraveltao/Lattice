@@ -23,16 +23,26 @@
 //! `HWND_BOTTOM` 的普通窗口，可以点、可以激活、可以打字；失焦时 runner 会
 //! 把它重新压回最底层，视觉上仍然是"贴在桌面上"。
 //!
-//! # 关于圆角
+//! # 关于圆角与透明
 //!
-//! 组件窗口是**不透明**的，圆角靠 `SetWindowRgn` 把窗口本身裁成圆角矩形，
-//! 而不是靠 `border-radius` + 透明窗口。原因是逐像素透明要求
+//! **卡片**（`shape: rect`）的窗口是**不透明**的，圆角靠 `SetWindowRgn` 把窗口
+//! 本身裁成圆角矩形，而不是靠 `border-radius` + 透明窗口。原因是逐像素透明要求
 //! WebView2 走 DirectComposition 合成，在混合显卡 / 虚拟显示适配器环境下
 //! 直接建不出 webview（`HRESULT(0x8007139F)`）；就算建出来了，
 //! 一旦软件渲染，透明背景也会退回成白底。
 //!
 //! 裁剪方案没有这些前提：窗口照常渲染，形状由系统负责，
 //! 代价是圆角边缘没有抗锯齿。对一个贴桌面的小组件来说这笔交易很划算。
+//!
+//! **区域形状**（`shape: region`，桌宠那类）是唯一的例外，它**必须**逐像素透明：
+//! 区域只回答"哪一块算她"，区域里面没被画到的像素仍然会被 WebView2 拿窗口
+//! 底色填上 —— 实测在亮壁纸上一圈近黑的底（亮度 23，背景 246），就是"她周围
+//! 那一圈黑框"。所以这类窗口在 `runner::create` 里开 `transparent(true)`，
+//! 同时把窗口自带的边框位摘掉（`strip_frame`）：两条一起做才干净，只做一半
+//! 会剩一层软影或者一圈硬边。
+//!
+//! 这台机器（有 GPU 合成）上真透明是能建的；万一哪天在没 GPU 的环境里
+//! 建不出来，症状是窗口直接建失败（`0x8007139F`），不会静默变白底。
 
 use serde::{Deserialize, Serialize};
 
@@ -189,12 +199,43 @@ pub fn apply_to(
 
             apply_layer(hwnd, layer, click_through, interactive)?;
 
+            /*
+             * 区域形状的窗口不该带系统的边框位。
+             *
+             * 这里**和** `set_region` 各做一次，不是冗余：窗口刚建出来时
+             * `apply_layer` 会按 tao 的默认样式重建一遍非客户区（边框跟着回来），
+             * 而 `set_region` 要等组件上报轮廓才跑 —— 中间那几百毫秒里她周围
+             * 有一圈黑框。两个点各摘一次，覆盖"建窗口"和"换轮廓"两条路。
+             *
+             * 必须在 `apply_layer` 之后：先摘了再落层级，`SetWindowPos` 会把
+             * 非客户区按当时的样式重算一遍，边框就又回来了。
+             */
+            if shape == WindowShape::Region {
+                imp::strip_frame(hwnd as _);
+            }
+
             // 轮廓归组件管的时候一根手指都别碰区域：`clip_rounded` 会把
             // 宠物身上那块非矩形区域换成圆角矩形，动物当场变成一张卡片。
             // 空区域留到窗口真正建完之后由 `runner::create` 补（那里才知道
             // 实例是 shape: region），这里只管"不覆盖"。
             if shape == WindowShape::Rect {
                 imp::clip_rounded(hwnd, size.width, size.height, CORNER_RADIUS * scale)?;
+            }
+
+            /*
+             * 置顶这一位交给 tao 的 API，别自己调 `SetWindowPos(HWND_TOPMOST)`。
+             *
+             * 实测：桌宠窗口上用 Win32 直接置顶会静默失败 —— 返回 TRUE，
+             * `WS_EX_TOPMOST` 却始终不出现（同一个进程里的主窗口反倒正常）。
+             * 原因是 tao 自己也记着"这个窗口是不是置顶"，两边不一致时以它的
+             * 记录为准，它下一次重排样式就把那一位按回去了。走 API 让它同时
+             * 更新自己的记录，之后的重排不会再清掉。
+             *
+             * 必须在 `strip_frame` 之后：那一次 `SWP_FRAMECHANGED` 会把顶层的位
+             * 抹掉（她周围那圈黑框就是同一次重排留下的），顺序反了就白置顶。
+             */
+            if let Err(error) = window.set_always_on_top(layer == WindowLayer::Top) {
+                eprintln!("[lattice] failed to apply the always-on-top state: {error}");
             }
 
             // 子类化必须在窗口自己的线程上做：跨线程调 SetWindowSubclass
@@ -239,6 +280,7 @@ pub fn apply_window_layer(
 mod imp {
     use super::WindowLayer;
     use windows_sys::Win32::Foundation::{HANDLE, HWND, LPARAM};
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_NCRENDERING_POLICY};
     use windows_sys::Win32::Graphics::Gdi::{
         CombineRgn, CreateEllipticRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject,
         RedrawWindow, SetWindowRgn, RGN_OR, RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE,
@@ -246,11 +288,12 @@ mod imp {
     };
     use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GetParent, GetPropW,
-        GetWindowLongPtrW, HWND_BOTTOM, HWND_TOPMOST, RemovePropW, SWP_NOACTIVATE, SWP_NOMOVE,
-        SWP_NOSIZE, SWP_NOZORDER, SendMessageTimeoutW, SetParent, SetPropW, SetWindowLongPtrW,
-        SetWindowPos, WINDOWPOS, WM_WINDOWPOSCHANGING, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+        EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetParent, GetPropW,
+        GetWindowLongPtrW, HWND_BOTTOM, HWND_TOPMOST, RemovePropW, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageTimeoutW, SetParent,
+        SetPropW, SetWindowLongPtrW, SetWindowPos, WINDOWPOS, WM_WINDOWPOSCHANGING, WS_BORDER,
+        WS_DLGFRAME, WS_EX_CLIENTEDGE, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_STATICEDGE,
+        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE,
     };
 
     /// Progman 收到这条未公开消息后会派生出承载壁纸的 WorkerW
@@ -292,6 +335,53 @@ mod imp {
 
     fn wide(value: &str) -> Vec<u16> {
         value.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// 把窗口自己的边框 / 投影剥掉（区域形状的窗口用）。
+    ///
+    /// 桌宠的轮廓就是她的形状，而 `WS_BORDER` / `WS_DLGFRAME` / `WS_EX_WINDOWEDGE`
+    /// 会让系统沿着这圈轮廓画一条深色描边，再叠一层 DWM 投影 —— 看上去就是
+    /// "她周围有一圈黑框"。那圈不是组件画的：它在区域边界上、由 DWM 合成，
+    /// CSS 盖不住，只能在窗口这一层摘掉。
+    ///
+    /// 三条：
+    /// - **先改样式，再 `SWP_FRAMECHANGED`**。只改样式不重算非客户区的话，旧边框
+    ///   的像素要等窗口下一次改尺寸才会掉 —— 表现是"改了没用，拖一下才没"。
+    /// - **顺手关掉 DWM 的非客户区渲染**（`DWMNCRP_DISABLED`）。边框没了、投影
+    ///   还在，是最难查的那种"剩一半"。
+    /// - **只对区域窗口做**。圆角卡片那圈 1px 描边是 CSS 画的（`body::after`），
+    ///   动它会让所有组件的长相一起变。
+    pub fn strip_frame(hwnd: HWND) {
+        const DWMNCRP_DISABLED: i32 = 1;
+        unsafe {
+            let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+            let next = style & !((WS_BORDER | WS_DLGFRAME) as isize);
+            if next != style {
+                SetWindowLongPtrW(hwnd, GWL_STYLE, next);
+            }
+            let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+            let next_ex =
+                ex & !((WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE) as isize);
+            if next_ex != ex {
+                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next_ex);
+            }
+            SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
+            let disabled: i32 = DWMNCRP_DISABLED;
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_NCRENDERING_POLICY as u32,
+                &disabled as *const i32 as *const core::ffi::c_void,
+                std::mem::size_of::<i32>() as u32,
+            );
+        }
     }
 
     /// 若干块矩形 / 椭圆的并集 → 窗口区域。
@@ -339,6 +429,9 @@ mod imp {
             }
             return Err("failed to apply the window region".to_string());
         }
+
+        // 区域形状的窗口不该有边框：那圈描边和投影正是"她周围的黑框"
+        strip_frame(hwnd as HWND);
 
         /*
          * 区域变了以后必须**强制重绘一次**。

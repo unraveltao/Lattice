@@ -27,6 +27,8 @@ pub mod guide_policy;
 pub mod guides;
 pub mod guides_overlay;
 pub mod instance;
+pub mod llm;
+pub mod llm_policy;
 pub mod media;
 pub mod metrics;
 pub mod metrics_policy;
@@ -157,6 +159,11 @@ pub fn run() {
             store::store_download,
             store::store_install,
             store::store_report,
+            llm::llm_status,
+            llm::llm_save,
+            llm::llm_set_key,
+            llm::llm_models,
+            llm::llm_chat,
             agent::agent_status,
             agent::agent_activity,
             agent::agent_set_enabled,

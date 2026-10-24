@@ -148,7 +148,7 @@ fn clear_endpoint(app: &AppHandle) {
 
 /// 一行一条 JSON。**不做轮转**：一天点几十次也就几十 KB，而轮转代码本身
 /// 是个没人会去读的角落。
-fn audit(app: &AppHandle, op: &str, detail: &str, status: u16, ms: u128) {
+pub(crate) fn audit(app: &AppHandle, op: &str, detail: &str, status: u16, ms: u128) {
     let Ok(dir) = agent_dir(app) else {
         return;
     };

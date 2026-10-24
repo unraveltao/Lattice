@@ -545,6 +545,122 @@ function fit(
 
 
 /* ------------------------------------------------------------------ *
+ * 组件自己挪窗口
+ *
+ * 桌宠走来走去、悬浮挂件被自己的指针拖着走 —— 这两件事都得让**组件**决定
+ * 往哪挪，平台只负责把它夹回工作区里。
+ *
+ * 和窗饰那条拖动不是一回事：那条吃的是宿主页上的指针（窗口边框），而组件的
+ * 指针在沙箱 iframe 里，宿主根本收不到。所以位移只能由组件按 `pointermove`
+ * 算出来，再交给这里执行。
+ *
+ * 攒批是必须的：组件的 pointermove 比 IPC 快，一次拖动每秒能发几百条。
+ * 每条都走一遍 `outerPosition()` + `setPosition()` 的话，超出去的那些会在
+ * Rust 侧排队，手感变成"松手之后窗口还在动"。所以这里串成一条链，一次只
+ * 读一次位置、改一次窗口；后到的调用发现累加值已经被前一次吃掉，直接回
+ * 上一次的落点。
+ * ------------------------------------------------------------------ */
+
+/** 挪完之后安静这么久，就把位置写回主窗口（进 `desktopRects`） */
+const MOVE_SETTLE_MS = 900;
+/** 一直在挪（宠物散步）时，最多这么久落一次盘 */
+const MOVE_PERSIST_MS = 3000;
+
+function createMover() {
+  let pendingX = 0;
+  let pendingY = 0;
+  /** 上一次成功落地的位置（物理像素）。null = 还没挪成过 */
+  let at: { x: number; y: number } | null = null;
+  let chain: Promise<{ x: number; y: number } | null> = Promise.resolve(null);
+  let timer = 0;
+  let lastPersist = 0;
+  /**
+   * 攒不起来的零头（物理像素）。
+   *
+   * 窗口位置是整数，而组件给的是浮点数：一只以 30 px/s 散步的宠物，每帧
+   * 只走 0.5 像素 —— 直接四舍五入等于**永远不动**（每次都被舍回原地）。
+   * 所以把舍掉的零头留到下一次，位置才会"过一会儿整跳一格"。
+   *
+   * 但撞到工作区边缘时零头必须清零：那是夹紧给出的落点，不是舍入的损失，
+   * 攒着它就变成"顶着墙走十秒、回头要先还清十秒的债"，看起来像卡住了。
+   */
+  let carryX = 0;
+  let carryY = 0;
+
+  /**
+   * 位置是要落盘的（`desktopRects` 决定下次启动摆哪儿），但**不能每帧落**：
+   * 一次散步就是几百次 `state_write`，每次都在重写整份 `state.json`。
+   * 所以"停下来 0.9 秒"落一次，一直在挪的话每 3 秒落一次。
+   */
+  const schedulePersist = () => {
+    if (timer) window.clearTimeout(timer);
+    const wait = Math.max(
+      MOVE_SETTLE_MS,
+      MOVE_PERSIST_MS - (Date.now() - lastPersist),
+    );
+    timer = window.setTimeout(() => {
+      timer = 0;
+      lastPersist = Date.now();
+      void reportRect();
+    }, wait);
+  };
+
+  const apply = async (dx: number, dy: number) => {
+    try {
+      const scale = await win.scaleFactor();
+      const position = await win.outerPosition();
+      const size = await win.innerSize();
+      // 位移是 CSS px，窗口是物理 px：一步位移是 `dx * scale`（和窗饰拖动同一个口径）
+      const wantX = position.x + carryX + dx * scale;
+      const wantY = position.y + carryY + dy * scale;
+      const target = fit(wantX, wantY, size.width, size.height, await screenBoxes(), scale);
+      const x = Math.round(target.x);
+      const y = Math.round(target.y);
+      // 撞到边缘时夹紧会给出同一个点，这时不发请求：`SetWindowPos` 每次都带一次重绘
+      if (x !== position.x || y !== position.y) {
+        await win.setPosition(new PhysicalPosition(x, y));
+      }
+      const clamped = Math.abs(target.x - wantX) > 0.6 || Math.abs(target.y - wantY) > 0.6;
+      carryX = clamped ? 0 : wantX - x;
+      carryY = clamped ? 0 : wantY - y;
+      at = { x, y };
+      schedulePersist();
+      return at;
+    } catch {
+      /*
+       * 读不到窗口位置（窗口正在销毁、或这台机器上它根本不是窗口）就**停手**：
+       * 回 null 让组件收到 `applied: false`，它不会每帧再试。抛出去反而更糟 ——
+       * 那会让组件的每次 `pointermove` 都变成一条 `internal` 错误。
+       */
+      return at;
+    }
+  };
+
+  return (dx: number, dy: number): Promise<{ x: number; y: number } | null> => {
+    pendingX += dx;
+    pendingY += dy;
+    chain = chain.then(async () => {
+      if (!pendingX && !pendingY) return at;
+      const stepX = pendingX;
+      const stepY = pendingY;
+      pendingX = 0;
+      pendingY = 0;
+      return await apply(stepX, stepY);
+    });
+    return chain;
+  };
+}
+
+/**
+ * 一个宿主页只有一扇窗口，所以一份就够。
+ *
+ * 放在模块作用域（而不是 `boot()` 里）是因为 `reloadWidget()` 会重跑 `boot()`：
+ * 每次重载都新建一份的话，上一份攒着的位移就跟着丢了 —— 宠物正在走的时候
+ * 作者存一次盘，它会原地卡一下。
+ */
+const moveByWindow = createMover();
+
+/* ------------------------------------------------------------------ *
  * 组件出错了怎么办
  *
  * 组件在沙箱 iframe 里，它的异常宿主看不见（不透明源）。协议层在发组件
@@ -1283,6 +1399,8 @@ async function boot() {
             await invoke("widget_set_region", { parts });
           }
         : undefined,
+      // 桌宠走动 / 拖动自己。画布那边不传，于是回 `applied: false`
+      moveBy: moveByWindow,
       trace: (entry) => {
         trace({
           kind: "call",

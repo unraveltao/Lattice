@@ -436,9 +436,22 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
    * 用 color-mix 而不是在 JS 里算：主题一换，CSS 自己就跟着重算，没有读不到
    * 新值的时序问题；浏览器不支持这条声明时会被丢掉，退回原来的主题底色。
    */
+  /*
+   * `shape: region` 的组件（桌宠）在画布上也不该有卡片。
+   *
+   * 桌面那边由 `SetWindowRgn` 裁成轮廓、宿主页一层底板都不画；画布这边要是一
+   * 还在 `.lattice-widget` 那层底色 + 描边上，同一个组件就有了两个样子 ——
+   * 而且"先在这儿把样子调好、再投到桌面"正是画布的用途，预览套着一个黑框
+   * 是最容易让人以为桌面上也有一块底板的。
+   *
+   * 只去掉底色 / 描边 / 阴影，**不删标题条**：那是画布上唯一能拖的地方
+   * （桌面窗口的拖拽走的是宿主页窗饰，不能用在这里）。它平时淡着，指到或选中
+   * 才淡入，所以不挡她的脸。
+   */
+  const isRegion = record.manifest.shape === "region";
   const appearance = normalizeAppearance(placement.appearance ?? record.manifest.appearance);
   const previewBackdrop =
-    appearance.tint === "auto"
+    isRegion || appearance.tint === "auto"
       ? undefined
       : `color-mix(in srgb, ${appearance.tint} ${Math.round(appearance.alpha * 100)}%, var(--lattice-surface))`;
 
@@ -449,7 +462,7 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
     <div
       className={`lattice-widget${selected ? " is-selected" : ""}${
         placement.layer === "top" ? " is-top" : ""
-      }`}
+      }${isRegion ? " is-region" : ""}`}
       style={{
         left: placement.x,
         top: placement.y,

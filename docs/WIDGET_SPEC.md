@@ -156,6 +156,49 @@ await call("window.setRegion", {
 代价要说清楚：**区域边缘没有抗锯齿**（系统裁剪不做羽化），而且一旦开始上报，
 右上角的 ✕ 就不存在了 —— 组件得自己给退出口（桌宠用的是右键 → `window.close`）。
 
+### 2.6 `window.moveBy`：让组件自己走两步
+
+`shape: "region"` 的窗口没有窗饰，也就没有可以按住的标题栏。一个会动的组件
+（桌宠走来走去、被自己身上的指针拖着走）必须能**自己挪自己**：
+
+```js
+// 拖动：按下的那一刻抓住指针，之后每一次移动只报「这次动了多少」
+pet.addEventListener("pointerdown", (event) => {
+  pet.setPointerCapture(event.pointerId);   // 指针出了窗口也还能收到 move
+  let last = [event.screenX, event.screenY];
+  pet.addEventListener("pointermove", (move) => {
+    const dx = move.screenX - last[0];
+    const dy = move.screenY - last[1];
+    last = [move.screenX, move.screenY];
+    void call("window.moveBy", { dx, dy });
+  });
+});
+
+// 散步：每帧走一点点。0.5px 这种位移不会被吃掉（平台替你攒零头）
+void call("window.moveBy", { dx: speed * dt, dy: 0 });
+```
+
+几条规矩：
+
+- **`dx` / `dy` 是组件文档的 CSS 像素**，和 `pointermove` 的位移同一个口径。
+  别自己乘 `devicePixelRatio` —— 跨屏时那个值和窗口的 scaleFactor 不是一回事。
+  （注意和 `window.setRegion` 的区别：那边吃的是画布坐标，要乘；这边吃的是
+  JS 算出来的位移，不乘。）
+- **用 `screenX/screenY` 或 `movementX/movementY` 算位移，不要用 `clientX`**：
+  窗口会跟着指针一起动，`clientX` 于是几乎不变 —— 拿它算位移，宠物在你手里
+  会立刻停住。
+- **平台负责夹紧**。撞到工作区边缘就停在那儿，回执里的 `x` / `y` 是**真实落点**
+  （物理像素），组件据此把"走到头了"画成转身，而不是继续空走。
+- **位置会落盘，但不是每帧**。停下来约 1 秒（一直在走则每 3 秒）平台把当前位置
+  写回 `desktopRects`，所以下次启动还在那儿。这条也是"组件挪窗口"和"用户摆布局"
+  不打架的原因：placement 仍然是用户的，组件只是临时挪了一下。
+- **画布预览里是 `applied: false`**（那里没有窗口），组件据此停掉走动和拖动。
+  不要把它当错误，也不用 catch。
+- **心跳不可见时是停的**（不变量 10），走动自然跟着停 —— 这正是想要的：
+  桌宠不该在窗口被藏起来的时候还在消耗 CPU 走路。
+
+动作用**整体位移**，不要用窗口内部的大小变化去模拟（同 §2.5 的美术约束）。
+
 ### 2.1 `icon`：组件图标
 
 写一个相对组件目录的路径就行（`"icon": "icon.svg"`）。平台把它显示在三处：组件库的卡片色块、画布卡片的标题条、属性面板的标题前。
@@ -335,8 +378,11 @@ if (data.type === "config-changed") {
 | `audio:level` | `audio.level`（扬声器现在的响度，见 §4.5） | 可用 |
 | `shell:open` | `shell.open`（用系统默认浏览器打开 http/https 链接，见 §3.3） | 可用 |
 | `agent:activity` | `agent.activity`（本机 agent 做过的操作，读的是审计日志） | 可用 |
+| `llm:chat` | `llm.chat`（用**用户自己配的**模型说一句话，花的是用户的额度，见 §3.4） | 可用 |
 
 只申请你真正用到的。申请一堆用不上的权限，用户会直接不装。
+
+`llm:chat` 是唯一一条"会花钱"的权限：它不碰网络、拿不到 key，但每次调用都在消耗用户充进去的额度。所以它和其它权限一样**逐项授权、按 widgetId**，而且默认拒绝 —— 授权界面上那行字叫 "Use my AI model"，用户看得懂自己点了什么。
 
 `media:control` 一项权限同时管读和按。拆成"读会话"和"控制播放"两行，用户没法凭一行字分清区别，只会多点一次授权。
 
@@ -423,6 +469,28 @@ if (data.type === "config-changed") {
 - **撤权后返回 `permission_denied`**，组件要说人话（"需要「打开链接」权限"），不要静默失败 —— 用户点了没反应只会当成 bug。
 - **纯浏览器预览（`npm run dev`，没有 Tauri）里没有系统 shell**，这条路返回 `internal`。桌面应用里的画布实例是能打开的（走的是同一座桥）。
 
+### 3.4 用用户的模型说话（`llm.chat`）
+
+`llm.chat` 把几句话发给**用户自己配置的模型**，回一段文本。它要 `llm:chat`。
+
+```js
+const { text } = await lattice.llm.chat({
+  messages: [
+    { role: "system", content: "你是一只桌宠，回答要短。" },
+    { role: "user", content: "今天适合做什么？" },
+  ],
+});
+```
+
+四条必须知道的：
+
+- **拿不到 key**。key 存在本机的 `assistant.json` 里，由 Rust 读、由 Rust 发请求。组件既看不见它，也换不了 baseUrl —— 想让请求指向别处是不可能的。
+- **没有工具**。这条路只给嘴不给手：请求里不会出现 `tools`，模型没法借它改桌面。真要摆组件，那是用户在 assistant 面板里说、或者外部 agent 端点（有自己的白名单）的事。万一模型还是回了工具调用，平台会返回 `internal`（一句能读懂的话），而不是给你一个空字符串。
+- **有上限**：最多 60 条消息、单条 12000 字、合计 60000 字、role 只认 `system` / `user` / `assistant`。超了是**拒绝**（`bad_params` / `internal`），不是截断 —— 悄悄砍掉历史会让模型自信地答非所问。
+- **会花钱**。用户没配模型时 `llm.chat` 返回 `internal`，`message` 里是"没有 key / 没有模型"这类人话；配置状态可以先问 `llm.status`（**不需要权限**，返回 `{ configured, model }`），据此决定是显示输入框还是提示去设置里填。
+
+平台侧每次调用都会写一行审计（`assistant.chat`，只记字数 / 工具名，不记内容），节流 300ms。
+
 
 ## 4. 桥 API
 
@@ -466,8 +534,11 @@ parent.postMessage(
 | `audio.level` | `audio:level` | — | `{ level, running }`；`level` 是 0..1，没有设备时 `running: false`，见 §4.5 |
 | `shell.open` | `shell:open` | `{ url }` | `{ ok: true }`；只收 http/https（`github.com` 这类会补成 https），见 §3.3 |
 | `agent.activity` | `agent:activity` | `{ limit? }` | `{ enabled, entries }`；`entries` 是审计日志最后几条，新的在**后**（组件自己倒序） |
+| `llm.status` | — | — | `{ configured, model }`；只是"用户配没配模型"，拿不到 key，见 §3.4 |
+| `llm.chat` | `llm:chat` | `{ messages }` | `{ text }`；`messages` 是 `{role, content}` 数组，role 只认 `system` / `user` / `assistant`，见 §3.4 |
 | `window.close` | — | — | 关闭当前组件实例的窗口，**但不删用户的 placement** |
 | `window.setRegion` | — | `{ parts }` | `{ ok, applied, parts }`；`shape: "region"` 才有 `applied: true`，见 §2.5 |
+| `window.moveBy` | — | `{ dx, dy }` | `{ ok, applied, x?, y? }`；`dx` / `dy` 是 **CSS 像素**位移，撞到工作区边缘会被夹紧，`x` / `y` 是夹紧后的**物理像素**落点，见 §2.6 |
 
 **`window.close` 只是关窗，不是删组件。** 调用之后窗口消失，但用户摆在画布 / 桌面上的那个 placement 还在 `state.json` 里，下次启动照样回来；本次运行内不会再自动冒出来（平台记着"它自己退出了"）。真正删掉用户布局的只有用户自己按宿主页那颗 ✕。所以组件别把这个方法当"自毁"用 —— 它是"我先歇着"。
 

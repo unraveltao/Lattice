@@ -29,7 +29,7 @@ at 2× and placed on a plain wallpaper. Nothing from a real desktop is in the fr
 
 Lattice is a shell for widgets you write yourself. A widget is a folder: `index.html`, a stylesheet, a script, and a `manifest.json` that says what it is allowed to ask for. Drop the folder into the window and it is installed, copied under `%APPDATA%` and served from its own protocol. Drag it onto the canvas to see it live, then **Send to desktop** and it becomes a frameless window that stays there across restarts.
 
-The important part is the sentence above "it becomes a window". A widget never touches Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are nine permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
+The important part is the sentence above "it becomes a window". A widget never touches Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are ten permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
 
 **The platform ships empty.** The 15 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
 
@@ -37,7 +37,9 @@ So is the absence of a server. The catalogue is a static `registry.json`, the pa
 
 ## Where it stands
 
-v0.9 is the current version: **sound you can see, links that get out.** The music widget was renamed from `lattice.media` to `lattice.music` (it reads *what is playing* before it reads *how loud*), the player name is translated from AUMID into something a person recognises, the card was re-laid-out for its real 268 × 172 budget, and two capabilities landed: `audio:level` — a WASAPI loopback tap on the default output device that returns one number in `0..1` — and `shell:open`, which hands an http/https URL to the default browser and nothing else. `lattice.bookmarks` is the widget that proves it.
+v0.10 is the current version: **a model you bring, hands that stay ours.** The platform has an assistant of its own — `Ctrl+K`, or the button in the top bar: paste an OpenAI-compatible base URL and an API key once, and it answers in the drawer *and* in a widget's bubble. There is no model bundled and no proxy in between: the key lives in `assistant.json` under Rust's control, the frontend only ever sees `sk-1…cdef`, and the only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had. A widget that asks for `llm:chat` gets text back, never tools.
+
+v0.9 added **sound you can see, links that get out.** The music widget was renamed from `lattice.media` to `lattice.music` (it reads *what is playing* before it reads *how loud*), the player name is translated from AUMID into something a person recognises, the card was re-laid-out for its real 268 × 172 budget, and two capabilities landed: `audio:level` — a WASAPI loopback tap on the default output device that returns one number in `0..1` — and `shell:open`, which hands an http/https URL to the default browser and nothing else. `lattice.bookmarks` is the widget that proves it.
 
 | Version | What it added |
 | --- | --- |
@@ -50,19 +52,20 @@ v0.9 is the current version: **sound you can see, links that get out.** The musi
 | **v0.7** | Delivery: NSIS installer, in-app updater, draft-first releases, and the SmartScreen problem written down instead of hidden |
 | **v0.8** | Agent access: an opt-in loopback HTTP endpoint, a token, an audit log, 8 allowlisted actions, and an activity board widget |
 | **v0.9** | `lattice.music`, `audio:level`, `lattice.bookmarks`, `shell:open` |
+| **v0.10** | The built-in assistant: your own model behind an OpenAI-compatible URL, the key kept in Rust, tool calling over the same 8 actions, `llm:chat` for widgets |
 
 **By the numbers**
 
 | Metric | Value |
 | --- | --- |
 | Official widgets | 15 |
-| Permissions | 9 |
-| Tauri commands | 48 |
-| Browser assertions | 1 357 over 36 pages |
-| Rust tests | 157 |
+| Permissions | 10 |
+| Tauri commands | 54 |
+| Browser assertions | 1 533 over 39 pages |
+| Rust tests | 178 |
 | Documented pitfalls | 69 |
 
-Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 136 `rustc --test` pure-logic cases plus 21 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
+Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 157 `rustc --test` pure-logic cases plus 21 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
 ## Two hosts, one bridge
 
@@ -126,18 +129,21 @@ Every capability is a permission, and every permission is a gate in `runtime/bri
 | `audio:level` | One number in `0..1`: how loud the output is | Music |
 | `shell:open` | Hand an http/https URL to the default browser | Bookmarks |
 | `agent:activity` | Read the agent's audit log | Agent board |
+| `llm:chat` | Send a conversation to the assistant's model, get text back | Desktop pet |
 
 <p align="center"><a href="docs/screenshot-permission.png"><img src="docs/screenshot-permission.png" width="380" alt="A card asking for a permission it was not granted"></a></p>
 
 <p align="center"><sub>A widget that reaches for a capability it was not granted says so on the card, by name; one <code>Grant</code> covers the set, and the widget re-initialises.</sub></p>
 
-Three of those deserve their own paragraph, because "it has the permission" is never the whole story.
+Four of those deserve their own paragraph, because "it has the permission" is never the whole story.
 
 **`network` is an allowlist, not a switch.** A request passes three gates in a fixed order: the permission exists → the target host is listed in `manifest.network.hosts` → the request shape is legal (method, header count, body size). There are no wildcards, on purpose: `*.example.com` turns "I allowed this one endpoint" into "I allowed the whole domain", and the permission panel only shows one line — the user could not review what they approved. A port is part of the host's identity, and redirects are never followed: following a 302 from an allowed host to an unfriendly one would hand the allowlist to whoever controls the first hop. Requests travel over IPC rather than a local HTTP proxy, because a proxy port would be a second, unaudited way out.
 
 **`shell:open` opens exactly one kind of door.** `tauri-plugin-opener` passes the string straight to `ShellExecuteW`, which does *not* validate schemes — `file:` would hand a local file to its default program, `ms-settings:` would jump to a Windows privacy page. So the protocol allowlist (`http` / `https` only) lives in `open_policy.rs`, in front of the plugin, and the widget's own normalisation of what the user typed is a second, independent check. It does not weaken the navigation block: a widget's document still cannot navigate itself away to smuggle data into a URL.
 
 **`audio:level` is one number.** A background thread captures the default output device with WASAPI loopback and computes RMS → decibels → a `0..1` envelope with a release curve. The command only reads the latest value. No buffer, no audio content, nothing to reconstruct — the only version of "show me the sound" that is safe to ship.
+
+**`llm:chat` is a mouth, not hands.** A widget can hold a conversation with the model you configured, and that is all: the bridge calls `llm.chat` with `tools: null` every time, and a reply that asks for a tool call comes back as an `internal` error instead of being executed. The key never enters the renderer — Rust reads it, attaches it, and returns text plus a masked hint — so a compromised widget has nothing to steal and nothing to move. Changing the desktop stays with the platform's own assistant, which is the thing *you* are talking to.
 
 ## Distribution without a server
 
@@ -236,7 +242,7 @@ npm run typecheck        # tsc --noEmit
 npm run test:injection   # the diagnostics reporter is injected identically on both paths
 npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
-npm run test:browser     # 1 357 assertions over 36 pages, real Chrome, real dev server
+npm run test:browser     # 1 533 assertions over 39 pages, real Chrome, real dev server
 ```
 
 The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.
@@ -275,7 +281,7 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 | --- | --- |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | How the pieces fit, and why |
 | [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) | The widget contract |
-| [docs/ROADMAP.md](./docs/ROADMAP.md) | Version history, 69 pitfalls, 8 overturned decisions |
+| [docs/ROADMAP.md](./docs/ROADMAP.md) | Version history, 69 pitfalls, 9 overturned decisions |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | The agent endpoint's threat model |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | Keys, trust anchors, what is *not* signed |
 | [AGENTS.md](./AGENTS.md) | 18 invariants, written for whoever touches this next |

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>window.moveBy test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      import {
+        handleBridgeRequest,
+        MAX_MOVE_STEP,
+        normalizeMoveStep,
+      } from "/src/runtime/bridge.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+
+      const bail = (error) => {
+        document.getElementById("out").innerHTML =
+          `<span class="bad">FAIL 抛错：${String((error && error.stack) || error)}</span>`;
+      };
+      window.addEventListener("error", (event) => bail(event.error));
+      window.addEventListener("unhandledrejection", (event) => bail(event.reason));
+
+      /**
+       * 走真的 `handleBridgeRequest`：权限闸门、"没窗口就降级"的语义都在那条
+       * 路上，只测 `normalizeMoveStep` 会漏掉一半。
+       *
+       * `moveBy` 传 null 就是**画布预览**那种没有窗口的宿主。
+       */
+      function callMove(params, { moveBy, granted = [] } = {}) {
+        const seen = [];
+        return new Promise((resolve) => {
+          const ctx = {
+            instanceId: "test",
+            widgetId: "lattice.__test",
+            granted: new Set(granted),
+            config: {},
+            reply: (payload) => resolve({ payload, seen }),
+            close: () => {},
+          };
+          if (moveBy) {
+            ctx.moveBy = async (dx, dy) => {
+              seen.push([dx, dy]);
+              return moveBy(dx, dy);
+            };
+          }
+          handleBridgeRequest(
+            { __lattice: 1, type: "request", id: 1, method: "window.moveBy", params },
+            ctx,
+          );
+        });
+      }
+
+      const at = (x, y) => ({ x, y });
+
+      // ---- 1. 画布预览：没有窗口，就不该装作挪成了 ----
+      {
+        const { payload, seen } = await callMove({ dx: 4, dy: 0 });
+        log(payload.ok === true, "没有窗口时 ok 仍为 true（不是错误）");
+        log(payload.result.applied === false, "没有窗口时 applied 为 false");
+        log(payload.result.x === undefined, "没有窗口时不报坐标");
+        log(seen.length === 0, "没有窗口时不去调宿主");
+      }
+
+      // ---- 2. 桌面窗口：位移原样交给宿主，落点原样回给组件 ----
+      {
+        const { payload, seen } = await callMove({ dx: -3, dy: 7 }, { moveBy: () => at(120, 340) });
+        log(payload.result.applied === true, "有窗口时 applied 为 true");
+        log(payload.result.x === 120 && payload.result.y === 340, "落点原样回给组件（夹紧跟组件有关）");
+        log(seen.length === 1 && seen[0][0] === -3 && seen[0][1] === 7, "负位移原样传给宿主");
+      }
+
+      // ---- 3. 缺省 / 浮点 ----
+      {
+        const { seen } = await callMove({}, { moveBy: () => at(0, 0) });
+        log(seen[0][0] === 0 && seen[0][1] === 0, "两个都缺省 → (0,0)，不是 NaN");
+      }
+      {
+        const { seen } = await callMove({ dx: 0.4 }, { moveBy: () => at(0, 0) });
+        log(seen[0][0] === 0.4, "浮点位移保留（0.4 不会被抹成 0，否则慢速散步永远不动）");
+      }
+      {
+        const { seen } = await callMove({ dy: 2 }, { moveBy: () => at(0, 0) });
+        log(seen[0][0] === 0 && seen[0][1] === 2, "只给 dy 时 dx 补 0");
+      }
+
+      // ---- 4. 宿主挪不动（读不到窗口 / 平台报错）→ 组件据此停手 ----
+      {
+        const { payload } = await callMove({ dx: 1, dy: 1 }, { moveBy: () => null });
+        log(payload.ok === true && payload.result.applied === false, "宿主挪不动时 applied 为 false，且不是错误");
+      }
+
+      // ---- 5. 坏参数一律 bad_params，而且**不要**去碰窗口 ----
+      const rejects = async (params, label) => {
+        const { payload, seen } = await callMove(params, { moveBy: () => at(1, 1) });
+        log(payload.ok === false && payload.code === "bad_params", `${label} → bad_params`);
+        log(seen.length === 0, `${label} 时不去碰窗口`);
+      };
+      await rejects({ dx: Number.NaN }, "NaN 位移");
+      await rejects({ dy: Number.POSITIVE_INFINITY }, "Infinity 位移");
+      await rejects({ dx: "12" }, "字符串位移");
+      await rejects({ dx: MAX_MOVE_STEP + 1 }, "超过单次上限");
+      await rejects({ dx: null }, "null 位移");
+
+      // ---- 6. 上限边界本身是合法的 ----
+      {
+        const { payload } = await callMove({ dx: MAX_MOVE_STEP, dy: -MAX_MOVE_STEP }, {
+          moveBy: () => at(0, 0),
+        });
+        log(payload.ok === true && payload.result.applied === true, "正好等于上限时放行");
+      }
+
+      // ---- 7. 不需要任何权限 ----
+      {
+        const { payload } = await callMove({ dx: 1, dy: 0 }, { moveBy: () => at(9, 9) });
+        log(payload.code !== "permission_denied", "不给任何权限也能挪自己的窗口");
+      }
+
+      // ---- 8. 纯函数本身 ----
+      {
+        log(normalizeMoveStep(undefined).dx === 0, "normalizeMoveStep 收 undefined → 0");
+        const pass = (() => {
+          try {
+            normalizeMoveStep({ dx: 1e9 });
+            return false;
+          } catch (error) {
+            return error && error.code === "bad_params";
+          }
+        })();
+        log(pass, "1e9 被拒（单位算错时宁可报错，不要瞬移到屏幕另一头）");
+      }
+
+      const failed = lines.filter((line) => line.startsWith("FAIL")).length;
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      if (failed === 0) document.title = "ok";
+    </script>
+  </body>
+</html>

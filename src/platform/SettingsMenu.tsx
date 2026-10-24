@@ -61,9 +61,11 @@ interface SettingsMenuProps {
   placementCount: number;
   /** 真的退出应用。关主窗口只是收起来（桌面上还有组件时），退出走这里 */
   onQuit: () => void;
+  /** 打开 assistant 抽屉（设置菜单里那一条） */
+  onOpenAssistant: () => void;
 }
 
-export function SettingsMenu({ installedCount, placementCount, onQuit }: SettingsMenuProps) {
+export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAssistant }: SettingsMenuProps) {
   const profile = useLattice((state) => state.profile);
   const signIn = useLattice((state) => state.signIn);
   const signOut = useLattice((state) => state.signOut);
@@ -481,6 +483,25 @@ export function SettingsMenu({ installedCount, placementCount, onQuit }: Setting
                     />
                   </label>
                 </div>
+
+                {/*
+                  Assistant：平台**自己**带的那只。和上面那条不是一件事 ——
+                  Agent access 是"让外部程序从 127.0.0.1 伸进来"，这条是
+                  "在这里跟模型说话、它替你改桌面"。两扇门分开写，权限也分开。
+                */}
+                <button
+                  type="button"
+                  className="lattice-menu-row"
+                  onClick={() => {
+                    close();
+                    onOpenAssistant();
+                  }}
+                  title="用你自己的模型和 API key 说话，它替你把桌面摆好（Ctrl+K）"
+                >
+                  <Glyph d={ICON.agent} />
+                  <span className="lattice-menu-label">AI assistant</span>
+                  <span className="lattice-menu-note">模型 · key · Ctrl+K</span>
+                </button>
 
                 {autostartHint ? (
                   <p className={`lattice-menu-hint${autostartError ? " is-error" : ""}`}>{autostartHint}</p>

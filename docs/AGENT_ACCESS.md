@@ -1,22 +1,24 @@
 # Agent 接入
 
-> 一句话：**一个端点，三个接入面。** 底下那层（通道 + 身份 + 审计）是三项共用的，
-> 它不对的话上面两层都要重写。
+> 一句话：**一个执行器，四个接入面。** 底下那层（白名单动作 + 审计）是共用的，
+> 它不对的话上面几层都要重写。
 
 这份文档记录的是**已经做出来的**和**想清楚但还没做的**，两者分开写。看的时候先看每节
 标题后面的状态标记：`[已实现]` / `[设计]`。
 
-## 0. 先把三件事分开
+## 0. 先把四件事分开
 
-"让 AI 调控桌面"这句话里其实有三件事，它们的风险、工作量、依赖完全不同：
+"让 AI 调控桌面"这句话里其实有四件事，它们的风险、工作量、依赖完全不同：
 
 | | 是什么 | 状态 | 要动什么 |
 | --- | --- | --- | --- |
-| **A 控制平面** | agent 摆组件、改布局、换主题、暂停 | `[已实现]` | 一条通道 + 一个新身份 + 审计 |
+| **A 控制平面** | 外部 agent 摆组件、改布局、换主题、暂停 | `[已实现]` | 一条通道 + 一个新身份 + 审计 |
 | **B 数据平面** | agent 读待办、加日历事件、查天气 | `[设计]` | 组件清单加一节 `agent.tools`，**所有组件作者要跟着改** |
 | **C agent 当组件** | 一块看板：agent 刚才说了什么、改了什么 | `[已实现]` | 一个官方组件 + 一条 `say` 通道 + 一项新权限 |
+| **D 内置 assistant** | 平台自己带模型（用户填地址 / 模型 / key），Ctrl+K 说话，它照着改桌面 | `[已实现]`（第 4 节） | 传输层 + key 落盘 + 工具循环 + 抽屉 |
 
-顺序不能倒。B 要改组件规范（波及所有作者），C 依赖 A 已经能用；A 是地基。
+顺序不能倒。B 要改组件规范（波及所有作者），C 依赖 A 已经能用；A 是地基；D 复用 A 的
+执行器，但**不依赖 A 的端点**（它不需要端口开着）。
 
 ## 1. A 控制平面 `[已实现]`
 
@@ -202,6 +204,10 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 而它想解决的问题 —— "我看不见 agent 在干什么" —— 不需要模型就能解决。agent 宿主
 （Claude Desktop / CLI / 任何会说 HTTP 的东西）本来就有自己的界面，它只是**说不出话**。
 
+> **这一条在 v0.10 被推翻了 —— 见第 4 节。** 推翻的不是理由，是**对象**：上面三条
+> 说的是"**组件**不该自带模型"，后来发现我把它读成了"**平台**不该有模型"。平台自己
+> 带一只，三条都不成立（key 在 Rust 侧、请求走 Rust、手就是下面这八个动作）。
+
 ### 3.2 所以给了它一条 `say`
 
 `{"op": "say", "text": "…"}` 是 agent 唯一的嘴。它不走前端往返 —— `agent.rs` 直接写进
@@ -236,12 +242,72 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 两条都要等 B 的授权轴（`2.2` 第三条）做完，因为那时才有"agent 能做什么"这个概念可以复用。
 现在不做。
 
-## 4. 明确不做（v1）
+> **本条已被第 4 节取代。** 最后的答案是第三条路：**组件只拿嘴（`llm.chat`，不带工具），
+> 手留在平台手里**（assistant 面板 + 现有的八个动作）。既没有给组件开 `127.0.0.1`，
+> 也没有让组件能改布局。
+
+## 4. D 内置 assistant（模型在平台里）[已实现，v0.10]
+
+一句话：**用户填一个 OpenAI 兼容的地址、模型名和 API key，Ctrl+K 说话，它用现有的八个
+动作改桌面。**
+
+### 4.1 和前三个的关系
+
+| | 谁在说话 | 手从哪来 | 入口 |
+| --- | --- | --- | --- |
+| A 控制平面 | 外部 agent（Claude Desktop / CLI） | HTTP `POST /rpc` + 八个动作 | `127.0.0.1:<port>` |
+| D 内置 assistant | **平台自己**带模型 | 同一个执行器（`runAgentAction`） | 主窗口抽屉（Ctrl+K） |
+
+两条路的执行器**是同一个**（`platform/agent.ts`）。这不是省事，是安全模型：白名单只有一份，
+"agent 能改什么"的答案不会因为入口不同而不同。区别只在"谁在说"和"谁在听"。
+
+### 4.2 key 在哪儿，为什么这么放
+
+`%APPDATA%\com.iron-tom.lattice\assistant.json`：
+
+```jsonc
+{ "baseUrl": "https://api.deepseek.com/v1", "model": "deepseek-chat", "temperature": 0.6, "apiKey": "sk-…" }
+```
+
+- **前端只见掩码**（`sk-1…cdef`）。key 一旦进了 JS 状态，就会跟着调试面板、截图、某次
+  `JSON.stringify` 一起外泄，而它换不了（用户得去后台吊销）。
+- **组件见不到**。组件的 `llm.chat` 走桥 → Rust 读 key 发请求，组件全程不知道它长什么样，
+  也没法改 baseUrl。
+- **开发时可以完全不落盘**：`LATTICE_LLM_KEY` / `LATTICE_LLM_BASE_URL` / `LATTICE_LLM_MODEL`
+  三个环境变量优先，界面上会标成"key 来自环境变量"。
+- 明文 `http://` **只允许本机**（Ollama / LM Studio）：key 走明文发到外网等于贴在明信片上。
+
+### 4.3 协议：只做 OpenAI 兼容
+
+`POST {base}/chat/completions`，`tools` + `tool_choice: "auto"`。选它是因为一份代码能盖住
+DeepSeek / OpenAI / Kimi / Qwen / Ollama / LM Studio —— 而"再多支持一家原生协议"是
+`llm_policy.rs` 里一个函数的事，不是架构问题。地址归一化很宽容：`api.x.com`、
+`https://api.x.com/`、`https://api.x.com/v1`、整条 `/chat/completions` 贴进来都认。
+
+### 4.4 工具：就是那八个
+
+`runtime/assistant.ts` 的 `TOOL_SPECS` 和 `AGENT_ACTIONS` **逐字一致**（`tests/assistant.html`
+11 条断言钉着），每个工具的参数名也和执行器读的键逐个对上。新增动作时**三处一起改**：
+`agent_policy::ACTIONS`、`AGENT_ACTIONS`、`TOOL_SPECS`。
+
+仍然不给的，和 §1.5 一样：授权、安装、卸载、`config.set`、`storage.write`、清空。模型要是
+被要求做这些，它该说"做不到" —— 系统提示里写死了这一条。
+
+### 4.5 三条边界，别拆
+
+1. **组件的 `llm.chat` 永远不带工具。** 组件的嘴和平台的手分开，是为了让"给组件授权"
+   不等于"给组件改桌面的权力"。
+2. **循环有上限**（6 轮，`MAX_STEPS`）。模型可以连着做几步，但不能自己转圈把额度烧完；
+   Rust 那边还有 300ms 节流兜底。
+3. **错误要说人话。** 401 是"key 被拒"，404 是"base URL 多了或少了 `/v1`"，429 是"额度/频率"。
+   统一说"检查你的网络"是更新器踩过的坑（见 ROADMAP）。
+
+## 5. 明确不做（v1）
 
 **后台自主调控。** 比如"每天按天气自动换主题"——那需要一个常驻订阅，而人在环（用户说
 一句、它做一次）和无人环是两套完全不同的安全模型。先把有人的那条做顺。
 
-## 5. 验证
+## 6. 验证
 
 | 部分 | 怎么验 |
 | --- | --- |
@@ -249,4 +315,7 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 | `platform/agent.ts`（动作执行器） | `tests/agent.html` 57 条，跑的是**真 store** |
 | `scripts/lattice-agent.mjs`（客户端） | `npm run test:agent`，14 条，起假端点测请求形状、`say` 的整句传递与退出码 |
 | `lattice.agent`（看板组件） | `tests/agent-widget.html` 50 条，iframe 里加载真组件，调 `window.__latticeAgentFeed` |
+| `llm_policy.rs`（地址 / 请求体 / 响应 / 工具调用 / 错误翻译） | 21 条 `rustc --test`，见 `.scratch/llm-test.rs` |
+| `runtime/assistant.ts`（工具表 / 历史裁剪 / 快照预算） | `tests/assistant.html` 83 条 |
+| `llm.rs` + 工具循环 + 组件那条路 | **2026-10-25 实机验过**：起一个假的 OpenAI 兼容服务（`.scratch/fake-llm.mjs`），真点开抽屉、真打字、真回车 —— 卡片从 (32,40) 挪到 (300,120)，气泡里出现"✓ 移动 lattice.pet#demo01"和回复；两个 pet iframe 的 `llm.chat` 都回到 `{ok:true,text:"…"}`；把 key 换成错的之后 `listModels` 报"the provider rejected the API key (HTTP 401)" |
 | Rust 监听器 + Tauri 往返 | **没验过** —— 要起 `tauri:dev`。起之前先确认没有残留的 `lattice.exe`（孤儿进程会用内存里那份盖掉 `state.json`） |

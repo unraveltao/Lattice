@@ -36,7 +36,8 @@ export type Permission =
   | "media:control" // 控制正在播放的媒体
   | "audio:level" // 读扬声器现在的响度（回环采集，只出一个 0..1）
   | "shell:open" // 把 http/https 链接交给系统默认浏览器
-  | "agent:activity"; // 读 agent 在本机做过的操作（审计日志）
+  | "agent:activity" // 读 agent 在本机做过的操作（审计日志）
+  | "llm:chat"; // 用用户配的模型说话（花的是用户自己的额度）
 
 export interface WidgetSize {
   w: number;
@@ -287,6 +288,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "audio:level": "Sound level",
   "shell:open": "Open links",
   "agent:activity": "Agent activity",
+  "llm:chat": "Use my AI model",
 };
 
 /**
@@ -321,6 +323,7 @@ export const PERMISSION_READY: ReadonlySet<Permission> = new Set<Permission>([
   "audio:level",
   "shell:open",
   "agent:activity",
+  "llm:chat",
 ]);
 
 /** 这个权限是不是已经有桥方法了 */

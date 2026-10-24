@@ -1,0 +1,171 @@
+# 参考项目：桌宠的美术与骨骼
+
+`lattice.pet` 的素材不是我们画的。这一页记三件事：**素材从哪来、许可到哪儿、骨骼怎么在棂里跑起来**。
+先读结论：
+
+- 素材与骨骼来自 **Coopanion**（`github.com/Pal-AI-Lab/Coopanion`，本机克隆在 `D:\GitDev\Coopanion`）。
+- 更早还有一份 **DaFeiYu-ZhuoChong-Alpha**（`github.com/kiven72/DaFeiYu-ZhuoChong-Alpha`，
+  `D:\GitDev\DaFeiYu-ZhuoChong-Alpha`）—— 同一套美术的 Electron 快照，代码更短、更易读，**已被取代**，
+  只当参考留着。
+- **鲸鱼贴图不在任何一个开源许可里**（见 §4），所以 `public/widgets/lattice.pet/` 一直**不进仓库**。
+
+---
+
+## 0. 两个上游
+
+| | DaFeiYu-ZhuoChong-Alpha | Coopanion |
+| --- | --- | --- |
+| 是什么 | 同一套鲸鱼美术的 Electron 44 外壳，`pet-core.js` + `whale/figure.js` + `rig/` | 完整的桌宠项目：`web/kit/rig.js`（WebGL2）、`web/kit/body.js`（54 KB 状态机）、`web/whale/figure.js`、`web/coo/`（另一只角色） |
+| 代码许可 | MIT（`Copyright (c) 2026 Phantivia`），自称 Coopanion 的离线衍生版 | **AGPL-3.0-or-later**，`LICENSE` 里写明覆盖"整个仓库、含它的各个 package" |
+| 角色 | 只有鲸鱼 | 鲸鱼 + Coo（Coo 是**纯程序化**画的，没有任何贴图） |
+| 现在的用途 | 只读参考（`canvas-rig.js` 77 行是读它最省时间的入口） | **`lattice.pet` 的 `model.json` / 贴图 / 三套服装都从这里来** |
+
+克隆踩过一条：这台机器上 HTTPS 会 `curl 56`（连接被重置），**用 SSH 克隆**。`git clone` 退出码 1
+是 stderr 的噪声，文件是齐的。
+
+---
+
+## 1. 骨骼长什么样
+
+三层，互相之间只有窄接口（Coopanion 形状相同，只是底层换成了 WebGL2）：
+
+```
+body.js / pet-core.js   状态机 + 物理 + 表情语义
+   │  figure.draw(ctx, face, frame)
+   ▼
+whale/figure.js   25 个部件的变形参数、11 个弹簧、程序化画脸
+   │  createRig(canvas, {parts, deformers, view})
+   ▼
+kit/rig.js        WebGL2 网格变形；canvas-rig.js 是 Canvas2D 版
+```
+
+**不是骨骼蒙皮。** 一个部件 = 一张 PNG + 一个均匀网格（`grid: [8,12]`）+ 一个矩形（`box`）。
+每帧对每个顶点跑一条**变形器链**：
+
+- `rot`：`p' = pivot + t + R(a)·S·(p − pivot)`（身体、四肢、尾、鳍、呆毛）
+- `warp`：`p' = p + fn(u, v)`，`u/v` 是点在矩形内的归一化坐标（头发、裙、头部视差）
+
+25 个部件合计约 1000 顶点 / 1450 三角形。**没有顶点数据落盘** —— `model.json` 只存
+`box + grid + z + parent + tex`，网格是启动时现算的。所以一整套 rig 只要 8 KB 描述。
+
+**弹簧是标量的，不是质点链。** 每个通道只有 `x` 和 `v` 两个数（半隐式欧拉），
+"头发像一串珠子"来自网格细分 + warp 场按 `v^1.6` 加权，不是物理模拟：
+
+```js
+this.v += ((target - this.x) * k - this.v * c) * dt;
+this.x += this.v * dt;
+if (Math.abs(this.x) > lim) { this.x = Math.sign(this.x) * lim; this.v = 0; }  // 防翻折
+```
+
+**表情不是换整张脸。** 睁眼三件套（眼白 / 虹膜 / 睫毛）画进一张 390×252 的离屏 canvas，
+再用二次曲线（`feat[*].lidFit`）把眼睑以上 `destination-out` 擦掉 —— "半闭眼、眯眼"都不需要贴图，
+6 种极端表情（happy / sleep / drag / love / dizzy / surprised）才有整只眼的贴图。
+
+---
+
+## 2. 在棂里怎么落地（已实现的部分）
+
+| 上游的做法 | 棂里的做法 | 为什么 |
+| --- | --- | --- |
+| 每帧按包围盒 `setBounds` 裁窗口 | **不动窗口形状**，一次 `window.setRegion` 裁出轮廓，走动 = 整个窗口平移 | 每帧调 Win32 重建区域会掉帧；区域相对窗口是常量 |
+| `setIgnoreMouseEvents(!interactive, {forward:true})` | 不需要：区域外的像素**根本不存在** | `SetWindowRgn` 连命中测试一起裁了 |
+| 主进程 `screen.getCursorScreenPoint()` 拖动 | 组件自己算位移 → `window.moveBy`（主线，见 WIDGET_SPEC §2.6） | 宿主页看不到沙箱 iframe 里的指针 |
+| 常驻 rAF 自循环 | 画帧用 rAF；**心跳类判断**走 `schedule.every`（不变量 10） | 窗口不可见时整条时间轴要能停 |
+| `localStorage` 存偏好 | 清单的 `config`（按实例）+ `storage` 桥 | 不变量 5 / 13 |
+| `pet://local/` + CSP | 平台已经包好（`protocol.rs` / `csp.rs` / `egress.rs`） | — |
+| 托盘 / 自启动 / 单实例 | 平台已经有，组件别再要 | — |
+
+五处**必须改**的地方，都是"沙箱里没有宿主 DOM"造成的：
+
+1. **整身变换**原本是 `setAttribute('transform')`；canvas 里自己 `setTransform`，并把逆变换留着 ——
+   命中测试（点她身上 / 点气泡）和气泡定位都靠它。
+2. **后端**：上游默认 WebGL2 且没有降级路径。我们**直接只做 Canvas2D**：实测整只 26 部件 / 560×560
+   一帧 **3.46 ms**，60 fps 够用 —— 换来的是不用在 WebView2 里赌 WebGL2 可用。
+3. **资源**：沙箱文档是 **opaque origin**，`getImageData` 抛 SecurityError、`fetch` 自己的 JSON 也受限，
+   所以骨骼和轮廓都在**构建期**算好，以 `art/rig-data.js`（`window.__PET_RIG_DATA = {model, masks}`）
+   这种 classic script 交进去。
+4. **窗口尺寸固定**（560×420），不像上游窗口跟着宠物裁。所以 canvas 铺满窗口，
+   宠物在窗口里的位置由 `figure.layout()` 自己算：`S=0.19`、脚底 `y=1363`、
+   `U(x)=128+(x−650)·S`、`V(y)=256−(1363−y)·S`。
+5. **轮廓**要按服装算（披风的围巾、店员的马尾都伸出身体），所以 `art/build-masks.py`
+   对每套服装跑一遍并集：`MARGIN=6` rig 单位、`GRID=6`、`ALPHA=8`、`SCALE=2`。
+
+---
+
+## 3. 组件里现在有什么
+
+```
+public/widgets/lattice.pet/
+  whale/model.json          25 个部件 + pivots + feat + outfits（3 套）
+  whale/tex/                30 张（身体拆件，deepseek 配色）
+  whale/feat/               25 张（6 种极端表情的眼睛，其余是别的配色才用的）
+  whale/outfits/cape/       20 张   冬装（斗篷 + 围巾）
+  whale/outfits/crew/        9 张   店员装（马尾 + 制服）
+  art/build-masks.py        构建期轮廓生成
+  art/rig-data.js           17 KB，骨骼 + 三套轮廓（构建产物，别再手改）
+```
+
+- 合计 85 个文件 / **2.71 MB**。单一配色（`deepseek`）+ 三套服装。
+- **为什么不带 8 套配色**：`model.json` 里 8 个 scheme 是同一批拆件的 8 次上色导出（逐像素 alpha 一致、
+  颜色不同），全带 ≈ 15 MB，**贴着商店 16 MB 的下载上限**，而 `store_download` 那道上限是硬的。
+- **服装贴图不跟着配色变**：上游也是这么导出的，所以披风在任何配色下都一个颜色。
+
+---
+
+## 4. 许可（结论明确，别踩）
+
+- **Coopanion 的代码是 AGPL-3.0-or-later**，`LICENSE` 开头那句把"整个仓库、含它的各个 package"
+  都算进去了。`web/kit/rig.js` 之类**不要整段复制**进棂 —— 我们是按 §1 的描述重写的
+  （`pet-rig.js`，接口形状按 `window.__PET_RIG_DATA` 重新设计）。
+- **鲸鱼贴图明确不在 AGPL 内**：`README` 的 License 一节与
+  `packages/cortico-world-desktop-pet/THIRD_PARTY_NOTICES.md` 都写明"贴图版权归原作者，
+  想在别处使用请自行确认原设与各家标志的权利"。涉及的有：角色原设「溟月」（上善无形）、
+  二创 ZipZipPipe、围裙上 **7 家公司的商标**。没有任何一句授权再分发。
+- **Coo 的美术是 AGPL 覆盖的**（它没有贴图，是代码画出来的）—— 换句话说 Coo 反而是"能合法再用"的那一只。
+- 所以：**代码结论可查，贴图只在本地**。`public/widgets/lattice.pet/` 不进 git，
+  要发布就换成原创形象（或者在许可清晰的前提下重新画一套拆件）。
+
+---
+
+## 5. 已经做到的 / 还差什么
+
+已完成（0.5.0）：
+
+- **骨骼**：25 部件、网格按链变形、11 组弹簧（后发、刘海、裙、尾、双鳍、呆毛、手臂、抬头）。
+- **脸**：眼睑二次曲线裁切 + 眨眼（20% 短眨，否则 2.2–5.2s）+ 腮红 + 6 种表情。
+- **服装**：女仆 / 冬装 / 店员三套，切换即换件 + 换轮廓 + 换该服装自带的变形器。
+- **动**：按住拖（4px 阈值、`movementX` 算位移、吃掉补发的 click）、自己散步（`roam` 三档，
+  撞工作区边缘转身）、拖动时身体前倾。
+- **轮廓**：`window.setRegion` 按 `masks` 出矩形，气泡打开时把自己的矩形并进去。
+
+没做（按价值排序）：
+
+1. **摸头 / 戳 / 抛出去**：`body.js` 里现成的（累计位移 > 320px 算摸头、< 400ms 抬起算戳、
+   松手速度 → 抛物线）。纯逻辑，直接翻译。
+2. **视线跟随**：`pointermove` 时眼白 / 虹膜按指针相对头心的偏移偏一点，二十行。
+3. **坐在任务栏上**：拖到工作区下沿时 `squash` 一下坐住。
+4. **说话**：`llm.chat` 不在主线（组件已经在 `unknown method` 上降级）。要先在
+   `bridge.ts` 加方法 + 权限 + WIDGET_SPEC，再谈人格。
+
+---
+
+## 6. 落地时最容易踩的六个坑
+
+1. **别每帧重报 `window.setRegion`**。轮廓只在"形状真的变了"时上报（窗宽、服装、气泡开合）；
+   走动是整体平移，轮廓相对窗口没变。每帧重报 = 每帧一次 GDI 区域重建。
+2. **Canvas2D 的网格封顶是 6×8**（`buildMesh` 里夹的）。上游 WebGL 用 8×12 的头发，
+   Canvas2D 下会被压到 6×8，弯曲会略微变棱角 —— 构建期就把网格定成 ≤6×8，省得中间形态来回变。
+3. **脸每帧重绘是常态，但要能跳过**。逐项比较绘制入参（含取整后的腮红、虹膜位移），
+   全等就不重绘那张离屏 canvas。
+4. **窗口位置是整数，慢速走路要攒零头**。宿主侧的 `moveBy` 已经做了（`carryX/carryY`，
+   撞边缘时清零），组件侧**别再自己四舍五入**。
+5. **`window.moveBy` 的位移要用 `movementX/movementY`，不能用 `screenX/screenY`**。
+   窗口跟着指针走，`screenX` 本身就在变，两个数在不同帧更新会**放大**位移
+   （实测拖 140 px，窗口走了 203 px）；`clientX` 更糟，几乎不变，宠物在你手里立刻停住。
+6. **区域窗口必须逐像素透明，而且置顶要建窗口时就定**。两个都不是组件能修的：
+   - 窗口不透明时，区域之内没被画到的像素由 WebView2 用窗口底色填，看着就是"她周围一圈黑框"
+     （实测亮背景上她身边亮度 23，去掉窗口 234）。所以 `shape: region` 建窗口时要
+     `.transparent(true)`，并摘掉非客户区（`desktop::strip_frame` + 非客户区渲染关掉）。
+   - 事后调 `set_always_on_top(true)` / `SetWindowPos(HWND_TOPMOST)` 对这类窗口**静默失效**：
+     返回 TRUE，`WS_EX_TOPMOST` 始终不出现（同进程的普通窗口反倒正常），她于是被浏览器压住、
+     点不到。只有建窗口时 `.always_on_top(true)` 才真的在顶层那一档。

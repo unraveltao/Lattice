@@ -18,7 +18,20 @@ export type Permission =
   | "system:monitor"
   | "media:control"
   | "audio:level"
-  | "shell:open";
+  | "shell:open"
+  | "agent:activity"
+  | "llm:chat";
+
+export interface LlmStatus {
+  /** 地址 / 模型 / key 三样齐了才是 true */
+  configured: boolean;
+  /** 正在用的模型名（没配就是空串） */
+  model: string;
+}
+
+export interface LlmReply {
+  text: string;
+}
 
 export declare class LatticeError extends Error {
   constructor(code: BridgeErrorCode, message: string, permission?: Permission);
@@ -192,6 +205,13 @@ export interface Lattice {
 
   network: {
     fetch(input: NetworkRequest): Promise<NetworkResponse>;
+  };
+
+  llm: {
+    /** 用用户配的模型说一句话（要 `llm:chat`；key 不进组件，也没有工具） */
+    chat(messages: Array<{ role: "system" | "user" | "assistant"; content: string }>): Promise<LlmReply>;
+    /** 用户配没配模型（不需要权限） */
+    status(): Promise<LlmStatus>;
   };
 
   now(): Promise<ClockInfo>;

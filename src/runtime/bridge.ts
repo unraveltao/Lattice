@@ -96,6 +96,16 @@ export interface BridgeContext {
    */
   setRegion?: (parts: RegionPart[]) => Promise<void> | void;
   /**
+   * 把这扇窗按 CSS 像素位移挪一下（功德桌宠走路 / 拖动自己）。
+   *
+   * 同样做成注入的回调：画布上的实例不是窗口，没有位置可挪。不传这个字段时
+   * `window.moveBy` 回 `{ ok: true, applied: false }`。
+   *
+   * 返回**夹紧后**的物理像素落点；返回 `null` 表示这次没挪成（读不到窗口 /
+   * 平台报错），组件据此停手，而不是每帧重试。
+   */
+  moveBy?: (dx: number, dy: number) => Promise<{ x: number; y: number } | null>;
+  /**
    * 桥调用的观察者（调试面板用）。
    *
    * 放在每次调用的上下文里、而不是模块级的一个全局钩子：主窗口的画布上
@@ -426,6 +436,61 @@ defineMethod("window.setRegion", null, async (params, ctx) => {
 });
 
 /**
+ * 组件自己挪自己的窗口（桌宠走动、悬浮挂件被拖过来）。
+ *
+ * **不要权限**，和 `window.setRegion` 同一条理由：它只动**自己**这一扇窗，
+ * 既改不了别人的位置，也读不到屏幕上的任何东西。位置本身归用户（placement），
+ * 所以这里做的是"临时挪一下"—— 落盘那一步仍然由宿主补，组件拿它当持久化手段
+ * 是不行的。
+ *
+ * 位移单位是**组件文档的 CSS 像素**，和 `pointermove` 的位移同一个口径：
+ * 组件直接把 `movementX/movementY`（或两次 `screenX/screenY` 的差）传进来，
+ * 由宿主乘一次 `scaleFactor` 换成物理像素。**别让组件自己乘 `devicePixelRatio`** ——
+ * 跨屏时那个值和窗口的 scaleFactor 不是一回事（见 `screen-fit.ts` 的注释）。
+ *
+ * 返回 `applied: false` 表示"这里不是桌面窗口"（画布预览）：画布上那张卡片
+ * 属于用户的布局，不该被组件自己推着走。组件据此关掉走动/拖动，不用 catch ——
+ * 桌宠在画布上一动不动是正常的，那不是错误。
+ *
+ * 位置是**夹紧后**的真实落点：撞到工作区边缘就停在那儿，`x` / `y` 报的就是
+ * 停住的位置，所以组件不会以为"我说了算"。
+ */
+defineMethod("window.moveBy", null, async (params, ctx) => {
+  const step = normalizeMoveStep(params);
+  if (!ctx.moveBy) return { ok: true, applied: false };
+  const at = await ctx.moveBy(step.dx, step.dy);
+  if (!at) return { ok: true, applied: false };
+  return { ok: true, applied: true, x: at.x, y: at.y };
+});
+
+/**
+ * 一次最多认多少位移（CSS 像素）。
+ *
+ * 不是保险丝，是**量纲**：一次调用代表"这一帧动了多少"，一帧走不了 32K 像素。
+ * 超过它的数只可能来自算错的单位（比如把毫秒当像素、或者忘了除 `devicePixelRatio`），
+ * 那种 bug 落在夹紧之后表现为"宠物瞬移到屏幕另一头"，比一条报错难查得多。
+ */
+export const MAX_MOVE_STEP = 32768;
+
+export function normalizeMoveStep(raw: unknown): { dx: number; dy: number } {
+  const box = (raw && typeof raw === "object" ? raw : {}) as { dx?: unknown; dy?: unknown };
+  const pick = (value: unknown, name: string): number => {
+    if (value === undefined) return 0;
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new BridgeError("bad_params", `window.moveBy needs a finite number in "${name}"`);
+    }
+    if (Math.abs(value) > MAX_MOVE_STEP) {
+      throw new BridgeError(
+        "bad_params",
+        `window.moveBy accepts at most ${MAX_MOVE_STEP} css px per call in "${name}"`,
+      );
+    }
+    return value;
+  };
+  return { dx: pick(box.dx, "dx"), dy: pick(box.dy, "dy") };
+}
+
+/**
  * 轮廓条目校验。坏数据一律 `bad_params`，不做"尽量理解"：
  * 一个 NaN 坐标交给 GDI 的结果是整个窗口区域失效，症状是"宠物突然变成
  * 一张实心卡片"，比一条明确的错误难查得多。
@@ -601,6 +666,75 @@ defineMethod("network.fetch", "network", async (params, ctx) => {
     // 桌面窗口会忽略这份（它在 Rust 的注册表里），画布上的实例靠它出网
     hosts: [...ctx.egress],
   });
+});
+
+/**
+ * 内置 assistant 的状态：用户到底配没配模型。
+ *
+ * **不需要权限**：知道"这台机器配了模型"本身不构成能力，而组件要靠它决定
+ * 是显示输入框还是显示"先让用户去设置里填一把 key"。真正的调用在下面。
+ */
+defineMethod("llm.status", null, async () => {
+  if (!bridgeInTauri()) return { configured: false, model: "" };
+  return await invoke<{ configured: boolean; model: string }>("llm_status");
+});
+
+/**
+ * 用用户配置的模型说一句话。要 `llm:chat`。
+ *
+ * 三条约束，每一条都对应一次真实的滥用：
+ *
+ * 1. **不带工具**。组件的 `llm.chat` 只有一张嘴，没有手：请求里不会出现
+ *    `tools`，模型也就没法让它"顺手挪一下组件"。改桌面只有两条路 ——
+ *    用户在 assistant 面板里说，或者外部 agent 端点（那条有自己的白名单）。
+ * 2. **key 不进组件**。请求由 Rust 发、key 从本机的 `assistant.json` 读，
+ *    组件全程看不见；它也没法换 baseUrl 把请求指向别处。
+ * 3. **形状收窄**。消息条数 / 单条长度 / 总量都有上限（`llm_policy.rs`），
+ *    role 只认 system / user / assistant。超了是**拒绝**，不是截断。
+ *
+ * 错误码沿用桥的四种：没授权 `permission_denied`、参数不对 `bad_params`、
+ * 没配模型或者供应商报错 `internal`（`message` 里是人话，组件直接显示就行）。
+ */
+defineMethod("llm.chat", "llm:chat", async (params) => {
+  const input = (params ?? {}) as { messages?: unknown };
+  if (!Array.isArray(input.messages)) {
+    throw new BridgeError("bad_params", "\"messages\" must be an array of {role, content}");
+  }
+  if (input.messages.length === 0) {
+    throw new BridgeError("bad_params", "\"messages\" is empty");
+  }
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "the assistant is only available in the desktop app");
+  }
+
+  const messages: { role: string; content: string }[] = [];
+  for (const item of input.messages) {
+    if (!item || typeof item !== "object") continue;
+    const { role, content } = item as { role?: unknown; content?: unknown };
+    if (typeof role !== "string" || typeof content !== "string") continue;
+    if (!["system", "user", "assistant"].includes(role)) continue;
+    messages.push({ role, content });
+  }
+  if (messages.length === 0) {
+    throw new BridgeError("bad_params", "no usable message (role must be system / user / assistant)");
+  }
+
+  try {
+    const reply = await invoke<{ text: string; toolCalls?: unknown[] }>("llm_chat", {
+      messages: JSON.stringify(messages),
+      // 组件这条路**永远**不带工具（见上面的第 1 条）
+      tools: null,
+    });
+    // 没给它工具它却想调工具：说明这个模型不听话。别把空字符串当回答交回去，
+    // 那会让组件显示一个空气泡，而用户完全看不出发生了什么
+    if (Array.isArray(reply.toolCalls) && reply.toolCalls.length > 0 && !reply.text) {
+      throw new BridgeError("internal", "the model tried to call a tool, but widgets cannot use tools");
+    }
+    return { text: reply.text ?? "" };
+  } catch (error) {
+    if (error instanceof BridgeError) throw error;
+    throw new BridgeError("internal", String(error instanceof Error ? error.message : error));
+  }
 });
 
 function readKey(params: unknown): string {

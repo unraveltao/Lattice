@@ -510,7 +510,33 @@ fn create(app: &AppHandle, spec: &WidgetWindowSpec, runner: &Runner) -> Result<(
         .shadow(false)
         .skip_taskbar(true)
         .focused(false)
-        .visible(false);
+        .visible(false)
+        /*
+         * 置顶要在**建窗口时**就定下来，不能建完再补。
+         *
+         * 事后调 `set_always_on_top(true)`（不管是我们自己的 `SetWindowPos`
+         * 还是 tao 的 API）对这类无边框透明窗口不生效：调用返回成功，
+         * `WS_EX_TOPMOST` 却始终不出现 —— 桌宠就这么沉在浏览器下面、点不到。
+         * 建的时候指定，窗口一出生就在顶层那一档，之后再没机会掉出去。
+         */
+        .always_on_top(spec.layer == WindowLayer::Top);
+
+    /*
+     * `shape: region` 的窗口必须**真透明**。
+     *
+     * 区域裁的是"哪一块算她"，但区域内部没被画到的像素仍会被 WebView2 拿
+     * 窗口底色填上 —— 那圈底色在浅色壁纸上就是她周围的一圈黑框（实测：
+     * 亮背景上她身边的亮度 23，去掉窗口后是 234）。区域的矩形粒度救不了它，
+     * 只有让窗口本身逐像素透明才行。
+     *
+     * 卡片（`rect`）不加这条：它们自己会画满一块不透明的卡面，透明只会让
+     * DWM 多走一遍 alpha 合成，白费性能。
+     */
+    let builder = if spec.shape == WindowShape::Region {
+        builder.transparent(true)
+    } else {
+        builder
+    };
 
     let window = match builder.build() {
         Ok(window) => window,
@@ -574,10 +600,19 @@ fn create(app: &AppHandle, spec: &WidgetWindowSpec, runner: &Runner) -> Result<(
         if spec.shape == WindowShape::Region {
             if let Ok(handle) = window.window_handle() {
                 if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+                    let hwnd = win32.hwnd.get() as isize;
                     let parts = runner.region_of(&label);
-                    if let Err(error) = desktop::set_region(win32.hwnd.get() as isize, &parts) {
+                    if let Err(error) = desktop::set_region(hwnd, &parts) {
                         eprintln!("[lattice] failed to apply the initial region ({label}): {error}");
                     }
+                }
+            }
+            // 区域是在 `apply_to` 之后才贴上的，那一步会动非客户区；窗口真正
+            // "立起来"要等这一串走完，所以收尾再让 tao 确认一次置顶 —— 少了它，
+            // 桌宠偶尔建出来是被浏览器压着的普通窗口。
+            if spec.layer == WindowLayer::Top {
+                if let Err(error) = window.set_always_on_top(true) {
+                    eprintln!("[lattice] failed to keep {label} on top: {error}");
                 }
             }
         }

@@ -12,9 +12,9 @@
 
 **棂 / Lattice** —— 可扩展的 Windows 桌面小组件平台。第三方用纯 HTML/CSS/JS 写组件，平台负责把它们安全地放到桌面上。
 
-当前状态：**v0.8 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志 + 一块看板组件），数据平面（组件把能力声明成工具）还没做。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
+当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志 + 一块看板组件），数据平面（组件把能力声明成工具）还没做；平台另外自带一个 **assistant**（`Ctrl+K`：自备 OpenAI 兼容地址与 key，key 只在 Rust 里，工具调用只走同一套 8 个动作，组件那侧只有 `llm:chat`）。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
 
-想先知道"为什么现在是这样"，读 [ROADMAP 的「被推翻的八个决定」](./docs/ROADMAP.md#被推翻的八个决定)——每个决定都写着当初怎么选、被什么撞翻、现在怎么补。
+想先知道"为什么现在是这样"，读 [ROADMAP 的「被推翻的九个决定」](./docs/ROADMAP.md#被推翻的九个决定)——每个决定都写着当初怎么选、被什么撞翻、现在怎么补。
 
 技术栈：Tauri 2 + React 19 + TypeScript + Vite 8 + Zustand。Rust 侧只做窗口与文件，不碰 UI。
 
@@ -62,6 +62,8 @@ src/
     autostart.ts          开机自启的读写与"路径漂移"判定（`Run` 注册表项）
     catalogue.ts          商店客户端：读目录（内置走 fetch / 远端走 IPC）、下载安装、备份与回滚、写举报
     DebugPanel.tsx        调试面板：桥调用与组件 console 的实时抽屉（Ctrl+Shift+D）
+    assistant.ts          assistant 的 IPC 面：读写模型设置、列模型（测试连接）、跑一轮对话（工具循环 ≤6 步，动作交给 `runtime/agent.ts`）
+    AssistantPanel.tsx    assistant 抽屉（Ctrl+K）：模型设置 + 对话；工具结果一行一个
   runtime/
     manifest.ts           清单校验与归一化；Permission 类型与中文标签（唯一真源）
     config.ts             每实例配置：清单 schema（5 类字段）、归一化、值合并
@@ -75,6 +77,7 @@ src/
     screen-fit.ts         纯几何：锚点选屏、夹紧（入参一律物理像素，`tests/screen-fit.html` 钉着）
     close-guard.ts        ✕ 该不该认这一下：指针序列 + 命中测试（纯函数，`tests/close-guard.html` 钉着）
     agent.ts              agent 动作执行器：白名单动作走真 store，回快照（`tests/agent.html` 57 条）
+    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、system prompt、历史裁剪、OpenAI 消息形状、快照压缩（`tests/assistant.html` 83 条）
     align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 单包命中判定（纯函数，`tests/library-search.html` 钉着）
     debug.ts              调试总线：环形缓冲 400 条、攒批镜像到主窗口、过滤 / 统计纯函数
@@ -125,6 +128,8 @@ src-tauri/src/
   open_policy.rs          上面那道的纯逻辑：只放 http/https、像地址栏一样补协议头（5 条 rustc --test）
   agent.rs                Agent 端点：只绑 127.0.0.1 的 HTTP、令牌、审计、转发给主窗口（默认关）
   agent_policy.rs         上面那道的纯逻辑：HTTP 三态解析、Bearer 常量时间比对、动作白名单、`say` 的单行化与超长拒绝（26 条 rustc --test）
+  llm.rs                  内置 assistant 的模型面：`assistant.json` 读写、环境变量覆盖、llm_status / llm_save / llm_set_key / llm_models / llm_chat 五个命令、出网走 `network::send`、审计只记模型与字数
+  llm_policy.rs           上面那道的纯逻辑：base URL 归一化与回环判定、请求体拼装、消息与工具校验、`/chat/completions` 与 `/models` 的应答解析、401/404/429 的给人看的话（21 条 `rustc --test`，**不引 crate**）
   wallpaper.rs            截壁纸（宿主页底板的第一层）
   metrics.rs              系统指标（sysmon 组件用）：整机 + 逐核 CPU、内存与提交量、磁盘、网络、开机时长 / 进程计数，直接调 Win32 不引 crate
   metrics_policy.rs       上面那道的纯逻辑：累计计数 → 占用率、核数变了返回空而不是错位（5 条 rustc --test）
@@ -286,6 +291,7 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 | --- | --- | --- |
 | 摆放、已安装、授权、主题、网格吸附、本机档案、桌面矩形、目录地址、钉住的发布者钥匙、评分、待复核的权限 | `%APPDATA%\com.iron-tom.lattice\state.json` | `store.ts` → `state_write` |
 | 组件私有数据 | `%APPDATA%\com.iron-tom.lattice\widget-data\<widgetId>.json` | `bridge.ts` → `widget_store_write` |
+| assistant 的模型设置与 **API key** | `%APPDATA%\com.iron-tom.lattice\assistant.json`（`{baseUrl, model, temperature, apiKey}`，临时文件 + 原子替换） | `llm.rs`（**只有 Rust 读得到明文 key**，前端只见掩码） |
 | 用户安装的组件 | `%APPDATA%\com.iron-tom.lattice\widgets\<id>\` | `widgets.rs` |
 | 上一代的组件（回滚用） | `%APPDATA%\com.iron-tom.lattice\widget-backups\<id>\` | `backup.rs`（只留一代，卸载时一起删） |
 | 举报与评分 | `%APPDATA%\com.iron-tom.lattice\reports\<widgetId>-<unix>.json` | `store.rs::store_report`（**不发送**，只是文件） |
@@ -323,6 +329,20 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 3. 运行态要用的话，一路加下去：`buildSpecs` → `WidgetWindowSpec`（TS）→ `WidgetWindowSpec`（Rust）→ `HostConfig` → **`Applied`**
 
 第 3 步最后那个 `Applied` 最容易漏。`Applied` 是"已经写进 Win32 的状态"，不在里面的字段永远不会触发窗口更新——撤销权限对已打开的桌面窗口无效，就是这么来的。
+
+### 改内置 assistant / 加一项 AI 能力
+
+一句话的形状：**key 只在 Rust 里，模型只认 OpenAI 兼容的 `/chat/completions`，手仍然是那八个动作。**
+
+1. **模型设置与 key 落在 `assistant.json`，不落 `state.json`**。`llm.rs` 独占读写（临时文件 + 原子替换），前端只拿到 `LlmStatus`：`keyHint` 是 `sk-1…cdef` 这种掩码，`llm_status` **永远不回明文 key**。为什么不放 `state.json`：那份是前端整体回写的，两个入口（面板、组件宿主）会互相盖；而且把 key 交给渲染进程，等于任何一个组件 XSS 都直接拿到它。环境变量 `LATTICE_LLM_KEY` / `_BASE_URL` / `_MODEL` 可以盖掉文件（`keySource: "env"`），CI 与临时试验用这条路。
+2. **协议只认 OpenAI 兼容形状，归一化只有一处**。`llm_policy::normalize_base` 补 `https://`、去尾斜杠、剥掉用户顺手粘进来的 `/chat/completions` `/completions` `/models`；`http://` **只放回环**（`127.0.0.1` / `localhost` / `[::1]`，IPv6 要走 `host_of` 拆括号，别用 `split(':')`）。别在 `AssistantPanel.tsx` 里再补一套——两套规则迟早不一致，症状是"设置里能测通、一发消息就 404"。
+3. **加一个工具要改两处，且必须相等**：`runtime/agent.ts` 的 `AGENT_ACTIONS`（真执行器）+ `runtime/assistant.ts` 的 `TOOL_SPECS`（名字、参数名、类型、required）。`tests/assistant.html` 会比对两边——名字集合相等、每个动作的参数键与执行器的 `EXECUTOR_KEYS` 对得上、`required` 是子集。**别在 `AGENT_ACTIONS` 之外新写一个"给模型用的"执行器**：那等于给模型开一条不受审计、不走 store 的旁路。
+4. **工具循环只在 `platform/assistant.ts`**：≤6 步（`MAX_STEPS`）、每步把执行器返回的 JSON 字符串当 `tool` 消息回填、`shouldStop` 让"停止"立刻断掉。Rust 侧另有两道闸：`MAX_TOOL_STEPS = 8`、请求间 300ms（`MIN_GAP`，在 `spawn_blocking` 里 sleep）。
+5. **组件永远没有工具**。`bridge.ts` 的 `llm.chat` 一律 `tools: null`，模型真要调工具就抛 `internal`（"widgets cannot use tools"）。组件能用的只有 `llm.chat` + `llm.status`，权限 `llm:chat`（标签 "Use my AI model"）。这条是不变量 2 的延伸：**能改变桌面的是平台，不是组件**，否则"你信不信任这段代码"就变成"你敢不敢让它动你的布局"。
+6. **错误话要分得清是谁的错**。`describe_status` 把 401/403 说成"provider 拒了这把 key（HTTP 401）—— 去 Assistant settings 换一把"、404 提 `/v1`、429 说配额。别统一成"网络问题"——那条教训是拿更新器换来的（见不变量 16）。
+7. **审计只记形状不记内容**：`assistant.chat` 记模型名与字符数，`assistant.models` 记主机。`agent.rs::audit` 已改成 `pub(crate)`，只此一处复用。
+8. **`llm_policy.rs` 必须保持不引 crate**。它要能在写不了 `target/debug/deps` 的机器上用 `rustc --test` 单独跑（把文件 `#[path]` 进一个壳子即可）——所以 JSON 读取是手写的（深度上限 32），`llm.rs` 才引 `serde_json` 拼返回值。往 `llm_policy.rs` 里加 `use serde::…` 会让那 21 条测试整批失去可运行性。
+9. **UI 只有两处**：`AssistantPanel.tsx` 一个抽屉两态（对话 / 设置），快捷键 Ctrl+K 写在 `App.tsx`；样式只追加 `.lattice-assistant*` 到 `styles.css`。设置里"测试连接"打的是 `llm_models`，它同时是唯一一处验证 key 的地方。
 
 ### 改三栏布局
 
@@ -390,6 +410,13 @@ public/widgets/<id>/
 **页面这边还得自己拉一次初始状态。** 事件是"变了才发"，而页面可能是在窗口**已经**最小化之后才加载的（热更新、权限变更重载、改完 Rust 重启），那一次变化早就过去了。所以 `hookWindowVisibility` 在订阅之后补一句 `isMinimized()`，把初始状态对齐 —— 少了它，热更新一次就要等用户再最小化一遍才会重新停摆。
 
 **守卫是"开关 + 子类化"两件事，顺序不能反。** 开关是一个窗口属性（`set_sink`，任意线程可同步翻转），子类化只能回窗口线程装（`install_guard`，跨线程会静默返回 0）。`apply_to` 里必须**先翻开关再落层级**：否则切"置顶"那一下的 `HWND_TOPMOST` 会被还活着的守卫吃掉，组件永远上不去。
+
+**`shape: "region"` 的窗口有两件事只能在建窗口时定，事后补不回来。** 两条都是真机量出来的，症状都长得像"组件写错了"：
+
+- **必须 `.transparent(true)`**（`runner::create` 里按 `spec.shape` 分支）。区域裁的是"哪一块算它"，可区域之内没被画到的像素仍由 WebView2 用窗口底色填上 —— 浅色壁纸上那就是组件周围一圈黑框（实测亮背景上它身边亮度 23，去掉窗口 234）。区域是矩形粒度，救不了这条，只有窗口本身逐像素透明才行。顺带 `desktop::strip_frame` 摘掉非客户区（`WS_BORDER|WS_DLGFRAME` + 三个 edge 扩展位）并关掉 DWM 的非客户区渲染 —— 边框没了投影还在，是最难查的那种"剩一半"。`apply_to` 与 `set_region` 各调一次 `strip_frame` 不是冗余：一次盖"建窗口"，一次盖"换轮廓"。
+- **置顶必须 `.always_on_top(layer == Top)`**。事后 `set_always_on_top(true)` / `SetWindowPos(HWND_TOPMOST)` 对这类无边框透明窗口**静默失效**：返回 TRUE、`WS_EX_TOPMOST` 却始终不出现（同一个进程里的普通窗口反倒正常，所以很容易误判成"代码没跑"）。结果是她沉在浏览器下面、点不到（命中测试落在别人窗口上）。建的时候指定，窗口一出生就在顶层那一档。（`apply_to` 里仍保留一次 `set_always_on_top(layer == Top)`，那是给**运行时切层级**用的，不是给建窗口收尾用的。）
+
+区域窗口还有两条连带事实：它没有窗饰，所以**没有桌面端的缩放手柄** —— 要调大小只能建 `config`（桌宠的「大小」就是这条路），别指望改窗口尺寸；区域里的透明像素连命中测试一起消失（`WindowFromPoint` 直接跳过），所以"看得见"就等于"点得到"，不用另写一套。
 
 **想往屏幕上画东西，先想清楚能不能用"两条 1px 叠层窗口"。** 桌面拖拽的对齐参考线（`guides_overlay.rs`）就是这条路：`WS_EX_LAYERED | WS_EX_TRANSPARENT` 的 1px 窗口 + `UpdateLayeredWindow` 逐像素 alpha，一条竖的一条横的，**不是**一个透明 WebView2 窗口（逐像素透明的 WebView2 在软件渲染的机器上建不出来，见上面那条 `0x8007139F`）。五条别踩回去：① 窗口归**专用线程**所有、由它泵消息，跨线程 `SetWindowPos` / `UpdateLayeredWindow` 会等窗口线程处理，而窗口线程不泵消息就互相等死；② 位图只跟屏幕尺寸/颜色有关，拖动时只 `UpdateLayeredWindow` 换位置和尺寸（一次调用同时给目的地和大小），**别每帧重建全屏位图**（3456×1080×4 是 15MB）；③ 每帧 `SetWindowPos(HWND_TOPMOST)` 提一次 —— 被拖的那扇窗口常常正好压在线上；④ 收线不能只靠前端：宿主页崩了就没人发 `Hide`，叠层线程 4 秒没新坐标要自己收（前端拖动期间每秒补一发心跳，所以"指针停住看对齐"不会误触发）；⑤ 线形和画布用同一套数（4px 亮 / 4px 空、62% 亮度、没有中段实线也没有端头淡入），线段长短也只有一个实现（`align-guides.ts::guideLines`：以被拖的窗口为中心、两端各伸出「半个窗口 + 48px」，总长 = 2 ×（窗口尺寸 + 48px），再夹进工作区）—— `guide_policy.rs` 是像素规则、`styles.css` 的 `.lattice-guide` 是对应写法（一个 `repeating-linear-gradient` + `currentColor`，位置和长度走内联 style）。**别往那个元素上加 `mask-image` 或 `filter`**：它们会连子内容一起遮/一起模糊（历史上两端淡入就是这么只剩 5% 亮度的）。线是局部的，所以叠层窗口的**尺寸每帧都在变**，`len` 记得夹到位图那一维以内。
 

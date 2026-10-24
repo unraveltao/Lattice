@@ -382,6 +382,27 @@ export function createLattice(options = {}) {
       fetch: (input) => call("network.fetch", input || {}),
     },
 
+    llm: {
+      /**
+       * 用**用户自己配的**模型说一句话。要 `llm:chat`。
+       *
+       * key 不进组件：平台替你把请求发出去，组件全程看不见它，也换不了 baseUrl。
+       * 这条路**没有工具** —— 组件只能说话，不能借它改桌面（那是 assistant 面板
+       * 和 agent 端点的事）。
+       *
+       * 失败时的错误码：没授权是 `permission_denied`（`permission` 字段就是
+       * `"llm:chat"`），用户还没配模型 / 供应商报错都是 `internal`，`message`
+       * 是可以直接给用户看的一句话。
+       *
+       * @param {Array<{role: "system"|"user"|"assistant", content: string}>} messages
+       * @returns {Promise<{text: string}>}
+       */
+      chat: (messages) => call("llm.chat", { messages }),
+
+      /** 用户到底配没配模型。不需要权限 —— 组件据此决定显示输入框还是提示去设置。 */
+      status: () => call("llm.status"),
+    },
+
     /** 读系统时间。要 `clock`。 */
     now: () => call("clock.now"),
 

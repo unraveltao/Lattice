@@ -29,7 +29,7 @@
 
 Lattice 是给"你自己写的组件"用的外壳。一个组件就是一个目录：`index.html`、一份样式、一份脚本，加一份 `manifest.json` 说明"我可能要什么"。把目录拖进窗口就装好了，拷到 `%APPDATA%` 下，由自己的协议伺服；拖到画布上就能看到它跑起来，点 **投放到桌面**，它变成一个无边框窗口，重启还在原位。
 
-关键在于上面那句"变成一个窗口"。组件从头到尾碰不到 Windows。它跑在一个 `sandbox="allow-scripts allow-forms"` 的 iframe 里，源是不透明的，CSP 把它钉在自己的文件上；它拥有的每一项能力都是一次过桥请求 —— `clock` 拿时间、`storage` 用自己那份小数据库、`network` 访问一份白名单里的主机，等等。一共九项权限，默认一项都不给，**装一个组件也不会顺带给它任何权限**：每项能力由你按组件批一次，撤掉一项对已经开着的窗口当场生效。
+关键在于上面那句"变成一个窗口"。组件从头到尾碰不到 Windows。它跑在一个 `sandbox="allow-scripts allow-forms"` 的 iframe 里，源是不透明的，CSP 把它钉在自己的文件上；它拥有的每一项能力都是一次过桥请求 —— `clock` 拿时间、`storage` 用自己那份小数据库、`network` 访问一份白名单里的主机，等等。一共十项权限，默认一项都不给，**装一个组件也不会顺带给它任何权限**：每项能力由你按组件批一次，撤掉一项对已经开着的窗口当场生效。
 
 **平台本身是空的。** 15 个官方组件和第三方组件一样，都是从组件库里显式装进来的普通包 —— 它们没有被编进应用，也不会自动装上。这是"扩展平台"和"桌面小工具"的分界线，也是 [AGENTS.md](./AGENTS.md) 里的第一条不变量。
 
@@ -37,7 +37,9 @@ Lattice 是给"你自己写的组件"用的外壳。一个组件就是一个目�
 
 ## 现在到哪了
 
-当前版本 v0.9：**声音看得见、链接出得去。** 音乐组件从 `lattice.media` 改名为 `lattice.music`（它先回答"在放什么"，再回答"有多响"），播放器名字从 AUMID 翻成人话，卡片按真实的 268 × 172 预算重排；同时落下两项能力：`audio:level`（对默认输出设备做 WASAPI 回环采集，只回一个 `0..1` 的数）和 `shell:open`（把 http/https 地址交给默认浏览器，此外什么都不做）。`lattice.bookmarks` 就是验证它俩的那个组件。
+当前版本 v0.10：**模型你自己带，手仍然归平台。** 平台自带一个 assistant —— `Ctrl+K` 或顶栏那颗按钮：填一次 OpenAI 兼容的 base URL 和 API key，它就在抽屉里、也在组件的对话框里回话。不内置任何模型，中间没有代理：key 落在 Rust 掌管的 `assistant.json`，前端只看得到 `sk-1…cdef` 这样的掩码；模型能"做"的，只有 agent 端点本来就有那 8 个白名单动作。组件要 `llm:chat` 只拿得到文字，永远拿不到工具。
+
+v0.9 加了**声音看得见、链接出得去。** 音乐组件从 `lattice.media` 改名为 `lattice.music`（它先回答"在放什么"，再回答"有多响"），播放器名字从 AUMID 翻成人话，卡片按真实的 268 × 172 预算重排；同时落下两项能力：`audio:level`（对默认输出设备做 WASAPI 回环采集，只回一个 `0..1` 的数）和 `shell:open`（把 http/https 地址交给默认浏览器，此外什么都不做）。`lattice.bookmarks` 就是验证它俩的那个组件。
 
 | 版本 | 加了什么 |
 | --- | --- |
@@ -50,19 +52,20 @@ Lattice 是给"你自己写的组件"用的外壳。一个组件就是一个目�
 | **v0.7** | 交付：NSIS 安装包、应用内更新、先出草稿的发布流程，以及把 SmartScreen 这件事写下来而不是藏起来 |
 | **v0.8** | Agent 接入：默认关的回环 HTTP 端点、令牌、审计日志、8 个白名单动作，以及一块看板组件 |
 | **v0.9** | `lattice.music`、`audio:level`、`lattice.bookmarks`、`shell:open` |
+| **v0.10** | 平台自带 assistant：自备 OpenAI 兼容地址与 key，key 留在 Rust 里，工具调用只走那 8 个动作，组件那侧是 `llm:chat` |
 
 **几个数字**
 
 | 项 | 数值 |
 | --- | --- |
 | 官方组件 | 15 个 |
-| 权限 | 9 项 |
-| Tauri 命令 | 48 条 |
-| 浏览器断言 | 36 个页面、1357 条 |
-| Rust 单测 | 157 条 |
+| 权限 | 10 项 |
+| Tauri 命令 | 54 条 |
+| 浏览器断言 | 39 个页面、1533 条 |
+| Rust 单测 | 178 条 |
 | 记下来的坑 | 69 个 |
 
-每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；157 条 Rust 单测分成 136 条 `rustc --test` 的纯逻辑和 21 条要完整 `cargo test` 的；69 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
+每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；178 条 Rust 单测分成 157 条 `rustc --test` 的纯逻辑和 21 条要完整 `cargo test` 的；69 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
 
 ## 两个宿主，一套桥
 
@@ -126,18 +129,21 @@ Lattice 是给"你自己写的组件"用的外壳。一个组件就是一个目�
 | `audio:level` | 一个 `0..1` 的数：输出有多响 | 音乐 |
 | `shell:open` | 把 http/https 地址交给默认浏览器 | 书签 |
 | `agent:activity` | 读 agent 的审计日志 | Agent 看板 |
+| `llm:chat` | 把一段对话交给 assistant 的模型，换回文字 | 桌宠 |
 
 <p align="center"><a href="docs/screenshot-permission.png"><img src="docs/screenshot-permission.png" width="380" alt="卡片在要一项没被授予的权限"></a></p>
 
 <p align="center"><sub>卡片碰到一项没被授予的能力，会当场把名字说出来；一次 <code>Grant</code> 覆盖整套，然后组件重新初始化。</sub></p>
 
-其中三项值得单独说一段，因为"它有这个权限"从来不是全部故事。
+其中四项值得单独说一段，因为"它有这个权限"从来不是全部故事。
 
 **`network` 是白名单，不是开关。** 一次请求按固定顺序过三道闸：有 `network` 权限 → 目标主机在 `manifest.network.hosts` 里 → 请求形状合法（方法、头数量、体积）。**故意没有通配符**：`*.example.com` 会把"我允许了这一个接口"变成"我允许了整个域"，而权限面板只显示一行字 —— 用户根本没法审阅自己批准了什么。端口算主机身份的一部分；重定向一律不跟随，因为从放行的域名 302 到别的域名，等于把白名单交给第一跳的主人。请求走 IPC 而不是本地 HTTP 代理，因为一个代理端口就是第二条没人审查的出路。
 
 **`shell:open` 只开一扇门。** `tauri-plugin-opener` 把字符串原样丢给 `ShellExecuteW`，而它**不认协议** —— `file:` 会把本地文件交给默认程序打开，`ms-settings:` 能直接翻到系统隐私页。所以协议白名单（只放 http / https）写在 `open_policy.rs` 里，卡在插件前面；组件侧把用户输入收拾干净是第二道独立的检查。这不削弱导航拦截：组件的文档仍然不能自己跳走，把数据拼进 URL 送出去。
 
 **`audio:level` 只有一个数。** 后台线程对默认输出设备做 WASAPI 回环采集，算出 RMS → 分贝 → 带释放曲线的 `0..1` 包络；命令只读最新那个值。没有缓冲区、没有音频内容、没有能反推的东西 —— "把声音显示出来"只有这一版是可以发出去的。
+
+**`llm:chat` 是嘴，不是手。** 组件能和你配好的模型聊一段，仅此而已：桥每次都用 `tools: null` 调 `llm.chat`，模型真回一个工具调用，就变成 `internal` 错误，不会被执行。key 从不进渲染进程 —— Rust 读它、拼进请求头、只回文字和一段掩码 —— 所以一个被攻破的组件既偷不到东西，也动不了桌面。改桌面这件事只属于平台自己的 assistant，那才是**你**在说话的那个人。
 
 ## 没有服务端的分发
 
@@ -236,7 +242,7 @@ npm run typecheck        # tsc --noEmit
 npm run test:injection   # 上报脚本在两条发文档的路上注入得一模一样
 npm run test:sdk         # 每份内嵌 SDK 副本都和 packages/sdk 一致
 npm run test:agent       # agent 客户端的请求形状与退出码
-npm run test:browser     # 36 个页面、1357 条断言，真 Chrome、真 dev server
+npm run test:browser     # 39 个页面、1533 条断言，真 Chrome、真 dev server
 ```
 
 浏览器那套是里面最有意思的。每个 `tests/*.html` 都是一张真的断言页 —— 纯逻辑（semver、config、目录、参考线、关闭守卫、屏幕夹紧）、布局预算、组件行为 —— 由 dev server 伺服，Chrome 驱动。它存在的原因是"我这儿是好的"这句话反复地说错：书签第六行实测 36px，而它的注释写着 30px，就这么被 `overflow: hidden` 静默切掉，直到有人去量。
@@ -275,7 +281,7 @@ docs/                架构、组件规范、路线图、代码签名、agent �
 | --- | --- |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 各块怎么拼起来，以及为什么 |
 | [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) | 组件契约 |
-| [docs/ROADMAP.md](./docs/ROADMAP.md) | 版本历史、69 个坑、被推翻的 8 个决定 |
+| [docs/ROADMAP.md](./docs/ROADMAP.md) | 版本历史、69 个坑、被推翻的 9 个决定 |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | agent 端点的威胁模型 |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | 钥匙、信任锚点、哪些东西**没有**签名 |
 | [AGENTS.md](./AGENTS.md) | 18 条不变量，写给下一个动这份代码的人 |

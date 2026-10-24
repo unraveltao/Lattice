@@ -1020,6 +1020,48 @@ button {
   z-index: 20;
 }
 
+/*
+ * `shape: region`（桌宠那类）：画布上也不给它底板。
+ *
+ * 桌面窗口由 `SetWindowRgn` 裁成轮廓、一层底板都不画；画布这边要是还留着
+ * 底色 + 1px 描边，同一个组件在"设计器"里永远套着一个黑框，而那恰好是用户
+ * 第一次调它的地方。字号、间距都别动 —— 只去掉底色、描边和阴影。
+ *
+ * 标题条不删（它是画布上唯一能拖的地方），平时淡到几乎看不见，指到 / 选中
+ * 才淡入。
+ */
+.lattice-widget.is-region {
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lattice-widget.is-region:hover {
+  border-color: var(--lattice-border);
+}
+
+.lattice-widget.is-region.is-selected {
+  border-color: var(--lattice-accent);
+  box-shadow:
+    0 0 0 2px var(--lattice-accent-soft),
+    0 0 0 1px var(--lattice-accent);
+}
+
+.lattice-widget.is-region .lattice-widget-bar {
+  border-bottom-color: transparent;
+  background: transparent;
+  opacity: 0.35;
+  transition: opacity 0.15s ease;
+}
+
+.lattice-widget.is-region:hover .lattice-widget-bar,
+.lattice-widget.is-region.is-selected .lattice-widget-bar {
+  border-bottom-color: var(--lattice-border);
+  background: var(--lattice-surface-2);
+  opacity: 1;
+}
+
 .lattice-widget-bar {
   display: flex;
   align-items: center;
@@ -3094,4 +3136,169 @@ button.lattice-chip[aria-pressed="true"] {
 /* 说明框比举报框宽一点：那里面是几节列表，420px 会频繁折行 */
 .lattice-modal.is-help {
   width: min(460px, 100%);
+}
+
+
+/* ---------------------------------------------------------------------------
+ * Assistant 抽屉
+ *
+ * 浮在画布右侧，不占三栏的位置：它改的就是画布上的东西，盖住就没法看了。
+ * 宽度固定 380 —— 再宽会压住属性面板，再窄一行只放得下十来个字。
+ * ------------------------------------------------------------------------ */
+
+.lattice-assistant {
+  position: fixed;
+  top: 62px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 42;
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: calc(100vw - 28px);
+  overflow: hidden;
+  background: var(--lattice-surface);
+  border: 1px solid var(--lattice-border);
+  border-radius: 14px;
+  box-shadow: var(--lattice-shadow-2);
+}
+
+.lattice-assistant-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--lattice-border);
+}
+
+.lattice-assistant-title {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lattice-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lattice-assistant-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.lattice-assistant-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.lattice-assistant-turn {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--lattice-text);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.lattice-assistant-turn.is-user {
+  align-self: flex-end;
+  max-width: 88%;
+  background: var(--lattice-accent-soft);
+  border-radius: 10px 10px 2px 10px;
+}
+
+.lattice-assistant-turn.is-assistant {
+  align-self: flex-start;
+  max-width: 92%;
+  background: var(--lattice-surface-2);
+  border-radius: 10px 10px 10px 2px;
+}
+
+/* 工具执行结果：一行一个，密度高过正文 —— 它是过程，不是对话 */
+.lattice-assistant-chip {
+  margin: 0;
+  padding: 4px 8px;
+  font-family: var(--lattice-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted);
+  overflow-wrap: anywhere;
+  background: var(--lattice-surface-2);
+  border: 1px solid var(--lattice-border);
+  border-radius: 6px;
+}
+
+.lattice-assistant-chip.is-failed {
+  color: var(--lattice-danger);
+  background: var(--lattice-danger-soft);
+  border-color: color-mix(in srgb, var(--lattice-danger) 30%, transparent);
+}
+
+.lattice-assistant-error {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--lattice-danger);
+  overflow-wrap: anywhere;
+  background: var(--lattice-danger-soft);
+  border-radius: 8px;
+}
+
+.lattice-assistant-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-assistant-hint code {
+  font-size: 10px;
+}
+
+.lattice-assistant-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--lattice-border);
+}
+
+.lattice-assistant-composer textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lattice-text);
+  resize: none;
+  background: var(--lattice-surface-2);
+  border: 1px solid var(--lattice-border);
+  border-radius: 8px;
+}
+
+.lattice-assistant-composer textarea:focus {
+  outline: none;
+  border-color: var(--lattice-accent);
+}
+
+.lattice-assistant-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.lattice-assistant-meta {
+  margin-left: auto;
+  font-family: var(--lattice-mono);
+  font-size: 10px;
+  color: var(--lattice-text-faint);
 }

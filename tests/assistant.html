@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>assistant test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 内置 assistant 的纯逻辑。
+       *
+       * 这里不连模型、不发请求 —— 那两件事一条在 Rust（llm.rs / llm_policy.rs），
+       * 一条要真 key。这一页钉的是**最容易悄悄错掉、又最难在真机上发现**的东西：
+       *
+       *   1. 工具表和动作白名单**逐字一致**（多一个 = 模型会调用一个执行器不认的动作，
+       *      而它收到的是一条 `unknown_action`，然后开始猜）
+       *   2. 每个工具的参数名和执行器读的键**对得上**（`readString` / `readNumber`
+       *      用的是字面量，改名字两边不会互相提醒）
+       *   3. 历史裁剪不留半截（system 必须留下，否则模型不知道桌面现状）
+       *   4. 模型把 arguments 写成字符串 / 写成对象 / 写成垃圾时的行为
+       *   5. 快照的预算：配置撑爆就整段丢掉，而不是把 token 账单一起撑爆
+       */
+      import {
+        MAX_HISTORY,
+        TOOL_SPECS,
+        compactSnapshot,
+        describeToolCall,
+        parseArguments,
+        systemPrompt,
+        toWire,
+        toolDefs,
+        trimHistory,
+      } from "../src/runtime/assistant.ts";
+      import { AGENT_ACTIONS } from "../src/platform/agent.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(JSON.stringify(actual) === JSON.stringify(expected), `${text}（得到 ${JSON.stringify(actual)}）`);
+      const ok = (condition, text) => log(Boolean(condition), text);
+
+      // ---- 1. 两张表必须一致 ----
+
+      eq(
+        Object.keys(TOOL_SPECS).slice().sort(),
+        [...AGENT_ACTIONS].sort(),
+        "工具名和 agent 动作白名单一致（多一个少一个都是 bug）",
+      );
+
+      // ---- 2. 参数名和执行器读的键对得上 ----
+
+      /** 执行器 `runAgentAction` 里每个动作会读哪些键（照抄那份 switch） */
+      const EXECUTOR_KEYS = {
+        "placement.add": { strings: ["widgetId"], numbers: [], booleans: [] },
+        "placement.move": { strings: ["instanceId"], numbers: ["x", "y"], booleans: [] },
+        "placement.resize": { strings: ["instanceId"], numbers: ["w", "h"], booleans: [] },
+        "placement.remove": { strings: ["instanceId"], numbers: [], booleans: [] },
+        "placement.pin": { strings: ["instanceId"], numbers: [], booleans: ["pinned"] },
+        "placement.front": { strings: ["instanceId"], numbers: [], booleans: [] },
+        "theme.set": { strings: ["theme"], numbers: [], booleans: [] },
+        "widgets.pause": { strings: [], numbers: [], booleans: ["paused"] },
+      };
+
+      for (const [name, keys] of Object.entries(EXECUTOR_KEYS)) {
+        const spec = TOOL_SPECS[name];
+        ok(!!spec, `${name} 有说明书`);
+        if (!spec) continue;
+        const properties = Object.keys(spec.parameters.properties).sort();
+        const wanted = [...keys.strings, ...keys.numbers, ...keys.booleans].sort();
+        eq(properties, wanted, `${name} 的 schema 键和执行器读的键一致`);
+        eq([...(spec.parameters.required ?? [])].sort(), wanted, `${name} 的必填项就是全部参数`);
+        for (const key of keys.strings) {
+          eq(spec.parameters.properties[key].type, "string", `${name}.${key} 是字符串`);
+        }
+        for (const key of keys.numbers) {
+          eq(spec.parameters.properties[key].type, "number", `${name}.${key} 是数字`);
+        }
+        for (const key of keys.booleans) {
+          eq(spec.parameters.properties[key].type, "boolean", `${name}.${key} 是布尔`);
+        }
+        ok(spec.description.length > 20, `${name} 的描述够模型判断"什么时候用"`);
+      }
+
+      // `theme.set` 的枚举必须和 store 的 ThemeMode 一致
+      eq(
+        TOOL_SPECS["theme.set"].parameters.properties.theme.enum,
+        ["light", "dark", "system"],
+        "theme.set 只给三个合法值",
+      );
+
+      // ---- 3. 工具定义是 OpenAI 兼容的形状 ----
+
+      const defs = toolDefs();
+      eq(defs.length, AGENT_ACTIONS.length, "每个动作一个 function 定义");
+      ok(
+        defs.every((item) => item.type === "function" && item.function.name && item.function.parameters.type === "object"),
+        "每个定义都是 {type:function, function:{name, parameters}}",
+      );
+
+      // ---- 4. 历史裁剪 ----
+
+      const history = (count) =>
+        Array.from({ length: count }, (_, index) => ({
+          role: index === 0 ? "system" : index % 2 ? "user" : "assistant",
+          content: `m${index}`,
+        }));
+
+      const short = history(4);
+      eq(trimHistory(short), short, "没超上限时原样返回（而且是一份拷贝）");
+      ok(trimHistory(short) !== short, "返回的是新数组，调用方改它不会污染原会话");
+
+      const long = history(MAX_HISTORY + 12);
+      const trimmed = trimHistory(long);
+      eq(trimmed.length, MAX_HISTORY, "超长历史裁到上限");
+      eq(trimmed[0].role, "system", "system 一定留下（桌面现状在里面）");
+      ok(trimmed[1].content.includes("省略"), "被砍掉的部分有一句说明，模型不会以为对话刚开始");
+      ok(
+        trimmed.at(-1).content === long.at(-1).content,
+        "留下的是**最近的**那些，不是最旧的",
+      );
+
+      // ---- 5. 参数解析 ----
+
+      eq(parseArguments('{"a":1}'), { ok: true, value: { a: 1 } }, "正常对象");
+      eq(parseArguments(""), { ok: true, value: {} }, "空串当没有参数");
+      ok(parseArguments("{oops").ok === false, "坏 JSON 要报错，交给模型改");
+      ok(parseArguments("[1,2]").ok === false, "数组不是对象");
+      ok(parseArguments("null").ok === false, "null 不是对象");
+      ok(parseArguments('{"a":1}').value.a === 1, "值原样带出去");
+
+      // ---- 6. 线格式 ----
+
+      const wire = toWire([
+        { role: "system", content: "sys" },
+        { role: "user", content: "把时钟挪走" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "call_1", name: "placement.move", arguments: '{"instanceId":"a","x":1,"y":2}' }],
+        },
+        { role: "tool", toolCallId: "call_1", content: '{"ok":true}' },
+      ]);
+      eq(wire[0], { role: "system", content: "sys" }, "system 原样");
+      eq(wire[2].role, "assistant", "assistant 那条");
+      ok(wire[2].content === null, "只调工具时 content 是 null（给空串有的供应商会拒）");
+      eq(wire[2].tool_calls[0].type, "function", "tool_calls 带 type:function");
+      eq(wire[2].tool_calls[0].function.name, "placement.move", "工具名原样");
+      eq(wire[3], { role: "tool", tool_call_id: "call_1", content: '{"ok":true}' }, "工具结果带 tool_call_id");
+
+      // ---- 7. 工具说明（界面上的小标签） ----
+
+      ok(
+        describeToolCall("placement.move", '{"instanceId":"lattice.clock#a1","x":1,"y":2}').includes("lattice.clock#a1"),
+        "移动的标签带上实例 id",
+      );
+      ok(describeToolCall("theme.set", '{"theme":"dark"}').includes("dark"), "主题的标签带上目标");
+      eq(describeToolCall("widgets.pause", '{"paused":true}'), "暂停全部组件", "暂停");
+      eq(describeToolCall("widgets.pause", '{"paused":false}'), "恢复全部组件", "恢复");
+      ok(describeToolCall("placement.pin", '{"instanceId":"a","pinned":true}').includes("钉住"), "钉住");
+      ok(describeToolCall("placement.remove", "{bad json").includes("组件"), "参数坏了也要出一个能看的标签");
+      eq(describeToolCall("nope.nope", "{}"), "nope.nope", "未知动作原样显示，不崩");
+
+      // ---- 8. 系统提示 ----
+
+      const prompt = systemPrompt('{"placements":[]}');
+      ok(prompt.includes("不要编造"), "要求它照快照里的 instanceId 说话");
+      ok(prompt.includes("做不到"), "工具之外的事要明确拒绝");
+      ok(prompt.includes("用用户的语言"), "工具描述是英文，回复跟用户走");
+      ok(prompt.includes('{"placements":[]}'), "桌面现状被带进提示");
+
+      // ---- 9. 快照与预算 ----
+
+      const desk = {
+        theme: "dark",
+        paused: false,
+        widgets: [
+          { id: "lattice.clock", name: "Clock", installed: true },
+          { id: "lattice.todo", name: "Todo", installed: false },
+        ],
+        placements: [
+          {
+            instanceId: "lattice.clock#a1",
+            widgetId: "lattice.clock",
+            name: "Clock",
+            x: 24,
+            y: 24,
+            w: 240,
+            h: 140,
+            pinned: false,
+            layer: "desktop",
+            config: { hour12: false },
+          },
+        ],
+      };
+
+      const snapshot = JSON.parse(compactSnapshot(desk));
+      eq(snapshot.placements.length, 1, "摆放都在");
+      eq(snapshot.installed, [{ id: "lattice.clock", name: "Clock" }], "只列已安装的（没装的它也用不了）");
+      eq(snapshot.placements[0].config, { hour12: false }, "配置带上（模型要回答“她怎么这么大”就得看见它）");
+
+      // 预算：塞一坨配置进去，超预算之后整段 config 应当消失
+      const fat = {
+        ...desk,
+        placements: [
+          {
+            ...desk.placements[0],
+            config: Object.fromEntries(Array.from({ length: 400 }, (_, i) => [`key${i}`, "x".repeat(20)])),
+          },
+        ],
+      };
+      const squeezed = compactSnapshot(fat, 1000);
+      ok(squeezed.length < 2000, "超预算时确实变小了");
+      ok(!squeezed.includes('"config"'), "手段是把 config 整段丢掉，而不是砍一半 JSON");
+
+      // ---- 输出 ----
+
+      const pass = lines.filter((line) => line.startsWith("PASS")).length;
+      const fail = lines.length - pass;
+      document.getElementById("out").innerHTML =
+        lines.map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`).join("\n") +
+        `\n\n${pass} passed, ${fail} failed`;
+      document.title = fail === 0 ? `assistant ${pass}/${lines.length}` : `assistant FAIL ${fail}`;
+    </script>
+  </body>
+</html>

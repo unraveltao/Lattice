@@ -12,6 +12,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Canvas } from "./platform/Canvas";
 import { startAgentBridge } from "./platform/agent";
+import { AssistantPanel } from "./platform/AssistantPanel";
 import { DebugPanel } from "./platform/DebugPanel";
 import { InspectorPanel } from "./platform/InspectorPanel";
 import { LibraryPanel, type InstallNotice } from "./platform/LibraryPanel";
@@ -171,6 +172,7 @@ export default function App() {
   const [crash, setCrash] = useState<CrashEvent | null>(null);
   /** 调试面板。不落盘：它是"看一眼就走"的工具，下次启动不必自动弹出来 */
   const [debugOpen, setDebugOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   /*
    * 组件目录（商店）。
@@ -237,6 +239,23 @@ export default function App() {
       if (event.key.toLowerCase() !== "d") return;
       event.preventDefault();
       setDebugOpen((value) => !value);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  /*
+   * Ctrl+K 开关 assistant。
+   *
+   * 不用 Ctrl+Space（输入法会吃掉）、不用 Ctrl+/（编辑器里太常见）。Ctrl+K 是
+   * 聊天框的肌肉记忆，而这台机器上它没有被别的东西占用。
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (event.key.toLowerCase() !== "k") return;
+      event.preventDefault();
+      setAssistantOpen((value) => !value);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -928,6 +947,16 @@ export default function App() {
 
           <button
             type="button"
+            className={`lattice-icon-btn is-large${assistantOpen ? " is-active" : ""}`}
+            onClick={() => setAssistantOpen((value) => !value)}
+            title="Assistant — 说一句就能改桌面（Ctrl+K）"
+            aria-label="Toggle assistant"
+          >
+            <Glyph d={ICON.agent} />
+          </button>
+
+          <button
+            type="button"
             className="lattice-icon-btn is-large"
             onClick={() => setTheme(nextTheme(theme))}
             title={`Theme: ${THEME_LABEL[theme]} — click for ${THEME_LABEL[nextTheme(theme)]}`}
@@ -962,6 +991,7 @@ export default function App() {
             onQuit={() => {
               if (isTauri()) void invoke("quit_app");
             }}
+            onOpenAssistant={() => setAssistantOpen(true)}
           />
         </div>
       </header>
@@ -1011,6 +1041,13 @@ export default function App() {
         也就不会触发桌面窗口那套"尺寸变了重铺壁纸"的连锁反应。
       */}
       <DebugPanel open={debugOpen} onClose={() => setDebugOpen(false)} />
+
+      {/* 抽屉式：它改的是画布上的东西，用户得看得见 */}
+      <AssistantPanel
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        records={records}
+      />
 
       {/*
         删除是可以反悔的。
