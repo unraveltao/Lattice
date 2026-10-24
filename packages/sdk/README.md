@@ -73,6 +73,7 @@ my-widget/
 | `network.fetch(input)` | 代发 HTTP，需要 `network` + 清单白名单 |
 | `now()` | 系统时间，需要 `clock` |
 | `copy(text)` | 写剪贴板，需要 `clipboard:write` |
+| `open(url)` | 用默认浏览器打开 http/https 链接，需要 `shell:open` |
 | `close()` | 关掉自己这个窗口（不删用户的 placement） |
 
 ### 错误

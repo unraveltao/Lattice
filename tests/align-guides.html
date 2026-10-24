@@ -28,7 +28,12 @@
        * 三条线同时对上时亮几条。手感本身测不了，但"差 7px 吸、差 9px 不吸"
        * 测得了 —— 而这两条正是用户会立刻察觉的东西。
        */
-      import { ALIGN_THRESHOLD_PX, computeAlign } from "/src/runtime/align-guides.ts";
+      import {
+        ALIGN_THRESHOLD_PX,
+        GUIDE_PAD_PX,
+        computeAlign,
+        guideLines,
+      } from "/src/runtime/align-guides.ts";
 
       const lines = [];
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
@@ -106,6 +111,92 @@
 
       // ---- 11. 中线落在 .5 上时也只画一条 ----
       eq(computeAlign(250, 0, 101, 100, [rect(200, 0, 101, 100)]).xs.length, 1, "中线落在 .5 上也只画一条");
+
+      /*
+       * 12. 容器有原点时边界线跟着走。
+       *
+       * 桌面上没有"画布"，参考线贴的是那块显示器的工作区；第二块屏的原点是
+       * 负的、或者 -1728 这种。认死 0 / w 的话，桌面上的"贴屏幕右边"会落在
+       * 幻影位置，线也会画到屏幕外面去。
+       */
+      const shifted = { x: 1920, y: 100, w: 800, h: 600 };
+      // 我的右边 = 2615 + 100 = 2715，容器右边 2720 → 差 5，吸到 2620
+      eq(computeAlign(2615, 0, 100, 100, [], { bounds: shifted }).x, 2620, "带原点的右边界也能吸");
+      // 容器中线 = 1920 + 400 = 2320；我的中线 = 2265 + 50 = 2315 → 差 5，吸到 2270
+      eq(computeAlign(2265, 0, 100, 100, [], { bounds: shifted }).x, 2270, "带原点的中线也能吸");
+      // 容器上边 = 100；我的上边 = 103 → 吸到 100（原点含 y）
+      eq(computeAlign(0, 103, 100, 100, [], { bounds: shifted }).y, 100, "纵向也认原点");
+      // 原点没给时仍然是 0 起算（画布那条路不许变）
+      eq(computeAlign(695, 0, 100, 100, [], { bounds: { w: 800, h: 600 } }).x, 700, "不给原点等价于原点 0");
+
+      /*
+       * 13. 线是局部的：以被拖的那个矩形为中心，两端各伸出「半个矩形 + 48px」。
+       *
+       * 这条是"线太大"的直接解法 —— 一条从屏幕顶画到底的线会把桌面切成两半，
+       * 而它要说清的只有"我这条边和你那条边在同一个坐标"。长度由共享的
+       * `guideLines` 算，画布和桌面用的是同一个函数，所以这里钉住的就是两边
+       * 的观感。
+       *
+       * 总长 = 2 × (矩形尺寸 + `GUIDE_PAD_PX`)：正好是上一版（矩形 + 48px）的
+       * 两倍 —— 只比卡片长一点点时，线看起来像卡片自己的描边，不像"对上了"。
+       */
+      const dragged = { x: 400, y: 300, w: 240, h: 140 };
+      const screen = { x: 0, y: 0, w: 1728, h: 1080 };
+      const wired = guideLines(
+        { x: 400, y: 300, xs: [400], ys: [300] },
+        dragged,
+        screen,
+      );
+      eq(wired.vertical.length, 1, "每轴一条线");
+      eq(wired.vertical[0].at, 400, "竖线钉在吸附后的 x");
+      eq(
+        [wired.vertical[0].from, wired.vertical[0].length],
+        [300 - (140 / 2 + GUIDE_PAD_PX), 376],
+        "竖线以卡片为中心、两端各半个卡片 + 线头",
+      );
+      eq(
+        [wired.horizontal[0].from, wired.horizontal[0].length],
+        [400 - (240 / 2 + GUIDE_PAD_PX), 576],
+        "横线同样以卡片为中心",
+      );
+      // "长一倍"是这个改动的全部要求，所以单独钉一条：总长是 (尺寸 + 线头) 的两倍
+      eq(wired.vertical[0].length, 2 * (140 + GUIDE_PAD_PX), "竖线正好是旧的规则的两倍长");
+      eq(wired.horizontal[0].length, 2 * (240 + GUIDE_PAD_PX), "横线也是两倍长");
+      log(
+        wired.vertical[0].length < screen.h / 2,
+        "线远短于屏幕高 —— 不是全屏线（得到 " + wired.vertical[0].length + "px）",
+      );
+
+      // 贴着容器边缘时不许溢出：段被夹进容器里（这里是卡片左边超出左边界，
+      // 横线的起点被夹到 0，长度随之变短）
+      const atEdge = guideLines(
+        { x: 0, y: 0, xs: [], ys: [10] },
+        { x: 0, y: -100, w: 100, h: 100 },
+        screen,
+      );
+      eq([atEdge.horizontal[0].from, atEdge.horizontal[0].length], [0, 198], "贴着边界时不外溢");
+
+      // 不给容器就不夹（画布滚出视口时仍然要画出来）
+      eq(
+        guideLines({ x: 0, y: 0, xs: [], ys: [10] }, { x: 50, y: -100, w: 100, h: 100 })
+          .horizontal[0].from,
+        50 - (100 / 2 + GUIDE_PAD_PX),
+        "没有容器就不夹紧",
+      );
+
+      // 没有对齐就没有线
+      eq(guideLines({ x: 5, y: 5, xs: [], ys: [] }, dragged, screen), { vertical: [], horizontal: [] }, "没吸上就一条线都不画");
+
+      // 线头可调（0 时两端只剩"半个卡片"那一截）
+      const exact = guideLines({ x: 0, y: 0, xs: [], ys: [300] }, dragged, screen, 0);
+      eq([exact.horizontal[0].from, exact.horizontal[0].length], [280, 480], "线头 0 时两端各半个卡片");
+
+      // 段长是整数像素：画布上是 CSS px、桌面上是物理 px，小数会糊成两像素
+      const fractional = guideLines({ x: 0, y: 0, xs: [100], ys: [] }, { x: 10.4, y: 20.6, w: 100, h: 100 }, screen);
+      log(
+        Number.isInteger(fractional.vertical[0].from) && Number.isInteger(fractional.vertical[0].length),
+        "段起点和长度都取整",
+      );
 
       document.getElementById("out").innerHTML = lines
         .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)

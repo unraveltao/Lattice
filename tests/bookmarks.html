@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>bookmarks: url rules, add / open / rename / delete</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        width: 280px;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 网址收藏夹的四件事，全在这一页里钉住：
+       *
+       *   1. **归一化**。用户打的是文本，不是 URL。`github.com` 补成 https、
+       *      `example.com:8080/x` 认出是主机加端口、`javascript:` / `file:` /
+       *      `mailto:` 一律拒。这张用例表要和 `src-tauri/src/open_policy.rs`
+       *      的 tests 对得上 —— 那边是安全边界，这边只是让用户当场看到结果。
+       *   2. **一次添加只写一次盘**，重复的地址不写。收藏夹最容易出的毛病是
+       *      "手一抖存两条"和"存进一条空壳"。
+       *   3. **打开走桥**（`shell.open`），被撤权时说人话，不是静默什么都不发生。
+       *   4. **改名 / 删除 / 排序 / 另一个窗口写盘**这些都得跟着动。
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      function mountBookmarks({ initial = null, config, openError = null } = {}) {
+        const state = {
+          stored: initial,
+          sets: [],
+          opens: [],
+          openError,
+          config: config || { sort: "recent", showHost: true },
+        };
+
+        const frame = document.createElement("iframe");
+        // allow-same-origin 只是让这页能读 iframe 里的 DOM；
+        // allow-forms 是被测的那一位（提交要能触发）
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+        frame.src = "/widgets/lattice.bookmarks/index.html";
+        document.body.appendChild(frame);
+
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+
+            if (data.method === "config.get") {
+              reply({ ok: true, result: state.config });
+              return;
+            }
+            if (data.method === "storage.get") {
+              reply({ ok: true, result: state.stored });
+              return;
+            }
+            if (data.method === "storage.set") {
+              state.sets.push(data.params.value);
+              state.stored = data.params.value;
+              reply({ ok: true, result: { ok: true } });
+              return;
+            }
+            if (data.method === "shell.open") {
+              if (state.openError) {
+                reply({ ok: false, code: state.openError, error: "not now" });
+                return;
+              }
+              state.opens.push(data.params.url);
+              reply({ ok: true, result: { ok: true } });
+              return;
+            }
+            reply({ ok: false, code: "unknown_method", error: "unknown" });
+          });
+        });
+
+        return {
+          frame,
+          state,
+          ready,
+          doc: () => frame.contentDocument,
+          push: (message) => frame.contentWindow.postMessage(message, "*"),
+        };
+      }
+
+      const rows = (doc) => Array.from(doc.querySelectorAll(".link"));
+      const names = (doc) => rows(doc).map((row) => row.querySelector(".link-name").textContent);
+      const hosts = (doc) => rows(doc).map((row) => row.querySelector(".link-host").textContent);
+
+      async function submit(shelf, text) {
+        const doc = shelf.doc();
+        doc.getElementById("url").value = text;
+        doc.getElementById("form").requestSubmit();
+        await sleep(120);
+      }
+
+      // ---- 场景 1：空货架 → 一条条加进来，归一化必须每次都对 ----
+      {
+        const shelf = mountBookmarks();
+        await shelf.ready;
+        const doc = shelf.doc();
+
+        log(rows(doc).length === 0, `空货架没有行（${rows(doc).length}）`);
+        log(doc.getElementById("empty").hidden === false, "空货架显示提示语");
+        log(doc.getElementById("count").textContent === "", "空货架计数为空");
+
+        await submit(shelf, "github.com");
+        log(rows(doc).length === 1, `加一条后有 1 行（${rows(doc).length}）`);
+        log(shelf.state.stored.items[0].url === "https://github.com/", `落盘地址是「${shelf.state.stored.items[0].url}」`);
+        log(names(doc)[0] === "github.com", `没给名字时用域名当名字（${names(doc)[0]}）`);
+        log(hosts(doc)[0] === "github.com", `域名行是「${hosts(doc)[0]}」`);
+        log(doc.getElementById("count").textContent === "1", `计数是「${doc.getElementById("count").textContent}」`);
+        log(shelf.state.sets.length === 1, `只写了一次盘（${shelf.state.sets.length}）`);
+
+        await submit(shelf, "  https://Example.COM/Path  ");
+        log(rows(doc).length === 2, `第二条进来了（${rows(doc).length}）`);
+        log(
+          shelf.state.stored.items[0].url === "https://example.com/Path",
+          `大小写折平、两边空白去掉：「${shelf.state.stored.items[0].url}」`,
+        );
+        log(
+          shelf.state.stored.items[0].title === "example.com",
+          `标题取的是域名（${shelf.state.stored.items[0].title}）`,
+        );
+
+        // 冒号后面是端口，不是协议
+        await submit(shelf, "example.com:8080/x");
+        log(
+          shelf.state.stored.items[0].url === "https://example.com:8080/x",
+          `host:port 补成 https（${shelf.state.stored.items[0].url}）`,
+        );
+
+        // 协议相对写法
+        await submit(shelf, "//example.com/x");
+        log(
+          shelf.state.stored.items[0].url === "https://example.com/x",
+          `//host 补成 https（${shelf.state.stored.items[0].url}）`,
+        );
+
+        // ---- 该拒的四种：能执行代码 / 读本地文件 / 不是网页 / 带裸空格 ----
+        const before = rows(doc).length;
+        await submit(shelf, "javascript:alert(1)");
+        log(rows(doc).length === before, `javascript: 被拒（${rows(doc).length} 行）`);
+        log(
+          doc.getElementById("hint").textContent.includes("http"),
+          `拒绝时说清楚了只收 http/https：「${doc.getElementById("hint").textContent}」`,
+        );
+
+        await submit(shelf, "file:///C:/Windows/System32/drivers/etc/hosts");
+        log(rows(doc).length === before, "file: 被拒");
+
+        await submit(shelf, "mailto:someone@example.com");
+        log(rows(doc).length === before, "mailto: 被拒");
+
+        await submit(shelf, "https://example.com/a b");
+        log(rows(doc).length === before, "带裸空格的地址被拒");
+
+        // ---- 重复的地址不再存一条 ----
+        const setsBefore = shelf.state.sets.length;
+        const countBefore = rows(doc).length;
+        await submit(shelf, "HTTPS://GITHUB.COM/");
+        log(rows(doc).length === countBefore, `重复地址不加行（${rows(doc).length} 行）`);
+        log(shelf.state.sets.length === setsBefore, "重复地址不写盘");
+        log(
+          doc.getElementById("hint").textContent.toLowerCase().includes("already"),
+          `重复时给出提示：「${doc.getElementById("hint").textContent}」`,
+        );
+
+        // ---- 点一行 → 走桥打开，地址和落盘的一模一样 ----
+        const first = rows(doc)[0];
+        const firstUrl = shelf.state.stored.items[0].url;
+        first.click();
+        await sleep(120);
+        log(shelf.state.opens.length === 1, `点一行就调了一次 shell.open（${shelf.state.opens.length}）`);
+        log(shelf.state.opens[0] === firstUrl, `打开的是「${shelf.state.opens[0]}」`);
+        log(doc.getElementById("hint").textContent === "", "打开成功后提示行是空的");
+
+        // ---- 删除 ----
+        const removeTarget = shelf.state.stored.items[0].url;
+        rows(doc)[0].querySelector('[data-action="remove"]').click();
+        await sleep(120);
+        log(rows(doc).length === countBefore - 1, `删掉一行（${rows(doc).length}）`);
+        log(
+          shelf.state.stored.items.every((item) => item.url !== removeTarget),
+          "删掉的那条已经不在盘上",
+        );
+
+        // ---- 改名：Enter 提交 ----
+        const renameRow = rows(doc)[0];
+        const renameUrl = shelf.state.stored.items[0].url;
+        renameRow.querySelector('[data-action="rename"]').click();
+        await sleep(40);
+        const input = doc.querySelector(".link-rename");
+        log(!!input, "点铅笔后就地出现输入框");
+        if (input) {
+          input.value = "Lattice";
+          input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+          await sleep(120);
+          log(names(doc)[0] === "Lattice", `回车后名字是「${names(doc)[0]}」`);
+          log(
+            shelf.state.stored.items.some((item) => item.url === renameUrl && item.title === "Lattice"),
+            "新名字落盘了",
+          );
+        }
+
+        // ---- 改名：清空 → 退回域名，不留一个没名字的行 ----
+        const row0 = rows(doc)[0];
+        row0.querySelector('[data-action="rename"]').click();
+        await sleep(40);
+        const empty = doc.querySelector(".link-rename");
+        if (empty) {
+          empty.value = "   ";
+          empty.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+          await sleep(120);
+          log(names(doc)[0] === "example.com", `空名字退回域名（${names(doc)[0]}）`);
+        }
+
+        // ---- 打开被拒（撤了 shell:open）要说人话 ----
+        shelf.state.openError = "permission_denied";
+        rows(doc)[0].click();
+        await sleep(120);
+        log(
+          doc.getElementById("hint").textContent.includes("Open links"),
+          `撤权后提示「${doc.getElementById("hint").textContent}」`,
+        );
+
+        // ---- 删除要真的落盘（上一个场景已经删过一次，这里校验条数对得上） ----
+        log(
+          shelf.state.stored.items.length === rows(doc).length,
+          `盘上 ${shelf.state.stored.items.length} 条 = 屏上 ${rows(doc).length} 行`,
+        );
+
+        shelf.frame.remove();
+      }
+
+      // ---- 场景 2：排序与"隐藏域名"只读配置，不进存储 ----
+      {
+        const shelf = mountBookmarks({
+          initial: {
+            v: 1,
+            items: [
+              { id: "z", url: "https://zeta.example/", title: "Aaa", addedAt: 3 },
+              { id: "a", url: "https://alpha.example/", title: "Zzz", addedAt: 2 },
+              { id: "m", url: "https://mike.example/", title: "Mmm", addedAt: 1 },
+            ],
+          },
+          config: { sort: "title", showHost: true },
+        });
+        await shelf.ready;
+        const doc = shelf.doc();
+
+        log(names(doc).join("|") === "Aaa|Mmm|Zzz", `按名字排序：${names(doc).join("|")}`);
+        log(hosts(doc).length === 3, "域名行还在");
+
+        shelf.push({ __lattice: 1, type: "config-changed", payload: { config: { sort: "host", showHost: false } } });
+        await sleep(120);
+        log(names(doc).join("|") === "Zzz|Mmm|Aaa", `按站点排序：${names(doc).join("|")}`);
+        log(rows(doc)[0].querySelector(".link-host") === null, "关掉 showHost 后没有域名行");
+
+        shelf.frame.remove();
+      }
+
+      // ---- 场景 3：盘上的脏数据 —— 能救的救，救不回来的丢 ----
+      {
+        const shelf = mountBookmarks({
+          initial: {
+            v: 1,
+            items: [
+              { id: "1", url: "github.com", title: "", addedAt: 1 },
+              { id: "2", url: "javascript:alert(1)", title: "bad", addedAt: 2 },
+              { id: "3", url: "https://github.com/", title: "dup", addedAt: 3 },
+              { nope: true },
+              "garbage",
+            ],
+          },
+        });
+        await shelf.ready;
+        const doc = shelf.doc();
+
+        log(rows(doc).length === 1, `五条脏数据只剩 1 条（${rows(doc).length}）`);
+        log(names(doc)[0] === "github.com", `没名字的退回域名（${names(doc)[0]}）`);
+        log(doc.getElementById("count").textContent === "1", `计数是「${doc.getElementById("count").textContent}」`);
+        // 读盘不该写盘：脏数据只是不显示，不许把用户的文件改写成"看起来干净"的样子
+        log(shelf.state.sets.length === 0, `载入脏数据没有回写（${shelf.state.sets.length} 次）`);
+
+        shelf.frame.remove();
+      }
+
+      // ---- 场景 4：另一个窗口改了货架 → 这个视图跟着变 ----
+      {
+        const shelf = mountBookmarks({
+          initial: { v: 1, items: [{ id: "a", url: "https://a.example/", title: "A", addedAt: 1 }] },
+        });
+        await shelf.ready;
+        const doc = shelf.doc();
+        log(rows(doc).length === 1, "先是 1 行");
+
+        // 另一个窗口写进去两条，平台广播 store-changed
+        shelf.state.stored = {
+          v: 1,
+          items: [
+            { id: "b", url: "https://b.example/", title: "B", addedAt: 2 },
+            { id: "a", url: "https://a.example/", title: "A", addedAt: 1 },
+          ],
+        };
+        shelf.push({ __lattice: 1, type: "store-changed", payload: { key: "shelf" } });
+        await sleep(150);
+        log(names(doc).join("|") === "B|A", `跟着变成「${names(doc).join("|")}」`);
+
+        // 别的键的广播不该触发重读
+        shelf.state.stored = { v: 1, items: [] };
+        shelf.push({ __lattice: 1, type: "store-changed", payload: { key: "something-else" } });
+        await sleep(150);
+        log(rows(doc).length === 2, `别的键不改列表（${rows(doc).length} 行）`);
+
+        shelf.frame.remove();
+      }
+
+      const out = document.getElementById("out");
+      const failed = lines.filter((line) => line.startsWith("FAIL")).length;
+      out.textContent = lines.join("\n") + `\n\n${lines.length} 条，FAIL ${failed}`;
+      out.className = failed === 0 ? "ok" : "bad";
+      document.title = (failed === 0 ? "ok " : "fail ") + lines.length;
+    </script>
+  </body>
+</html>

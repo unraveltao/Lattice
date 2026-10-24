@@ -35,10 +35,21 @@ const toolchain = process.env.LATTICE_TOOLCHAIN || resolve(root, "..", ".toolcha
 const binDir = join(toolchain, "mingw64", "bin");
 const shimDir = join(toolchain, "gcc-shim");
 const msysBin = join(toolchain, "msys64", "mingw64", "bin");
+/**
+ * `ld.exe` 的两个依赖（`libintl-8.dll` / `libiconv-2.dll`）。
+ *
+ * 少了它们 `ld` 一启动就 `STATUS_DLL_NOT_FOUND` 退出，而 GCC 只会转述一句
+ * `collect2.exe: error: ld returned 53 exit status` —— 看起来像链接器内存不够，
+ * 实际连一句诊断都没打出来。**`cargo build` 连 hello world 都编不过**就是这个。
+ * 放在 `.toolchain/intl`（从 MSYS2 的 gettext 里拿的两个 DLL），PATH 里排最前。
+ */
+const intlDir = join(toolchain, "intl");
 
 const hasRealGcc = existsSync(join(msysBin, "gcc.exe"));
 
 const prepend = [];
+// 链接器的 DLL 依赖排最前：它和工具链是两回事，缺了连 --version 都跑不起来
+if (existsSync(join(intlDir, "libintl-8.dll"))) prepend.push(intlDir);
 // 真 gcc 排最前：它的 as/ld 和自带 binutils 配套，混用两套 binutils 会出怪问题
 if (hasRealGcc) prepend.push(msysBin);
 if (existsSync(join(binDir, "windres.exe"))) prepend.push(binDir);

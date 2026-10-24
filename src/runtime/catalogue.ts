@@ -272,6 +272,7 @@ const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set<string>([
   "system:monitor",
   "media:control",
   "audio:level",
+  "shell:open",
   "agent:activity",
 ]);
 

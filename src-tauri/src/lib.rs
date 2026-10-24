@@ -23,6 +23,9 @@ pub mod csp;
 pub mod desktop;
 pub mod diagnostics;
 pub mod egress;
+pub mod guide_policy;
+pub mod guides;
+pub mod guides_overlay;
 pub mod instance;
 pub mod media;
 pub mod metrics;
@@ -33,6 +36,8 @@ pub mod package_policy;
 pub mod network_policy;
 pub mod occlusion;
 pub mod occlusion_policy;
+pub mod open;
+pub mod open_policy;
 pub mod protocol;
 pub mod runner;
 pub mod signature;
@@ -130,10 +135,14 @@ pub fn run() {
             runner::widget_report_rect,
             runner::widget_set_pinned,
             runner::widget_set_layer,
+            runner::widget_set_region,
             runner::widget_close,
             runner::widget_reload,
             runner::widget_set_theme,
             runner::widget_set_appearance,
+            guides::guide_targets,
+            guides::guide_show,
+            open::open_external,
             wallpaper::widget_wallpaper,
             metrics::system_metrics,
             media::media_session,

@@ -73,7 +73,7 @@ src/
     screen-fit.ts         纯几何：锚点选屏、夹紧（入参一律物理像素，`tests/screen-fit.html` 钉着）
     close-guard.ts        ✕ 该不该认这一下：指针序列 + 命中测试（纯函数，`tests/close-guard.html` 钉着）
     agent.ts              agent 动作执行器：白名单动作走真 store，回快照（`tests/agent.html` 57 条）
-    align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（跨过被拖的那张、夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
+    align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 单包命中判定（纯函数，`tests/library-search.html` 钉着）
     debug.ts              调试总线：环形缓冲 400 条、攒批镜像到主窗口、过滤 / 统计纯函数
     semver.ts             版本号与范围：解析 / 比较 / `^ ~ >= <= > < =` / 通配 / `||`（纯函数，`tests/semver.html` 钉着）
@@ -119,6 +119,8 @@ src-tauri/src/
   visibility.rs           真实可见性：最小化 / 收起 / 被整个盖住，发 lattice:window-visible
   occlusion.rs            遮挡判定（Win32）：九点 WindowFromPoint + DWMWA_CLOAKED，点透窗口跳过
   occlusion_policy.rs     遮挡的纯逻辑：采样点怎么取、几个没命中算挡住（8 条 rustc --test）
+  open.rs                 打开外链：把 shell.open 交给系统默认浏览器（协议由 open_policy 卡）
+  open_policy.rs          上面那道的纯逻辑：只放 http/https、像地址栏一样补协议头（5 条 rustc --test）
   agent.rs                Agent 端点：只绑 127.0.0.1 的 HTTP、令牌、审计、转发给主窗口（默认关）
   agent_policy.rs         上面那道的纯逻辑：HTTP 三态解析、Bearer 常量时间比对、动作白名单、`say` 的单行化与超长拒绝（26 条 rustc --test）
   wallpaper.rs            截壁纸（宿主页底板的第一层）
@@ -187,6 +189,11 @@ docs/                     架构、组件规范、路线图与踩坑、代码签
     - **走 IPC，不搭本地 HTTP 代理**。开一个 `127.0.0.1:xxxx` 的代理端口就等于给组件留了一条绕过桥的路（它 `fetch` 那个端口没人拦），而 IPC 通道只有宿主页能说话。
     - **画布上的实例也要能出网**（`network_policy::egress_for`）。白名单在桌面窗口那条路上存在 Rust 的注册表里（建窗口时写进去的），而画布上的实例**不是窗口** —— 它跑在主窗口的 iframe 里，注册表里没有条目。第一版没做这条兜底，结果是同一个组件"桌面上能联网、设计器里不能"，而设计器恰好是用户第一次配置它的地方，症状是刚加进来就报"连不上服务"。现在未注册的窗口退回宿主页随请求带来的 `network.hosts`（`bridge.ts` 的 `egress`）。**在册的窗口一律用自己那份**：窗口已经注册了还去信请求里那份，等于让一个前端 bug 悄悄扩大出网范围。
     这条是**加了一扇门，不是拆了别的门**：CSP（不变量 12）和 `egress.rs` 的导航拦截照旧生效，组件仍然不能自我导航把数据拼进 URL 送走。
+
+    **`shell.open` 是另一扇门，也只开一条缝。** 组件要把链接交给系统浏览器，只能走 `bridge.ts` 的 `shell.open`（权限 `shell:open`）→ `open.rs`。三条别踩回去：
+    - **协议白名单只有 http/https，写在 `open_policy.rs` 里。** `tauri-plugin-opener` 把字符串原样丢给 `ShellExecuteW`，而它**不认协议** —— `file:` 会把本地文件交给默认程序打开，`ms-settings:` 能直接翻到系统隐私页，`search-ms:` / 任何注册过的自定义协议一样照办。少这一道，`file:///C:/…` 比联网彻底得多。
+    - **别在组件里另写一套放行规则。** 组件侧只做"让存下来的东西是干净的"（`github.com` → `https://github.com/`、`example.com:8080/x` 认成主机加端口），边界上 `open_policy::normalize` 再判一次；两边的用例表在 `tests/bookmarks.html` 和 `open_policy.rs` 的 tests 里各钉一份。
+    - **它不削弱 `egress.rs`。** 那条拦的是"组件自己的 frame 导航走"，这条是"把地址交给浏览器"，组件的文档仍然钉在自己的 origin 上。
 
 15. **分发的信任锚点是包，不是目录**。装一个包要过三道，顺序不能换：`sha256(字节)` 等于目录里写的 → ed25519 签名能被 `publisher.key` 验过 → 这把钥匙等于**这个组件第一次安装时钉在本地的那把**（`store.trustedKeys`）。前两道挡传输损坏和伪造，第三道才挡得住"另起一把钥匙、连目录一起换掉"。五条别踩回去：
     - **目录本身不签名**，它只是索引。所以"目录能改"这件事必须由上面三道兜住 —— 谁想给目录加个新字段去驱动行为（自动安装、自动更新、静默授权），先想清楚这个字段被改坏之后会怎样。
@@ -382,7 +389,7 @@ public/widgets/<id>/
 
 **守卫是"开关 + 子类化"两件事，顺序不能反。** 开关是一个窗口属性（`set_sink`，任意线程可同步翻转），子类化只能回窗口线程装（`install_guard`，跨线程会静默返回 0）。`apply_to` 里必须**先翻开关再落层级**：否则切"置顶"那一下的 `HWND_TOPMOST` 会被还活着的守卫吃掉，组件永远上不去。
 
-**想往屏幕上画东西，先想清楚能不能用"两条 1px 叠层窗口"。** 桌面拖拽的对齐参考线（`guides_overlay.rs`）就是这条路：`WS_EX_LAYERED | WS_EX_TRANSPARENT` 的 1px 窗口 + `UpdateLayeredWindow` 逐像素 alpha，一条竖的一条横的，**不是**一个透明 WebView2 窗口（逐像素透明的 WebView2 在软件渲染的机器上建不出来，见上面那条 `0x8007139F`）。五条别踩回去：① 窗口归**专用线程**所有、由它泵消息，跨线程 `SetWindowPos` / `UpdateLayeredWindow` 会等窗口线程处理，而窗口线程不泵消息就互相等死；② 位图只跟屏幕尺寸/颜色有关，拖动时只 `UpdateLayeredWindow` 换位置和尺寸（一次调用同时给目的地和大小），**别每帧重建全屏位图**（3456×1080×4 是 15MB）；③ 每帧 `SetWindowPos(HWND_TOPMOST)` 提一次 —— 被拖的那扇窗口常常正好压在线上；④ 收线不能只靠前端：宿主页崩了就没人发 `Hide`，叠层线程 4 秒没新坐标要自己收（前端拖动期间每秒补一发心跳，所以"指针停住看对齐"不会误触发）；⑤ 线形和画布用同一套数（4px 亮 / 4px 空、62% 亮度、没有中段实线也没有端头淡入），线段长短也只有一个实现（`align-guides.ts::guideLines`：跨过被拖的窗口、两端各留 24px、夹进工作区）—— `guide_policy.rs` 是像素规则、`styles.css` 的 `.lattice-guide` 是对应写法（一个 `repeating-linear-gradient` + `currentColor`，位置和长度走内联 style）。**别往那个元素上加 `mask-image` 或 `filter`**：它们会连子内容一起遮/一起模糊（历史上两端淡入就是这么只剩 5% 亮度的）。线是局部的，所以叠层窗口的**尺寸每帧都在变**，`len` 记得夹到位图那一维以内。
+**想往屏幕上画东西，先想清楚能不能用"两条 1px 叠层窗口"。** 桌面拖拽的对齐参考线（`guides_overlay.rs`）就是这条路：`WS_EX_LAYERED | WS_EX_TRANSPARENT` 的 1px 窗口 + `UpdateLayeredWindow` 逐像素 alpha，一条竖的一条横的，**不是**一个透明 WebView2 窗口（逐像素透明的 WebView2 在软件渲染的机器上建不出来，见上面那条 `0x8007139F`）。五条别踩回去：① 窗口归**专用线程**所有、由它泵消息，跨线程 `SetWindowPos` / `UpdateLayeredWindow` 会等窗口线程处理，而窗口线程不泵消息就互相等死；② 位图只跟屏幕尺寸/颜色有关，拖动时只 `UpdateLayeredWindow` 换位置和尺寸（一次调用同时给目的地和大小），**别每帧重建全屏位图**（3456×1080×4 是 15MB）；③ 每帧 `SetWindowPos(HWND_TOPMOST)` 提一次 —— 被拖的那扇窗口常常正好压在线上；④ 收线不能只靠前端：宿主页崩了就没人发 `Hide`，叠层线程 4 秒没新坐标要自己收（前端拖动期间每秒补一发心跳，所以"指针停住看对齐"不会误触发）；⑤ 线形和画布用同一套数（4px 亮 / 4px 空、62% 亮度、没有中段实线也没有端头淡入），线段长短也只有一个实现（`align-guides.ts::guideLines`：以被拖的窗口为中心、两端各伸出「半个窗口 + 48px」，总长 = 2 ×（窗口尺寸 + 48px），再夹进工作区）—— `guide_policy.rs` 是像素规则、`styles.css` 的 `.lattice-guide` 是对应写法（一个 `repeating-linear-gradient` + `currentColor`，位置和长度走内联 style）。**别往那个元素上加 `mask-image` 或 `filter`**：它们会连子内容一起遮/一起模糊（历史上两端淡入就是这么只剩 5% 亮度的）。线是局部的，所以叠层窗口的**尺寸每帧都在变**，`len` 记得夹到位图那一维以内。
 
 **不要加 `--disable-gpu-compositing`**，它会关掉 DirectComposition，WebView2 建不出来（`HRESULT 0x8007139F`）。GPU 相关的启动参数在 `lib.rs`，用 `LATTICE_GPU=1` 可以恢复默认。
 
@@ -393,6 +400,7 @@ public/widgets/<id>/
 | 缺口 | 影响 | 需要的动作 |
 | --- | --- | --- |
 | **agent 端点：只差一次 CLI 往返** | 真机已经确认到的：端点只在开关打开时才 bind（关着时 `agent/` 目录下连 `endpoint.json` 都没有）、绑定的是回环地址加系统分配端口、退出时打 `agent endpoint on 127.0.0.1:<port> stopped` 并擦掉 `endpoint.json`、看板每 2 秒一次的 `agent.activity` 在调试面板里稳定往返。**没验的**：从 CLI 真发一条 `state` / `act` / `say`（那需要端点开着的时候正好在跑命令），以及"关掉之后端口释放"的实测 | 起一次 `tauri:dev`，设置里打开 → `npm run agent -- say "hello"` → `state` → `act theme.set` → 关掉再 `state`（应该报端点文件没了）。**起之前先确认没有残留的 `lattice.exe`** —— 孤儿进程会用内存里那份盖掉 `state.json` |
+| **`shell.open` 只过了单测** | `open_policy.rs` 的 5 条 `rustc --test` 全过、`cargo check` 干净、`tests/bookmarks.html` 44 条全过 —— 但那全是"规则对不对"和"组件答得对不对"。**没验的**是最后一步：`ShellExecuteW` 到底有没有把浏览器叫起来，以及撤掉 `shell:open` 之后点一行是不是只出提示、什么都不打开 | 起一次桌面应用 → 装 Bookmarks（属性面板里勾上 Open links）→ 点一行看默认浏览器是否起来（`shell.open` 成功只代表"交给系统了"，浏览器起不来它也不会知道）→ 撤掉 Open links 再点一次，卡片应显示 "It needs the Open links permission"，任务管理器里不该多出浏览器进程。**跑之前先确认没有残留的 `lattice.exe`**，孤儿进程会用内存里那份盖掉 `state.json` |
 | **安装包没有代码签名** | 第一次运行被 SmartScreen 拦成"未知发布者"，点"仍要运行"才装得上。用户流失基本都发生在这一步 | 买 OV/EV 证书（EV 能立刻建立信誉，OV 要攒），或走 winget / Microsoft Store 分发绕开 |
 | **平台更新只走 GitHub Releases** | `plugins.updater.endpoints` 写死一条 GitHub 地址。国内网络环境下 `github.com` 和 `objects.githubusercontent.com` 都可能连不上，更新会失败 | 加第二个 endpoint（自建静态站 / 对象存储），更新器按顺序试。注意**两个地址要放同一份 `latest.json`**，否则两边版本会飘 |
 | **底板透不出后面的窗口** | 磨砂层是"壁纸"，不是"压在组件后面的浏览器窗口"——系统的模糊半径写死，做不成滑杆，二者只能选一个 | 要么接受，要么换 `SetWindowCompositionAttribute` 并放弃连续滑杆（见 ROADMAP 被推翻的决定 7） |
@@ -588,7 +596,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
   #[path = "../src-tauri/src/network_policy.rs"] mod network_policy;
   ```
   `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe`。**这就是"纯逻辑要单独拆成一个文件"的原因 —— 拆出来才测得到**。断言只有一份（`#[cfg(test)] mod tests` 在模块内部），壳子别复制。
-  能这么跑的现在是 121 条：`agent_policy.rs`（26）、`diagnostics.rs`（14）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`occlusion_policy.rs`（8）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`audio_policy.rs`（6）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）、`package.rs`（1，跟着 `package_policy` 一起编）。剩下 26 条（`protocol.rs` 6、`widget_store.rs` 5、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1、其余在带 `tauri::` 的胶水里）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
+  能这么跑的现在是 136 条（全仓 157 条 `#[test]`，`grep -c` 一下就对得上）：`agent_policy.rs`（26）、`diagnostics.rs`（14）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`occlusion_policy.rs`（8）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`audio_policy.rs`（6）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）、`package.rs`（1，跟着 `package_policy` 一起编）。剩下 21 条（`protocol.rs` 6、`widget_store.rs` 5、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
   **壳子会过期，过期了要修，不要当它不存在**：`extract-test.rs` 曾经在 `package.rs` 加上验签之后编不过（`extract` 多了第三个参数、还引用了 `signature_policy` 和 `backup`），但 `rustc` 编译失败时旧的 `.exe` 还在，`&&` 串起来的写法会**跑那个旧二进制并显示全绿** —— 那才是最坏的情况。所以：编不过就是红，先看 `rustc` 的退出码，别信后面那行 `test result`。修法是给壳子补 `#[path]` 把 `signature_policy.rs` 编进来，`backup` 依赖 `tauri` 编不进来，就写一个签名对得上的桩（四条用例传的都是 `None`，走不到那条分支）。
   `package.rs` 要用到 `flate2` / `serde_json`，`signature.rs` 要用到 `ed25519_dalek` / `sha2`，壳子得额外指路：`rustc --edition 2024 --test 壳子.rs -L src-tauri/target/debug/deps --extern flate2=<rlib> --extern serde_json=<rlib> -o 壳子.exe`（rlib 从 `target/debug/deps/` 里按 `libflate2-*.rlib` 找）。只给 `--extern` 不给 `-L` 会报 `can't find crate`。`csp.rs` 那个桩的值要抄对（`"lattice-widget"`，不是 `"lattice"`），抄错了单测会红 —— 这次正好被它抓了一下。
   **raw `rustc` 的默认 edition 是 2015**，不带 `--edition` 编出来的 panic 消息不认内联捕获（`assert!(cond, "{index}")` 会报 unused placeholder，断言本身照样成立）。想安静就照着 crate 的 edition 给一个：`rustc --edition 2024 --test src-tauri/src/guide_policy.rs -o 壳子.exe`。

@@ -880,32 +880,49 @@ button {
 /*
  * 拖拽对齐参考线。
  *
- * 只在拖的时候存在（React 里那两条 map 由 guides 状态驱动），所以这里不用管
- * "什么时候藏"。三条约束：
+ * 两条规矩：
+ *
+ * 1. **全是虚线，4px 实 / 4px 空**。实线太抢眼 —— 一条压在所有卡片上面的
+ *    1px 实线，第一眼看到的是"线"，不是"对上了"。虚线把存在感压下去一半，
+ *    眼睛仍然读得出那条坐标。
+ * 2. **线是局部的**：以被拖的那张卡片为中心、两端各伸出「半个卡片 + 48px」
+ *    （`guideLines` 算的，画布和桌面共用同一份规则）。从画布顶画到底会把整块
+ *    区域切一道 —— 那比卡片本身还显眼，用户会说"线太大"。反过来只比卡片长
+ *    一点点，又像卡片自己的描边，所以总长正好是"卡片 + 48px"的两倍。
+ *
+ * 三条约束：
  *   - `pointer-events: none`：线画在卡片上方，不能挡住拖拽的指针事件；
  *   - z-index 高过卡片（卡片最高 30 左右，见 `.lattice-widget.is-selected`）；
- *   - 用 accent 色 + 一点点光晕：一条 1px 的灰线在点阵背景上根本看不见。
+ *   - 只有 1px 宽、62% 亮度、**不加光晕** —— 那圈 glow 才是"线看着有好几像素
+ *     粗"的来源，比线本身显眼得多。
+ *
+ * 桌面上的参考线用同一套数（`src-tauri/src/guide_policy.rs`：4px/4px、
+ * `BASE_ALPHA = 0.62`），两边看起来才是同一个东西。
  */
 .lattice-guide {
   position: absolute;
   z-index: 60;
   pointer-events: none;
-  background: var(--lattice-accent);
-  box-shadow: 0 0 0 0.5px var(--lattice-accent), 0 0 6px var(--lattice-accent);
-  opacity: 0.9;
+  color: color-mix(in srgb, var(--lattice-accent) 62%, transparent);
 }
 
-/* 长度默认 100%，实际由内联的 scrollHeight / scrollWidth 覆盖（见 Canvas） */
+/* 位置与长度全部内联（见 Canvas：`left` / `top` / `height` / `width`） */
 .lattice-guide.is-v {
-  top: 0;
   width: 1px;
-  height: 100%;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    currentColor 0 4px,
+    transparent 4px 8px
+  );
 }
 
 .lattice-guide.is-h {
-  left: 0;
   height: 1px;
-  width: 100%;
+  background-image: repeating-linear-gradient(
+    to right,
+    currentColor 0 4px,
+    transparent 4px 8px
+  );
 }
 
 .lattice-empty {

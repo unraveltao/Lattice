@@ -1,0 +1,314 @@
+/*
+ * 网址收藏夹
+ *
+ * 四条约束决定了这里的写法：
+ *
+ *   1. **颜色全部从 `--lattice-*` 令牌来**。卡片底板可能被用户调成浅色、浓一点
+ *      的磨砂，写死的颜色不会跟着翻。这里只用 `--fg` / `--muted` / `--accent` /
+ *      `--border` 四个变量，深浅都靠 `color-mix` 调，不出现第二种底色。
+ *   2. **右上角 120px 是窗饰的地盘**。桌面窗口的拖动/层级/别针/重载/收回浮在
+ *      那里，标题栏不腾出这块，计数就会被压在按钮底下。
+ *   3. **一行 33px、两行字**。收藏夹是"扫一眼找那个站"的场景：名字大一点、
+ *      域名小一点，比两列图标墙好认（图标墙得联网抓 favicon，而平台的白名单
+ *      是按主机的，一个收藏夹不可能把所有站都列进去）。
+ *   4. **删除和改名只在悬停时出现**。常驻两个按钮会把 240px 宽的行吃掉近 50px，
+ *      名字本来就不长。
+ */
+
+:root {
+  --fg: #ecebe6;
+  --muted: #97978f;
+  --surface: #1d1d21;
+  --accent: #5dcaa5;
+  --border: rgba(255, 255, 255, 0.12);
+  --radius: 10px;
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+  /*
+   * 不写 -webkit-font-smoothing: antialiased：在 Windows 上它关掉 ClearType
+   * 次像素渲染，11px 的中文立刻发灰、像没对上焦。
+   */
+}
+
+.shelf {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px;
+  gap: 7px;
+}
+
+/* ---------- 标题栏（同时给窗饰让位） ---------- */
+
+.shelf-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 22px;
+  /* 120px 是窗饰的实际占地：五个 22px 按钮 + 间距 + 内边距 + 右边距 6px，
+     再减掉卡片自己的 12px 内边距。窗饰加按钮，这里要跟着加。 */
+  padding-right: 120px;
+}
+
+.shelf-title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.shelf-count {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.shelf-count.is-error {
+  color: var(--accent);
+}
+
+/* ---------- 粘贴框 ---------- */
+
+.shelf-form {
+  flex: none;
+  margin: 0;
+}
+
+.shelf-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.shelf-input::placeholder {
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+}
+
+.shelf-input:focus {
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ---------- 提示行 ---------- */
+
+.shelf-hint {
+  flex: none;
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* 没有话要说时整行不占高度：卡片只有 240px 高，空行也是成本 */
+.shelf-hint:empty {
+  display: none;
+}
+
+.shelf-hint.is-warn {
+  color: color-mix(in srgb, var(--accent) 80%, var(--fg));
+}
+
+/* ---------- 列表 ---------- */
+
+.shelf-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--fg) 18%, transparent) transparent;
+}
+
+.shelf-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.shelf-body::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg) 18%, transparent);
+}
+
+.shelf-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.shelf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shelf-empty {
+  margin: 18px 4px 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.shelf-empty[hidden] {
+  display: none;
+}
+
+/* ---------- 一行链接 ---------- */
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 2px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  /* 双击改名、拖动滚动时别把文字选成一坨蓝 */
+  user-select: none;
+  outline: none;
+}
+
+.link:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+.link:focus-visible {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* 站名的首字母方块。色相不换（换了就得写死颜色），只让浓度在 12–22% 之间跳，
+   一眼扫过去每行有一点点区别，但整块卡片仍然是一个色系。 */
+.link-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) var(--tint, 16%), transparent);
+  color: var(--fg);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.link-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.link-name {
+  font-size: 12.5px;
+  line-height: 1.25;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-host {
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-rename {
+  width: 100%;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+/* ---------- 悬停才出现的两个动作 ---------- */
+
+.link-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.link:hover .link-actions,
+.link:focus-within .link-actions,
+.link.is-renaming .link-actions {
+  opacity: 1;
+}
+
+.link-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+}
+
+.link-btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.link-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* 没有指针设备（或键盘浏览）时动作不能只靠 hover 才存在 */
+@media (hover: none) {
+  .link-actions {
+    opacity: 1;
+  }
+}

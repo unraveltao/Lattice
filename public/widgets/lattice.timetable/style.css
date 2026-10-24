@@ -1,0 +1,657 @@
+/*
+ * 课程表
+ *
+ * 这张卡比多数组件大（默认 360×320，最小 300×240），因为一周的课表塞不进
+ * 240×140。三条约束决定了写法：
+ *
+ *   1. 顶上必须是 22px 的标题栏，右侧让出 120px —— 桌面窗口的窗饰（拖动 /
+ *      层级 / 别针 / 重载 / 收回）浮在右上角，真的能点。课程格子从标题栏
+ *      下面开始，所以窗饰压不到任何一节课。
+ *   2. 字号 11 / 9px 分工：课程名 11px，房间号和时刻 9px。中文在 9px 会粘，
+ *      但房间号通常短、时刻是数字，可以承受；课程名低于 11px 就没法扫读了。
+ *   3. 时间轴按小时画线，但卡片高度不够时整块可滚。课程块用百分比定位，
+ *      所以窗口拉大拉小都不会错位。
+ */
+
+:root {
+  --fg: #ecebe6;
+  --muted: #97978f;
+  --surface: #1d1d21;
+  --accent: #5dcaa5;
+  --border: rgba(255, 255, 255, 0.12);
+  --radius: 10px;
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+
+  /* 左侧时刻栏的宽度，和 JS 里没有任何耦合：CSS 变量一处改，网格跟着变 */
+  --gutter: 34px;
+  /* 每小时最少给多高。低于这个值课程名就只剩一条缝，不如让 body 滚 */
+  --hour-h: 22px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow: hidden;
+  /*
+   * 刻意不写 -webkit-font-smoothing: antialiased：Windows 上它会关掉
+   * ClearType，中文小字立刻发灰。WIDGET_SPEC §6 有完整理由。
+   */
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------- 外壳 ---------- */
+
+.tt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px;
+  gap: 6px;
+}
+
+/* ---------- 标题栏（同时给窗饰让位） ---------- */
+
+.tt-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  /*
+   * 120px 是窗饰的实际占地：五个 22px 按钮 + 间距 + 内边距 + 右边距 6px，
+   * 再减掉卡片自己的 12px 内边距。窗饰加按钮，这里要跟着加。
+   */
+  padding-right: 120px;
+}
+
+.tt-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.tt-week {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.tt-week.is-error {
+  color: #f09595;
+}
+
+.tt-add {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.tt-add:hover {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--fg) 26%, transparent);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+.tt-add:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* ---------- 星期头 ---------- */
+
+.tt-daybar {
+  flex: none;
+  display: grid;
+  grid-template-columns: var(--gutter) repeat(var(--days, 5), minmax(0, 1fr));
+  align-items: end;
+  height: 28px;
+}
+
+.tt-dayhead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1px;
+  min-width: 0;
+  padding-bottom: 3px;
+  border-left: 1px solid transparent;
+}
+
+.tt-dayname {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tt-daynum {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tt-dayhead.is-today .tt-dayname,
+.tt-dayhead.is-today .tt-daynum {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---------- 可滚的时间区 ---------- */
+
+.tt-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.tt-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tt-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tt-body::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg) 16%, transparent);
+}
+
+/*
+ * 高度至少填满 body；一节课多的时候按 --hours × 24px 撑开并滚动。
+ * --hours 由 JS 按"实际可见的时间范围"设置，所以 7:00–21:00 会自动变高。
+ */
+.tt-canvas {
+  position: relative;
+  display: flex;
+  min-height: 100%;
+  height: max(100%, calc(var(--hours, 10) * var(--hour-h)));
+}
+
+.tt-times {
+  position: relative;
+  flex: none;
+  width: var(--gutter);
+}
+
+.tt-hour-label {
+  position: absolute;
+  right: 6px;
+  transform: translateY(-50%);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 第一格贴着顶，往下挪半个字高会被裁掉一半 */
+.tt-hour-label.is-first {
+  transform: none;
+}
+
+/* 最后一格贴着底，往上收，别掉出卡片 */
+.tt-hour-label.is-last {
+  transform: translateY(-100%);
+}
+
+.tt-grid {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--days, 5), minmax(0, 1fr));
+}
+
+.tt-col {
+  position: relative;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.tt-col.is-today {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+/* 小时线铺在课程块下面：线穿过文字会像表格画错了一样 */
+.tt-hours {
+  position: absolute;
+  left: var(--gutter);
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.tt-hour-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- 课程块 ---------- */
+
+.tt-course {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-height: 15px;
+  padding: 3px 4px 3px 5px;
+  border: 0;
+  border-left: 3px solid var(--course-color, var(--accent));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--course-color, var(--accent)) 18%, transparent);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.tt-course:hover {
+  background: color-mix(in srgb, var(--course-color, var(--accent)) 30%, transparent);
+}
+
+.tt-course:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 1px;
+}
+
+/* 正在上的那节课：描边比线更醒目，但不改底色，课程自己的颜色还在 */
+.tt-course.is-now {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+
+.tt-name {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: 0.01em;
+}
+
+.tt-room {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+/* 一节 20 分钟的课只有一条缝，房间号会挤掉名字 */
+.tt-course.is-short .tt-room {
+  display: none;
+}
+
+.tt-now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.tt-now::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ---------- 空状态 ---------- */
+
+.tt-empty {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  pointer-events: none;
+}
+
+.tt-empty.is-visible {
+  display: flex;
+}
+
+/* ---------- 编辑器 ---------- */
+
+/*
+ * 编辑时整张卡翻成表单。背景用 --surface 铺满：课程格子透出来会把输入
+ * 框的边界搅乱。顶部那 120px 同样让给窗饰，表单正文从下面开始。
+ */
+.tt-editor {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.tt-editor.is-open {
+  display: block;
+}
+
+.tt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.tt-form::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tt-form::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg) 16%, transparent);
+}
+
+.tt-editor-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 22px;
+  padding-right: 120px;
+}
+
+.tt-editor-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.tt-editor-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.tt-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.tt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tt-label {
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tt-input {
+  width: 100%;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1;
+  outline: none;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.tt-input:hover {
+  border-color: color-mix(in srgb, var(--fg) 22%, transparent);
+}
+
+.tt-input:focus {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.tt-input::placeholder {
+  color: var(--muted);
+}
+
+/* ---------- 选择器（全部自绘） ---------- */
+
+.tt-daypick,
+.tt-weekpick {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tt-pick {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.tt-pick:hover {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--fg) 26%, transparent);
+}
+
+.tt-pick.is-on {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.tt-pick:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.tt-colors {
+  display: flex;
+  gap: 6px;
+}
+
+.tt-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--course-color);
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    transform 0.12s ease;
+}
+
+.tt-swatch:hover {
+  transform: scale(1.1);
+}
+
+.tt-swatch.is-on {
+  border-color: var(--fg);
+}
+
+.tt-swatch:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* ---------- 错误与按钮 ---------- */
+
+.tt-error {
+  min-height: 12px;
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.3;
+  color: #f09595;
+}
+
+.tt-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 4px;
+  /*
+   * 最矮的 240px 高度下表单会滚。按钮跟着滚出视野，用户填完找不到 Save，
+   * 所以让这一行贴住底边；默认尺寸下它仍然在表单最下面。
+   */
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+}
+
+.tt-actions-spacer {
+  flex: 1 1 auto;
+}
+
+.tt-btn {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.tt-btn:hover {
+  border-color: color-mix(in srgb, var(--fg) 26%, transparent);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+.tt-btn.is-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.tt-btn.is-primary:hover {
+  background: color-mix(in srgb, var(--accent) 86%, var(--fg));
+}
+
+.tt-btn.is-danger {
+  color: #f09595;
+}
+
+.tt-btn.is-danger:hover {
+  border-color: color-mix(in srgb, #f09595 45%, transparent);
+  background: color-mix(in srgb, #f09595 10%, transparent);
+}
+
+.tt-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+[hidden] {
+  display: none !important;
+}

@@ -8,7 +8,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useLattice } from "./store";
 import { WidgetFrame } from "./WidgetFrame";
-import type { AlignResult } from "../runtime/align-guides";
+import { guideLines, type AlignGuideState } from "../runtime/align-guides";
 import type { WidgetRecord } from "../runtime/registry";
 
 interface CanvasProps {
@@ -30,20 +30,33 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
    * 不放 store 里有两个原因：它每帧都变（store 一变就整份 `state.json` 落盘，
    * 拖一次组件等于写几百次盘），而且它不属于"用户摆好的布局" —— 松手就该没了。
    */
-  const [guides, setGuides] = useState<AlignResult | null>(null);
-  const onGuides = useCallback((next: AlignResult | null) => setGuides(next), []);
+  const [guides, setGuides] = useState<AlignGuideState | null>(null);
+  const onGuides = useCallback((next: AlignGuideState | null) => setGuides(next), []);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   /*
-   * 参考线的长度要覆盖**整块内容**，不是一屏。
+   * 参考线是**局部**的：以被拖的那张卡片为中心、两端各伸出「半个卡片 + 48px」
+   * （见 `guideLines`）。
    *
-   * 画布是 `overflow: auto` 的，绝对定位的子元素以内容左上角为原点：写
-   * `bottom: 0` 只能画到视口底边，往下滚之后线就跑到上面去了。所以按
-   * `scrollHeight` 给长度。读 ref 是在渲染里做的一次性测量 —— 线的出现本来
-   * 就伴随着一次 setState，不会因此多渲染一轮。
+   * 以前它按 `scrollHeight` 画满整块内容 —— 一拖动就把画布从上到下切一道，
+   * 看着比卡片本身还显眼。现在长度由共享的纯函数算，桌面那边用的是同一份规则。
+   *
+   * 传给 `guideLines` 的边界仍然按**整块内容**算（不是一屏）：画布是
+   * `overflow: auto` 的，绝对定位的子元素以内容左上角为原点，用视口尺寸夹会把
+   * 往下滚之后的那一段夹没。读 ref 是在渲染里做的一次性测量 —— 线的出现本来就
+   * 伴随着一次 setState，不会因此多渲染一轮。
    */
-  const spanW = canvasRef.current?.scrollWidth ?? 0;
-  const spanH = canvasRef.current?.scrollHeight ?? 0;
+  const contentW = canvasRef.current?.scrollWidth ?? 0;
+  const contentH = canvasRef.current?.scrollHeight ?? 0;
+  const lines = guides
+    ? guideLines(
+        guides.result,
+        guides.rect,
+        contentW > 0 && contentH > 0
+          ? { x: 0, y: 0, w: contentW, h: contentH }
+          : null,
+      )
+    : null;
 
   return (
     <div
@@ -58,19 +71,19 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
       }}
       onDrop={onDropWidget}
     >
-      {guides?.xs.map((x) => (
+      {lines?.vertical.map((seg) => (
         <div
-          key={`x${x}`}
+          key={`v${seg.at}:${seg.from}`}
           className="lattice-guide is-v"
-          style={{ left: x, height: spanH || undefined }}
+          style={{ left: seg.at, top: seg.from, height: seg.length }}
           aria-hidden
         />
       ))}
-      {guides?.ys.map((y) => (
+      {lines?.horizontal.map((seg) => (
         <div
-          key={`y${y}`}
+          key={`h${seg.at}:${seg.from}`}
           className="lattice-guide is-h"
-          style={{ top: y, width: spanW || undefined }}
+          style={{ top: seg.at, left: seg.from, width: seg.length }}
           aria-hidden
         />
       ))}

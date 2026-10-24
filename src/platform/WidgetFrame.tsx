@@ -29,7 +29,7 @@ import {
   type WidgetErrorReport,
 } from "../runtime/diagnostics";
 import { isTauri, type WidgetRecord } from "../runtime/registry";
-import { computeAlign, type AlignResult } from "../runtime/align-guides";
+import { computeAlign, type AlignGuideState } from "../runtime/align-guides";
 import { isWidgetLog, trace } from "../runtime/debug";
 import { WidgetIconMark } from "./icons";
 import { snap, useLattice, type Placement } from "./store";
@@ -55,7 +55,7 @@ interface WidgetFrameProps {
   record: WidgetRecord;
   placement: Placement;
   /** 拖拽中的对齐参考线，交给画布去画（见 runtime/align-guides.ts） */
-  onGuides?: (guides: AlignResult | null) => void;
+  onGuides?: (guides: AlignGuideState | null) => void;
 }
 
 export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
@@ -364,8 +364,21 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
     const aligned = computeAlign(gridX, gridY, placement.w, placement.h, others, {
       bounds: state.bounds,
     });
-    update(placement.instanceId, { x: Math.max(0, aligned.x), y: Math.max(0, aligned.y) });
-    onGuides?.(aligned.xs.length || aligned.ys.length ? aligned : null);
+    const nextX = Math.max(0, aligned.x);
+    const nextY = Math.max(0, aligned.y);
+    update(placement.instanceId, { x: nextX, y: nextY });
+    /*
+     * 线只盖住这一张卡片（`guideLines` 拿它算段长），所以要连矩形一起交出去。
+     * 传的是**吸附之后**的位置：线标记的是最终落点。
+     */
+    onGuides?.(
+      aligned.xs.length || aligned.ys.length
+        ? {
+            result: aligned,
+            rect: { x: nextX, y: nextY, w: placement.w, h: placement.h },
+          }
+        : null,
+    );
   };
 
   const onDragEnd = (event: React.PointerEvent) => {

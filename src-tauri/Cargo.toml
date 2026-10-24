@@ -77,6 +77,8 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_Security",
   "Win32_Storage_FileSystem",
   "Win32_System_IO",
+  # GetModuleHandleW：参考线叠层窗口要注册一个自己的窗口类
+  "Win32_System_LibraryLoader",
   # GetPerformanceInfo：提交量、进程/线程/句柄计数
   "Win32_System_ProcessStatus",
   "Win32_System_Registry",

@@ -1,0 +1,97 @@
+{
+  "id": "lattice.bookmarks",
+  "name": "Bookmarks",
+  "version": "1.0.0",
+  "description": "A small shelf of links: paste an address, click it to open in your browser",
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 280, "h": 300, "minW": 220, "minH": 180 },
+  "layer": "top",
+  "permissions": ["storage", "shell:open"],
+  "config": [
+    {
+      "key": "sort",
+      "type": "select",
+      "label": "Order",
+      "help": "Newest first keeps what you just saved on top; By name and By site are for when the shelf is full.",
+      "default": "recent",
+      "options": [
+        { "value": "recent", "label": "Newest first" },
+        { "value": "title", "label": "By name" },
+        { "value": "host", "label": "By site" }
+      ]
+    },
+    {
+      "key": "showHost",
+      "type": "toggle",
+      "label": "Show the site under each name",
+      "help": "Turn it off for a one-line list that fits more links.",
+      "default": true
+    }
+  ],
+  "help": {
+    "sections": [
+      {
+        "title": "Saving a link",
+        "items": [
+          "Paste an address in the box at the top and press Enter.",
+          "You do not need the https:// part — github.com is saved as https://github.com/.",
+          "Only http and https links are accepted. file: and javascript: are refused, because they can read local files or run code.",
+          "Saving the same address twice just says it is already on the shelf — no duplicates.",
+          "Hover a row and click the × to remove it."
+        ]
+      },
+      {
+        "title": "Opening a link",
+        "items": [
+          "Click a row (or press Enter on it) to open it in your default browser.",
+          "This needs the Open links permission. Without it the card says so instead of doing nothing.",
+          "In the browser preview there is no system browser to call, so opening only works in the desktop app."
+        ]
+      },
+      {
+        "title": "Naming a link",
+        "items": [
+          "Hover a row and click the pencil, or press F2 on a focused row.",
+          "Enter or clicking anywhere else saves the name; Esc puts the old one back.",
+          "An empty name falls back to the site address, so a row is never nameless."
+        ]
+      },
+      {
+        "title": "One shelf, several windows",
+        "items": [
+          "Every Bookmarks widget shows the same shelf — it is stored per widget, not per copy.",
+          "Add a link in one window and the other windows update right away."
+        ]
+      },
+      {
+        "title": "Order and density",
+        "items": [
+          "The Order setting in the properties panel sorts by newest, by name, or by site.",
+          "Show the site under each name can be turned off for a denser one-line list.",
+          "The shelf holds up to 100 links."
+        ]
+      },
+      {
+        "title": "If it cannot save",
+        "items": [
+          "The counter switches to Not saved when a write fails — usually a missing storage permission.",
+          "Hover it to see the reason. The list keeps working in memory until it can write again."
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-10-24",
+      "changes": [
+        "First release: paste an address, press Enter, click a row to open it in your browser.",
+        "Rename a link with the pencil (or F2); empty names fall back to the site address.",
+        "Order by newest, name, or site; hide the site line for a denser list."
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

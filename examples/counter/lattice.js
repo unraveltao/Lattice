@@ -388,6 +388,21 @@ export function createLattice(options = {}) {
     /** 写剪贴板。要 `clipboard:write`。 */
     copy: (text) => call("clipboard.write", { text }),
 
+    /**
+     * 用系统默认浏览器打开一个链接。要 `shell:open`。
+     *
+     * 只接受 http / https —— `file:` / `ms-settings:` 这类协议会被平台拒绝
+     * （它们能读写本地文件、改系统设置，等于绕开全部出网限制）。少写协议头
+     * 没关系（`github.com` 会按 https 补全），但**别把用户的输入原样扔进来**：
+     * 先自己看一眼，被拒时给用户一句人话。
+     *
+     * 浏览器预览里没有系统 shell，这条路会抛 `internal`。
+     *
+     * @param {string} url
+     * @returns {Promise<{ok: true}>}
+     */
+    open: (url) => call("shell.open", { url }),
+
     /** 关掉自己这个窗口（桌面窗口）或这张卡片对应的 placement 不会被删 */
     close: () => call("window.close"),
   };

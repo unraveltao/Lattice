@@ -32,6 +32,13 @@ import {
   type Appearance,
 } from "./runtime/appearance";
 import {
+  ALIGN_THRESHOLD_PX,
+  computeAlign,
+  guideLines,
+  type AlignRect,
+  type AlignResult,
+} from "./runtime/align-guides";
+import {
   BRIDGE_TAG,
   handleBridgeRequest,
   isBridgeRequest,
@@ -62,6 +69,8 @@ interface HostConfig {
   minH: number;
   layer: "desktop" | "top";
   clickThrough: boolean;
+  /** `rect` = 平台圆角卡片；`region` = 组件上报轮廓（桌宠），不画底板与窗饰 */
+  shape: "rect" | "region";
   appearance: Appearance;
   /** 已经合并过出厂值的实例配置（见 runtime/config.ts） */
   config: ConfigValues;
@@ -158,6 +167,101 @@ async function reportRect() {
   });
   // 窗口挪过地方，"我背后那块桌面"就变了，磨砂底得重截一张
   void refreshWallpaper();
+}
+
+/* ------------------------------------------------------------------ *
+ * 桌面上的对齐参考线
+ *
+ * 画布那条路由 `Canvas.tsx` 自己画线，桌面上画不了：每个组件是一个独立窗口，
+ * 而参考线要贯穿整个屏幕、压在窗口上面。所以这里只负责"吸到哪、线在哪"，
+ * 画线交给 Rust 的两个 1px 叠层窗口（`src-tauri/src/guides_overlay.rs`）——
+ * 不是透明 WebView2（那条路在软件渲染的机器上建不出窗口，见 desktop.rs）。
+ *
+ * 吸附用的是和画布**同一个** `computeAlign`：算法只有一份，两边手感不会漂。
+ * 唯一的差别是坐标空间：桌面全是物理像素，阈值也要跟着 DPI 放大。
+ * ------------------------------------------------------------------ */
+
+interface AlignTargets {
+  /** 当前显示器的工作区（物理像素） */
+  bounds: { x: number; y: number; w: number; h: number };
+  /** 其它可见组件窗口 */
+  rects: AlignRect[];
+}
+
+/**
+ * 邻居矩形。一次拖动只取一次 —— 拖动期间只有被拖的那扇窗口在动，
+ * 别人是静止的。跨屏时缩放变了会重取（那时窗口会被系统重摆一遍）。
+ */
+async function alignTargets(): Promise<AlignTargets | null> {
+  try {
+    return await invoke<AlignTargets>("guide_targets");
+  } catch {
+    // 读不到邻居不影响拖动，只是没有参考线
+    return null;
+  }
+}
+
+let guideState: { x: GuideWire | null; y: GuideWire | null } = { x: null, y: null };
+let guideTimer: number | null = null;
+/** 松手之后还在飞的指针事件不该再画线（否则收线后又被推回来一条） */
+let guidesActive = false;
+
+/** 一条线在屏幕上的位置与长度，全是物理像素 */
+interface GuideWire {
+  /** 竖线是 x、横线是 y */
+  at: number;
+  from: number;
+  len: number;
+}
+
+/** 线的颜色跟着主题走：宿主页上有平台令牌 */
+function guideColor(): string {
+  const accent = getComputedStyle(document.documentElement)
+    .getPropertyValue("--lattice-accent")
+    .trim();
+  return accent.startsWith("#") ? accent : "#5dcaa5";
+}
+
+function sameWire(a: GuideWire | null, b: GuideWire | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.at === b.at && a.from === b.from && a.len === b.len;
+}
+
+function pushGuides(vertical: GuideWire | null, horizontal: GuideWire | null) {
+  if (!guidesActive) return;
+  if (sameWire(guideState.x, vertical) && sameWire(guideState.y, horizontal)) return;
+  guideState = { x: vertical, y: horizontal };
+  void invoke("guide_show", { vertical, horizontal, color: guideColor() });
+}
+
+/** 松手收线，并停掉心跳 */
+function endGuides() {
+  guidesActive = false;
+  if (guideTimer !== null) {
+    window.clearInterval(guideTimer);
+    guideTimer = null;
+  }
+  guideState = { x: null, y: null };
+  void invoke("guide_show", { vertical: null, horizontal: null });
+}
+
+/**
+ * 指针停住不动时不会再有 `pointermove`，而 Rust 侧有一条"4 秒没有新坐标就
+ * 收线"的兜底（防宿主页崩掉之后把线永远留在屏幕上）。拖动期间每秒补发一次，
+ * 线就不会因为"停下来看一眼对齐"而消失。
+ */
+function startGuideHeartbeat() {
+  guidesActive = true;
+  if (guideTimer !== null) return;
+  guideTimer = window.setInterval(() => {
+    if (guideState.x === null && guideState.y === null) return;
+    void invoke("guide_show", {
+      vertical: guideState.x,
+      horizontal: guideState.y,
+      color: guideColor(),
+    });
+  }, 1000);
 }
 
 /* ------------------------------------------------------------------ *
@@ -646,6 +750,9 @@ function buildChrome(config: HostConfig) {
       const size = await win.innerSize();
       // 显示器信息拖一次只取一次：拖拽期间显示器不会变（缩放变了会重取）
       let screens = await screenBoxes();
+      // 同理：邻居的矩形也在拖动期间静止。取不到就退化成"只有网格般的自由摆放"
+      let targets = await alignTargets();
+      startGuideHeartbeat();
 
       /**
        * 跨到另一块屏时的重锚。
@@ -675,6 +782,8 @@ function buildChrome(config: HostConfig) {
             baseDx = step.dx;
             baseDy = step.dy;
             screens = await screenBoxes();
+            // 换了块屏，工作区（参考线的边界候选）也换了
+            targets = await alignTargets();
           }
 
           // 指针走 CSS px，窗口走物理 px：一步位移是 `dx * scale`
@@ -686,9 +795,52 @@ function buildChrome(config: HostConfig) {
             screens,
             scale,
           );
-          await win.setPosition(
-            new PhysicalPosition(Math.round(target.x), Math.round(target.y)),
-          );
+
+          /*
+           * 先夹进屏幕、再吸到邻居。
+           *
+           * 和画布同一个顺序（先网格后对齐），理由也一样：夹紧给出一个合法落点，
+           * 对齐再把它精确地拉到某个边上。反过来的话，吸附结果会被夹紧推走几像素，
+           * 用户看到的是"明明对上了，松手却差一点"。
+           */
+          const aligned: AlignResult | null = targets
+            ? computeAlign(target.x, target.y, size.width, size.height, targets.rects, {
+                bounds: targets.bounds,
+                // 阈值是 CSS 像素（8px 的手感），坐标全是物理像素
+                threshold: ALIGN_THRESHOLD_PX * scale,
+              })
+            : null;
+
+          const nx = Math.round(aligned ? aligned.x : target.x);
+          const ny = Math.round(aligned ? aligned.y : target.y);
+          await win.setPosition(new PhysicalPosition(nx, ny));
+
+          /*
+           * 线是**局部**的：以这扇窗口为中心、两端各伸出「半个窗口 + 48px」
+           * （`guideLines` 和画布
+           * 用的是同一个函数）。一条从屏幕顶画到底的线会像把桌面切成两半，
+           * 而这里真正要说清的就是"我这条边和它那条边在同一个坐标"。
+           */
+          if (aligned && targets) {
+            const lines = guideLines(
+              aligned,
+              { x: nx, y: ny, w: size.width, h: size.height },
+              targets.bounds,
+            );
+            const vertical = lines.vertical[0];
+            const horizontal = lines.horizontal[0];
+            pushGuides(
+              vertical
+                ? { at: Math.round(vertical.at), from: vertical.from, len: vertical.length }
+                : null,
+              horizontal
+                ? { at: Math.round(horizontal.at), from: horizontal.from, len: horizontal.length }
+                : null,
+            );
+          } else {
+            // 没有邻居数据（换屏时重取失败）就别把上一帧的线留在屏幕上
+            pushGuides(null, null);
+          }
         }
         busy = false;
       };
@@ -700,7 +852,10 @@ function buildChrome(config: HostConfig) {
           pending = { dx, dy };
           void pump();
         },
-        () => void reportRect(),
+        () => {
+          endGuides();
+          void reportRect();
+        },
       );
     })();
   });
@@ -955,32 +1110,44 @@ async function boot() {
   enableMirror();
 
   /*
+   * `shape: region`：这块窗口不是卡片，是"只有宠物那几块像素存在"的一个洞。
+   *
+   * 所以底板三层一层都不画 —— 画了也是白画：区域外（包括整块底板）都被
+   * `SetWindowRgn` 裁掉了，剩下的只有宠物身上那几块。背景改成透明，
+   * 是为了让"还没上报区域"的那几百毫秒什么都不露（Rust 那边同时用空区域兜底）。
+   */
+  const regionShape = config.shape === "region";
+  document.documentElement.dataset.shape = regionShape ? "region" : "rect";
+
+  /*
    * 底板三层，从下往上：
    *   canvas  壁纸（模糊半径由 CSS filter 给，脚本只管截）
    *   veil    底色 rgba(tint, alpha)
    *   iframe  组件内容
    * 卡片本体（body 的底色、圆角、描边）还是由 widget-host.html 负责。
    */
-  wallpaperCanvas = document.createElement("canvas");
-  wallpaperCanvas.className = "lw-wallpaper";
-  wallpaperVeil = document.createElement("div");
-  wallpaperVeil.className = "lw-veil";
-  document.body.append(wallpaperCanvas, wallpaperVeil);
-  applyAppearance(normalizeAppearance(config.appearance));
-  // 上次退出时就是磨砂底的话，建窗口这一刻就得把壁纸补上
-  void refreshWallpaper();
-
-  /*
-   * 尺寸变了要重铺壁纸：canvas 的 CSS 盒子是按窗口大小算的，缩小时它多出来
-   * 一截（无所谓，被圆角裁掉），放大时就会露出没铺到的边 —— 得重新截一张，
-   * 因为"窗口背后那块桌面"也跟着变大了。
-   */
-  window.addEventListener("resize", () => {
-    if (!wallpaperCanvas) return;
-    wallpaperCanvas.style.width = `${window.innerWidth + WALLPAPER_PAD * 2}px`;
-    wallpaperCanvas.style.height = `${window.innerHeight + WALLPAPER_PAD * 2}px`;
+  if (!regionShape) {
+    wallpaperCanvas = document.createElement("canvas");
+    wallpaperCanvas.className = "lw-wallpaper";
+    wallpaperVeil = document.createElement("div");
+    wallpaperVeil.className = "lw-veil";
+    document.body.append(wallpaperCanvas, wallpaperVeil);
+    applyAppearance(normalizeAppearance(config.appearance));
+    // 上次退出时就是磨砂底的话，建窗口这一刻就得把壁纸补上
     void refreshWallpaper();
-  });
+
+    /*
+     * 尺寸变了要重铺壁纸：canvas 的 CSS 盒子是按窗口大小算的，缩小时它多出来
+     * 一截（无所谓，被圆角裁掉），放大时就会露出没铺到的边 —— 得重新截一张，
+     * 因为"窗口背后那块桌面"也跟着变大了。
+     */
+    window.addEventListener("resize", () => {
+      if (!wallpaperCanvas) return;
+      wallpaperCanvas.style.width = `${window.innerWidth + WALLPAPER_PAD * 2}px`;
+      wallpaperCanvas.style.height = `${window.innerHeight + WALLPAPER_PAD * 2}px`;
+      void refreshWallpaper();
+    });
+  }
 
   const granted = new Set<Permission>(config.permissions as Permission[]);
 
@@ -1043,7 +1210,10 @@ async function boot() {
   document.body.appendChild(iframe);
   widgetFrame = iframe;
 
-  buildChrome(config);
+  // 窗饰是画在卡片右上角的，`region` 形状下那块位置根本不存在（被裁掉了），
+  // 留着只会让"✕ 消失了"变成一个谜。桌宠自己给退出口（右键 → window.close），
+  // 真正的删除仍然在组件库 / 画布的"收回"里 —— 那是用户数据，不经组件。
+  if (!regionShape) buildChrome(config);
 
   const post = (payload: unknown) => iframe.contentWindow?.postMessage(payload, "*");
   pushTheme = () => post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
@@ -1107,6 +1277,12 @@ async function boot() {
         // 组件自己要退出：关窗口，但不删用户的 placement
         void invoke("widget_close", { reason: "widget" });
       },
+      // 只有 `shape: region` 的窗口认这个；Rust 侧还会再核一遍清单
+      setRegion: regionShape
+        ? async (parts) => {
+            await invoke("widget_set_region", { parts });
+          }
+        : undefined,
       trace: (entry) => {
         trace({
           kind: "call",

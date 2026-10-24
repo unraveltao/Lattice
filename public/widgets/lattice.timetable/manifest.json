@@ -1,0 +1,119 @@
+{
+  "id": "lattice.timetable",
+  "name": "Timetable",
+  "version": "0.1.0",
+  "description": "A weekly class timetable with rooms, colours and a live now line — click any slot to add a class",
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 360, "h": 320, "minW": 300, "minH": 240 },
+  "layer": "desktop",
+  "interactive": true,
+  "permissions": ["storage"],
+  "config": [
+    {
+      "key": "days",
+      "type": "select",
+      "label": "Days shown",
+      "default": "5",
+      "options": [
+        { "value": "5", "label": "Mon – Fri" },
+        { "value": "6", "label": "Mon – Sat" },
+        { "value": "7", "label": "Mon – Sun" }
+      ],
+      "help": "Classes on hidden days are kept — switch to Mon – Sat or Mon – Sun to see them."
+    },
+    {
+      "key": "dayStart",
+      "type": "number",
+      "label": "Day starts at",
+      "default": 8,
+      "min": 0,
+      "max": 23,
+      "step": 1,
+      "unit": ":00",
+      "help": "The first hour on the card. A class that starts earlier expands the range automatically."
+    },
+    {
+      "key": "dayEnd",
+      "type": "number",
+      "label": "Day ends at",
+      "default": 18,
+      "min": 1,
+      "max": 24,
+      "step": 1,
+      "unit": ":00",
+      "help": "The last hour on the card. A class that ends later expands the range automatically."
+    },
+    {
+      "key": "termStart",
+      "type": "date",
+      "label": "Term starts",
+      "default": "",
+      "help": "The Monday of week 1, used for odd / even weeks. Leave empty to show every class every week."
+    }
+  ],
+  "help": {
+    "sections": [
+      {
+        "title": "Adding a class",
+        "items": [
+          "Click an empty slot in the grid, or the + in the top bar. The editor opens with that day and time already filled in.",
+          "Give it a name, a room, a start and an end. Times look like 09:30; 9:30 also works.",
+          "Save with the button or Enter. Escape closes the editor without saving."
+        ]
+      },
+      {
+        "title": "Reading the week",
+        "items": [
+          "Columns are weekdays, rows are hours. The header shows this week's dates, and today is marked in the accent colour.",
+          "A thin line across today's column is the current time; a class under it is outlined.",
+          "Colours are yours to choose in the editor — six tints that work on both light and dark boards."
+        ]
+      },
+      {
+        "title": "Changing or removing",
+        "items": [
+          "Click a class block to edit it. Delete removes it immediately; there is no undo.",
+          "Two classes at the same time sit side by side instead of covering each other.",
+          "Short classes hide the room line so the name stays readable."
+        ]
+      },
+      {
+        "title": "Days and hours",
+        "items": [
+          "Days shown, Day starts at and Day ends at are in the inspector, per copy.",
+          "A class outside the chosen hours expands the range for the whole week — nothing is silently cut off.",
+          "Classes on hidden days stay in storage; they are not deleted."
+        ]
+      },
+      {
+        "title": "Odd and even weeks",
+        "items": [
+          "Set Term starts to the Monday of week 1, then pick Every week, Odd weeks or Even weeks in the editor.",
+          "The card shows the current week; classes for the other parity stay hidden until that week comes around.",
+          "With Term starts empty, every class is shown every week — parity is ignored rather than guessed."
+        ]
+      },
+      {
+        "title": "If it cannot save",
+        "items": [
+          "The week label switches to Not saved when a write fails — usually a missing storage permission.",
+          "The timetable keeps working in memory until it can write again; grant storage in the inspector and edit once more.",
+          "Nothing is uploaded anywhere. There is no account and no network permission."
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "changes": [
+        "First release: weekly grid with click-to-add classes, rooms, six colours and a live now line.",
+        "Click a class to edit or delete it; overlapping classes share the column.",
+        "Odd / even week support through Term starts, plus per-copy day range and visible days."
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

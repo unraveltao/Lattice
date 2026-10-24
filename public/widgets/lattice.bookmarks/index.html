@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Bookmarks</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="shelf">
+      <header class="shelf-head">
+        <h1 class="shelf-title">Bookmarks</h1>
+        <span class="shelf-count" id="count" aria-live="polite"></span>
+      </header>
+
+      <form class="shelf-form" id="form">
+        <input
+          class="shelf-input"
+          id="url"
+          type="text"
+          placeholder="Paste a link, press Enter"
+          autocomplete="off"
+          spellcheck="false"
+          maxlength="2048"
+          aria-label="Link address"
+        />
+      </form>
+
+      <p class="shelf-hint" id="hint" aria-live="polite"></p>
+
+      <div class="shelf-body">
+        <ul class="shelf-list" id="list"></ul>
+        <p class="shelf-empty" id="empty">No links yet — paste one above</p>
+      </div>
+    </main>
+    <script src="widget.js"></script>
+  </body>
+</html>

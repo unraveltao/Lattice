@@ -14,6 +14,16 @@ import { normalizeChangelog, normalizeHelp, type ChangelogEntry, type WidgetHelp
 export type WidgetLayer = "desktop" | "top";
 
 /**
+ * 窗口轮廓从哪儿来。
+ *
+ * `rect`（默认）是平台画的圆角卡片。`region` 表示"这不是一张卡片"：
+ * 可见像素和点击命中都由组件通过 `window.setRegion` 上报，平台不画底板、
+ * 不画窗饰、不裁圆角 —— 桌宠、悬浮挂件走这条。代价是组件必须自己算
+ * 轮廓，而且硬边缘（区域外的像素根本不存在，投影和半透明羽化都会被切掉）。
+ */
+export type WidgetShape = "rect" | "region";
+
+/**
  * 组件可申请的权限。
  * 平台默认全拒，用户在组件详情里逐项授予；未授予时桥调用直接返回错误。
  */
@@ -25,6 +35,7 @@ export type Permission =
   | "system:monitor" // 读取 CPU / 内存 / 磁盘等指标
   | "media:control" // 控制正在播放的媒体
   | "audio:level" // 读扬声器现在的响度（回环采集，只出一个 0..1）
+  | "shell:open" // 把 http/https 链接交给系统默认浏览器
   | "agent:activity"; // 读 agent 在本机做过的操作（审计日志）
 
 export interface WidgetSize {
@@ -79,6 +90,13 @@ export interface WidgetManifest {
    * 换回"点了不打扰你"的行为。
    */
   interactive: boolean;
+  /**
+   * 窗口轮廓由谁决定：`rect`（平台圆角，默认）或 `region`（组件上报）。
+   *
+   * 写 `region` 等于同时声明三件事：不画底板、不画窗饰、背景透明。
+   * 三者是同一个决定 —— 一块被裁成宠物形状的窗口没有"卡片"可画。
+   */
+  shape: WidgetShape;
   permissions: Permission[];
   /**
    * 联网白名单，只有授予 `network` 时才起作用。
@@ -171,6 +189,9 @@ export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest
   // 只有显式写 false 才关掉：第三方组件忘了声明时，宁可抢一次焦点，
   // 也不要让人对着输入框敲半天没反应
   const interactive = input.interactive !== false;
+  // 只有显式写 "region" 才换轮廓：默认必须是卡片，
+  // 否则一个笔误就让组件变成一块看不见的剪影（组件没上报区域时窗口是空的）
+  const shape: WidgetShape = input.shape === "region" ? "region" : "rect";
 
   return {
     id,
@@ -183,6 +204,7 @@ export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest
     size,
     layer,
     interactive,
+    shape,
     permissions: normalizePermissions(input.permissions),
     network: normalizeNetwork(input.network),
     sdk: optionalString(input.sdk) || SUPPORTED_SDK,
@@ -263,6 +285,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "system:monitor": "System metrics",
   "media:control": "Media control",
   "audio:level": "Sound level",
+  "shell:open": "Open links",
   "agent:activity": "Agent activity",
 };
 
@@ -272,8 +295,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
  * `normalizePermissions` 也读这一份 —— 以前那里另抄了一份同样的名单，两处
  * 各改各的，漏一处的表现是"清单里写了、界面上没有"，不报错。
  *
- * 八项现在全齐了（`media:control` 在 v0.4、`agent:activity` 在 v0.8、
- * `audio:level` 在 v0.9 补上）。加一项权限要**四处一起改**：
+ * 九项现在全齐了（`media:control` 在 v0.4、`agent:activity` 在 v0.8、
+ * `audio:level` / `shell:open` 在 v0.9 补上）。加一项权限要**四处一起改**：
  *
  * 1. `Permission` 联合类型
  * 2. 这个集合
@@ -296,6 +319,7 @@ export const PERMISSION_READY: ReadonlySet<Permission> = new Set<Permission>([
   "network",
   "media:control",
   "audio:level",
+  "shell:open",
   "agent:activity",
 ]);
 

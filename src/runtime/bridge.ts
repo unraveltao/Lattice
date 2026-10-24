@@ -38,6 +38,23 @@ export interface BridgeResponseMessage {
 
 export type BridgeErrorCode = "unknown_method" | "permission_denied" | "bad_params" | "internal";
 
+/**
+ * 窗口轮廓里的一块。
+ *
+ * 坐标是**物理像素**、相对客户区左上角 —— 和 `desktop::clip_rounded` 同一个口径，
+ * 所以组件要自己乘 `devicePixelRatio`。`w` / `h` 是宽高，不是右下角坐标。
+ */
+export interface RegionPart {
+  kind?: "rect" | "ellipse";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** 一次上报最多认多少块（Rust 侧同一上限）。图片轮廓按 6px 网格合并后会到 100 上下 */
+export const MAX_REGION_PARTS = 256;
+
 export interface BridgeContext {
   /** 组件实例 id：同一个组件可以同时放多个实例 */
   instanceId: string;
@@ -69,6 +86,15 @@ export interface BridgeContext {
   egress: readonly string[];
   /** 组件请求关闭自己 */
   close: () => void;
+  /**
+   * 把窗口裁成组件上报的形状（只有 `shape: "region"` 的窗口认）。
+   *
+   * 做成注入的回调而不是直接 `invoke`，理由和 `close` 一样：画布上的实例
+   * **不是窗口**，没有轮廓可裁。画布那边不传这个字段，于是 `window.setRegion`
+   * 回 `{ ok: true, applied: false }` —— 组件据此知道"这里只有预览"，
+   * 不用 try/catch，也不会把桌面那条路当成坏了。
+   */
+  setRegion?: (parts: RegionPart[]) => Promise<void> | void;
   /**
    * 桥调用的观察者（调试面板用）。
    *
@@ -287,6 +313,31 @@ defineMethod("clipboard.write", "clipboard:write", async (params) => {
   return { ok: true };
 });
 
+/*
+ * 把链接交给系统默认浏览器。
+ *
+ * 这是唯一一条"往外递东西"的桥方法，所以它要权限，而且**只放 http/https**。
+ * 真正的门在 `src-tauri/src/open_policy.rs` —— opener 插件不认协议，
+ * `file:` / `ms-settings:` / `search-ms:` 都会被 ShellExecuteW 执行，那是
+ * 一条绕开 `egress.rs` 和 `network.rs` 的路。这里补一道形状检查，好让参数
+ * 错误变成 `bad_params` 而不是一声不响。
+ *
+ * 为什么不让组件自己 `<a target="_blank">`：那会变成组件 frame 的一次导航，
+ * 被 `egress.rs` 取消（白名单里没有外部站点，也永远不该有）。浏览器预览
+ * （`npm run dev`）里没有 shell，这条路直接报 `internal`，不装作成功。
+ */
+defineMethod("shell.open", "shell:open", async (params) => {
+  const url = (params as { url?: unknown } | undefined)?.url;
+  if (typeof url !== "string" || !url.trim() || url.length > 2048) {
+    throw new BridgeError("bad_params", "shell.open requires a url string of 1–2048 characters");
+  }
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "opening a link needs the desktop app");
+  }
+  await invoke("open_external", { url });
+  return { ok: true };
+});
+
 defineMethod("theme.get", null, () => readThemeTokens());
 
 /*
@@ -353,6 +404,66 @@ defineMethod("window.close", null, (_params, ctx) => {
   ctx.close();
   return { ok: true };
 });
+
+/*
+ * 把窗口裁成组件自己的形状（桌宠 / 悬浮挂件）。
+ *
+ * 为什么这是"组件能碰自己的窗口"的唯一一处：形状只影响**它自己**的可见像素与
+ * 点击命中，碰不到别的窗口，所以不需要权限。而清单里的 `shape: "region"` 是
+ * 一道门 —— 没写这一项的组件调用会被 Rust 拒掉，卡片不会因为一次误调用
+ * 变成一块看不懂的剪影（右上角那颗 ✕ 是画在卡片上的，形状没了就点不到）。
+ *
+ * 返回 `applied: false` 表示"这里不是桌面窗口"（画布预览）。组件据此降级，
+ * 不用 catch —— 画布上显示一只不透明的宠物是正常的，那不是错误。
+ */
+defineMethod("window.setRegion", null, async (params, ctx) => {
+  const parts = normalizeRegionParts(
+    (params as { parts?: unknown } | undefined)?.parts,
+  );
+  if (!ctx.setRegion) return { ok: true, applied: false, parts: parts.length };
+  await ctx.setRegion(parts);
+  return { ok: true, applied: true, parts: parts.length };
+});
+
+/**
+ * 轮廓条目校验。坏数据一律 `bad_params`，不做"尽量理解"：
+ * 一个 NaN 坐标交给 GDI 的结果是整个窗口区域失效，症状是"宠物突然变成
+ * 一张实心卡片"，比一条明确的错误难查得多。
+ */
+export function normalizeRegionParts(raw: unknown): RegionPart[] {
+  if (!Array.isArray(raw)) {
+    throw new BridgeError("bad_params", "window.setRegion requires an array in \"parts\"");
+  }
+  if (raw.length > MAX_REGION_PARTS) {
+    throw new BridgeError(
+      "bad_params",
+      `window.setRegion accepts at most ${MAX_REGION_PARTS} parts, got ${raw.length}`,
+    );
+  }
+  const parts: RegionPart[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      throw new BridgeError("bad_params", "every region part must be an object");
+    }
+    const part = item as Record<string, unknown>;
+    const kind = part.kind === "ellipse" ? "ellipse" : "rect";
+    const x = part.x;
+    const y = part.y;
+    const w = part.w;
+    const h = part.h;
+    if (
+      typeof x !== "number" || typeof y !== "number" ||
+      typeof w !== "number" || typeof h !== "number" ||
+      !Number.isFinite(x) || !Number.isFinite(y) ||
+      !Number.isFinite(w) || !Number.isFinite(h) ||
+      w < 1 || h < 1
+    ) {
+      throw new BridgeError("bad_params", "region parts need finite x / y and w / h >= 1");
+    }
+    parts.push({ kind, x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) });
+  }
+  return parts;
+}
 
 /*
  * 媒体控制：读当前播放、按一下播放/暂停、上一首/下一首。

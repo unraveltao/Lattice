@@ -17,7 +17,8 @@ export type Permission =
   | "network"
   | "system:monitor"
   | "media:control"
-  | "audio:level";
+  | "audio:level"
+  | "shell:open";
 
 export declare class LatticeError extends Error {
   constructor(code: BridgeErrorCode, message: string, permission?: Permission);
@@ -195,6 +196,8 @@ export interface Lattice {
 
   now(): Promise<ClockInfo>;
   copy(text: string): Promise<{ ok: true }>;
+  /** 用系统默认浏览器打开一个 http/https 链接（要 `shell:open`） */
+  open(url: string): Promise<{ ok: true }>;
   close(): Promise<{ ok: true }>;
 }
 

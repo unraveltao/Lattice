@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Timetable</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      每周课程表。内容从顶上开始排，所以第一条必须是 22px 的标题栏并把右侧
+      120px 让给桌面窗口的窗饰（见 WIDGET_SPEC §5.1）。课程格子从标题栏下面
+      才开始，窗饰压不到任何可点的课程。
+    -->
+    <main class="tt" id="root">
+      <header class="tt-head">
+        <h1 class="tt-title">Timetable <span class="tt-week" id="week"></span></h1>
+        <button class="tt-add" id="add" type="button" aria-label="Add class" title="Add class">+</button>
+      </header>
+
+      <div class="tt-daybar" id="daybar" aria-hidden="true"></div>
+
+      <div class="tt-body" id="body">
+        <div class="tt-canvas" id="canvas">
+          <div class="tt-times" id="times" aria-hidden="true"></div>
+          <div class="tt-grid" id="grid"></div>
+          <div class="tt-hours" id="hours" aria-hidden="true"></div>
+        </div>
+        <p class="tt-empty" id="empty">No classes yet — click a slot or +</p>
+      </div>
+
+      <section
+        class="tt-editor"
+        id="editor"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="editor-title"
+        aria-hidden="true"
+      >
+        <form class="tt-form" id="editor-form" novalidate>
+          <header class="tt-editor-head">
+            <h2 class="tt-editor-title" id="editor-title">Add class</h2>
+            <span class="tt-editor-sub" id="editor-sub"></span>
+          </header>
+
+          <div class="tt-fields">
+            <label class="tt-field">
+              <span class="tt-label">Class</span>
+              <input
+                class="tt-input"
+                id="f-name"
+                type="text"
+                maxlength="80"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Calculus"
+              />
+            </label>
+            <label class="tt-field">
+              <span class="tt-label">Room</span>
+              <input
+                class="tt-input"
+                id="f-room"
+                type="text"
+                maxlength="40"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="A101"
+              />
+            </label>
+          </div>
+
+          <div class="tt-field">
+            <span class="tt-label">Day</span>
+            <div class="tt-daypick" id="f-days" role="group" aria-label="Day of the week"></div>
+          </div>
+
+          <div class="tt-fields">
+            <label class="tt-field">
+              <span class="tt-label">Starts</span>
+              <input
+                class="tt-input"
+                id="f-start"
+                type="text"
+                maxlength="5"
+                inputmode="numeric"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="08:00"
+              />
+            </label>
+            <label class="tt-field">
+              <span class="tt-label">Ends</span>
+              <input
+                class="tt-input"
+                id="f-end"
+                type="text"
+                maxlength="5"
+                inputmode="numeric"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="09:30"
+              />
+            </label>
+          </div>
+
+          <div class="tt-field">
+            <span class="tt-label">Weeks</span>
+            <div class="tt-weekpick" id="f-weeks" role="group" aria-label="Which weeks"></div>
+          </div>
+
+          <div class="tt-field">
+            <span class="tt-label">Colour</span>
+            <div class="tt-colors" id="f-colors" role="group" aria-label="Colour"></div>
+          </div>
+
+          <p class="tt-error" id="f-error" role="alert"></p>
+
+          <div class="tt-actions">
+            <button class="tt-btn is-danger" id="f-delete" type="button">Delete</button>
+            <span class="tt-actions-spacer"></span>
+            <button class="tt-btn" id="f-cancel" type="button">Cancel</button>
+            <button class="tt-btn is-primary" id="f-save" type="button">Save</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script src="widget.js"></script>
+  </body>
+</html>

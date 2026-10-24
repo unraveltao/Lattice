@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>timetable test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 课程表：时间/周次/重叠布局 + 界面接线。
+       *
+       * 课程表最容易错的是边界：跨午夜的时钟、奇偶周、夏令时、两节课只重叠
+       * 一分钟、点空白处该落在哪个时间。这些用眼睛看不出来，所以前半页基本
+       * 都在算纯函数；后半页把组件装进假宿主里，真的点、真的填、真的存。
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(JSON.stringify(actual) === JSON.stringify(expected), `${text}（得到 ${JSON.stringify(actual)}）`);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      function mountTimetable({ initial = [], config = {}, storageError = false } = {}) {
+        const state = { stored: { courses: initial }, setCalls: 0, getCalls: 0 };
+
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+        frame.style.width = "360px";
+        frame.style.height = "320px";
+        document.body.appendChild(frame);
+
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+
+            if (data.method === "config.get") {
+              reply({ ok: true, result: config });
+              return;
+            }
+            if (data.method === "storage.get") {
+              state.getCalls += 1;
+              if (storageError) {
+                reply({ ok: false, code: "permission_denied", error: "storage denied" });
+              } else {
+                reply({ ok: true, result: state.stored });
+              }
+              return;
+            }
+            if (data.method === "storage.set") {
+              state.setCalls += 1;
+              if (storageError) {
+                reply({ ok: false, code: "permission_denied", error: "storage denied" });
+              } else {
+                state.stored = data.params.value;
+                reply({ ok: true, result: { ok: true } });
+              }
+              return;
+            }
+            if (data.method === "schedule.every") {
+              reply({ ok: true, result: { id: 1, every: data.params.every } });
+              return;
+            }
+            if (data.method === "schedule.clear") {
+              reply({ ok: true, result: { ok: true } });
+              return;
+            }
+            reply({ ok: false, error: "unknown method" });
+          });
+        });
+
+        frame.src = "/widgets/lattice.timetable/index.html";
+        return { frame, state, ready };
+      }
+
+      async function apiOf(frame, ready) {
+        await ready;
+        await sleep(80);
+        return frame.contentWindow.__latticeTimetable;
+      }
+
+      const { frame, state, ready } = mountTimetable({
+        initial: [
+          { id: "math", name: "Calculus", room: "A101", day: 0, start: "09:00", end: "10:30", color: 0 },
+          { id: "phys", name: "Physics", room: "B202", day: 0, start: "09:30", end: "11:00", color: 1 },
+          { id: "art", name: "Art", room: "C303", day: 5, start: "10:00", end: "11:00", color: 2 },
+        ],
+      });
+      const api = await apiOf(frame, ready);
+      log(Boolean(api), "组件把纯函数挂出来了");
+      if (!api) {
+        document.getElementById("out").textContent = lines.join("\n");
+        window.__done = true;
+        throw new Error("no api");
+      }
+
+      const {
+        parseTime, formatTime, dayIndex, startOfWeek, weekDates, weekNumber,
+        dateKey, parseDateKey, courseVisible, sortCourses, normalizeCourses,
+        addCourse, updateCourse, removeCourse, layoutDay, resolveRange,
+        MAX_COURSES, COLORS,
+      } = api;
+
+      // ---- 1. 时间 ----
+
+      eq(parseTime("9:30"), 570, "9:30 解析成 570");
+      eq(parseTime("09:30"), 570, "补零的也认");
+      eq(parseTime("9：30"), 570, "全角冒号也认");
+      eq(parseTime("23:59"), 1439, "23:59 合法");
+      eq(parseTime("0:00"), 0, "0:00 合法");
+      eq(parseTime("24:00"), null, "24:00 不是合法起点");
+      eq(parseTime("9:75"), null, "75 分钟不认");
+      eq(parseTime("9:5"), null, "分钟必须两位");
+      eq(parseTime("930"), null, "没有冒号不认");
+      eq(parseTime(""), null, "空串不认");
+      eq(parseTime(null), null, "null 不认");
+      eq(formatTime(570), "09:30", "570 格式化回 09:30");
+      eq(formatTime(0), "00:00", "零点");
+      eq(formatTime(1439), "23:59", "一天最后一分钟");
+      eq(formatTime(1440), "24:00", "1440 只用于显示");
+
+      // ---- 2. 星期 / 周 ----
+
+      eq(dayIndex(new Date(2026, 9, 26)), 0, "周一 = 0");
+      eq(dayIndex(new Date(2026, 9, 24)), 5, "周六 = 5");
+      eq(dayIndex(new Date(2026, 10, 1)), 6, "周日 = 6");
+
+      eq(dateKey(startOfWeek(new Date(2026, 9, 28))), "2026-10-26", "周三所在周的周一是 10 月 26");
+      eq(dateKey(startOfWeek(new Date(2026, 10, 1))), "2026-10-26", "周日所在周仍从周一算");
+      eq(dateKey(startOfWeek(new Date(2026, 9, 26))), "2026-10-26", "周一就是自己");
+      eq(startOfWeek(new Date(2026, 9, 26)).getHours(), 0, "周一是本地零点");
+
+      const dates = weekDates(new Date(2026, 9, 28), 5);
+      eq(dates.length, 5, "五天");
+      eq(dates.map((d) => d.key), ["2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30"], "日期连续");
+      eq(dates.map((d) => d.num), [26, 27, 28, 29, 30], "日号跟着走");
+      eq(dates.map((d) => d.label), ["Mon", "Tue", "Wed", "Thu", "Fri"], "星期标签");
+      eq(weekDates(new Date(2026, 9, 28), 7).length, 7, "可以显示七天");
+      eq(weekDates(new Date(2026, 9, 28), 9).length, 7, "超过七天的请求夹到七天");
+
+      eq(weekNumber("2026-09-07", new Date(2026, 8, 7)), 1, "开学那一周是第 1 周");
+      eq(weekNumber("2026-09-07", new Date(2026, 8, 14)), 2, "下一周是第 2 周");
+      eq(weekNumber("2026-09-07", new Date(2026, 9, 26)), 8, "10 月 26 日是第 8 周");
+      eq(weekNumber("2026-09-07", new Date(2026, 7, 31)), 1, "开学前也按第 1 周处理，不出现 0");
+      eq(weekNumber("", new Date(2026, 9, 26)), null, "没填开学日期就没有周次");
+      eq(weekNumber("2026-02-30", new Date(2026, 9, 26)), null, "不存在的日期不认");
+      eq(parseDateKey("2026-10-24"), { year: 2026, month: 9, day: 24 }, "日期键解析成 0 起月份");
+      eq(parseDateKey("2026-1-1"), null, "不补零的日期键不认");
+
+      // 奇偶周
+      const oddCourse = { weeks: "odd" };
+      const evenCourse = { weeks: "even" };
+      const allCourse = { weeks: "all" };
+      eq(courseVisible(oddCourse, 3), true, "第 3 周显示单周课");
+      eq(courseVisible(oddCourse, 4), false, "第 4 周不显示单周课");
+      eq(courseVisible(evenCourse, 3), false, "第 3 周不显示双周课");
+      eq(courseVisible(evenCourse, 4), true, "第 4 周显示双周课");
+      eq(courseVisible(allCourse, 3), true, "每周课一直显示");
+      eq(courseVisible(oddCourse, null), true, "没填开学日期时全部显示（不猜）");
+
+      // ---- 3. 重叠布局 ----
+
+      const paced = layoutDay(
+        [
+          { name: "A", start: "09:00", end: "11:00" },
+          { name: "B", start: "10:00", end: "12:00" },
+          { name: "C", start: "11:00", end: "13:00" },
+          { name: "D", start: "15:00", end: "16:00" },
+        ],
+        8 * 60,
+        18 * 60,
+      );
+      eq(paced.length, 4, "四节课都画出来");
+      const byName = (name) => paced.find((block) => block.course.name === name);
+      eq(byName("A").lanes, 2, "A/B/C 是一簇，最大并发 2");
+      eq(byName("A").lane, 0, "A 在第一条 lane");
+      eq(byName("B").lane, 1, "B 在第二条 lane");
+      eq(byName("C").lane, 0, "A 11 点结束，C 可以回到第一条 lane");
+      eq(byName("D").lanes, 1, "D 不重叠，独占整栏");
+      eq(byName("A").top, 10, "9:00 在 8–18 里是 10%");
+      eq(byName("A").height, 20, "两小时是 20%");
+      eq(byName("D").top, 70, "15:00 是 70%");
+
+      const adjacent = layoutDay(
+        [
+          { name: "X", start: "09:00", end: "10:00" },
+          { name: "Y", start: "10:00", end: "11:00" },
+        ],
+        8 * 60,
+        18 * 60,
+      );
+      eq(adjacent.map((block) => block.lanes), [1, 1], "首尾相接不算重叠，各自占整栏");
+
+      const triple = layoutDay(
+        [
+          { name: "A", start: "09:00", end: "10:00" },
+          { name: "B", start: "09:15", end: "10:00" },
+          { name: "C", start: "09:30", end: "10:00" },
+        ],
+        8 * 60,
+        18 * 60,
+      );
+      eq(triple.map((block) => block.lanes), [3, 3, 3], "三节同时上就分三条 lane");
+      eq(triple.map((block) => block.lane), [0, 1, 2], "lane 依次排开");
+
+      eq(layoutDay([], 8 * 60, 18 * 60), [], "没课就是空数组");
+      eq(layoutDay([{ name: "bad", start: "9:00", end: "8:00" }], 8 * 60, 18 * 60), [], "结束早于开始的坏数据不画");
+
+      // ---- 4. 范围 ----
+
+      const plain = resolveRange({ dayStart: 8, dayEnd: 18 }, []);
+      eq(plain, { start: 480, end: 1080, hours: 10 }, "没课时就是 8–18");
+      const early = resolveRange({ dayStart: 8, dayEnd: 18 }, [{ start: "07:30", end: "09:00" }]);
+      eq(early.start, 420, "7:30 的课把范围撑到 7:00");
+      const late = resolveRange({ dayStart: 8, dayEnd: 18 }, [{ start: "18:30", end: "20:00" }]);
+      eq(late.end, 1200, "18:30 的课把范围撑到 20:00");
+      const broken = resolveRange({ dayStart: 18, dayEnd: 8 }, []);
+      eq(broken, { start: 480, end: 1080, hours: 10 }, "首尾颠倒退回默认 8–18");
+      const narrow = resolveRange({ dayStart: 12, dayEnd: 12 }, []);
+      eq(narrow.end - narrow.start >= 60, true, "至少给一小时，别退化成零高");
+
+      // ---- 5. 数据归一化 ----
+
+      const dirty = normalizeCourses([
+        { id: "ok", name: "Calculus", room: "A101", day: 0, start: "9:00", end: "10:30", color: 2 },
+        { id: "no-name", name: "  ", day: 0, start: "09:00", end: "10:00" },
+        { id: "bad-day", name: "Bad", day: 7, start: "09:00", end: "10:00" },
+        { id: "backwards", name: "Back", day: 1, start: "10:00", end: "09:00" },
+        { id: "too-long", name: "Long", day: 2, start: "08:00", end: "21:00" },
+        { id: "dup", name: "First", day: 3, start: "09:00", end: "10:00" },
+        { id: "dup", name: "Second", day: 3, start: "11:00", end: "12:00" },
+        "not an object",
+        null,
+      ]);
+      eq(dirty.length, 3, "坏条目逐条丢，好的留下");
+      eq(dirty[0].start, "09:00", "时间被补零");
+      eq(dirty[0].end, "10:30", "结束时间保留");
+      eq(dirty[0].room, "A101", "房间保留");
+      eq(dirty[0].color, 2, "颜色保留");
+      eq(dirty[0].weeks, "all", "缺 weeks 默认每周");
+      eq(dirty[1].name, "First", "重复 id 的第一条保留原名");
+      eq(dirty[1].id, "dup", "第一条保留原 id");
+      eq(dirty[2].name, "Second", "第二条还在");
+      eq(dirty[2].id === "dup", false, "重复 id 的第二条被换了一个 id");
+      eq(normalizeCourses(null), [], "没有存档就是空表");
+      eq(normalizeCourses([]), [], "空数组还是空");
+      eq(normalizeCourses({ courses: [{ name: "From wrapper", day: 0, start: "08:00", end: "09:00" }] }).length, 1, "也接受 { courses } 包装");
+
+      const badColor = normalizeCourses([{ name: "Colour", day: 0, start: "08:00", end: "09:00", color: 99 }]);
+      eq(badColor[0].color >= 0 && badColor[0].color < COLORS.length, true, "非法颜色退回调色板里的一档");
+      const badWeeks = normalizeCourses([{ name: "Weeks", day: 0, start: "08:00", end: "09:00", weeks: "sometimes" }]);
+      eq(badWeeks[0].weeks, "all", "非法 weeks 退回每周");
+
+      // ---- 6. 增删改（不改入参） ----
+
+      const before = [{ id: "a", name: "A", day: 0, start: "08:00", end: "09:00", color: 0, room: "", weeks: "all" }];
+      const added = addCourse(before, { id: "b", name: "B", day: 0, start: "10:00", end: "11:00", color: 1, room: "", weeks: "all" });
+      eq(before.length, 1, "addCourse 不改入参");
+      eq(added.length, 2, "新数组里有两条");
+
+      const updated = updateCourse(added, { id: "a", name: "A2", day: 1, start: "08:00", end: "09:00", color: 0, room: "R", weeks: "all" });
+      eq(updated.find((c) => c.id === "a").name, "A2", "updateCourse 换掉对应那条");
+      eq(added.find((c) => c.id === "a").name, "A", "原数组里的那条没被改");
+      eq(updateCourse(added, { id: "nope", name: "N", day: 0, start: "08:00", end: "09:00" }), added, "更新不存在的 id 原样返回");
+
+      eq(removeCourse(added, "a").length, 1, "removeCourse 删掉一条");
+      eq(removeCourse(added, "nope"), added, "删不存在的 id 原样返回");
+
+      const full = Array.from({ length: MAX_COURSES }, (_, i) => ({ id: "c" + i, name: "C" + i, day: 0, start: "08:00", end: "09:00" }));
+      eq(addCourse(full, { id: "over", name: "Over", day: 0, start: "09:00", end: "10:00" }), full, "装满了就不再收");
+
+      const sorted = sortCourses([
+        { id: "c", name: "C", day: 1, start: "09:00", end: "10:00" },
+        { id: "a", name: "A", day: 0, start: "11:00", end: "12:00" },
+        { id: "b", name: "B", day: 0, start: "08:00", end: "09:00" },
+      ]);
+      eq(sorted.map((c) => c.id), ["b", "a", "c"], "按星期和开始时间排序");
+
+      // ---- 7. 界面：初始渲染 ----
+
+      const doc = frame.contentDocument;
+      const win = frame.contentWindow;
+      const snap = () => api.snapshot();
+      const blocks = () => Array.from(doc.querySelectorAll(".tt-course"));
+
+      eq(snap().courses.length, 3, "三条数据都在内存里");
+      eq(blocks().length, 2, "周六默认不显示，画布上只有两节");
+      eq(doc.querySelectorAll(".tt-dayhead").length, 5, "五天列头");
+      eq(doc.querySelector(".tt-dayhead .tt-dayname").textContent, "Mon", "第一列是周一");
+      eq(doc.querySelectorAll(".tt-dayhead .tt-dayname")[4].textContent, "Fri", "最后一列是周五");
+      eq(blocks().map((el) => el.querySelector(".tt-name").textContent), ["Calculus", "Physics"], "两节课的名字");
+      eq(blocks().map((el) => el.querySelector(".tt-room").textContent), ["A101", "B202"], "房间号");
+      eq(blocks()[0].style.width.includes("50%"), true, "重叠的两节课各占半栏");
+      eq(blocks()[1].style.left.includes("50%"), true, "第二节从半栏处开始");
+      eq(blocks()[0].style.height.includes("15%"), true, "90 分钟在 10 小时里是 15%");
+      eq(snap().range, { start: 480, end: 1080 }, "默认范围 8–18");
+
+      const headPad = parseFloat(win.getComputedStyle(doc.querySelector(".tt-head")).paddingRight);
+      eq(headPad >= 120, true, `标题栏给窗饰让出 ${headPad}px`);
+
+      const bodyEl = doc.getElementById("body");
+      eq(
+        bodyEl.scrollHeight <= bodyEl.clientHeight + 1,
+        true,
+        `默认尺寸下 8–18 不滚动（scroll ${bodyEl.scrollHeight} / client ${bodyEl.clientHeight}）`,
+      );
+
+      const cols = Array.from(doc.querySelectorAll(".tt-col"));
+      const heads = Array.from(doc.querySelectorAll(".tt-dayhead"));
+      const colRect = cols[0].getBoundingClientRect();
+      const headRect = heads[0].getBoundingClientRect();
+      eq(
+        Math.abs((colRect.left + colRect.right) / 2 - (headRect.left + headRect.right) / 2) < 1.5,
+        true,
+        "星期头和下面的列对齐",
+      );
+
+      const courseRect = blocks()[0].getBoundingClientRect();
+      eq(courseRect.left >= colRect.left - 0.5, true, "课程块不越出本列左边");
+      eq(courseRect.right <= colRect.right + 0.5, true, "课程块不越出本列右边");
+      eq(courseRect.top >= colRect.top - 0.5, true, "课程块不越出本列上边");
+
+      const firstLabel = doc.querySelector(".tt-hour-label.is-first").getBoundingClientRect();
+      const lastLabel = doc.querySelector(".tt-hour-label.is-last").getBoundingClientRect();
+      const canvasRect = doc.getElementById("canvas").getBoundingClientRect();
+      eq(firstLabel.top >= canvasRect.top - 0.5, true, "第一个时刻不被上边缘裁掉");
+      eq(lastLabel.bottom <= canvasRect.bottom + 0.5, true, "最后一个时刻不被下边缘裁掉");
+
+      const today = new Date();
+      const todayIndex = (today.getDay() + 6) % 7;
+      eq(doc.querySelectorAll(".tt-now").length, todayIndex < 5 ? 1 : 0, "今天在可见的五天里才画现在线");
+
+      // ---- 8. 界面：编辑 ----
+
+      blocks()[0].click();
+      await sleep(20);
+      eq(snap().editorOpen, true, "点课程块打开编辑器");
+      eq(doc.getElementById("f-name").value, "Calculus", "名字带进编辑器");
+      eq(doc.getElementById("editor-title").textContent, "Edit class", "标题是 Edit class");
+      eq(doc.getElementById("f-delete").hidden, false, "编辑时删除按钮可见");
+
+      const editorPad = parseFloat(
+        win.getComputedStyle(doc.querySelector(".tt-editor-head")).paddingRight,
+      );
+      eq(editorPad >= 120, true, `编辑器标题栏也给窗饰让出 ${editorPad}px`);
+
+      const formEl = doc.getElementById("editor-form");
+      eq(
+        formEl.scrollHeight <= formEl.clientHeight + 1,
+        true,
+        `默认尺寸下编辑器不滚动（scroll ${formEl.scrollHeight} / client ${formEl.clientHeight}）`,
+      );
+      const editorRect = doc.getElementById("editor").getBoundingClientRect();
+      const saveRect = doc.getElementById("f-save").getBoundingClientRect();
+      eq(saveRect.bottom <= editorRect.bottom + 0.5, true, "保存按钮在卡片内，不用滚到底去找");
+
+      doc.getElementById("f-name").value = "Linear Algebra";
+      doc.getElementById("f-room").value = "A102";
+      doc.getElementById("f-save").click();
+      await sleep(100);
+
+      eq(snap().editorOpen, false, "保存后编辑器关闭");
+      eq(snap().courses.find((c) => c.id === "math").name, "Linear Algebra", "内存里的名字改了");
+      eq(snap().courses.find((c) => c.id === "math").room, "A102", "房间号也改了");
+      eq(state.stored.courses.find((c) => c.id === "math").name, "Linear Algebra", "落盘的是新名字");
+      eq(blocks()[0].querySelector(".tt-name").textContent, "Linear Algebra", "卡片跟着重画");
+
+      // ---- 9. 界面：新增 ----
+
+      const setCallsBeforeAdd = state.setCalls;
+      doc.getElementById("add").click();
+      await sleep(20);
+      eq(snap().editorOpen, true, "+ 打开编辑器");
+      eq(doc.getElementById("editor-title").textContent, "Add class", "标题是 Add class");
+      eq(doc.getElementById("f-delete").hidden, true, "新增时没有删除按钮");
+
+      doc.getElementById("f-name").value = "Chemistry";
+      doc.getElementById("f-room").value = "Lab 2";
+      doc.getElementById("f-start").value = "13:00";
+      doc.getElementById("f-end").value = "14:30";
+      doc.querySelector('.tt-pick[data-day="2"]').click();
+      doc.getElementById("f-save").click();
+      await sleep(100);
+
+      eq(snap().courses.length, 4, "多了一条");
+      const chemistry = snap().courses.find((c) => c.name === "Chemistry");
+      eq(Boolean(chemistry), true, "Chemistry 真的存下来了");
+      eq(chemistry.day, 2, "落在周三");
+      eq(chemistry.start, "13:00", "开始时间");
+      eq(chemistry.end, "14:30", "结束时间");
+      eq(chemistry.room, "Lab 2", "房间");
+      eq(state.setCalls > setCallsBeforeAdd, true, "新增触发了一次写盘");
+      eq(blocks().some((el) => el.querySelector(".tt-name").textContent === "Chemistry"), true, "卡片上出现 Chemistry");
+
+      // ---- 10. 界面：删除 / Escape ----
+
+      const chemBlock = blocks().find((el) => el.querySelector(".tt-name").textContent === "Chemistry");
+      chemBlock.click();
+      await sleep(20);
+      doc.getElementById("f-delete").click();
+      await sleep(100);
+      eq(snap().courses.length, 3, "删除后回到三条");
+      eq(blocks().some((el) => el.querySelector(".tt-name").textContent === "Chemistry"), false, "卡片上也消失了");
+
+      doc.getElementById("add").click();
+      await sleep(20);
+      const lengthBeforeEscape = snap().courses.length;
+      doc.getElementById("f-name").value = "Should not save";
+      doc.getElementById("editor").dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await sleep(20);
+      eq(snap().editorOpen, false, "Escape 关闭编辑器");
+      eq(snap().courses.length, lengthBeforeEscape, "Escape 不保存");
+
+      // 焦点落在编辑器外面时（点了卡片背景），Escape 也得管用：那条监听挂在 window 上
+      doc.getElementById("add").click();
+      await sleep(20);
+      eq(snap().editorOpen, true, "编辑器又打开了");
+      doc.body.dispatchEvent(new win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await sleep(20);
+      eq(snap().editorOpen, false, "编辑器外面按 Escape 也能关");
+      eq(doc.getElementById("editor").classList.contains("is-open"), false, "编辑器真的收起来了");
+
+      // ---- 11. 配置：显示周末 ----
+
+      frame.contentWindow.postMessage(
+        {
+          __lattice: 1,
+          type: "config-changed",
+          payload: { config: { days: "7", dayStart: 8, dayEnd: 18, termStart: "" } },
+        },
+        "*",
+      );
+      await sleep(60);
+      eq(snap().days, 7, "配置改成七天");
+      eq(doc.querySelectorAll(".tt-dayhead").length, 7, "列头变成七天");
+      eq(blocks().length, 3, "周六的 Art 出现了（Math / Physics / Art）");
+
+      // ---- 12. 存储广播：另一个实例改了数据 ----
+
+      const broadcast = snap().courses.concat([
+        { id: "bio", name: "Biology", room: "D404", day: 1, start: "15:00", end: "16:00", color: 3, weeks: "all" },
+      ]);
+      state.stored = { courses: broadcast };
+      frame.contentWindow.postMessage(
+        { __lattice: 1, type: "store-changed", payload: { key: "timetable" } },
+        "*",
+      );
+      await sleep(120);
+      eq(snap().courses.length, 4, "store-changed 后重读到了新数据");
+      eq(blocks().some((el) => el.querySelector(".tt-name").textContent === "Biology"), true, "新课程画出来了");
+
+      frame.remove();
+      await sleep(30);
+
+      // ---- 13. 没有 storage 权限 ----
+
+      const denied = mountTimetable({ storageError: true, initial: [] });
+      const deniedApi = await apiOf(denied.frame, denied.ready);
+      eq(Boolean(deniedApi), true, "无权限时组件仍然加载");
+      if (deniedApi) {
+        eq(deniedApi.snapshot().storageDenied, true, "快照里标记了 storage 被拒");
+        eq(
+          denied.frame.contentDocument.getElementById("empty").textContent.includes("Grant storage permission"),
+          true,
+          "空状态告诉用户去授权",
+        );
+        denied.frame.remove();
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

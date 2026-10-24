@@ -80,6 +80,7 @@ npm run pack:widget -- examples/counter --out out/  # 指定目录
 | `permissions` | 否 | `[]` | 申请的平台权限，见下表 |
 | `network` | 否 | `{ "hosts": [] }` | 联网白名单，只有授予 `network` 时才起作用，见 §3.2 |
 | `interactive` | 否 | `true` | 要不要键盘输入。纯展示的组件设 `false`，见下 |
+| `shape` | 否 | `rect` | `rect` = 平台圆角卡片；`region` = 轮廓由组件上报（桌宠、挂件），见 §2.5 |
 | `appearance` | 否 | `{ "tint": "auto", "alpha": 1, "blur": 0 }` | 底板外观的出厂值，见 §2.2 |
 | `config` | 否 | `[]` | 可配置项，平台据此渲染属性面板表单，见 §2.3 |
 | `sdk` | 否 | `^0.1` | 依赖的 SDK 版本区间 |
@@ -96,6 +97,64 @@ npm run pack:widget -- examples/counter --out out/  # 指定目录
 * `false`：挂 WorkerW、保持 `WS_EX_NOACTIVATE`，是真正的"桌面背景"，最省事也最不打扰。
 
 **纯展示的组件（时钟、倒计时、天气）建议显式写 `false`**：少一次激活，也就不会在点桌面的时候抢焦点。
+
+### 2.5 `shape: "region"`：不是一张卡片的组件
+
+时钟、便签、待办都是**卡片**：底板、圆角、右上角那排窗饰都由平台画。但桌宠、
+悬浮挂件不是卡片 —— 它只有"身体那几块像素"存在，其余位置应该像桌面本身一样。
+
+清单里写 `"shape": "region"`，窗口就不再是矩形：
+
+```json
+"shape": "region",
+"layer": "top",
+"interactive": true
+```
+
+三件事同时发生：
+
+| 变化 | 含义 |
+| --- | --- |
+| 平台不裁圆角、不画底板、不画窗饰 | 一块被裁成宠物形状的窗口没有"卡片"可画 |
+| 可见性由 `window.setRegion` 决定 | 没上报之前窗口是**空的**（不是一块色块） |
+| 点击命中跟着区域走 | 区域外点下去，点到的是桌面或后面的窗口 |
+
+**画出来的形状必须等于上报的区域。** 这是这条路上唯一一条硬规矩，因为：
+
+- 画得比区域大 → 看得见的那一块点不到（"透明但能点"的反面：看得见、点不到）
+- 画得比区域小 → 没画的地方仍然会挡住桌面上的点击
+
+图片类组件（桌宠、悬浮挂件）的做法可以参考：轮廓在**构建期**从图片 alpha 算好、存成
+一张横条表（形如 `art/masks.json`），画图的位置和上报的坐标读同一张表，两边不会对不上。
+（运行期读 alpha 是不行的 —— 沙箱 iframe 是不透明源，`getImageData` 直接抛。）
+
+**美术约束（很重要）：**
+
+- **硬边缘**。区域外的像素不存在，投影、外发光、半透明羽化都会被切掉，边缘看着像刀切的。
+- **轮廓即包围盒**。别在身体四周留大片透明留白 —— 留白就是"能收到点击但看不见"的死区。
+- **动作用整体位移，不用形变**。拉伸 / 旋转会让区域和画面错位。走路 = 平移；眨眼这类不改变轮廓的动作随便做。
+- **窗口背景必须是透明的**，而且区域内能被看到的每一个像素都得是"画出来的"。
+
+**上报。** 坐标是**物理像素**、相对客户区左上角（和圆角裁剪同一个口径），
+所以要乘 `devicePixelRatio`：
+
+```js
+await call("window.setRegion", {
+  parts: [
+    { kind: "ellipse", x: 22, y: 14, w: 114, h: 92 },   // 头
+    { kind: "rect", x: 120, y: 108, w: 32, h: 13 },     // 尾巴
+  ],
+});
+```
+
+- `kind` 只有 `rect` / `ellipse` 两种；`w` / `h` 是宽高，不是右下角坐标
+- 最多 **256 块**（一块宠物十来块够了；几千块说明算错了，Rust 会拒）
+- 返回 `{ ok: true, applied: true }`；画布预览里是 `applied: false` —— 那里没有窗口，别继续报
+- 窗口尺寸变了（`resize`）要**重新上报**：平台不会替组件重算轮廓
+- 一块都不报（或报空数组）= 窗口什么都不是（空的），所以第一帧之前别清空它
+
+代价要说清楚：**区域边缘没有抗锯齿**（系统裁剪不做羽化），而且一旦开始上报，
+右上角的 ✕ 就不存在了 —— 组件得自己给退出口（桌宠用的是右键 → `window.close`）。
 
 ### 2.1 `icon`：组件图标
 
@@ -274,6 +333,7 @@ if (data.type === "config-changed") {
 | `network` | `network.fetch`（还要求清单里列了目标主机） | 可用 |
 | `media:control` | `media.get` / `media.control`（系统媒体会话，见 §4.4） | 可用 |
 | `audio:level` | `audio.level`（扬声器现在的响度，见 §4.5） | 可用 |
+| `shell:open` | `shell.open`（用系统默认浏览器打开 http/https 链接，见 §3.3） | 可用 |
 | `agent:activity` | `agent.activity`（本机 agent 做过的操作，读的是审计日志） | 可用 |
 
 只申请你真正用到的。申请一堆用不上的权限，用户会直接不装。
@@ -338,6 +398,31 @@ if (data.type === "config-changed") {
 
 写坏的条目只丢那一条，不让整包加载失败 —— 和图标同一个理由。丢掉的后果是那个主机连不上（明确的拒绝），而不是悄悄放宽。
 
+### 3.3 打开外链：唯一一扇"往外递东西"的门
+
+`shell.open` 把一条链接交给系统默认浏览器。它要 `shell:open`，而且**只放 `http` / `https`**。
+
+这一条必须单独说清楚，因为它是 §3.2 那套白名单的**另一面**：
+
+- `ShellExecuteW` 不认协议。`file:` 会把本地文件交给默认程序打开，`ms-settings:` 能直接翻到系统隐私设置页，`search-ms:` / 任何注册过的自定义协议一样照办。
+- 所以"打开链接"如果不限协议，就等于给组件一条绕开白名单的路 —— `file:///C:/Users/…` 比联网更彻底。
+
+允许的写法（和浏览器地址栏一致）：
+
+| 写法 | 打开 |
+| --- | --- |
+| `https://example.com/x` | 原样 |
+| `github.com` | `https://github.com/`（补协议头） |
+| `example.com:8080/x` | `https://example.com:8080/x`（冒号后是端口，不是协议） |
+
+其余一律拒，错误信息会说明"只支持 http/https"。规则只有一份实现在 `src-tauri/src/open_policy.rs`；桥那层只做形状检查（长度、非空），**别在组件里自己写一套放行规则**。
+
+三条边界：
+
+- **是"交给浏览器"，不是"在组件里显示网页"**。组件的 frame 仍然被 `egress.rs` 钉在自己的文档上，`shell.open` 不会改变这件事。
+- **撤权后返回 `permission_denied`**，组件要说人话（"需要「打开链接」权限"），不要静默失败 —— 用户点了没反应只会当成 bug。
+- **纯浏览器预览（`npm run dev`，没有 Tauri）里没有系统 shell**，这条路返回 `internal`。桌面应用里的画布实例是能打开的（走的是同一座桥）。
+
 
 ## 4. 桥 API
 
@@ -379,8 +464,10 @@ parent.postMessage(
 | `media.get` | `media:control` | — | 当前媒体会话，没有播放器时返回 `null`（不是错误），见 §4.4 |
 | `media.control` | `media:control` | `{ action }` | `{ ok }`；`action` 是 `playPause` / `next` / `previous` / `stop` |
 | `audio.level` | `audio:level` | — | `{ level, running }`；`level` 是 0..1，没有设备时 `running: false`，见 §4.5 |
+| `shell.open` | `shell:open` | `{ url }` | `{ ok: true }`；只收 http/https（`github.com` 这类会补成 https），见 §3.3 |
 | `agent.activity` | `agent:activity` | `{ limit? }` | `{ enabled, entries }`；`entries` 是审计日志最后几条，新的在**后**（组件自己倒序） |
 | `window.close` | — | — | 关闭当前组件实例的窗口，**但不删用户的 placement** |
+| `window.setRegion` | — | `{ parts }` | `{ ok, applied, parts }`；`shape: "region"` 才有 `applied: true`，见 §2.5 |
 
 **`window.close` 只是关窗，不是删组件。** 调用之后窗口消失，但用户摆在画布 / 桌面上的那个 placement 还在 `state.json` 里，下次启动照样回来；本次运行内不会再自动冒出来（平台记着"它自己退出了"）。真正删掉用户布局的只有用户自己按宿主页那颗 ✕。所以组件别把这个方法当"自毁"用 —— 它是"我先歇着"。
 
