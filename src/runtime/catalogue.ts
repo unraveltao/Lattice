@@ -407,6 +407,31 @@ export function isBlockedKey(key: string, blocked: readonly string[] | null | un
 }
 
 /**
+ * 随应用一起发的那份目录用的发布者公钥（`scripts/dev-publisher.key`）。
+ *
+ * 这把钥匙是**公开的** —— 它就躺在仓库里，谁都能拿它签一个包。所以它证明的只是
+ * "这个包和这份目录是一起生成的"，不是"这个人可信"。内置目录由 `npm run dev` /
+ * `npm run build` 现场用这把钥匙签出来（不签的话开箱就报"签名验不过"），而远端
+ * 目录用的是发布者自己的钥匙 —— 于是同一个组件在两条路上有两把钥匙。
+ *
+ * 后果：从内置目录装过的组件会钉下这把公开钥匙，等用户切到远端目录，卡片上就跳出
+ * "Publisher key changed"。那句话技术上没错，但它描述的是一次**没发生过的换人**：
+ * 两把钥匙都是我们自己发的。这类假警报最贵的代价不是烦人，是**训练用户闭眼点
+ * "Trust the new key"** —— 那正好把第三道校验（换钥匙必须由人点头）废掉。
+ *
+ * 所以钉这把钥匙没有意义，它不构成身份。忽略它，`planInstall` 才会把这条当成
+ * 一次普通安装。换 `scripts/dev-publisher.key` 时要同步改这里，否则老机器上会
+ * 重新开始弹提示。
+ */
+export const DEMO_PUBLISHER_KEY = "6fdd6b9e2a582e1495c8b91074613fad64af3dc2d5d6cf74ac96b21c1db9720b";
+
+/** 这把钥匙是不是"随应用发的那份目录"的公开钥匙（钉它不算身份） */
+export function isDemoPublisherKey(key: string | null | undefined): boolean {
+  if (!key) return false;
+  return normalizeKey(key) === DEMO_PUBLISHER_KEY;
+}
+
+/**
  * 公钥指纹：前 16 位，四段一组。
  * 只做"人对一眼"，不是校验 —— 校验永远比完整的 64 位 hex。
  */

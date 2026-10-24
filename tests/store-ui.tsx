@@ -20,6 +20,7 @@ import "../src/styles.css";
 import { LibraryPanel } from "../src/platform/LibraryPanel";
 import type { StoreBinding } from "../src/platform/CatalogueSection";
 import type { Catalogue, CatalogueEntry, CataloguePackage } from "../src/runtime/catalogue";
+import { DEMO_PUBLISHER_KEY } from "../src/runtime/catalogue";
 import type { WidgetRecord } from "../src/runtime/registry";
 
 const lines: string[] = [];
@@ -553,6 +554,35 @@ async function main() {
   helpDialog?.querySelector<HTMLButtonElement>(".lattice-icon-btn")?.click();
   await sleep(40);
   eq(document.querySelector(".lattice-modal.is-help"), null, "关掉之后框就没了");
+
+  /*
+   * ---- 8. 公开的演示钥匙不算身份 ----
+   *
+   * 内置目录（随应用发的那份）用仓库里那把公开钥匙签，远端目录用发布者自己的
+   * 钥匙。同一条目在两处有两把钥匙，于是"从内置目录装过"的人一切源就会看到
+   * "Publisher key changed" —— 而那是一次没发生过的换人。
+   *
+   * 钉住公开钥匙不该产生这个提示；钉住**别的**钥匙当然还要提示（下面第二条）。
+   */
+  render({ store: { ...store, pinnedKeys: { "lattice.note": DEMO_PUBLISHER_KEY } } });
+  await sleep(60);
+  const noteDemoPin = cardById("lattice.note");
+  log(
+    noteDemoPin?.textContent?.includes("Install") ?? false,
+    "钉的是公开演示钥匙 -> 照常 Install，不弹换钥匙",
+  );
+  log(
+    !(noteDemoPin?.textContent?.includes("Publisher key changed") ?? false),
+    "钉的是公开演示钥匙 -> 不说\"换人了\"",
+  );
+
+  render({ store: { ...store, pinnedKeys: { "lattice.note": OTHER_KEY } } });
+  await sleep(60);
+  const noteRealPin = cardById("lattice.note");
+  log(
+    noteRealPin?.textContent?.includes("Publisher key changed") ?? false,
+    "钉的是别的发布者钥匙 -> 照样要人点头（这道闸没被上面的例外拆掉）",
+  );
 
   // ---- 7. 搜索同时过滤目录段，而且无视折叠 ----
   render();

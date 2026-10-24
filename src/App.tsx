@@ -29,6 +29,7 @@ import {
 import {
   addedPermissions,
   isBlockedKey,
+  isDemoPublisherKey,
   keyFingerprint,
   type CatalogueEntry,
   type CataloguePackage,
@@ -563,7 +564,12 @@ export default function App() {
       setCatalogueBusyId(entry.id);
       try {
         const result = await installCataloguePackage(entry, pkg);
-        trustKey(entry.id, key);
+        /*
+         * 公开的演示钥匙不钉。内置目录（随应用发的那份）就是用它签的，而远端
+         * 目录用发布者自己的钥匙 —— 钉住前者，用户切到远端就会被问一次
+         * "换人了没有"，而那两把钥匙都是我们自己发的。详见 `isDemoPublisherKey`。
+         */
+        if (!isDemoPublisherKey(key)) trustKey(entry.id, key);
         // 内置包也要显式"安装"（不变量 1）；用户目录里的包本来就算已装，
         // 多记一次没有副作用
         installWidget(entry.id);

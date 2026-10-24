@@ -485,6 +485,12 @@ public/widgets/<id>/
 
 已修（别再改回去）：**SDK 是"随包分发的普通文件"，不是 npm 依赖**。`packages/sdk/lattice.js` 是唯一真源，每个用到它的组件目录里都有一份拷贝（`scripts/sdk-sync.mjs` 负责刷，`--check` 只查不改）。改 SDK 之后**必须跑 `npm run sdk:sync`**，否则 `npm run test:sdk` 会红 —— 那条测试就是为"忘了同步"准备的，别把它删了。`public/widgets/` 下的官方组件**刻意不用 SDK**：它们是"不装 SDK 也能写"的证明，也是 SDK 的唯一回归基准。
 
+已修（别再改回去）：**公开的演示钥匙不算身份**。内置目录（随应用发的那份 `public/store/`）是 `npm run dev` / `npm run build` 现场用仓库里那把**公开的** `scripts/dev-publisher.key` 签出来的（不签的话开箱就报"签名验不过"），而远端目录用发布者自己的钥匙 —— 于是同一个组件在两处有两把钥匙。以前从内置目录装过的人一切源就会看到红色的 "Publisher key changed"，而那是一次**没发生过的换人**：两把钥匙都是我们自己发的。现在 `runtime/catalogue.ts::isDemoPublisherKey` 把那把公开钥匙排除在钉子之外（`CatalogueSection` 算 plan 时当它不存在，`App.tsx` 也不写进 `trustedKeys`）。四条别踩回去：
+- **这个例外只针对那一把公开钥匙，不要扩成"某几个 id 免检"**。给具体组件开后门，等于把第三道校验拆了。
+- **换 `scripts/dev-publisher.key` 要同步 `DEMO_PUBLISHER_KEY`**，否则老机器上会重新开始弹提示（常量旁边写着原因）。
+- **别的钥匙照样要人点头**。`tests/store-ui.tsx` 最后那段有两条对照：钉演示钥匙 → 照常 Install；钉别的发布者钥匙 → 仍然 "Publisher key changed"。
+- **两把钥匙这件事本身是设计**（内置那份必须能在 clone 下来之后直接签），不是待修的 bug。要"统一成一把"，得先解决"没有私钥的机器怎么跑 `npm run dev`"。
+
 ---
 
 ## 9. 踩过的坑

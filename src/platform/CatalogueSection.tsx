@@ -20,6 +20,7 @@ import { useMemo, useState } from "react";
 import {
   addedPermissions,
   isBlockedKey,
+  isDemoPublisherKey,
   keyFingerprint,
   planInstall,
   type CatalogueEntry,
@@ -123,12 +124,18 @@ export function CatalogueSection({
     return entries
       .map((entry) => {
         const installedVersion = store.installedVersions.get(entry.id) ?? null;
+        const pinned = store.pinnedKeys[entry.id];
         return {
           entry,
           installed: installedIds.has(entry.id),
           plan: planInstall(entry, {
             installedVersion,
-            pinnedKey: store.pinnedKeys[entry.id] ?? null,
+            /*
+             * 公开的演示钥匙不算身份（`isDemoPublisherKey` 里写了为什么）：
+             * 内置目录就是用它签的，而远端目录用发布者自己的钥匙 —— 同一份组件
+             * 在两处有两把钥匙，钉住前者只会在切源时制造一次"换人了"的假警报。
+             */
+            pinnedKey: isDemoPublisherKey(pinned) ? null : (pinned ?? null),
             blockedKeys: store.blockedKeys,
           }),
           versionPlan: planInstall(entry, { installedVersion, pinnedKey: null, blockedKeys: null }),

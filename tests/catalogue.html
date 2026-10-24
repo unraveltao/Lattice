@@ -33,7 +33,9 @@
        */
       import {
         addedPermissions,
+        DEMO_PUBLISHER_KEY,
         isBlockedKey,
+        isDemoPublisherKey,
         isNewer,
         keyFingerprint,
         latestPackage,
@@ -260,6 +262,17 @@
         eq(isBlockedKey(KEY.toUpperCase(), [KEY]), true, "大小写不同也算命中");
         eq(isBlockedKey(OTHER_KEY, [KEY]), false, "别的钥匙不误伤");
         eq(isBlockedKey("", [""]), false, "空钥匙不会被空名单项命中");
+
+        /*
+         * 内置目录用公开的演示钥匙签，远端目录用发布者自己的钥匙。钉住前者会在
+         * 切源时弹一次"换人了"——那是一次没发生过的换人，所以它不算身份。
+         */
+        eq(isDemoPublisherKey(DEMO_PUBLISHER_KEY), true, "演示钥匙认得出来");
+        eq(isDemoPublisherKey(DEMO_PUBLISHER_KEY.toUpperCase()), true, "大写写法也认得出来");
+        eq(isDemoPublisherKey(KEY), false, "发布者自己的钥匙不是演示钥匙");
+        eq(isDemoPublisherKey(""), false, "空钥匙不是演示钥匙");
+        eq(isDemoPublisherKey(null), false, "没有钉子的时候不报错");
+        eq(isDemoPublisherKey(undefined), false, "undefined 也不报错");
 
         eq(planInstall(clock, { blockedKeys: [KEY] }).kind, "blocked", "拉黑 -> 不装");
         eq(planInstall(clock, { blockedKeys: [KEY] }).key, KEY, "blocked 带着那把钥匙，界面要能解黑");
