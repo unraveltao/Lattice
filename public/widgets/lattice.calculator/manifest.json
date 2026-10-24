@@ -1,7 +1,7 @@
 {
   "id": "lattice.calculator",
   "name": "Calculator",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "An expression calculator with a running history, plus Base64 / URL encoding and MD5",
   "author": "Lattice",
   "entry": "index.html",
@@ -73,6 +73,12 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.1.1",
+      "changes": [
+        "The title bar now leaves room for the window buttons, so the Hash tab is no longer covered."
+      ]
+    },
     {
       "version": "0.1.0",
       "changes": [

@@ -1,7 +1,7 @@
 {
   "id": "lattice.stopwatch",
   "name": "Stopwatch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Counts up, with laps — keeps running while the card is closed",
   "author": "Lattice",
   "entry": "index.html",
@@ -37,6 +37,12 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.1.1",
+      "changes": [
+        "The reading no longer runs under the window buttons in the top-right corner."
+      ]
+    },
     {
       "version": "0.1.0",
       "changes": [

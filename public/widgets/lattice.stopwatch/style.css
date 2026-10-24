@@ -32,6 +32,26 @@ body {
   gap: 6px;
 }
 
+/* ---------- 标题栏（同时给窗饰让位） ---------- */
+
+.sw-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  /* 120px 是窗饰的实际占地，与待办 / 系统监视器 / 媒体保持一致 */
+  padding-right: 120px;
+}
+
+.sw-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* ---------- 读数 ---------- */
 
 .sw-time {

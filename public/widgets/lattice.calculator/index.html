@@ -11,6 +11,16 @@
       转一下、算个哈希是同一件事的三步，分开放只会让人装三个卡片找哪个是哪个。
     -->
     <main class="calc" id="root">
+      <!--
+        顶上这条 22px 是标题栏，也是给窗饰让位的那一条。桌面窗口的五个功能
+        按钮浮在右上角 6px 处、约 120×28，指针一进窗口就现身 —— 页签原本从
+        8px 就开始排，最右边那颗「Hash」正好压在按钮下面，点下去点到的是「收回」。
+        和待办 / 系统监视器 / 媒体一样：标题栏留 `padding-right: 120px`。
+      -->
+      <header class="calc-head">
+        <span class="calc-title">Calculator</span>
+      </header>
+
       <nav class="calc-tabs" role="tablist">
         <button type="button" class="calc-tab is-active" data-pane="calc" role="tab">Calc</button>
         <button type="button" class="calc-tab" data-pane="encode" role="tab">Encode</button>

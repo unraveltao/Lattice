@@ -34,11 +34,19 @@ body {
 
 /* ---------- 头部 ---------- */
 
+/*
+ * 这一条既是月份栏，也是给窗饰让位的那一条。
+ *
+ * 桌面窗口的五个功能按钮浮在右上角 6px 处、约 120×28，指针一进窗口就现身。
+ * 月份栏原来铺满整张卡片，最右边那颗「›」正好落在按钮底下 —— 点"下个月"
+ * 点到的是"收回"。留出 120px 之后标题变窄，所以下面允许它省略号截断。
+ */
 .cal-head {
   display: flex;
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
+  padding-right: 120px;
 }
 
 .cal-nav {
@@ -62,6 +70,11 @@ body {
 /* 标题能点（回今天），所以写成按钮 —— 不然键盘用户够不到它 */
 .cal-title {
   flex: 1 1 auto;
+  /* 让位给窗饰之后标题窄了，长月份名宁可截断也别把「›」挤出去 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 2px 4px;
   border: 0;
   border-radius: 6px;

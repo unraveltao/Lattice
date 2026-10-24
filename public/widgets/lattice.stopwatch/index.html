@@ -12,6 +12,15 @@
       240 宽 —— 把"当前状态不该有的那个动作"藏进同一个位置更省地方。
     -->
     <main class="sw" id="root">
+      <!--
+        22px 标题栏，同时给窗饰让位。桌面窗口的五个功能按钮浮在右上角 6px
+        处、约 120×28 —— 读数原来从 8px 就开始排，34px 的字正好横穿那块地方，
+        右上角那截数字被按钮压住。和待办 / 系统监视器 / 媒体同一条规矩。
+      -->
+      <header class="sw-head">
+        <span class="sw-title">Stopwatch</span>
+      </header>
+
       <div class="sw-time" id="time">00:00.00</div>
 
       <div class="sw-actions">

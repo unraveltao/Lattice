@@ -1,7 +1,7 @@
 {
   "id": "lattice.calendar",
   "name": "Calendar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Month view with your own events — click a day, type a line",
   "author": "Lattice",
   "entry": "index.html",
@@ -52,6 +52,12 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.1.1",
+      "changes": [
+        "The month buttons moved clear of the window buttons in the top-right corner."
+      ]
+    },
     {
       "version": "0.1.0",
       "changes": [

@@ -73,7 +73,7 @@ src/
     screen-fit.ts         纯几何：锚点选屏、夹紧（入参一律物理像素，`tests/screen-fit.html` 钉着）
     close-guard.ts        ✕ 该不该认这一下：指针序列 + 命中测试（纯函数，`tests/close-guard.html` 钉着）
     agent.ts              agent 动作执行器：白名单动作走真 store，回快照（`tests/agent.html` 57 条）
-    align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，画布边界也是候选（纯函数，`tests/align-guides.html` 钉着）
+    align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 单包命中判定（纯函数，`tests/library-search.html` 钉着）
     debug.ts              调试总线：环形缓冲 400 条、攒批镜像到主窗口、过滤 / 统计纯函数
     semver.ts             版本号与范围：解析 / 比较 / `^ ~ >= <= > < =` / 通配 / `||`（纯函数，`tests/semver.html` 钉着）
@@ -101,6 +101,9 @@ src-tauri/src/
   protocol.rs             lattice-widget:// 静态文件服务（用户组件的 HTML/CSS/JS）
   csp.rs                  组件文档的 CSP：一处生成策略，protocol.rs 只负责挂头
   egress.rs               出网闸门：WebView2 层拦帧导航，组件出不去
+  guides.rs               桌面参考线：邻居窗口矩形 + 工作区交给前端算吸附，再把线交给叠层窗口
+  guides_overlay.rs       参考线的两条 1px `WS_EX_LAYERED` 窗口 + 专用消息线程（不是透明 WebView2）
+  guide_policy.rs         上面那道的纯逻辑：虚线节拍、端头淡入、颜色解析（9 条 `rustc --test`）
   network.rs              出网代理（WinHTTP）：权限 → 白名单 → 形状，三道闸
   network_policy.rs       上面那道的纯逻辑：URL 解析 + 主机白名单匹配 + 白名单来源（12 条单测）
   crash.rs                ICoreWebView2::add_ProcessFailed 胶水：认崩溃类型、记账、重载
@@ -376,6 +379,8 @@ public/widgets/<id>/
 
 **守卫是"开关 + 子类化"两件事，顺序不能反。** 开关是一个窗口属性（`set_sink`，任意线程可同步翻转），子类化只能回窗口线程装（`install_guard`，跨线程会静默返回 0）。`apply_to` 里必须**先翻开关再落层级**：否则切"置顶"那一下的 `HWND_TOPMOST` 会被还活着的守卫吃掉，组件永远上不去。
 
+**想往屏幕上画东西，先想清楚能不能用"两条 1px 叠层窗口"。** 桌面拖拽的对齐参考线（`guides_overlay.rs`）就是这条路：`WS_EX_LAYERED | WS_EX_TRANSPARENT` 的 1px 窗口 + `UpdateLayeredWindow` 逐像素 alpha，一条竖的一条横的，**不是**一个透明 WebView2 窗口（逐像素透明的 WebView2 在软件渲染的机器上建不出来，见上面那条 `0x8007139F`）。五条别踩回去：① 窗口归**专用线程**所有、由它泵消息，跨线程 `SetWindowPos` / `UpdateLayeredWindow` 会等窗口线程处理，而窗口线程不泵消息就互相等死；② 位图只跟屏幕尺寸/颜色有关，拖动时只 `UpdateLayeredWindow` 换位置，**别每帧重建全屏位图**（3456×1080×4 是 15MB）；③ 每帧 `SetWindowPos(HWND_TOPMOST)` 提一次 —— 被拖的那扇窗口常常正好压在线上；④ 收线不能只靠前端：宿主页崩了就没人发 `Hide`，叠层线程 4 秒没新坐标要自己收（前端拖动期间每秒补一发心跳，所以"指针停住看对齐"不会误触发）；⑤ 线形和画布用同一套数（中段实线、两端 4px/4px 虚线、62% 亮度），`guide_policy.rs` 是像素规则、`styles.css` 的 `.lattice-guide` 是对应写法 —— 而 CSS 那两层**必须是兄弟伪元素**：`mask-image` 会连子内容一起遮，把实线遮罩写在元素自己身上会把 `::after` 的虚线一起掐掉。
+
 **不要加 `--disable-gpu-compositing`**，它会关掉 DirectComposition，WebView2 建不出来（`HRESULT 0x8007139F`）。GPU 相关的启动参数在 `lib.rs`，用 `LATTICE_GPU=1` 可以恢复默认。
 
 ---
@@ -473,6 +478,18 @@ public/widgets/<id>/
 已修（别再改回去）：iframe 的沙箱必须带 `allow-forms`。少了这一位，浏览器会把表单提交整条拦掉 —— `submit` 事件不触发、控制台不报错，组件里"输入框 + 回车"这种最普通的写法静默失效（待办清单就这么空转了一整版：字打得进去，回车没反应，列表永远是"Nothing here yet"）。`tests/todo-add.html` 钉住了这件事：同一条提交路径，有 `allow-forms` 就写盘，没有就 0 次写盘。改沙箱属性时两处一起改：`src/widgetHost.ts`（桌面窗口）和 `src/platform/WidgetFrame.tsx`（画布）。
 
 已修（别再改回去）：右上角那块地方要让给窗饰。桌面窗口的功能图标浮在 `top: 6px; right: 6px`，大约 120×28（五颗按钮），鼠标一进卡片就淡入，而且**真的能点**。组件把输入框、按钮、可点列表项摆在那儿，用户点下去点到的是"收回"。待办清单的解法是顶部先放一条 22px 标题栏（`padding-right: 120px`），窗饰正好落在标题栏右端。新组件照抄这条，或者整块内容避开右上角。**给窗饰加按钮时，两个组件的 `padding-right` 和 `tests/note-layout.html` 的 `PILL_WIDTH` 要一起加**，否则正文又被压住。
+
+补一次（2026-10-24）：**这条以前只是"新组件照抄"，没人回头量过老组件**。写了个一次性探针 `.scratch/chrome-fit.html`，把 14 个包按各自清单里的尺寸放进 iframe，量出所有落在右上角那块 120×28 里的元素（带内容的、可点的才算），结果三条中枪：
+- **`lattice.calculator`** —— 页签从 8px 就开始排，最右边那颗 `Hash` 整颗在按钮底下（`x 198–290, y 10–31`）。加了一条 22px 标题栏。
+- **`lattice.calendar`** —— 月份栏铺满整张卡片，`›`（下个月）在 `x 270–292`，标题右半截也在底下。给 `.cal-head` 加 `padding-right: 120px`，标题允许省略号截断。
+- **`lattice.stopwatch`** —— 34px 的读数从 8px 起排，右上角那截数字被压住。同样加了 22px 标题栏。
+
+三个都升到 0.1.1 并补了 changelog。改完再跑一遍探针：`affected=0`。**新组件一律先跑这个探针再交付** —— 它量的是真布局，不是"看起来没问题"。用法：`npm run dev` 起着，然后
+```bash
+chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
+  --dump-dom http://localhost:1420/.scratch/chrome-fit.html
+```
+预算要给到 25 秒（14 个 iframe 依次加载，9 秒截到的是半截）。探针只打印不断言，别塞进 `npm run test:browser`：那里每个页面只有 9 秒。
 
 同一条规矩还有个"看不见"的版本：**正文从顶上就开始排的组件**（便签）不会"点错"，而是正在写的那一行被压住 —— 打字的人手不离键盘、指针一动不动，窗饰也就不动。所以那 24px 里别留空带，放一条真信息（便签放的是保存状态）。判据是正文起点 `y ≥ 34`（窗饰下沿），`tests/note-layout.html` 直接量这个数。
 
