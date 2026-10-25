@@ -111,8 +111,13 @@ jobs:
             exit 0
           fi
           gh release view "$TAG" --json body -q .body > notes.md
+          # 上一次跑留下的那一段先切掉。重跑同一个 tag 是常事（改了代码重打、
+          # 或者 action 那步失败重试），而 `gh release edit` 是**整份替换**进来的
+          # 这几行：不切的话 notes 里会攒出两段 `### SHA-256`，后一段是新的、
+          # 前一段是上一版安装包的哈希 —— 用户照着核对，核对的是旧的。
+          awk '/^### SHA-256$/{exit} {print}' notes.md > notes-base.md
           {
-            cat notes.md
+            cat notes-base.md
             printf '\n### SHA-256\n\n'
             printf 'Verify the download before running it:\n\n'
             printf '```\n'

@@ -96,6 +96,8 @@ npm run tauri:build    # 出安装包
 
 **第 3 步别勾 "Set as a pre-release"。** 勾了之后 release 页面正常、产物都在，唯独更新器会去敲的那个地址是 404，而它报出来的话是「检查你的网络」—— 症状和原因长得完全不像。完整的一条在 [`../PITFALLS.md`](../PITFALLS.md)「目录、签名与网络」。
 
+**草稿还没发布之前，打错的 tag 可以重打。** `git push --delete origin v0.x.y`，把 tag 指到修好的那个提交再推一次即可：tauri-action 是**在所有 release 里按 tag 名**找那份草稿（草稿用 `getReleaseByTag` 查不到，只能翻列表），找到就删掉同名产物重传，`### SHA-256` 那一段也先切掉旧的再写。发布之后就**不是**重打了 —— 那时候已经装上的用户手里是另一份二进制，重打等于把一个版本号对应两份东西。
+
 ## 六、密钥与产物速查
 
 | | 组件 | 平台 |
@@ -116,7 +118,7 @@ npm run tauri:build    # 出安装包
 | --- | --- | --- |
 | `frontend` | `typecheck` → `build` → `test:injection` → `test:sdk` → `test:agent` → `test:tokens` → `check:tokens` → `check:docs` | 都不需要 dev server，几秒钟跑完 |
 | `browser` | 起 dev server → `test:browser`（全部 `tests/*.html`） | 页面 import 的是 `.ts` / `.tsx`，必须有转译；本机也能跑，只是慢 |
-| `rust` | `cargo test --lib` | **本机跑不了**（安全策略拦 `target/debug/deps` 下的 exe），runner 是唯一的机会 |
+| `rust` | `cargo test --lib` | **本机跑不了**（安全策略拦 `target/debug/deps` 下的 exe），runner 是唯一的机会 —— 而 `release.yml` **不跑**这一格，所以动过没有壳子的 `#[cfg(test)]` 就先推 `main` 等它绿，再打 tag |
 
 `ci.yml` 里有一句话值得抄在这儿：**不写具体条数**。写过一次，写的时候就已经过期了 —— 没有人会去核一个注释。要数字就跑命令，或者看 README（那个有 `check:docs` 盯着）。
 
