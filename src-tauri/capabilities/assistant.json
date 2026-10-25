@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "assistant",
-  "description": "assistant 桌面小窗：拖标题栏、收听 / 收起自己（关窗口 = 藏起来，不销毁）",
+  "description": "assistant 桌面小窗：拖标题栏、拖边缩放、收听 / 收起自己（关窗口 = 藏起来，不销毁）",
   "windows": ["assistant"],
   "permissions": [
     "core:default",
@@ -12,6 +12,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-outer-position",
     "core:window:allow-scale-factor",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "core:window:allow-set-size",
+    "core:window:allow-inner-size"
   ]
 }
