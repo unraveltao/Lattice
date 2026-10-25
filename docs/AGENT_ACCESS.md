@@ -185,7 +185,7 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 
 ## 3. C agent 当组件 `[已实现，组件后来删了]`
 
-> **v0.10 末尾把这块看板连包删了**（用户原话："widgets 里的 now playing 和 agent 没有什么作用"）。删掉的是组件包，**不是这条口子**：`agent.activity` 与 `agent:activity` 权限还在 `WIDGET_SPEC` 的方法表里，第三方组件想自己画一块日志看板随时能接。读日志的默认姿势于是回到终端：`npm run agent -- state`。下面几节记的是当初为什么不做聊天窗 —— 那条判断不受影响。
+> **v0.10 末尾把这块看板连包删了**（用户原话："widgets 里的 now playing 和 agent 没有什么作用"；那句里的 "now playing" 说的是商店目录里一条旧条目，不是本仓库的组件 —— 音乐组件 `lattice.music` 留了下来）。删掉的是组件包，**不是这条口子**：`agent.activity` 与 `agent:activity` 权限还在 `WIDGET_SPEC` 的方法表里，第三方组件想自己画一块日志看板随时能接。读日志的默认姿势于是回到终端：`npm run agent -- state`。下面几节记的是当初为什么不做聊天窗 —— 那条判断不受影响。
 
 一个官方组件 `lattice.agent`，但它**不是聊天窗，也不带模型**。
 
