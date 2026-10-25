@@ -11,12 +11,12 @@ code: src-tauri/src/assistant_window.rs, src-tauri/src/desktop.rs, src/platform/
 > ② 底板**跟组件同一套 appearance**（tint / alpha / blur）；③ 能**锁住、能拖边放大缩小**。
 > 这三件事都不碰组件协议，但都碰窗口行为与一份落盘文件，所以先写这一份。
 
-> **现在的状态：Rust 侧写完了，命令没接上。** `assistant_window.rs` 里 `Mode` / `Appearance` /
-> `locked` / `assistant-window.json` v2 / `apply_mode` 都在，`resizable(true)` 也改过来了；
-> 但 `lib.rs` 的 `invoke_handler` 里只注册了 `toggle` / `hide` / `save_pos` 三条，
-> **`state` / `mode` / `appearance` / `locked` / `save_rect` 五条还没挂上去**（文件里那句
-> `#[allow(dead_code)] // 接线在下一步` 就是这件事）。所以界面拿不到"现在是哪种模式"，
-> 也改不了底板和锁 —— 不是"还没做"，是"做了一半、接上就能用"。
+> **现在的状态：接线完成。** `assistant_window.rs` 的八条命令全部挂了 `#[tauri::command]`、
+> 并在 `lib.rs` 的 `invoke_handler` 里注册（`toggle` / `hide` / `save_pos` / `state` / `mode` /
+> `appearance` / `locked` / `save_rect`，一律 `async fn` —— 同步命令会占着主线程去等主线程）。
+> 面板开局读 `state`、改底板与改锁都拿返回值覆盖本地，所以标题栏那颗药丸、底板面板、锁
+> 已经真的生效了。**还剩的**只有第 6 节那几条真机验收（要人点一次：桌面模式下打字、
+> 锁上拖不动、拉大之后重启还是这个尺寸）。
 > 下面第 1 节描述的是**动手之前**的样子，别拿它当现状读。
 
 ## 1. 问题
@@ -184,9 +184,9 @@ assistant 仍然是"平台的一部分，不是组件"（`assistant_window.rs` �
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/assistant-window.html` | ~16 | v1→v2 迁移、坏值逐项退回、`clampRect` 夹进工作区与最小尺寸、`normalizeAppearance` 的出厂值不动令牌 |
-| `src-tauri/src/assistant_window_policy.rs` | ~10 | `rustc --test`：模式字面量只有两个、rect 夹紧、v1 迁移、尺寸上下限 |
-| 手工 | — | **拖动已验证**：真机上连拖四次，位移与光标一一对应（100×60 × 4），落盘的 rect 跟着变；v1 的 `{x, y}` 真文件也升成了 v2。仍待验（要等命令接线）：桌面模式下 Win+D / 被应用盖住之后还在、点它敲字能进输入框、锁上拖不动、拉右下角到 900×700 松手重启还是这个尺寸、切回浮窗对话一行没少 |
+| `tests/assistant-window.html` | 33（跑过） | v1→v2 迁移、坏值逐项退回、`clampRect` 夹进工作区与最小尺寸、`normalizeAppearance` 的出厂值不动令牌 |
+| `src-tauri/src/assistant_window_policy.rs` | 11（跑过） | `rustc --test`：模式字面量只有两个、rect 夹紧、v1 迁移、尺寸上下限 |
+| 手工 | — | **拖动已验证**：真机上连拖四次，位移与光标一一对应（100×60 × 4），落盘的 rect 跟着变；v1 的 `{x, y}` 真文件也升成了 v2。**命令已接线**：八条 `#[tauri::command]` 全在 `invoke_handler` 里（`cargo check --all-targets` 过），面板读得到模式 / 底板 / 锁。仍待验：桌面模式下 Win+D / 被应用盖住之后还在、点它敲字能进输入框、锁上拖不动、拉右下角到 900×700 松手重启还是这个尺寸、切回浮窗对话一行没少 |
 
 **不做的**：9 个方向的缩放手柄只做三个；不提供"反向缩放"（画面缩放）—— 那会让字体一起变大，
 和"把面板拉宽"是两件不同的事，混在一起用户分不清。这两条写在这里，不是"以后再随便加"。

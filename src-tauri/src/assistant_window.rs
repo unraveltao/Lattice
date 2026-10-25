@@ -459,9 +459,11 @@ fn save_current_rect(app: &AppHandle, window: &tauri::WebviewWindow) -> Result<(
 // 也是这么定下来的，见 lib.rs §5）。`hide` / `save_pos` 本身不建窗口，但一起做成
 // async，免得下次有人在这里加一句 `build()` 又踩一遍。
 //
-// 0007 的五条（state / mode / appearance / locked / save_rect）**还没接线**：
-// 它们要进 `lib.rs` 的 `invoke_handler`，而那个文件此刻在另一个会话手里。
-// 挂命令宏与注册放在同一个提交里做，所以这里先只有函数体。
+// 0007 的五条（state / mode / appearance / locked / save_rect）和上面三条同一批接线：
+// 命令宏挂在这里，注册在 `lib.rs` 的 `invoke_handler`。**`mode` 与 `save_rect` 必须
+// async** —— 它们要 `apply_mode` / `apply_rect` 去改窗口层级和位置，那是主线程的活，
+// 同步命令会占着主线程等自己（理由同上一条）。面板开局读一次 `state`、改一次底板或锁
+// 都拿返回值覆盖本地状态，所以这五条都返回 `WindowState`（改不动的两次给 `Result`）。
 
 #[tauri::command]
 pub async fn assistant_window_toggle(app: AppHandle) -> Result<bool, String> {
@@ -487,14 +489,14 @@ pub async fn assistant_window_save_pos(app: AppHandle) -> Result<(), String> {
 
 /// 现在这一份状态（模式、位置尺寸、底板、锁）。面板开局读一次，
 /// 之后每次改都拿返回值覆盖 —— **别在页面里另攒一份权威**
-#[allow(dead_code)] // 接线在下一步：挂命令宏、在 `lib.rs` 注册
-pub fn assistant_window_state(app: AppHandle) -> WindowState {
+#[tauri::command]
+pub async fn assistant_window_state(app: AppHandle) -> WindowState {
     load_state(&app)
 }
 
 /// 换模式。窗口已经开着的话**就地改层级**（不重建 = 对话不丢）
-#[allow(dead_code)]
-pub fn assistant_window_mode(app: AppHandle, mode: String) -> Result<WindowState, String> {
+#[tauri::command]
+pub async fn assistant_window_mode(app: AppHandle, mode: String) -> Result<WindowState, String> {
     let mut state = load_state(&app);
     state.mode = Mode::from_str(&mode);
     if let Some(window) = app.get_webview_window(LABEL) {
@@ -505,8 +507,8 @@ pub fn assistant_window_mode(app: AppHandle, mode: String) -> Result<WindowState
 }
 
 /// 改底板。**归一化在这里做**（非法值退回出厂），前端只负责把滑杆的值送上来
-#[allow(dead_code)]
-pub fn assistant_window_appearance(app: AppHandle, appearance: Appearance) -> WindowState {
+#[tauri::command]
+pub async fn assistant_window_appearance(app: AppHandle, appearance: Appearance) -> WindowState {
     let mut state = load_state(&app);
     state.appearance = appearance;
     normalize_state(&mut state, screen_area(&app));
@@ -515,8 +517,8 @@ pub fn assistant_window_appearance(app: AppHandle, appearance: Appearance) -> Wi
 }
 
 /// 锁 / 解锁。锁的是**位置与尺寸**，不锁内容（和组件的 `locked` 同一句话）
-#[allow(dead_code)]
-pub fn assistant_window_locked(app: AppHandle, locked: bool) -> WindowState {
+#[tauri::command]
+pub async fn assistant_window_locked(app: AppHandle, locked: bool) -> WindowState {
     let mut state = load_state(&app);
     state.locked = locked;
     save_state(&app, &state);
@@ -526,8 +528,8 @@ pub fn assistant_window_locked(app: AppHandle, locked: bool) -> WindowState {
 /// 缩放结束：夹一次、落到窗口上、存盘。
 /// 前端已经夹过一遍，这里再判一次 —— **Rust 是唯一真源**，渲染进程的 bug
 /// 不该让窗口变成"0 宽"或者跑到屏外
-#[allow(dead_code)] // 接线在下一步
-pub fn assistant_window_save_rect(app: AppHandle, rect: Rect) -> Result<WindowState, String> {
+#[tauri::command]
+pub async fn assistant_window_save_rect(app: AppHandle, rect: Rect) -> Result<WindowState, String> {
     let mut state = load_state(&app);
     state.rect = rect;
     normalize_state(&mut state, screen_area(&app));

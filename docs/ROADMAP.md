@@ -28,24 +28,24 @@
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
 | v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的**会话与观察已落地**（`assistant-sessions/<id>.json` 一条会话一个文件，50 份 / 200 条 / 1 MB 三道额度，面板顶部一条能挑回 / 新开 / 删的会话条，提示词里补了组件说明首句与商店那一段），**审批档也落了**（`approvalMode` 三档 `ask` / `auto` / `readonly`，`readonly` 连 schema 都不给、Rust 再拒一次，`auto` 仍然问删除），**B 数据平面也落了**（组件清单加 `agent.tools`：工具名 `widget.<id>.<tool>`、多份实例合成一条、新权限 `agent:tools` 独立授权、答话的是画布那一份实例、回话超 4000 字符拒绝不截断；留了三处缺口，见下面那条） |
 | v0.12 | 技能包、工作区与两个模式 | ✅ 完成 | `workspace` 从"相对路径的默认值"变成"免问区"（只对 `file.write`）；技能是说明书不是权限 —— `skills/<id>/SKILL.md` 进提示词、四条命令、`assistant.json` v4 的 `skills.enabled`，见 [design/0005](./design/0005-skills-and-workspace.md)；**两个模式**（内部 / 完全访问）是一个存盘的开关：内部 = 桌面动作 + 组件工具 + **你拨开的那几组手**（默认六组全关）、审批照档；完全访问 = 六组全开、审批不问、审计 fail-closed，启用走一道 DSH 形状的确认（风险段 + 四条硬线 + 必须勾的「我明白风险」+ 灰着的 Enable），见 [design/0009](./design/0009-assistant-modes.md)；不是第四档审批（0006 的定时授权已被它推翻） |
-| v0.13 | assistant 上桌面 | 📝 设计稿 | 两种窗口模式（浮窗 / 桌面，同一窗口不重建）：桌面模式走 `interactive` 那条路（不挂 WorkerW —— 挂了就拿不到键盘焦点，聊天框等于废了）；底板复用组件那套 appearance（tint / alpha / blur，出厂值一像素不改）；可锁、可拖边缩放（320×420 起，夹进工作区）；状态在 `assistant-window.json` v2，见 [design/0007](./design/0007-assistant-on-desktop.md) |
+| v0.13 | assistant 上桌面 | 🟡 进行中 | 两种窗口模式（浮窗 / 桌面，同一窗口不重建）：桌面模式走 `interactive` 那条路（不挂 WorkerW —— 挂了就拿不到键盘焦点，聊天框等于废了）；底板复用组件那套 appearance（tint / alpha / blur，出厂值一像素不改）；可锁、可拖边缩放（320×420 起，夹进工作区）；状态在 `assistant-window.json` v2，见 [design/0007](./design/0007-assistant-on-desktop.md)。**八条命令全在册**（含面板要的 `state` / `appearance` / `locked`），剩真机验收那几条 |
 
 **当前规模**（截至本次改动，2026-10-25）：
 
 | 指标 | 数值 | 备注 |
 | --- | --- | --- |
-| 前端 TS/TSX | 21 251 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
-| 样式 CSS | 5 523 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css`） |
-| Rust | 22 796 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
+| 前端 TS/TSX | 22 251 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
+| 样式 CSS | 5 968 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css` + `assistant-window.css`） |
+| Rust | 22 854 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
 | 组件 SDK | 801 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
-| 官方组件 + 示例 | 19 600 行 | 16 个官方包 + 1 个示例（含每个包里的 SDK 副本；未跟踪的桌宠不计） |
-| 构建脚本 | 4 846 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
-| 浏览器断言 | 2 325 条 | 50 个自检页，跑一遍的真实计数（0 failed） |
+| 官方组件 + 示例 | 23 770 行 | 16 个官方包 + 1 个示例（含每个包里的 SDK 副本；未跟踪的桌宠不计） |
+| 构建脚本 | 4 853 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
+| 浏览器断言 | 2 377 条 | 51 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 57 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + 浏览器预览那条通道 24 条，都不依赖 dev server。**CI 只跑前四条（33 条）**，`test:llm-proxy` 还没进 workflow |
-| Rust 单测 | 413 条 | 363 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `shell_policy` 9），50 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
-| Tauri 命令 | 87 个 | |
+| Rust 单测 | 415 条 | 364 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
+| Tauri 命令 | 92 个 | |
 | 权限 | 12 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐 |
-| 踩过的坑 | 80 条 | [`PITFALLS.md`](./PITFALLS.md) |
+| 踩过的坑 | 84 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
 ---
 
@@ -392,14 +392,15 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 - 验证：`tests/skills.html` **55 条**（front matter、id 与撞名、三道上限、提示词渲染、`insideWorkspace` 的整张路径表、`approvalFor` 的免问区四条）、`tests/hands.html` **103 条**（`effectiveHands` 内部照开关、`grantAllHands` 只动那六个值）、`skills_policy.rs` **19 条** `rustc --test`、`hands_policy.rs` 21 条、全量自检 **50 页 / 2 325 条 / 0 failed**。**真机还没走**：导入一个真实技能目录 → 启用 → 问"按那个流程做" → 落在 workspace 内的写没有确认条、落在 `D:\GitDev\lattice` 的有 → 关掉技能它回到默认做法（记在 `AGENTS.md` §8）。
 - 明确不做：剪贴板读写、浏览器自动化 / 任意 HTTP 方法、多根 workspace —— 三条各自的反对理由写在 0005 §3；**第四档审批**也不做（把"全权"写成 `approvalMode` 的第四个值，等于让"要不要问"这一个设置兼职表达"能碰什么"）；用户要的是**一个开关**，所以走的是 0009 的模式（存盘、常驻可见、切过去确认一次），代价"会被忘掉"由那条模式条和启动时的一次提示兜。都不是"以后随便加"。
 
-## v0.13 —— assistant 上桌面（设计稿，未开工）
+## v0.13 —— assistant 上桌面（代码已落地，待真机验收）
 
 用户的原话是"这个 agent 的面板要支持放在桌面，背景还跟其他组件一样可以调节，还可以固定放大缩小之类的"。推理在 [`design/0007-assistant-on-desktop.md`](./design/0007-assistant-on-desktop.md)。
 
-- [ ] **两种窗口模式，同一个窗口** —— 浮窗（默认，现状）/ 桌面。桌面模式用 `desktop::apply_to(Desktop, interactive: true)`：**不能挂 WorkerW**（那是桌面的子窗口，拿不到键盘焦点，聊天框就废了），走的是"`HWND_BOTTOM` 普通窗口 + 底层守卫"。切模式**不重建窗口**（两条都是事后可改的属性），所以对话一行都不丢。
-- [ ] **底板跟组件同一套 appearance** —— `{tint, alpha, blur}`，三层 `canvas`（`widget_wallpaper`，`pad = MAX_BLUR × 2`）→ `veil` → 内容；出厂 `auto / 1 / 0` 不覆盖任何令牌（不变量 6）；控件在标题栏那颗"底板"按钮里。
-- [ ] **锁与缩放** —— `locked` 一处判据（标题栏与手柄一起失效）；右 / 下 / 右下三个手柄，最小 `320 × 420`，每次应用都夹进当前屏工作区；位置尺寸外观锁全存 `assistant-window.json` v2（v1 的 `{x, y}` 就地升级），松手时存一次。
-**已落一半**（第一步）：窗口层（两种模式、不重建、`interactive` 那条路）、底板三层、锁与缩放的**纯逻辑与渲染**都做完了，断言也钉住了（`tests/assistant-window.html` 33 条 + `assistant_window_policy.rs` 11 条）；还剩命令注册、中文文案与平台样式 —— 那三处此刻在另一个会话手里，接线是一次独立的提交。
+- [x] **两种窗口模式，同一个窗口** —— 浮窗（默认，现状）/ 桌面。桌面模式用 `desktop::apply_to(Desktop, interactive: true)`：**不能挂 WorkerW**（那是桌面的子窗口，拿不到键盘焦点，聊天框就废了），走的是"`HWND_BOTTOM` 普通窗口 + 底层守卫"。切模式**不重建窗口**（两条都是事后可改的属性），所以对话一行都不丢。
+- [x] **底板跟组件同一套 appearance** —— `{tint, alpha, blur}`，三层 `canvas`（`widget_wallpaper`，`pad = MAX_BLUR × 2`）→ `veil` → 内容；出厂 `auto / 1 / 0` 不覆盖任何令牌（不变量 6）；控件在标题栏那颗"底板"按钮里。
+- [x] **锁与缩放** —— `locked` 一处判据（标题栏与手柄一起失效）；右 / 下 / 右下三个手柄，最小 `320 × 420`，每次应用都夹进当前屏工作区；位置尺寸外观锁全存 `assistant-window.json` v2（v1 的 `{x, y}` 就地升级），松手时存一次。
+- **八条命令接线完成**（`toggle` / `hide` / `save_pos` / `state` / `mode` / `appearance` / `locked` / `save_rect`，全 `async fn`）：面板开局读 `state`、改底板与改锁都拿返回值覆盖本地，标题栏那颗模式药丸、底板面板和锁因此真的生效（以前 invoke 会 reject、界面只是"看着能点"）。断言：`tests/assistant-window.html` 33 条 + `assistant_window_policy.rs` 11 条（`rustc --test` 壳子），`cargo check --all-targets` 干净。
+- **真机还差最后一遍**（人点一次，记在 `AGENTS.md` §8 与 0007 第 6 节）：桌面模式下 Win+D / 被别的应用盖住之后还在、点它敲字进输入框、锁上拖不动、拉到 900×700 松手重启还是这个尺寸、切回浮窗对话一行没少。
 - 明确不做：9 个方向的缩放手柄、"画面缩放"（会让字体一起变大，和"把面板拉宽"是两件事）、把 assistant 做成 placement（那会把"聊到一半"挂在一次布局同步上）。
 
 ## 长期要盯的风险

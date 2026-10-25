@@ -43,6 +43,7 @@ import {
 } from "../runtime/appearance";
 import {
   migrateAssistantWindow,
+  type AssistantWindowMode,
   type AssistantWindowState,
   type AssistantWorkArea,
 } from "../runtime/assistant-window";
@@ -136,8 +137,8 @@ export function AssistantWindow() {
       .finally(() => setReady(true));
   }, []);
 
-  /* 窗口自己的状态：Rust 是唯一真源。**读不到就退回出厂**（命令还没接线时
-   * 也会走到这里）—— 面板必须能开，不能不响 */
+  /* 窗口自己的状态：Rust 是唯一真源。**读不到就退回出厂**（文件坏了、IPC 断了
+   * 都会走到这里）—— 面板必须能开，不能不响 */
   useEffect(() => {
     void invoke<AssistantWindowState>("assistant_window_state")
       .then((disk) => setState(migrateAssistantWindow(disk, screenWorkArea())))
@@ -315,7 +316,7 @@ export function AssistantWindow() {
       void invoke<AssistantWindowState>("assistant_window_appearance", { appearance: normalized })
         .then((disk) => setState((before) => ({ ...before, ...disk })))
         .catch(() => {
-          /* 未接线：本地照常生效，下一次打开会回到出厂 */
+          /* 存不进去：本地照常生效，下一次打开会回到出厂 */
         });
     },
     [patch],
@@ -327,9 +328,21 @@ export function AssistantWindow() {
     void invoke<AssistantWindowState>("assistant_window_locked", { locked: next })
       .then((disk) => setState((before) => ({ ...before, ...disk })))
       .catch(() => {
-        /* 未接线：本地生效 */
+        /* 存不进去：本地生效 */
       });
   }, [patch, state.locked]);
+
+  /** 换层级（浮窗 ↔ 贴桌面）。**不重建窗口** —— 两条都是事后可改的属性，所以对话一行不丢。
+   *  入口在底板面板里一行开关，不在标题栏（那儿放过一颗 `▢`，长得像最大化，删了，见 0007） */
+  const toggleMode = useCallback(() => {
+    const next: AssistantWindowMode = state.mode === "desktop" ? "floating" : "desktop";
+    patch({ mode: next });
+    void invoke<AssistantWindowState>("assistant_window_mode", { mode: next })
+      .then((disk) => setState((before) => ({ ...before, ...disk })))
+      .catch(() => {
+        /* 层级没换成（窗口已经不在了 / 守卫装不上）：本地那个值会在下一次打开时被磁盘上那份覆盖 */
+      });
+  }, [patch, state.mode]);
 
   /* 拖边缩放**交给系统**（`startResizeDragging`），不在页面里逐帧 `setSize`。
    * 上一版就是逐帧 `setSize`，真机上的表现是"拖了等于没拖"，原因很清楚：
@@ -403,9 +416,9 @@ export function AssistantWindow() {
           （2026-10-25，用户："那个放大窗口是没用的，可以删除了"）：它长在
           最大化该在的位置、也长得像最大化，按下去却是把窗口换一层 ——
           一个按钮最糟的错就是"看着像另一件事"。
-          `state.mode` 仍然照 `assistant-window.json` 读、仍然决定窗口的层级
-          （`data-mode` + 标题栏那颗药丸），只是**界面上不再有入口**。
-          要把它加回来，先换个不像最大化的样子 —— 底板面板里一行开关就够。
+          所以入口换了个样子：**底板面板里一行开关**（下面那块），标题栏只留
+          一颗药丸显示当前在哪一层。`state.mode` 仍然照 `assistant-window.json`
+          读、仍然决定窗口的层级（`data-mode`）。
         */}
         <button
           type="button"
@@ -462,6 +475,24 @@ export function AssistantWindow() {
               onChange={(event) => saveAppearance({ ...appearance, blur: Number(event.target.value) })}
             />
           </label>
+          {/* 层级开关放在这儿而不是标题栏：它表达的是"这块面板贴在哪一层"，
+              和底板同属"窗口看起来是什么样"，而标题栏那颗 `▢` 已经被证明会被
+              认成最大化（见上面那段注释）。切换不重建窗口，对话不丢 */}
+          <div className="lattice-assistant-board-row">
+            <span className="lattice-assistant-board-label">{t("On the desktop")}</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={state.mode === "desktop"}
+              aria-label={t("On the desktop")}
+              title={state.mode === "desktop" ? t("Keep on top") : t("Send to desktop layer")}
+              className="lattice-assistant-switch"
+              data-on={state.mode === "desktop" ? "1" : "0"}
+              onClick={toggleMode}
+            >
+              <span className="lattice-assistant-switch-knob" aria-hidden="true" />
+            </button>
+          </div>
         </div>
       )}
 
