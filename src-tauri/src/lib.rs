@@ -174,6 +174,8 @@ pub fn run() {
             llm::llm_set_key,
             llm::llm_models,
             llm::llm_chat,
+            llm::llm_chat_stream,
+            llm::llm_chat_cancel,
             agent::agent_status,
             agent::agent_activity,
             agent::agent_set_enabled,

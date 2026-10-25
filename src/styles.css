@@ -3568,6 +3568,18 @@ button.lattice-chip[aria-pressed="true"] {
   border-radius: 10px 10px 10px 2px;
 }
 
+/* 还在长的那一条：一个会闪的方块，位置就在最后一个字后面。
+   它只在这一条上讲"字还在来"，所以气泡高度不会跳。 */
+.lattice-assistant-turn.is-live::after {
+  content: "▍";
+  animation: lattice-caret 1s steps(2, start) infinite;
+}
+
+@keyframes lattice-caret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+
 /* 工具执行结果：一行一个，密度高过正文 —— 它是过程，不是对话 */
 .lattice-assistant-chip {
   margin: 0;

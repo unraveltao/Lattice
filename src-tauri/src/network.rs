@@ -98,18 +98,54 @@ fn last_error(what: &str) -> String {
     format!("{what} failed (Win32 error {code})")
 }
 
-/// 发一次请求。阻塞 —— 调用方负责丢到线程池里。
+/// 普通请求等响应体的上限。DNS / 连接 / 发送各有自己的超时，这个只管"连上了
+/// 之后多久没字节算超时"
+const RECEIVE_TIMEOUT_MS: i32 = 15_000;
+/// 流式请求的读超时，**故意只有 1 秒**。
 ///
-/// `limit` 是响应体上限：组件那条路是 1MB，商店下载包放宽到 16MB
-/// （包本身受 `package_policy` 的 64MB 总量限制，这里只是别把整个文件读进内存
-/// 之前就撑爆）。
-pub(crate) fn send(
+/// 取消没有别的地方可以落地：WinHTTP 是阻塞 API，一个正在 `WinHttpReadData`
+/// 的句柄不能关（关了是未定义行为），唯一能让控制权回到我们手里的就是"读超时"。
+/// 所以每 1 秒回到循环一次，看一眼取消标志，再接着读。正常人看不见这个 1 秒 ——
+/// 供应商在吐字的时候根本不会超时。
+const STREAM_READ_TIMEOUT_MS: i32 = 1_000;
+/// `WinHttpReadData` 读超时的错误码（`ERROR_WINHTTP_TIMEOUT`）
+const ERROR_WINHTTP_TIMEOUT: u32 = 12_002;
+
+/// 一次请求的三层句柄。**声明顺序就是析构顺序**：先关请求、再关连接、
+/// 最后关会话。反过来的话，子句柄会指着一个已经没了的父句柄。
+///
+/// 其中 `session` / `connect` 从不被读 —— 它们的作用就是"活到请求结束"。
+#[allow(dead_code)]
+struct Chain {
+    session: Handle,
+    connect: Handle,
+    request: Handle,
+}
+
+impl Chain {
+    fn request(&self) -> *mut core::ffi::c_void {
+        self.request.0
+    }
+}
+
+/// 已经拿到响应头、等着读响应体的请求
+struct Opened {
+    chain: Chain,
+    status: u16,
+    headers: BTreeMap<String, String>,
+}
+
+/// 建会话 → 连接 → 发请求 → 等响应 → 读状态和头。**发完这一步之后两条路
+/// （整包读 / 边读边交）就只剩"怎么读 body"不一样了**，所以它必须只有一份。
+///
+/// `receive_timeout` 是"多久没字节算超时"（毫秒）。普通请求给 15 秒，流式给 1 秒。
+fn open(
     target: &Target,
     method: &str,
     headers: &[(String, String)],
     body: Option<&[u8]>,
-    limit: usize,
-) -> Result<RawResponse, String> {
+    receive_timeout: i32,
+) -> Result<Opened, String> {
     let agent = wide("Lattice/0.1");
     // SAFETY: 字符串以 NUL 结尾；AUTOMATIC_PROXY 用系统代理设置（企业环境常见）
     let session = Handle(unsafe {
@@ -126,7 +162,7 @@ pub(crate) fn send(
     }
 
     // SAFETY: 句柄有效。四个超时都设，缺一个就可能在 DNS 上挂住十几秒
-    unsafe { WinHttpSetTimeouts(session.0, 5_000, 5_000, 10_000, 15_000) };
+    unsafe { WinHttpSetTimeouts(session.0, 5_000, 5_000, 10_000, receive_timeout) };
 
     let host = wide(&target.host);
     // SAFETY: 同上
@@ -233,14 +269,129 @@ pub(crate) fn send(
     }
 
     let headers = read_headers(request.0);
-    let (body, truncated) = read_body(request.0, limit)?;
+    Ok(Opened {
+        chain: Chain {
+            session,
+            connect,
+            request,
+        },
+        status: status as u16,
+        headers,
+    })
+}
+
+/// 发一次请求。阻塞 —— 调用方负责丢到线程池里。
+///
+/// `limit` 是响应体上限：组件那条路是 1MB，商店下载包放宽到 16MB
+/// （包本身受 `package_policy` 的 64MB 总量限制，这里只是别把整个文件读进内存
+/// 之前就撑爆）。
+pub(crate) fn send(
+    target: &Target,
+    method: &str,
+    headers: &[(String, String)],
+    body: Option<&[u8]>,
+    limit: usize,
+) -> Result<RawResponse, String> {
+    let opened = open(target, method, headers, body, RECEIVE_TIMEOUT_MS)?;
+    let (body, truncated) = read_body(opened.chain.request(), limit)?;
 
     Ok(RawResponse {
-        status: status as u16,
-        ok: (200..300).contains(&status),
-        headers,
+        status: opened.status,
+        ok: (200..300).contains(&opened.status),
+        headers: opened.headers,
         body,
         truncated,
+    })
+}
+
+/// 边收边交出去的两个钩子。
+///
+/// 分成"来了字节"和"读超时了"两条，是因为它们要做的事不一样：前者解析增量、
+/// 可能见到 `[DONE]`；后者只是"这 1 秒什么都没来，顺便问一句还要不要继续"。
+pub(crate) struct StreamSink<'a> {
+    /// 收到一段原始字节。返回 `false` = 不用再读了
+    pub chunk: &'a mut dyn FnMut(&[u8]) -> bool,
+    /// 读超时（1 秒没有新字节）。返回 `false` = 用户取消
+    pub idle: &'a mut dyn FnMut() -> bool,
+}
+
+/// 流式请求的结果。**body 是原始字节**：调用方要自己切 SSE 帧（`llm_policy`），
+/// 而且在 `!ok` 时它拿到的是一段普通 JSON 错误体，不是事件流。
+pub(crate) struct StreamedResponse {
+    pub status: u16,
+    pub ok: bool,
+    pub body: Vec<u8>,
+    pub truncated: bool,
+    /// 是钩子叫停的（`[DONE]` 或用户取消），不是读完了
+    pub cancelled: bool,
+}
+
+/// 发请求，然后**边读边交**。返回时 `body` 里是已经收到的全部字节 ——
+/// 流式解析只发生在调用方，这里不解释内容。
+pub(crate) fn stream(
+    target: &Target,
+    method: &str,
+    headers: &[(String, String)],
+    body: Option<&[u8]>,
+    limit: usize,
+    sink: &mut StreamSink,
+) -> Result<StreamedResponse, String> {
+    let opened = open(target, method, headers, body, STREAM_READ_TIMEOUT_MS)?;
+    let Opened { chain, status, .. } = opened;
+    let request = chain.request();
+
+    let mut collected: Vec<u8> = Vec::new();
+    let mut chunk = vec![0u8; 16 * 1024];
+    let mut truncated = false;
+    let mut cancelled = false;
+
+    loop {
+        let mut read: u32 = 0;
+        // SAFETY: 缓冲区独占，长度对得上
+        let ok = unsafe {
+            WinHttpReadData(
+                request,
+                chunk.as_mut_ptr() as *mut core::ffi::c_void,
+                chunk.len() as u32,
+                &mut read,
+            )
+        };
+        if ok == 0 {
+            // SAFETY: 只读线程局部错误码
+            let code = unsafe { GetLastError() };
+            if code == ERROR_WINHTTP_TIMEOUT {
+                // 1 秒没字节：**这里**才是能取消的地方
+                if !(sink.idle)() {
+                    cancelled = true;
+                    break;
+                }
+                continue;
+            }
+            return Err(last_error("reading the response body"));
+        }
+        if read == 0 {
+            // 正常收尾（EOF）
+            break;
+        }
+        let piece = &chunk[..read as usize];
+        collected.extend_from_slice(piece);
+        if collected.len() >= limit {
+            collected.truncate(limit);
+            truncated = true;
+            break;
+        }
+        if !(sink.chunk)(piece) {
+            cancelled = true;
+            break;
+        }
+    }
+
+    Ok(StreamedResponse {
+        status,
+        ok: (200..300).contains(&status),
+        body: collected,
+        truncated,
+        cancelled,
     })
 }
 

@@ -103,12 +103,12 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | --- | --- |
 | Official widgets | 15 |
 | Permissions | 11 |
-| Tauri commands | 65 |
+| Tauri commands | 67 |
 | Browser assertions | 1 880 over 45 pages |
-| Rust tests | 196 |
+| Rust tests | 219 |
 | Documented pitfalls | 75 |
 
-Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 169 `rustc --test` pure-logic cases plus 27 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
+Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 192 `rustc --test` pure-logic cases plus 27 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
 ## Two hosts, one bridge
 

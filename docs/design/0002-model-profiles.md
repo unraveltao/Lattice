@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-25
 code: src-tauri/src/llm.rs, src-tauri/src/llm_policy.rs, src-tauri/src/network.rs, src/platform/assistant.ts, src/platform/AssistantPanel.tsx, src/runtime/llm-models.ts
 ---
@@ -105,3 +105,13 @@ llm_chat_cancel({ requestId })
 | `llm_policy.rs` | +24 | SSE 字节切帧（半包 / 多字节 / `[DONE]` / 坏帧）、工具参数按 index 累加、auth 头三值 |
 
 **手工验一次**：真机跑 DeepSeek 直连（字一个个出来、停止立刻断、工具调用那一轮参数完整）、切到 Ollama（无 key 能通）、手工造一份 v1 的 `assistant.json` 再启动（key 还在、档名是主机名）。自动断言测不到 SSE 与 WinHTTP 的真实分片节奏 —— 这一层只有真机算数。
+
+## 7. 落地情况（与上面几节的出入）
+
+两半都落了，`status` 改成 `accepted`。和计划不一样的地方只有三处，都是实现时才看清的：
+
+- **命令多了一个**：`llm_chat_stream` / `llm_chat_cancel` 之外，`llm_chat` 和 `llm_chat_stream` 都多收一个可选的 `profileId`。原来两条路各读一次 active 档，抽出 `prepare()` 之后顺手统一了 —— 少一处"流式按 A 档、整包按 B 档"的可能。
+- **增量只在气泡里滚，不参与拼装**。设计里写的是"命令结束时返回拼好的完整消息"，实现在此之上又定了一条：前端**不**拿增量拼最终消息，最后用返回值整条覆盖。这样"拼增量拼错了"最多让字闪一下，不会留下一句错话。工具参数仍然不进事件。
+- **`SseBuffer` 按 `\n` 切，不按 `\n\n` 切**。第 5 节表格里写的是"切到 `\n\n` 才解码"；实现是"按字节切行 → 攒 `data:` 字段 → 空行收尾成一条事件"。两者等价，但后者顺带把"一条事件多行 `data:`"这件事做对了，而多字节字符永远不会被切开（`\n` 不在任何多字节序列内部）。
+- 断言数：`llm_policy.rs` 新增 **23** 条（不是 24），`tests/llm-models.html` 26 条、`tests/assistant.html` 118 条。全仓 Rust 单测 219 条。
+

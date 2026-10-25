@@ -26,12 +26,14 @@
 //! - 组件（**不带** `tools`，只说话；见 `runtime/bridge.ts` 的 `llm.chat`）
 //! - 桌面上的 assistant 小窗（和面板共用同一份实现）
 
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::llm_policy;
 use crate::network;
@@ -134,6 +136,85 @@ pub struct ProfilesView {
 pub struct SavedProfile {
     pub id: String,
     pub view: ProfilesView,
+}
+
+/// 一次流式请求的取消标志登记表。**只存"还在飞的那几轮"**：命令结束时
+/// （成功、失败、取消都一样）由 `CancelHandle` 的 Drop 摘掉，所以这里不会越攒越多。
+fn cancels() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    static CANCELS: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+    CANCELS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 登记一条取消标志，离开作用域时自动摘掉 —— 手写"每个 return 前删一次"
+/// 一定会漏掉一条，而漏掉的那条会让同名 id 下一次直接是"已被取消"。
+struct CancelHandle(String);
+
+impl Drop for CancelHandle {
+    fn drop(&mut self) {
+        if let Ok(mut map) = cancels().lock() {
+            map.remove(&self.0);
+        }
+    }
+}
+
+fn register_cancel(request_id: &str) -> (Arc<AtomicBool>, CancelHandle) {
+    let flag = Arc::new(AtomicBool::new(false));
+    if let Ok(mut map) = cancels().lock() {
+        map.insert(request_id.to_string(), flag.clone());
+    }
+    (flag, CancelHandle(request_id.to_string()))
+}
+
+/// 增量事件名。载荷带 `requestId`：`emit` 是广播（不变量 9），抽屉和桌面小窗
+/// 可能同时各跑一轮，谁的字归谁只能靠这个 id 分
+const DELTA_EVENT: &str = "lattice:llm-delta";
+
+fn emit_delta(app: &AppHandle, request_id: &str, text: &str) {
+    let _ = app.emit(
+        DELTA_EVENT,
+        serde_json::json!({ "requestId": request_id, "text": text }),
+    );
+}
+
+/// 这次请求真正要用的那一份配置。`profile_id` 为空 = 当前那条档。
+///
+/// 环境变量只盖**当前这一档**：传了一个明确的 id 时，除非那正好是 active，
+/// 否则不去碰它 —— "我设了 `LATTICE_LLM_KEY`，怎么另一条档也亮了"会是一个
+/// 解释不清的状态。
+fn prepare(app: &AppHandle, profile_id: Option<&str>) -> Result<Profile, String> {
+    let config = read_config(app);
+    let env = env_overrides();
+    let wanted = profile_id.map(str::trim).filter(|value| !value.is_empty());
+
+    let profile = match wanted {
+        Some(id) => {
+            if !llm_policy::profile_id_ok(id) {
+                return Err("that is not a profile id".to_string());
+            }
+            if id == config.active_id {
+                resolve_active(&config, &env).map(|(profile, _)| profile)
+            } else {
+                config.profiles.iter().find(|profile| profile.id == id).cloned()
+            }
+            .ok_or_else(|| "that profile is gone — reload the assistant".to_string())?
+        }
+        None => resolve_active(&config, &env)
+            .map(|(profile, _)| profile)
+            .ok_or_else(|| {
+                "no model profile yet — open the assistant settings and add one".to_string()
+            })?,
+    };
+
+    let auth = llm_policy::normalize_auth(&profile.auth);
+    if auth != "none" && profile.api_key.trim().is_empty() {
+        return Err(
+            "no key for this profile yet — open the assistant settings and paste one".to_string(),
+        );
+    }
+    if profile.model.trim().is_empty() {
+        return Err("the assistant has no model configured — open the assistant settings".to_string());
+    }
+    Ok(profile)
 }
 
 fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -483,6 +564,22 @@ pub fn llm_set_key(app: AppHandle, id: String, key: String) -> Result<ProfilesVi
     Ok(views(&config, &env_overrides()))
 }
 
+/// 节流：离上一次请求太近就返回要等多久。
+///
+/// 等待本身由调用方在阻塞线程里 `sleep` —— `thread::sleep` 放在异步线程上
+/// 会占住一个 worker。流式那条路也要过这一道：它比整包请求更容易被写循环刷爆。
+fn throttle() -> Result<Duration, String> {
+    let mut last = last_call()
+        .lock()
+        .map_err(|_| "the assistant lock is poisoned".to_string())?;
+    let now = Instant::now();
+    let wait = last
+        .map(|previous| MIN_GAP.saturating_sub(now.saturating_duration_since(previous)))
+        .unwrap_or_default();
+    *last = Some(now + wait);
+    Ok(wait)
+}
+
 /// 把一次 HTTP 往返跑完，返回 (状态码, 响应体)。
 ///
 /// 抽出来是因为 chat 和 models 两条路只有 URL、请求体、解析不一样，
@@ -495,22 +592,9 @@ async fn call(
     body: Option<String>,
 ) -> Result<(u16, String), String> {
     let target = parse_url(&url)?;
-    let headers = request_headers(auth, key);
+    let headers = request_headers(auth, key, "application/json");
     let payload = body.map(|text| text.into_bytes());
-
-    // 节流：离上一次太近就等一会儿。等待放在阻塞线程里 —— `thread::sleep`
-    // 在异步线程上会占住一个 worker
-    let wait = {
-        let mut last = last_call()
-            .lock()
-            .map_err(|_| "the assistant lock is poisoned".to_string())?;
-        let now = Instant::now();
-        let wait = last
-            .map(|previous| MIN_GAP.saturating_sub(now.saturating_duration_since(previous)))
-            .unwrap_or_default();
-        *last = Some(now + wait);
-        wait
-    };
+    let wait = throttle()?;
 
     // WinHTTP 是阻塞 API：扔到线程池，别占异步运行时的线程
     let response = tauri::async_runtime::spawn_blocking(move || {
@@ -641,10 +725,10 @@ pub async fn llm_models(
     Ok(models)
 }
 
-fn request_headers(auth: &str, key: &str) -> Vec<(String, String)> {
+fn request_headers(auth: &str, key: &str, accept: &str) -> Vec<(String, String)> {
     let mut headers = vec![
         ("content-type".to_string(), "application/json".to_string()),
-        ("accept".to_string(), "application/json".to_string()),
+        ("accept".to_string(), accept.to_string()),
     ];
     if let Some((name, value)) = llm_policy::auth_header(auth, key) {
         headers.push((name.to_string(), value));
@@ -652,24 +736,20 @@ fn request_headers(auth: &str, key: &str) -> Vec<(String, String)> {
     headers
 }
 
-/// 一次对话往返。
+/// 一次对话往返（整包）。
 ///
 /// `messages` / `tools` 是 JSON **字符串**，不是结构体：消息的形状本来就是
 /// OpenAI 的协议，多一层 Rust 结构体只是给它做个副本，还得跟着协议版本改。
 /// 校验在这里做（`check_messages`），不合法就拒，不静默截断。
 #[tauri::command]
-pub async fn llm_chat(app: AppHandle, messages: String, tools: Option<String>) -> Result<serde_json::Value, String> {
-    let config = read_config(&app);
-    let Some((profile, source)) = resolve_active(&config, &env_overrides()) else {
-        return Err("no model profile yet — open the assistant settings and add one".to_string());
-    };
+pub async fn llm_chat(
+    app: AppHandle,
+    messages: String,
+    tools: Option<String>,
+    profile_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let profile = prepare(&app, profile_id.as_deref())?;
     let auth = llm_policy::normalize_auth(&profile.auth);
-    if auth != "none" && profile.api_key.trim().is_empty() {
-        return Err("no key for this profile yet — open the assistant settings and paste one".to_string());
-    }
-    if profile.model.trim().is_empty() {
-        return Err("the assistant has no model configured — open the assistant settings".to_string());
-    }
     let base = llm_policy::normalize_base(&profile.base_url)?;
 
     // 校验放在 policy 里（那边有测试），这里只负责"不合法的输入不进网络"
@@ -684,6 +764,7 @@ pub async fn llm_chat(app: AppHandle, messages: String, tools: Option<String>) -
         tools.as_deref(),
         profile.temperature(),
         llm_policy::MAX_OUTPUT_TOKENS,
+        false,
     );
     let url = llm_policy::chat_url(&base);
 
@@ -697,25 +778,37 @@ pub async fn llm_chat(app: AppHandle, messages: String, tools: Option<String>) -
     }
 
     let reply = llm_policy::parse_chat(&text)?;
-    /*
-     * 写一行审计：`npm run agent -- state` 和第三方看板读的就是这份日志。
-     *
-     * 只记"模型说了几个字 / 要做几件事"，**不记内容** —— 用户的对话不该
-     * 因为开了个审计开关就变成一份可读的聊天记录。工具的每一步由前端在
-     * 执行时各自记（那个有 `op: act` 的现成通道）。
-     */
-    let detail = if reply.tool_calls.is_empty() {
-        format!("{} · {} chars", profile.model.trim(), reply.text.chars().count())
-    } else {
-        let names: Vec<&str> = reply.tool_calls.iter().map(|call| call.name.as_str()).collect();
-        format!("{} · tools: {}", profile.model.trim(), names.join(", "))
-    };
-    let _ = source; // 来源只影响界面提示，不进日志
-    crate::agent::audit(&app, "assistant.chat", &detail, status, ms);
+    audit_reply(&app, &profile.model, &reply, status, ms, None);
 
     // 用 Value 手拼，而不是给 policy 的结构体加 serde：那一层要保持
     // "不依赖任何 crate"（见 llm_policy.rs 的开头），序列化形状归这里
-    Ok(serde_json::json!({
+    Ok(reply_json(&reply))
+}
+
+/// 审计一行。只记"模型说了几个字 / 要做几件事"，**不记内容** —— 用户的对话
+/// 不该因为开了个审计开关就变成一份可读的聊天记录。
+fn audit_reply(
+    app: &AppHandle,
+    model: &str,
+    reply: &llm_policy::ChatReply,
+    status: u16,
+    ms: u128,
+    stopped: Option<usize>,
+) {
+    let model = model.trim();
+    let detail = if !reply.tool_calls.is_empty() {
+        let names: Vec<&str> = reply.tool_calls.iter().map(|call| call.name.as_str()).collect();
+        format!("{model} · tools: {}", names.join(", "))
+    } else if let Some(chars) = stopped {
+        format!("{model} · stopped after {chars} chars")
+    } else {
+        format!("{model} · {} chars", reply.text.chars().count())
+    };
+    crate::agent::audit(app, "assistant.chat", &detail, status, ms);
+}
+
+fn reply_json(reply: &llm_policy::ChatReply) -> serde_json::Value {
+    serde_json::json!({
         "text": reply.text,
         "toolCalls": reply.tool_calls.iter().map(|call| serde_json::json!({
             "id": call.id,
@@ -723,11 +816,180 @@ pub async fn llm_chat(app: AppHandle, messages: String, tools: Option<String>) -
             "arguments": call.arguments,
         })).collect::<Vec<_>>(),
         "finish": reply.finish,
-        "usage": reply.usage.map(|usage| serde_json::json!({
+        "usage": reply.usage.as_ref().map(|usage| serde_json::json!({
             "promptTokens": usage.prompt_tokens,
             "completionTokens": usage.completion_tokens,
         })),
-    }))
+    })
+}
+
+/// 一轮**流式**对话。
+///
+/// 形状和 `llm_chat` 一样（结束时返回拼好的整条消息），区别只在过程中会往
+/// `lattice:llm-delta` 上推增量。三条：
+///
+/// 1. **增量只是"让用户先看见字"**，权威结果仍然是这个命令的返回值。所以
+///    前端不会拿增量拼出最终消息 —— 它只在气泡里滚，最后用返回的那份覆盖。
+/// 2. **工具参数不进事件**。SSE 里它的参数是分片的，拼到一半的 JSON 对界面
+///    没有意义（也没法解析）；按 `index` 拼完整后随返回值一次回来。
+/// 3. **取消靠 1 秒读超时 + 标志位**，不是关句柄。见 `network::stream`。
+#[tauri::command]
+pub async fn llm_chat_stream(
+    app: AppHandle,
+    request_id: String,
+    messages: String,
+    tools: Option<String>,
+    profile_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let request_id = request_id.trim().to_string();
+    if !llm_policy::request_id_ok(&request_id) {
+        return Err("that is not a request id".to_string());
+    }
+    let profile = prepare(&app, profile_id.as_deref())?;
+    let auth = llm_policy::normalize_auth(&profile.auth);
+    let base = llm_policy::normalize_base(&profile.base_url)?;
+
+    llm_policy::check_messages(&messages)?;
+    if let Some(tools) = tools.as_deref() {
+        llm_policy::check_tools(tools)?;
+    }
+
+    let body = llm_policy::build_body(
+        profile.model.trim(),
+        &messages,
+        tools.as_deref(),
+        profile.temperature(),
+        llm_policy::MAX_OUTPUT_TOKENS,
+        true,
+    );
+    let url = llm_policy::chat_url(&base);
+    let headers = request_headers(auth, &profile.api_key, "text/event-stream");
+    let wait = throttle()?;
+
+    let (cancel, _handle) = register_cancel(&request_id);
+    let started = Instant::now();
+    let app_for_read = app.clone();
+    let id_for_read = request_id.clone();
+    let model = profile.model.trim().to_string();
+
+    let outcome = tauri::async_runtime::spawn_blocking(move || -> Result<(llm_policy::ChatReply, u16, Option<usize>), String> {
+        let target = parse_url(&url)?;
+        let payload = body.into_bytes();
+        if !wait.is_zero() {
+            std::thread::sleep(wait);
+        }
+
+        let mut sse = llm_policy::SseBuffer::new();
+        let mut acc = llm_policy::StreamAcc::new();
+        // 攒一会儿再发：一个字一个事件 = 一次 IPC + 一次 React 重渲染
+        let mut pending = String::new();
+        let mut last_emit = Instant::now();
+        let mut frames = 0usize;
+        let mut failure: Option<String> = None;
+
+        let response = {
+            let mut on_chunk = |piece: &[u8]| -> bool {
+                let mut payloads: Vec<String> = Vec::new();
+                sse.push(piece, &mut payloads);
+                for payload in payloads {
+                    frames += 1;
+                    match acc.apply(&payload) {
+                        Ok(Some(text)) => pending.push_str(&text),
+                        Ok(None) => {}
+                        Err(message) => {
+                            failure = Some(message);
+                            return false;
+                        }
+                    }
+                    if acc.done {
+                        break;
+                    }
+                }
+                if !pending.is_empty()
+                    && (pending.chars().count() >= 24 || last_emit.elapsed() >= Duration::from_millis(60))
+                {
+                    let text = std::mem::take(&mut pending);
+                    emit_delta(&app_for_read, &id_for_read, &text);
+                    last_emit = Instant::now();
+                }
+                failure.is_none() && !acc.done
+            };
+            let mut on_idle = || -> bool { !cancel.load(Ordering::SeqCst) };
+            let mut sink = network::StreamSink {
+                chunk: &mut on_chunk,
+                idle: &mut on_idle,
+            };
+            network::stream(
+                &target,
+                "POST",
+                &headers,
+                Some(&payload),
+                llm_policy::MAX_RESPONSE_BYTES,
+                &mut sink,
+            )
+        }
+        .map_err(|error| llm_policy::describe_failure(&error))?;
+
+        if !response.ok {
+            // 错误响应是普通 JSON，不是事件流：原样的 `describe_status` 才说得清
+            let text = String::from_utf8_lossy(&response.body).to_string();
+            return Err(llm_policy::describe_status(response.status, &text));
+        }
+        if response.truncated {
+            return Err("the provider's response was too large to read".to_string());
+        }
+        if let Some(message) = failure {
+            return Err(message);
+        }
+
+        // 流结束时最后一条可能没等到空行
+        if let Some(tail) = sse.flush() {
+            frames += 1;
+            acc.apply(&tail)?;
+        }
+        if !pending.is_empty() {
+            emit_delta(&app_for_read, &id_for_read, &pending);
+        }
+
+        // 有的中转站会无视 `stream: true`，直接回一整包 JSON。那就按整包读 ——
+        // 否则界面上一片空白，而错误也没有任何地方能冒出来
+        let reply = if frames == 0 {
+            let text = String::from_utf8_lossy(&response.body).to_string();
+            llm_policy::parse_chat(&text).unwrap_or_else(|_| acc.finish_reply())
+        } else {
+            acc.finish_reply()
+        };
+
+        // 用户按了停止（不是 `[DONE]`）：记一下停在第几个字
+        let stopped = if response.cancelled && !acc.done {
+            Some(reply.text.chars().count())
+        } else {
+            None
+        };
+        Ok((reply, response.status, stopped))
+    })
+    .await
+    .map_err(|error| format!("the request task failed: {error}"))??;
+
+    let (reply, status, stopped) = outcome;
+    audit_reply(&app, &model, &reply, status, started.elapsed().as_millis(), stopped);
+    Ok(reply_json(&reply))
+}
+
+/// 叫停一轮流式对话。**幂等**：那一轮已经结束（或者 id 已经不存在）时返回
+/// `false`，界面不用把它当错误。
+#[tauri::command]
+pub fn llm_chat_cancel(request_id: String) -> bool {
+    let Ok(map) = cancels().lock() else {
+        return false;
+    };
+    match map.get(request_id.trim()) {
+        Some(flag) => {
+            flag.store(true, Ordering::SeqCst);
+            true
+        }
+        None => false,
+    }
 }
 
 #[cfg(test)]

@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WidgetRecord } from "../runtime/registry";
 import {
   activateLlmProfile,
+  cancelActiveTurn,
   listModels,
   localSurface,
   readLlmProfiles,
@@ -45,7 +46,8 @@ import { useT } from "../runtime/i18n";
 /** 一条要显示的东西。模型的消息和工具的执行结果分开排，读起来才像"过程" */
 type Entry =
   | { kind: "user"; text: string }
-  | { kind: "assistant"; text: string }
+  /** `live` = 这一条还在长（流式增量正在往里追加），最后会被整条回复覆盖 */
+  | { kind: "assistant"; text: string; live?: boolean }
   | { kind: "tool"; detail: string; ok: boolean; error?: string }
   | { kind: "error"; text: string };
 
@@ -116,6 +118,9 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
   const editingProfile = profiles?.profiles.find((item) => item.id === editing) ?? null;
   const editingId = editingProfile?.id ?? null;
   const info = knownModel(model);
+  /** 最后一条还在长 = 字正在出来，这时候不该再显示「Thinking…」 */
+  const lastEntry = entries[entries.length - 1];
+  const streaming = lastEntry?.kind === "assistant" && lastEntry.live === true;
 
   /** 把一档灌进表单 */
   const fill = useCallback((profile: ProfileView) => {
@@ -215,8 +220,26 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
         // 上下文小的模型带不动 60k 字的历史；超了不是慢，是 400
         maxChars: historyChars(knownModel(active?.model ?? "")),
         onEvent: (event) => {
-          if (event.type === "text") {
-            setEntries((list) => [...list, { kind: "assistant", text: event.text }]);
+          if (event.type === "delta") {
+            // 正在长的那一条：同一轮里后续的增量都往它后面接。
+            // 增量事件一个接一个来（Rust 已经按 60ms / 24 字攒过批），
+            // 所以这里一次 setState 对应屏幕上可见的一小段
+            setEntries((list) => {
+              const last = list[list.length - 1];
+              if (last?.kind === "assistant" && last.live) {
+                return [...list.slice(0, -1), { ...last, text: last.text + event.text }];
+              }
+              return [...list, { kind: "assistant", text: event.text, live: true }];
+            });
+          } else if (event.type === "text") {
+            // 整条回复到了：用它覆盖那条还在长的，或者新加一条（没有流式增量时）
+            setEntries((list) => {
+              const last = list[list.length - 1];
+              if (last?.kind === "assistant" && last.live) {
+                return [...list.slice(0, -1), { kind: "assistant", text: event.text }];
+              }
+              return [...list, { kind: "assistant", text: event.text }];
+            });
           } else if (event.type === "tool") {
             setEntries((list) => [
               ...list,
@@ -346,6 +369,8 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
 
   const stop = useCallback(() => {
     stopFlag.current = true;
+    // 光设标志只能打断"步与步之间"；字正在冒的时候得让 Rust 那头的读循环收手
+    void cancelActiveTurn();
   }, []);
 
   const header = useMemo(() => {
@@ -587,12 +612,15 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
                 );
               }
               return (
-                <p key={index} className={`lattice-assistant-turn is-${entry.kind}`}>
+                <p
+                  key={index}
+                  className={`lattice-assistant-turn is-${entry.kind}${entry.kind === "assistant" && entry.live ? " is-live" : ""}`}
+                >
                   {entry.text}
                 </p>
               );
             })}
-            {busy && <p className="lattice-assistant-hint">{t("Thinking…")}</p>}
+            {busy && !streaming && <p className="lattice-assistant-hint">{t("Thinking…")}</p>}
           </div>
 
           <div className="lattice-assistant-composer">

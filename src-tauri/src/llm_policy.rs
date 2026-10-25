@@ -410,13 +410,15 @@ pub fn build_body(
     tools_json: Option<&str>,
     temperature: f64,
     max_tokens: u32,
+    stream: bool,
 ) -> String {
     let mut body = format!(
-        "{{\"model\":\"{}\",\"messages\":{},\"temperature\":{},\"max_tokens\":{},\"stream\":false",
+        "{{\"model\":\"{}\",\"messages\":{},\"temperature\":{},\"max_tokens\":{},\"stream\":{}",
         escape(model.trim()),
         messages_json.trim(),
         clamp_temperature(temperature),
         max_tokens,
+        stream,
     );
     if let Some(tools) = tools_json {
         let trimmed = tools.trim();
@@ -626,6 +628,264 @@ pub fn parse_models(body: &str) -> Result<Vec<String>, String> {
         return Err("the provider returned no models".to_string());
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// 流式（SSE）
+// ---------------------------------------------------------------------------
+
+/// 一次流式请求的 id 上限。它只是"这条增量是谁的"的标记，不是数据
+const MAX_REQUEST_ID: usize = 64;
+
+/// 前端生成的请求 id。限字符集是为了它出现在事件载荷和日志里时不用再转义
+pub fn request_id_ok(id: &str) -> bool {
+    let count = id.chars().count();
+    (1..=MAX_REQUEST_ID).contains(&count)
+        && id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+}
+
+/// 从缓冲区里切出一整行（含行尾），**按字节**找 `\n`。
+///
+/// 按字节而不是按 `String` 拼，是这一层唯一真正要紧的细节：一个中文字符是三个
+/// 字节，`WinHttpReadData` 完全可能把它从中间切开。先按字节切到 `\n` 再解码，
+/// 这个问题就不存在 —— `\n`（0x0A）不会出现在任何多字节字符的内部。
+pub fn take_line(buffer: &mut Vec<u8>) -> Option<String> {
+    let end = buffer.iter().position(|byte| *byte == b'\n')?;
+    let mut line: Vec<u8> = buffer.drain(..=end).collect();
+    line.pop();
+    if line.last() == Some(&b'\r') {
+        line.pop();
+    }
+    Some(String::from_utf8_lossy(&line).to_string())
+}
+
+/// SSE 的事件缓冲：把字节流攒成"一条事件 = 一段 data 载荷"。
+///
+/// 协议允许多行 `data:` 拼同一条事件，用空行收尾。OpenAI 系一家只发一行，
+/// 但把多行做对只多三行代码 —— 少写它的代价是某天接上中转站后整段文字消失。
+#[derive(Default)]
+pub struct SseBuffer {
+    raw: Vec<u8>,
+    data: String,
+}
+
+impl SseBuffer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 吃一段字节，把**已经完整**的事件载荷追加进 `out`。半行留在缓冲里等下一段。
+    pub fn push(&mut self, chunk: &[u8], out: &mut Vec<String>) {
+        self.raw.extend_from_slice(chunk);
+        while let Some(line) = take_line(&mut self.raw) {
+            if line.is_empty() {
+                if !self.data.is_empty() {
+                    out.push(std::mem::take(&mut self.data));
+                }
+                continue;
+            }
+            // `:` 开头是注释（供应商的心跳），没有冒号的也不是字段
+            let Some((field, value)) = line.split_once(':') else {
+                continue;
+            };
+            if field.trim() != "data" {
+                continue;
+            }
+            let value = value.strip_prefix(' ').unwrap_or(value);
+            if !self.data.is_empty() {
+                self.data.push('\n');
+            }
+            self.data.push_str(value);
+        }
+    }
+
+    /// 流结束时把没等到空行的最后一条交出去。**别省这一下**：少一条空行就丢
+    /// 最后一帧，而工具调用的 `finish_reason` 常常正好在最后一帧里。
+    pub fn flush(&mut self) -> Option<String> {
+        if self.data.is_empty() {
+            return None;
+        }
+        Some(std::mem::take(&mut self.data))
+    }
+}
+
+/// 一条正在拼的工具调用。参数是**分片**来的，按 `index` 往同一个槽里追加
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ToolCallAcc {
+    pub index: usize,
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+/// 流式的累加器：文字边来边拼，工具参数攒到最后一帧才解析。
+#[derive(Debug, Clone, Default)]
+pub struct StreamAcc {
+    pub text: String,
+    pub tools: Vec<ToolCallAcc>,
+    pub finish: String,
+    pub usage: Option<Usage>,
+    /// 见到 `[DONE]`
+    pub done: bool,
+}
+
+impl StreamAcc {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 吃一条事件载荷，返回这一帧**新增**的文字（没有就是 `None`）。
+    ///
+    /// 两种失败分开对待，这条区别是真机上换来的：
+    ///   - 载荷根本不是 JSON（中转站塞的心跳、半截日志）→ **跳过**，流继续；
+    ///   - 载荷里有 `error` 对象 → **报错**，因为那是供应商在 200 里说"我失败了"。
+    pub fn apply(&mut self, payload: &str) -> Result<Option<String>, String> {
+        let trimmed = payload.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        if trimmed == "[DONE]" {
+            self.done = true;
+            return Ok(None);
+        }
+        let Ok(value) = parse_json(trimmed) else {
+            return Ok(None);
+        };
+        if let Some(error) = value.get("error") {
+            let message = error
+                .get("message")
+                .and_then(Json::as_str)
+                .unwrap_or("the provider reported an error");
+            return Err(message.to_string());
+        }
+        if let Some(usage) = value.get("usage") {
+            self.usage = Some(Usage {
+                prompt_tokens: usage
+                    .get("prompt_tokens")
+                    .and_then(Json::as_num)
+                    .unwrap_or(0.0) as u64,
+                completion_tokens: usage
+                    .get("completion_tokens")
+                    .and_then(Json::as_num)
+                    .unwrap_or(0.0) as u64,
+            });
+        }
+
+        let Some(choice) = value
+            .get("choices")
+            .and_then(Json::as_arr)
+            .and_then(|choices| choices.first())
+        else {
+            return Ok(None);
+        };
+        if let Some(finish) = choice.get("finish_reason").and_then(Json::as_str) {
+            if !finish.is_empty() {
+                self.finish = finish.to_string();
+            }
+        }
+        let Some(delta) = choice.get("delta") else {
+            return Ok(None);
+        };
+
+        let mut added: Option<String> = None;
+        match delta.get("content") {
+            Some(Json::Str(text)) if !text.is_empty() => {
+                self.text.push_str(text);
+                added = Some(text.clone());
+            }
+            // 有的供应商把增量也写成多段内容
+            Some(Json::Arr(parts)) => {
+                let joined: String = parts
+                    .iter()
+                    .filter_map(|part| part.get("text").and_then(Json::as_str))
+                    .collect();
+                if !joined.is_empty() {
+                    self.text.push_str(&joined);
+                    added = Some(joined);
+                }
+            }
+            _ => {}
+        }
+
+        if let Some(calls) = delta.get("tool_calls").and_then(Json::as_arr) {
+            for (position, call) in calls.iter().enumerate() {
+                // `index` 缺省时用数组下标：只有一个工具调用时它不给 index
+                let index = call
+                    .get("index")
+                    .and_then(Json::as_num)
+                    .map(|number| number.max(0.0) as usize)
+                    .unwrap_or(position);
+                if !self.tools.iter().any(|item| item.index == index) {
+                    self.tools.push(ToolCallAcc {
+                        index,
+                        ..Default::default()
+                    });
+                }
+                let Some(slot) = self.tools.iter_mut().find(|item| item.index == index) else {
+                    continue;
+                };
+                if let Some(id) = call.get("id").and_then(Json::as_str) {
+                    if !id.is_empty() {
+                        slot.id = id.to_string();
+                    }
+                }
+                let Some(function) = call.get("function") else {
+                    continue;
+                };
+                if let Some(name) = function.get("name").and_then(Json::as_str) {
+                    if !name.is_empty() {
+                        slot.name = name.to_string();
+                    }
+                }
+                match function.get("arguments") {
+                    // 分片追加 —— 只取最后一帧的 `arguments` 会少半个参数
+                    Some(Json::Str(piece)) => slot.arguments.push_str(piece),
+                    Some(other) => slot.arguments.push_str(&other.to_text()),
+                    None => {}
+                }
+            }
+        }
+
+        Ok(added)
+    }
+
+    /// 收尾：拼成和 `parse_chat` **完全一样的形状**，调用方不用分两条路
+    pub fn finish_reply(&mut self) -> ChatReply {
+        let mut tools: Vec<ToolCallAcc> = self
+            .tools
+            .iter()
+            .filter(|acc| !acc.name.is_empty())
+            .cloned()
+            .collect();
+        tools.sort_by_key(|acc| acc.index);
+        ChatReply {
+            text: self.text.clone(),
+            tool_calls: tools
+                .iter()
+                .map(|acc| ToolCall {
+                    id: if acc.id.is_empty() {
+                        format!("call_{}", acc.index)
+                    } else {
+                        acc.id.clone()
+                    },
+                    name: acc.name.clone(),
+                    arguments: if acc.arguments.trim().is_empty() {
+                        "{}".to_string()
+                    } else {
+                        acc.arguments.clone()
+                    },
+                })
+                .collect(),
+            finish: if self.finish.is_empty() {
+                "stop".to_string()
+            } else {
+                self.finish.clone()
+            },
+            usage: self.usage.clone(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -906,7 +1166,7 @@ mod tests {
     #[test]
     fn body_has_no_tools_key_when_there_are_none() {
         let messages = r#"[{"role":"user","content":"hi"}]"#;
-        let body = build_body("m", messages, None, 0.6, 512);
+        let body = build_body("m", messages, None, 0.6, 512, false);
         assert!(body.contains(r#""model":"m""#), "{body}");
         assert!(body.contains(r#""stream":false"#));
         assert!(!body.contains("\"tools\""));
@@ -914,19 +1174,19 @@ mod tests {
         assert!(parse_json(&body).is_ok(), "拼出来必须是合法 JSON：{body}");
 
         let tools = r#"[{"type":"function","function":{"name":"theme.set"}}]"#;
-        let with = build_body("m", messages, Some(tools), 0.6, 512);
+        let with = build_body("m", messages, Some(tools), 0.6, 512, false);
         assert!(with.contains("\"tools\""), "{with}");
         assert!(with.contains("\"tool_choice\":\"auto\""));
         assert!(parse_json(&with).is_ok(), "{with}");
 
         // 空数组不该带出去：有的供应商见到它会 400
-        let empty = build_body("m", messages, Some("[]"), 0.6, 512);
+        let empty = build_body("m", messages, Some("[]"), 0.6, 512, false);
         assert!(!empty.contains("\"tools\""));
     }
 
     #[test]
     fn body_escapes_the_model_name_and_clamps_temperature() {
-        let body = build_body("weird\"model\\name", "[]", None, 99.0, 512);
+        let body = build_body("weird\"model\\name", "[]", None, 99.0, 512, false);
         let parsed = parse_json(&body).unwrap();
         assert_eq!(
             parsed.get("model").and_then(Json::as_str),
@@ -934,8 +1194,17 @@ mod tests {
         );
         assert_eq!(parsed.get("temperature").and_then(Json::as_num), Some(2.0));
 
-        let nan = build_body("m", "[]", None, f64::NAN, 512);
+        let nan = build_body("m", "[]", None, f64::NAN, 512, false);
         assert!(nan.contains("0.60"), "{nan}");
+    }
+
+    #[test]
+    fn the_stream_flag_is_the_only_difference() {
+        let plain = build_body("m", "[]", None, 0.6, 512, false);
+        let streamed = build_body("m", "[]", None, 0.6, 512, true);
+        assert!(plain.contains(r#""stream":false"#), "{plain}");
+        assert!(streamed.contains(r#""stream":true"#), "{streamed}");
+        assert_eq!(plain.replace("false", "true"), streamed);
     }
 
     #[test]
@@ -1027,5 +1296,249 @@ mod tests {
         assert!(!profile_id_ok("p-../etc"));
         assert!(!profile_id_ok(&format!("p-{}", "a".repeat(41))));
         assert_eq!(profile_id(0x1f, 2), "p-1f-2");
+    }
+
+    // -----------------------------------------------------------------------
+    // 流式：切帧
+    // -----------------------------------------------------------------------
+
+    /// 把一段完整的 SSE 文本灌进去，返回事件载荷
+    fn events(text: &str) -> Vec<String> {
+        let mut buffer = SseBuffer::new();
+        let mut out = Vec::new();
+        buffer.push(text.as_bytes(), &mut out);
+        if let Some(last) = buffer.flush() {
+            out.push(last);
+        }
+        out
+    }
+
+    #[test]
+    fn sse_lines_come_out_whole() {
+        let out = events("data: {\"a\":1}\n\ndata: [DONE]\n\n");
+        assert_eq!(out, vec![r#"{"a":1}"#.to_string(), "[DONE]".to_string()]);
+    }
+
+    #[test]
+    fn a_split_in_the_middle_of_a_line_is_held_back() {
+        let mut buffer = SseBuffer::new();
+        let mut out = Vec::new();
+        buffer.push(b"data: {\"a\"", &mut out);
+        assert!(out.is_empty(), "半行不该变成一条事件");
+        buffer.push(b":1}\n\n", &mut out);
+        assert_eq!(out, vec![r#"{"a":1}"#.to_string()]);
+    }
+
+    #[test]
+    fn a_split_inside_a_chinese_character_does_not_corrupt_it() {
+        // "好" 是 E5 A5 BD。把字节从中间切开，按 String 拼必然出替换符
+        let payload = "data: 好\n\n".as_bytes().to_vec();
+        let mut buffer = SseBuffer::new();
+        let mut out = Vec::new();
+        for byte in &payload {
+            buffer.push(&[*byte], &mut out);
+        }
+        assert_eq!(out, vec!["好".to_string()]);
+    }
+
+    #[test]
+    fn the_utf8_boundary_is_exactly_where_a_word_is_cut() {
+        // 真机最容易撞的形状：一行里两个中文字，分片正好落在第二个字的第一个字节后
+        let mut buffer = SseBuffer::new();
+        let mut out = Vec::new();
+        buffer.push(&[b'd', b'a', b't', b'a', b':', b' ', 0xe4], &mut out);
+        assert!(out.is_empty());
+        buffer.push(&[0xbd, 0xa0], &mut out); // 完成"你"
+        buffer.push("\n\n".as_bytes(), &mut out);
+        assert_eq!(out, vec!["你".to_string()]);
+    }
+
+    #[test]
+    fn crlf_and_comments_are_both_fine() {
+        let out = events(": keep-alive\r\n\r\ndata: hi\r\n\r\n");
+        assert_eq!(out, vec!["hi".to_string()]);
+    }
+
+    #[test]
+    fn unknown_fields_are_ignored() {
+        let out = events("event: message\nid: 7\ndata: hi\n\n");
+        assert_eq!(out, vec!["hi".to_string()]);
+    }
+
+    #[test]
+    fn multi_line_data_is_joined() {
+        let out = events("data: one\ndata: two\n\n");
+        assert_eq!(out, vec!["one\ntwo".to_string()]);
+    }
+
+    #[test]
+    fn a_last_event_without_a_blank_line_needs_the_flush() {
+        let mut buffer = SseBuffer::new();
+        let mut out = Vec::new();
+        buffer.push(b"data: tail\n", &mut out);
+        assert!(out.is_empty(), "没有空行就不算完");
+        assert_eq!(buffer.flush(), Some("tail".to_string()));
+        assert_eq!(buffer.flush(), None);
+    }
+
+    #[test]
+    fn only_one_space_after_the_colon_is_dropped() {
+        let out = events("data:  two spaces\n\n");
+        assert_eq!(out, vec![" two spaces".to_string()]);
+    }
+
+    // -----------------------------------------------------------------------
+    // 流式：增量累加
+    // -----------------------------------------------------------------------
+
+    fn delta(content: &str) -> String {
+        format!(r#"{{"choices":[{{"index":0,"delta":{{"content":"{content}"}}}}]}}"#)
+    }
+
+    #[test]
+    fn text_arrives_in_pieces() {
+        let mut acc = StreamAcc::new();
+        assert_eq!(acc.apply(&delta("你")).unwrap(), Some("你".to_string()));
+        assert_eq!(acc.apply(&delta("好")).unwrap(), Some("好".to_string()));
+        assert_eq!(acc.apply(&delta("")).unwrap(), None);
+        assert_eq!(acc.text, "你好");
+    }
+
+    #[test]
+    fn a_delta_with_null_content_is_not_text() {
+        let mut acc = StreamAcc::new();
+        let frame = r#"{"choices":[{"delta":{"role":"assistant","content":null}}]}"#;
+        assert_eq!(acc.apply(frame).unwrap(), None);
+        assert_eq!(acc.text, "");
+    }
+
+    #[test]
+    fn a_multi_part_delta_is_joined() {
+        let mut acc = StreamAcc::new();
+        let frame = r#"{"choices":[{"delta":{"content":[{"text":"a"},{"text":"b"}]}}]}"#;
+        assert_eq!(acc.apply(frame).unwrap(), Some("ab".to_string()));
+        assert_eq!(acc.text, "ab");
+    }
+
+    #[test]
+    fn done_ends_the_stream() {
+        let mut acc = StreamAcc::new();
+        assert_eq!(acc.apply("[DONE]").unwrap(), None);
+        assert!(acc.done);
+        assert_eq!(acc.text, "");
+    }
+
+    #[test]
+    fn junk_frames_are_skipped_but_an_error_frame_stops_us() {
+        let mut acc = StreamAcc::new();
+        // 中转站心跳 / 半截日志：跳过，流继续
+        assert_eq!(acc.apply("not json at all").unwrap(), None);
+        assert_eq!(acc.apply("{}").unwrap(), None);
+        assert_eq!(acc.apply(&delta("hi")).unwrap(), Some("hi".to_string()));
+
+        // 供应商在 200 里说"我失败了"：这是真错误
+        let error = r#"{"error":{"message":"model overloaded"}}"#;
+        assert_eq!(acc.apply(error).unwrap_err(), "model overloaded");
+    }
+
+    #[test]
+    fn finish_reason_and_usage_are_captured() {
+        let mut acc = StreamAcc::new();
+        let frame = r#"{"choices":[{"delta":{"content":"x"},"finish_reason":"stop"}],
+                        "usage":{"prompt_tokens":12,"completion_tokens":3}}"#;
+        acc.apply(frame).unwrap();
+        assert_eq!(acc.finish, "stop");
+        let usage = acc.usage.clone().unwrap();
+        assert_eq!((usage.prompt_tokens, usage.completion_tokens), (12, 3));
+        assert_eq!(acc.finish_reply().usage.unwrap().completion_tokens, 3);
+    }
+
+    #[test]
+    fn tool_arguments_accumulate_by_index() {
+        let mut acc = StreamAcc::new();
+        let first = r#"{"choices":[{"delta":{"tool_calls":[
+            {"index":0,"id":"call_a","type":"function","function":{"name":"placement.move","arguments":"{\"instance"}}]}}]}"#;
+        let second = r#"{"choices":[{"delta":{"tool_calls":[
+            {"index":0,"function":{"arguments":"Id\":\"w-1\"}"}}]}}]}"#;
+        acc.apply(first).unwrap();
+        acc.apply(second).unwrap();
+
+        let reply = acc.finish_reply();
+        assert_eq!(reply.tool_calls.len(), 1);
+        assert_eq!(reply.tool_calls[0].name, "placement.move");
+        assert_eq!(reply.tool_calls[0].id, "call_a");
+        // 只取最后一帧会得到 `Id":"w-1"}` —— 一个解析不了的半截 JSON
+        assert_eq!(reply.tool_calls[0].arguments, r#"{"instanceId":"w-1"}"#);
+        assert!(parse_json(&reply.tool_calls[0].arguments).is_ok());
+    }
+
+    #[test]
+    fn two_tool_calls_keep_their_own_buckets() {
+        let mut acc = StreamAcc::new();
+        let frame = r#"{"choices":[{"delta":{"tool_calls":[
+            {"index":0,"id":"a","function":{"name":"theme.set","arguments":"{\"theme\":"}},
+            {"index":1,"id":"b","function":{"name":"placement.move","arguments":"{\"instanceId\":"}}]}}]}"#;
+        acc.apply(frame).unwrap();
+        let tail = r#"{"choices":[{"delta":{"tool_calls":[
+            {"index":1,"function":{"arguments":"\"w-2\"}"}},
+            {"index":0,"function":{"arguments":"\"dark\"}"}}]}}]}"#;
+        acc.apply(tail).unwrap();
+
+        let reply = acc.finish_reply();
+        assert_eq!(reply.tool_calls.len(), 2);
+        assert_eq!(reply.tool_calls[0].name, "theme.set");
+        assert_eq!(reply.tool_calls[0].arguments, r#"{"theme":"dark"}"#);
+        assert_eq!(reply.tool_calls[1].name, "placement.move");
+        assert_eq!(reply.tool_calls[1].arguments, r#"{"instanceId":"w-2"}"#);
+    }
+
+    #[test]
+    fn a_missing_index_falls_back_to_its_position() {
+        let mut acc = StreamAcc::new();
+        let frame = r#"{"choices":[{"delta":{"tool_calls":[
+            {"id":"a","function":{"name":"theme.set","arguments":"{}"}}]}}]}"#;
+        acc.apply(frame).unwrap();
+        assert_eq!(acc.tools[0].index, 0);
+        assert_eq!(acc.finish_reply().tool_calls[0].id, "a");
+    }
+
+    #[test]
+    fn a_missing_id_or_arguments_gets_a_sane_default() {
+        let mut acc = StreamAcc::new();
+        let frame = r#"{"choices":[{"delta":{"tool_calls":[
+            {"index":0,"function":{"name":"theme.set"}}]}}]}"#;
+        acc.apply(frame).unwrap();
+        let reply = acc.finish_reply();
+        assert_eq!(reply.tool_calls[0].id, "call_0");
+        assert_eq!(reply.tool_calls[0].arguments, "{}");
+    }
+
+    #[test]
+    fn a_tool_call_without_a_name_is_dropped() {
+        let mut acc = StreamAcc::new();
+        let frame = r#"{"choices":[{"delta":{"tool_calls":[
+            {"index":0,"function":{"arguments":"{}"}}]}}]}"#;
+        acc.apply(frame).unwrap();
+        assert!(acc.finish_reply().tool_calls.is_empty());
+    }
+
+    #[test]
+    fn an_empty_stream_still_looks_like_a_reply() {
+        let mut acc = StreamAcc::new();
+        let reply = acc.finish_reply();
+        assert_eq!(reply.text, "");
+        assert!(reply.tool_calls.is_empty());
+        assert_eq!(reply.finish, "stop");
+        assert!(reply.usage.is_none());
+    }
+
+    #[test]
+    fn request_ids_are_bounded() {
+        assert!(request_id_ok("r-1a2b_3"));
+        assert!(!request_id_ok(""));
+        assert!(!request_id_ok("r 1"));
+        assert!(!request_id_ok("r/1"));
+        assert!(!request_id_ok(&"a".repeat(MAX_REQUEST_ID + 1)));
+        assert!(request_id_ok(&"a".repeat(MAX_REQUEST_ID)));
     }
 }

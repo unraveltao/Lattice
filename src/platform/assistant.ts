@@ -10,6 +10,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import {
   MAX_STEPS,
@@ -121,8 +122,72 @@ export async function activateLlmProfile(id: string): Promise<ProfilesView> {
 
 export type TurnEvent =
   | { type: "text"; text: string }
+  | { type: "delta"; text: string }
   | { type: "tool"; name: string; detail: string; ok: boolean; error?: string }
   | { type: "usage"; promptTokens: number; completionTokens: number };
+
+/** 流式增量的载荷。**带 `requestId`**：Rust 那边 `emit` 是广播（不变量 9） */
+interface DeltaPayload {
+  requestId: string;
+  text: string;
+}
+
+let requestSerial = 0;
+/** 正在飞的那一轮。用户的"停止"按钮要知道叫停谁 */
+let activeRequest: string | null = null;
+
+function newRequestId(): string {
+  requestSerial += 1;
+  return `r-${Date.now().toString(36)}-${requestSerial}`;
+}
+
+/**
+ * 叫停正在跑的那一轮。**幂等**：那一轮已经结束（或者从没开始）时什么都不做 ——
+ * 界面不该因为"按晚了一步"弹一个错误。
+ */
+export async function cancelActiveTurn(): Promise<void> {
+  const id = activeRequest;
+  if (!id) return;
+  try {
+    await invoke<boolean>("llm_chat_cancel", { requestId: id });
+  } catch {
+    // 那一轮已经结束了：这不是错误
+  }
+}
+
+/**
+ * 跑一轮**流式**对话。
+ *
+ * 三件事和整包那条路不一样：
+ *   1. 增量边走边交给 `onDelta`（界面上就是字一个个出来）；
+ *   2. 增量**只用来画**，权威结果是这个函数的返回值 —— 最后用它覆盖气泡，
+ *      所以"拼增量拼错了"最多是中间闪一下，不会留下一句错话；
+ *   3. 停止靠 `llm_chat_cancel`：Rust 那边在 1 秒读超时时看见标志就收手。
+ */
+async function streamChat(options: {
+  messages: string;
+  tools: string;
+  onDelta: (text: string) => void;
+}): Promise<AssistantReply> {
+  const requestId = newRequestId();
+  activeRequest = requestId;
+  // 先挂监听再发请求：迟一步的话，第一段字会在监听注册之前到（尤其是本地模型）
+  const unlisten = await listen<DeltaPayload>("lattice:llm-delta", (event) => {
+    const payload = event.payload;
+    if (!payload || payload.requestId !== requestId) return;
+    if (typeof payload.text === "string" && payload.text) options.onDelta(payload.text);
+  });
+  try {
+    return await invoke<AssistantReply>("llm_chat_stream", {
+      requestId,
+      messages: options.messages,
+      tools: options.tools,
+    });
+  } finally {
+    if (activeRequest === requestId) activeRequest = null;
+    unlisten();
+  }
+}
 
 /**
  * 一轮对话要碰的两样东西：桌面现状、执行动作。
@@ -211,9 +276,11 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
     if (shouldStop?.()) return false;
 
     const wire = toWire(trimHistory(messages, undefined, maxChars));
-    const reply = await invoke<AssistantReply>("llm_chat", {
+    // 走流式：字先出来，用户能立刻看见"它在说话"，而不是等 20 秒的 Thinking…
+    const reply = await streamChat({
       messages: JSON.stringify(wire),
       tools: JSON.stringify(defs),
+      onDelta: (text) => onEvent({ type: "delta", text }),
     });
 
     const text = (reply.text ?? "").trim();
@@ -227,6 +294,11 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
     }
 
     messages.push({ role: "assistant", content: reply.text ?? "", toolCalls: reply.toolCalls });
+
+    // 用户在"字还在冒"的时候按了停止：**别再执行任何动作**。
+    // 半句话可以留着，半个工具调用不行 —— 参数拼到一半的 JSON 要么解析失败，
+    // 要么更糟：解析成功但少一个字段，模型会在下一步拿错误的值去改桌面
+    if (shouldStop?.()) return false;
 
     const calls = reply.toolCalls ?? [];
     if (calls.length === 0) return true;
