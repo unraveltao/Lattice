@@ -13,10 +13,12 @@
 | **过去** | 为什么长成这样（分层、沙箱、窗口、数据） | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | 想改一个"看着奇怪"的设计之前 |
 | **过去** | 哪些决定被现实撞翻过 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的九个决定」 | 同上，先看这里再动手 |
 | **过去** | 已定案的推理（`accepted` / `superseded`） | [`design/`](./design/) | 想知道当时否掉了什么 |
+| **过去** | 每个版本当时怎么做的、验到什么程度 | [`reference/history.md`](./reference/history.md) | 想知道某段代码当初是怎么撞出来的 |
+| **过去** | 撞到过什么、怎么绕开的（**按症状**分组） | [`PITFALLS.md`](./PITFALLS.md) | 见到一个说不通的症状时，先 `Ctrl+F` 这里 |
 | **现在** | 这个词到底指什么 | [`../GLOSSARY.md`](../GLOSSARY.md) | **所有人**，包括 AI |
 | **现在** | 组件作者必须遵守什么 | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 写组件的人 |
 | **现在** | 改平台代码不许碰什么 | [`../AGENTS.md`](../AGENTS.md) | 改平台的人，人或 agent |
-| **现在** | 查一下就好：agent 接入 / 签名 / 素材 / 邻仓 | `AGENT_ACCESS.md`、`CODE_SIGNING.md`、`PET_REFERENCE.md`、`VELA-REUSE.md` | 碰到那一块的时候 |
+| **现在** | 查一下就好：agent 接入 / 签名 / 素材 / 邻仓 / 构建发版 | `AGENT_ACCESS.md`、`CODE_SIGNING.md`、`PET_REFERENCE.md`、`VELA-REUSE.md`、[`reference/build.md`](./reference/build.md) | 碰到那一块的时候 |
 | **未来** | 下一版做什么、还没做的事怎么想 | [`ROADMAP.md`](./ROADMAP.md) 待办 + [`design/`](./design/)（`draft`） | 要开一件新事的人 |
 
 「现在」这一层分三块：`GLOSSARY` 是**前提**（词先定，别的才谈得上），`WIDGET_SPEC` / `AGENTS` 是**契约**（不遵守就出错），最后一条是**参考**（查一下，不构成约束）。契约只有两份，别再加第三份。
@@ -46,6 +48,8 @@
 | 改平台代码 | [`../AGENTS.md`](../AGENTS.md)（先读第 4 节十九条不变量） | 20 分钟 |
 | 加一个能力（桥方法 / 权限 / 窗口行为） | [`AGENTS.md` 第 7 节"常见改动的配方"](../AGENTS.md) + `WIDGET_SPEC` 对应章节 | 按需 |
 | 想知道某个奇怪设计为什么是这样 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的九个决定」 | 按需 |
+| **手上有个说不通的症状** | [`PITFALLS.md`](./PITFALLS.md)（`Ctrl+F` 搜现象，别搜原因） | 1 分钟 |
+| 要编译 / 打包 / 发版 | [`reference/build.md`](./reference/build.md) | 15 分钟 |
 | 要动 agent 接入 | [`AGENT_ACCESS.md`](./AGENT_ACCESS.md) | 20 分钟 |
 | 要动签名 / 发布 | [`CODE_SIGNING.md`](./CODE_SIGNING.md) + `ROADMAP` v0.7 | 15 分钟 |
 | **要做一件还没做的事** | [`design/README.md`](./design/README.md) | 按需 |
@@ -55,7 +59,7 @@
 三问，从上往下，命中就停：
 
 1. **它是"还没做的事"动手前的推理吗？** → 未来。写 `design/` 一份，结论沉回 `ROADMAP` 一行。
-2. **三个月后还有人要照着它做吗？** 没有 → 参考。放 `docs/reference/`（还没建，第二份参考进来时建）。
+2. **三个月后还有人要照着它做吗？** 没有 → 参考。放 `docs/reference/`（现在有 `build.md` 和 `history.md` 两份，都是「照着做一次就不再翻」的东西）。
 3. **它是别人必须遵守的吗？** → 契约。`docs/` 根，一份，不拆。
 
 三问都不命中 → 它大概不该是文档，是代码注释或 `AGENTS.md` 配方节里的一行。
@@ -76,6 +80,8 @@
 | 组件作者契约 | `docs/WIDGET_SPEC.md` | 别处给链接 |
 | 改代码的约束 | `AGENTS.md` | 别处不重复 |
 | 决定与代价 | `docs/ROADMAP.md` | `design/` 只写推理，结论链接过去 |
+| 坑：症状 / 真实原因 / 解法 | `docs/PITFALLS.md` | 别处只说「见 PITFALLS」，**不要顺手把解法再抄一遍** |
+| 构建与发版的步骤 | `docs/reference/build.md` | `ROADMAP` 只写为什么这么定 |
 
 判断方法：**这段内容如果代码改了要不要跟着改？** 要 → 它不是文档，是指针，改成链接。
 

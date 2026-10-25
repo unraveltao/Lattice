@@ -71,12 +71,12 @@ if (!hasRealGcc && existsSync(join(shimDir, "gcc.exe"))) prepend.push(shimDir);
 
 if (prepend.length === 0) {
   console.warn(`[lattice] 没在 ${toolchain} 找到 windres/gcc，直接沿用系统 PATH。`);
-  console.warn("[lattice] 如果编译报 windres 相关错误，见 docs/ROADMAP.md 的环境一节。");
+  console.warn("[lattice] 如果编译报 windres 相关错误，见 docs/reference/build.md 的工具链一节。");
 } else {
   console.log(`[lattice] 工具链：${prepend.join(" ; ")}`);
   if (!hasRealGcc) {
     console.warn("[lattice] 只有 gcc-shim，没有真 C 编译器：依赖里有 C 代码（ring）时链接会失败。");
-    console.warn(`[lattice] 装一个：见 docs/ROADMAP.md「环境」一节（${msysBin}）。`);
+    console.warn(`[lattice] 装一个：见 docs/reference/build.md「工具链」一节（${msysBin}）。`);
   }
 }
 

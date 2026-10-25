@@ -105,7 +105,7 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | Tauri commands | 61 |
 | Browser assertions | 1 709 over 40 pages |
 | Rust tests | 178 |
-| Documented pitfalls | 72 |
+| Documented pitfalls | 75 |
 
 Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 157 `rustc --test` pure-logic cases plus 21 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
@@ -332,7 +332,9 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 | --- | --- |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | How the pieces fit, and why |
 | [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) | The widget contract |
-| [docs/ROADMAP.md](./docs/ROADMAP.md) | Version history, 72 pitfalls, 9 overturned decisions |
+| [docs/ROADMAP.md](./docs/ROADMAP.md) | Where the project is, and the 9 decisions reality overturned |
+| [docs/PITFALLS.md](./docs/PITFALLS.md) | Every pitfall, grouped by the symptom you are staring at |
+| [docs/reference/build.md](./docs/reference/build.md) | Toolchain, build, release — the operational manual |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | The agent endpoint's threat model |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | Keys, trust anchors, what is *not* signed |
 | [AGENTS.md](./AGENTS.md) | 19 invariants, written for whoever touches this next |

@@ -2,7 +2,7 @@
 
 写给任何要在这个仓库里改代码的人或模型。目标：读完这一页，不用通读源码就能动手，且不会踩已经踩过的坑。
 
-> 约定：这份文件只写**稳定事实**和**判断依据**。具体的坑与解法在 [docs/ROADMAP.md](./docs/ROADMAP.md)，组件协议在 [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md)，取舍论证在 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)，代码签名的取舍在 [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md)，agent 接入的协议与威胁模型在 [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md)。它们与本文冲突时，以代码为准，并顺手修文档。
+> 约定：这份文件只写**稳定事实**和**判断依据**。具体的坑与解法在 [docs/PITFALLS.md](./docs/PITFALLS.md)，组件协议在 [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md)，取舍论证在 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)，代码签名的取舍在 [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md)，agent 接入的协议与威胁模型在 [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md)。它们与本文冲突时，以代码为准，并顺手修文档。
 >
 > **要写新文档先看 [docs/README.md](./docs/README.md)**：哪份该读、哪份该改、新内容该放哪（按你要做的事找 + 三问定归属 + "一份事实只有一个家"）。还没做的事在动手前的推理放 [docs/design/](./docs/design/README.md)，写完的结论要沉回 ROADMAP 一行。
 >
@@ -612,7 +612,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 
 ## 9. 踩过的坑
 
-**别在这里重复记录。** 统一写在 [docs/ROADMAP.md](./docs/ROADMAP.md) 的「踩过的坑」表里，一行一条：症状 / 真实原因 / 解法。踩到新坑就补一行，这是这个仓库最有价值的资产之一。
+**别在这里重复记录。** 统一写在 [docs/PITFALLS.md](./docs/PITFALLS.md)，一行一条：症状 / 真实原因 / 解法。它按**症状**分组（不按版本）—— 查坑这件事从来不按版本发生，所以补新坑时先 `Ctrl+F` 找现象，别新开一节。踩到新坑就补一行，这是这个仓库最有价值的资产之一。
 
 动手前值得先扫一眼的三条（都是"看起来像 UI bug，其实是平台机制"）：
 
@@ -665,7 +665,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 - 改了**调试面板**：`tests/debug.html`（43 条，总线 + 过滤 / 统计纯函数）+ `tests/debug-panel.html`（15 条，把真组件挂起来点按钮）。后者**必须 `import "../src/styles.css"`**，否则面板渲染成裸 HTML。它同时也是一张验收图：`--screenshot` 出来的就是面板长什么样。
 - 改了**媒体控制 / 声音折线**：`tests/music.html`（66 条）自带假宿主，覆盖"有会话 / 没会话 / 权限被拒 / 直播没时长 / 点按钮 / 改轮询间隔"。它替身的坑记住一条：`setConfig()` 要 `Object.assign` 到 handler 捕获的那个对象上，否则 `config.get` 回的还是启动时那份，用例会假通过。
 - 改了组件库（列表 / 搜索 / 安装态）：`tests/library-search.html` 钉的是**判定规则**（空查询不筛、大小写与空白归一、多词 AND、权限名算命中、不做模糊匹配）。搜索的边界只在 `runtime/library-search.ts` 里写一份，组件里别再复制一遍 —— 复制的后果是"测试过了，界面上还是不对"。
-- 改了错误通道 / 兜底页：`tests/diagnostics.html`（识别边界、两条通道不撞、去重指纹、主错误选择）。注入规则本身跑 `npm run test:injection`（9 条，`node:test`，**不需要 dev server**，fixture 和 Rust 单测是同一批：`<head>` 带属性、`<header>` 别认错、doctype 兜底、幂等、压行后行号不变、多字节安全）。Rust 那边 14 条单测在 `diagnostics.rs` 里，但**这台机器跑不了 `cargo test`**（安全策略拦 `target/debug/deps` 下新写的 exe，见 ROADMAP 坑表）。绕法：写个只有一行的壳子 `#[path = "../src-tauri/src/diagnostics.rs"] mod diagnostics;`，然后 `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe` —— 断言还是模块里那一份，不复制。
+- 改了错误通道 / 兜底页：`tests/diagnostics.html`（识别边界、两条通道不撞、去重指纹、主错误选择）。注入规则本身跑 `npm run test:injection`（9 条，`node:test`，**不需要 dev server**，fixture 和 Rust 单测是同一批：`<head>` 带属性、`<header>` 别认错、doctype 兜底、幂等、压行后行号不变、多字节安全）。Rust 那边 14 条单测在 `diagnostics.rs` 里，但**这台机器跑不了 `cargo test`**（安全策略拦 `target/debug/deps` 下新写的 exe，见 [docs/PITFALLS.md](./docs/PITFALLS.md)「构建、工具链与验证」）。绕法：写个只有一行的壳子 `#[path = "../src-tauri/src/diagnostics.rs"] mod diagnostics;`，然后 `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe` —— 断言还是模块里那一份，不复制。
 - 改了内置组件的注入：**两条路都要看**。dev 下 `curl -s http://localhost:1420/widgets/lattice.clock/index.html | grep -c 'data-lattice="diagnostics"'` 应该是 `1`（不是 `2`：中间件要幂等，否则 vite 自己把 `public/` 也注一遍就重了）；`npm run build` 之后再看 `dist/widgets/*/index.html`，构建日志末尾会有一行 `[lattice] 错误上报已注入 N 份内置组件文档`，`N` 要等于内置组件个数。**行数也要对**：`wc -l dist/widgets/<id>/index.html` 必须和 `public/widgets/<id>/index.html` 一样多，多一行就是压行失效、行号全错。
 - **驱动真机 UI**：键盘事件能进 WebView2（`SetForegroundWindow` 之后发 `Ctrl+R` 能刷新、往输入框打字能落盘）；`mouse_event` 的点击**在宿主页的窗饰和错误卡上是生效的**（重载按钮就是这么验的），只是要先 `SetCursorPos` 再等 200–400ms —— 窗饰是 `body:hover` 才淡入的，移过去立刻点会点在还没出现的按钮上。往组件 iframe 里点则不可靠。
 - **CDP 连真机：这台机器上已经开不出来了。** 加 `--remote-debugging-port` 之后应用会起来、窗口标题也在，但**一个 `msedgewebview2` 子进程都没有**，端口不监听，日志里只有两行 watcher —— 看起来像"卡住"，其实是 WebView2 创建直接失败了。判据：`Get-Process msedgewebview2` 里没有带 `com.iron-tom` 的那个；去掉环境变量立刻正常。**别在这上面耗时间**，改用下面的替代验法。
