@@ -312,7 +312,7 @@ function themeSurface(theme: string): string {
   root.style.removeProperty("--lattice-surface");
   const value = getComputedStyle(root).getPropertyValue("--lattice-surface").trim();
   if (saved) root.style.setProperty("--lattice-surface", saved);
-  const resolved = value || (theme === "light" ? "#fbfaf8" : "#15151a");
+  const resolved = value || (theme === "light" ? "#fbfaf8" : "#17171d");
   surfaceCache = { theme, value: resolved };
   return resolved;
 }
