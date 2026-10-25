@@ -1131,7 +1131,10 @@ mod tests {
             r#"{"baseUrl":"https://api.deepseek.com/v1","model":"deepseek-chat",
                 "temperature":0.4,"apiKey":"sk-abc"}"#,
         );
-        assert_eq!(config.version, 2);
+        // 当前是 v3（v2 加了多档，v3 加了 hands + workspace）。这条断言跟着
+        // `normalize` 里的 `config.version = 3` 走 —— 它红过一次，因为版本号
+        // 抬了而这里没跟。
+        assert_eq!(config.version, 3);
         assert_eq!(config.profiles.len(), 1);
         assert_eq!(config.active_id, "p-1e9ac1");
         let profile = &config.profiles[0];
