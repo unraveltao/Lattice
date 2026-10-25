@@ -23,6 +23,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { readAgentStatus, setAgentEnabled, type AgentStatus } from "./agent";
 import { isStaleTarget, readAutostart, writeAutostart, type AutostartState } from "./autostart";
@@ -400,439 +401,441 @@ export function SettingsMenu({
         <Avatar name={profile?.name} size={24} />
       </button>
 
-      {open && (
-        <div
-          className="lattice-settings-backdrop"
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) close();
-          }}
-        >
+      {open &&
+        createPortal(
           <div
-            className="lattice-settings-panel"
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("Settings")}
+            className="lattice-settings-backdrop"
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) close();
+            }}
           >
-            <aside className="lattice-settings-nav">
-              <button
-                type="button"
-                className="lattice-settings-identity"
-                onClick={() => setSection("account")}
-              >
-                <Avatar name={profile?.name} size={30} />
-                <span className="lattice-settings-identity-text">
-                  <b>{profile?.name ?? t("Not signed in")}</b>
-                  <small>{profile ? t("Local profile") : t("Sign in to keep your preferences")}</small>
-                </span>
-              </button>
-
-              <nav className="lattice-settings-nav-list" aria-label={t("Settings sections")}>
-                {SECTIONS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`lattice-settings-nav-item${section === item.id ? " is-active" : ""}`}
-                    onClick={() => {
-                      setSection(item.id);
-                      setCatalogueOpen(false);
-                    }}
-                    aria-current={section === item.id ? "page" : undefined}
-                  >
-                    <Glyph d={item.icon} />
-                    <span>{t(item.label)}</span>
-                  </button>
-                ))}
-              </nav>
-            </aside>
-
-            <section className="lattice-settings-body">
-              <header className="lattice-settings-head">
-                <h2>{t(sectionLabel)}</h2>
+            <div
+              className="lattice-settings-panel"
+              ref={panelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("Settings")}
+            >
+              <aside className="lattice-settings-nav">
                 <button
                   type="button"
-                  className="lattice-icon-btn"
-                  onClick={close}
-                  title={t("Close settings")}
-                  aria-label={t("Close settings")}
+                  className="lattice-settings-identity"
+                  onClick={() => setSection("account")}
                 >
-                  <Glyph d={ICON.close} />
+                  <Avatar name={profile?.name} size={30} />
+                  <span className="lattice-settings-identity-text">
+                    <b>{profile?.name ?? t("Not signed in")}</b>
+                    <small>{profile ? t("Local profile") : t("Sign in to keep your preferences")}</small>
+                  </span>
                 </button>
-              </header>
 
-              <div className="lattice-settings-content">
-                {section === "account" && (
-                  <ProfilePanel
-                    profile={profile}
-                    installedCount={installedCount}
-                    placementCount={placementCount}
-                    usage={usage}
-                    onSave={(name, email) => signIn(name, email)}
-                    onSignOut={() => {
-                      signOut();
-                      close();
-                    }}
-                    onClearUsage={() => void clearUsage()}
-                  />
-                )}
+                <nav className="lattice-settings-nav-list" aria-label={t("Settings sections")}>
+                  {SECTIONS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`lattice-settings-nav-item${section === item.id ? " is-active" : ""}`}
+                      onClick={() => {
+                        setSection(item.id);
+                        setCatalogueOpen(false);
+                      }}
+                      aria-current={section === item.id ? "page" : undefined}
+                    >
+                      <Glyph d={item.icon} />
+                      <span>{t(item.label)}</span>
+                    </button>
+                  ))}
+                </nav>
+              </aside>
 
-                {section === "appearance" && (
-                  <div className="lattice-settings-form">
-                    <div className="lattice-settings-row">
-                      <span className="lattice-settings-label">{t("Theme")}</span>
-                      <div className="lattice-segmented is-compact is-icons">
-                        {THEME_OPTIONS.map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            className={`lattice-segment${theme === option.value ? " is-active" : ""}`}
-                            onClick={() => setTheme(option.value)}
-                            aria-pressed={theme === option.value}
-                            title={t(option.label)}
-                            aria-label={t(option.label)}
-                          >
-                            <ThemeGlyph mode={option.value} />
-                          </button>
-                        ))}
+              <section className="lattice-settings-body">
+                <header className="lattice-settings-head">
+                  <h2>{t(sectionLabel)}</h2>
+                  <button
+                    type="button"
+                    className="lattice-icon-btn"
+                    onClick={close}
+                    title={t("Close settings")}
+                    aria-label={t("Close settings")}
+                  >
+                    <Glyph d={ICON.close} />
+                  </button>
+                </header>
+
+                <div className="lattice-settings-content">
+                  {section === "account" && (
+                    <ProfilePanel
+                      profile={profile}
+                      installedCount={installedCount}
+                      placementCount={placementCount}
+                      usage={usage}
+                      onSave={(name, email) => signIn(name, email)}
+                      onSignOut={() => {
+                        signOut();
+                        close();
+                      }}
+                      onClearUsage={() => void clearUsage()}
+                    />
+                  )}
+
+                  {section === "appearance" && (
+                    <div className="lattice-settings-form">
+                      <div className="lattice-settings-row">
+                        <span className="lattice-settings-label">{t("Theme")}</span>
+                        <div className="lattice-segmented is-compact is-icons">
+                          {THEME_OPTIONS.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`lattice-segment${theme === option.value ? " is-active" : ""}`}
+                              onClick={() => setTheme(option.value)}
+                              aria-pressed={theme === option.value}
+                              title={t(option.label)}
+                              aria-label={t(option.label)}
+                            >
+                              <ThemeGlyph mode={option.value} />
+                            </button>
+                          ))}
+                        </div>
                       </div>
+                      <p className="lattice-settings-hint">
+                        {t("Applies to this window and every widget on your desktop.")}
+                      </p>
                     </div>
-                    <p className="lattice-settings-hint">
-                      {t("Applies to this window and every widget on your desktop.")}
-                    </p>
-                  </div>
-                )}
+                  )}
 
-                {section === "language" && (
-                  <div className="lattice-settings-form">
-                    <div className="lattice-settings-row">
-                      <span className="lattice-settings-label">{t("Language")}</span>
-                      <div className="lattice-segmented is-compact">
-                        {LANGUAGE_OPTIONS.map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            className={`lattice-segment${language === option.value ? " is-active" : ""}`}
-                            onClick={() => setLanguage(option.value)}
-                            aria-pressed={language === option.value}
-                            title={option.value === "system" ? t("Follow Windows") : option.label}
-                          >
-                            {option.value === "system" ? t("System") : option.label}
-                          </button>
-                        ))}
+                  {section === "language" && (
+                    <div className="lattice-settings-form">
+                      <div className="lattice-settings-row">
+                        <span className="lattice-settings-label">{t("Language")}</span>
+                        <div className="lattice-segmented is-compact">
+                          {LANGUAGE_OPTIONS.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`lattice-segment${language === option.value ? " is-active" : ""}`}
+                              onClick={() => setLanguage(option.value)}
+                              aria-pressed={language === option.value}
+                              title={option.value === "system" ? t("Follow Windows") : option.label}
+                            >
+                              {option.value === "system" ? t("System") : option.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
+                      <p className="lattice-settings-hint">
+                        {t("The whole platform switches immediately. Widgets pick it up on their next frame.")}
+                      </p>
                     </div>
-                    <p className="lattice-settings-hint">
-                      {t("The whole platform switches immediately. Widgets pick it up on their next frame.")}
-                    </p>
-                  </div>
-                )}
+                  )}
 
-                {section === "desktop" && (
-                  <div className="lattice-settings-list">
-                    <div className="lattice-menu-row is-static">
-                      <Glyph d={ICON.grid} />
-                      <span className="lattice-menu-label">{t("Snap to grid")}</span>
-                      <label className="lattice-switch" title={t("Align to an 8px grid while dragging")}>
-                        <input
-                          type="checkbox"
-                          checked={snapToGrid}
-                          onChange={toggleSnap}
-                          aria-label={t("Snap to grid")}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="lattice-menu-row is-static">
-                      <Glyph d={ICON.monitor} />
-                      <span className="lattice-menu-label">{t("Restore on launch")}</span>
-                      <label
-                        className="lattice-switch"
-                        title={t("Put your desktop widgets back when Lattice starts")}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={restoreOnLaunch}
-                          onChange={toggleRestoreOnLaunch}
-                          aria-label={t("Restore widgets on launch")}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="lattice-menu-row is-static">
-                      <Glyph d={ICON.startup} />
-                      <span className="lattice-menu-label">{t("Start with Windows")}</span>
-                      <label
-                        className="lattice-switch"
-                        title={t("Launch Lattice when you sign in, so your widgets are already there")}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={Boolean(autostart?.enabled)}
-                          disabled={!autostartKnown || autostartBusy}
-                          onChange={() => void toggleAutostart()}
-                          aria-label={t("Start Lattice with Windows")}
-                        />
-                      </label>
-                    </div>
-
-                    {autostartHint ? (
-                      <p className={`lattice-menu-hint${autostartError ? " is-error" : ""}`}>{autostartHint}</p>
-                    ) : null}
-
-                    {placementCount > 0 ? (
+                  {section === "desktop" && (
+                    <div className="lattice-settings-list">
                       <div className="lattice-menu-row is-static">
-                        <Glyph d={ICON.pause} />
-                        <span className="lattice-menu-label">{t("Pause widgets")}</span>
-                        <label
-                          className="lattice-switch"
-                          title={t("Hide the widgets on your desktop and stop their timers, without closing Lattice")}
-                        >
+                        <Glyph d={ICON.grid} />
+                        <span className="lattice-menu-label">{t("Snap to grid")}</span>
+                        <label className="lattice-switch" title={t("Align to an 8px grid while dragging")}>
                           <input
                             type="checkbox"
-                            checked={paused}
-                            onChange={() => void togglePaused()}
-                            aria-label={t("Pause desktop widgets")}
+                            checked={snapToGrid}
+                            onChange={toggleSnap}
+                            aria-label={t("Snap to grid")}
                           />
                         </label>
                       </div>
-                    ) : null}
-                  </div>
-                )}
 
-                {section === "widgets" && !catalogueOpen && (
-                  <div className="lattice-settings-list">
-                    <button type="button" className="lattice-menu-row" onClick={startCatalogue}>
-                      <Glyph d={ICON.store} />
-                      <span className="lattice-menu-label">{t("Widget catalogue")}</span>
-                      <span className="lattice-menu-note">
-                        {isOfficialCatalogue(catalogueSource.url)
-                          ? t("Official")
-                          : catalogueSource.kind === "bundled"
-                            ? t("Bundled")
-                            : t("Custom URL")}
-                      </span>
-                      <Glyph d={ICON.chevron} size={13} />
-                    </button>
-
-                    <button
-                      type="button"
-                      className={`lattice-menu-row${refreshing ? " is-spinning" : ""}`}
-                      onClick={onRefresh}
-                      disabled={refreshing}
-                      title={t("Rescan the widgets folder")}
-                    >
-                      <Glyph d={ICON.refresh} />
-                      <span className="lattice-menu-label">{t("Rescan widgets")}</span>
-                    </button>
-
-                    <div className="lattice-menu-row is-static">
-                      <Glyph d={ICON.terminal} />
-                      <span className="lattice-menu-label">{t("Debug panel")}</span>
-                      <label
-                        className="lattice-switch"
-                        title={t("Bridge calls and widget console, live (Ctrl+Shift+D)")}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={debugOpen}
-                          onChange={onToggleDebug}
-                          aria-label={t("Toggle debug panel")}
-                        />
-                      </label>
-                    </div>
-
-                    <p className="lattice-settings-hint">
-                      {t("Widgets install from the library; this only decides where packages come from.")}
-                    </p>
-                  </div>
-                )}
-
-                {section === "widgets" && catalogueOpen && (
-                  <div className="lattice-settings-form">
-                    <div className="lattice-settings-form-head">
-                      <button type="button" className="lattice-icon-btn" onClick={() => setCatalogueOpen(false)}>
-                        <Glyph d={ICON.back} />
-                        <span className="lattice-sr-only">{t("Back")}</span>
-                      </button>
-                      <span>{t("Widget catalogue")}</span>
-                    </div>
-
-                    <div className="lattice-segmented is-full">
-                      <button
-                        type="button"
-                        className={`lattice-segment${draftKind === "official" ? " is-active" : ""}`}
-                        onClick={() => setDraftKind("official")}
-                      >
-                        {t("Official")}
-                      </button>
-                      <button
-                        type="button"
-                        className={`lattice-segment${draftKind === "url" ? " is-active" : ""}`}
-                        onClick={() => setDraftKind("url")}
-                      >
-                        {t("Custom URL")}
-                      </button>
-                      <button
-                        type="button"
-                        className={`lattice-segment${draftKind === "bundled" ? " is-active" : ""}`}
-                        onClick={() => setDraftKind("bundled")}
-                      >
-                        {t("Bundled")}
-                      </button>
-                    </div>
-
-                    <label className="lattice-textfield">
-                      <span>{t("Catalogue address")}</span>
-                      <input
-                        value={draftKind === "official" ? OFFICIAL_CATALOGUE_URL : draftUrl}
-                        onChange={(event) => setDraftUrl(event.target.value)}
-                        placeholder="https://example.com/lattice/registry.json"
-                        disabled={draftKind !== "url"}
-                        spellCheck={false}
-                        autoComplete="off"
-                      />
-                    </label>
-
-                    <p className="lattice-account-hint">
-                      {draftKind === "bundled"
-                        ? t(
-                            "The catalogue that ships with the app — a demo for when the network is down. Its packages are signed with a public key, so switching back to a real catalogue later will ask you to confirm a different publisher.",
-                          )
-                        : t(
-                            "A plain JSON file — any static host works, no server needed. Packages are verified against the publisher key in that file before they are installed.",
-                          )}
-                    </p>
-
-                    <div className="lattice-blocked">
-                      <div className="lattice-blocked-head">
-                        <span>{t("Blocked publishers")}</span>
-                        <span className="lattice-blocked-count">{blockedKeys.length}</span>
+                      <div className="lattice-menu-row is-static">
+                        <Glyph d={ICON.monitor} />
+                        <span className="lattice-menu-label">{t("Restore on launch")}</span>
+                        <label
+                          className="lattice-switch"
+                          title={t("Put your desktop widgets back when Lattice starts")}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={restoreOnLaunch}
+                            onChange={toggleRestoreOnLaunch}
+                            aria-label={t("Restore widgets on launch")}
+                          />
+                        </label>
                       </div>
-                      {blockedKeys.length === 0 ? (
-                        <p className="lattice-account-hint">
-                          {t(
-                            "Nothing blocked. Blocking a publisher key means nothing signed with it will be installed — pinned keys do not help if the key itself leaks.",
-                          )}
-                        </p>
-                      ) : (
-                        <ul className="lattice-blocked-list">
-                          {blockedKeys.map((key) => (
-                            <li key={key}>
-                              <code title={key}>{keyFingerprint(key)}</code>
-                              <button type="button" className="lattice-btn is-small" onClick={() => unblockKey(key)}>
-                                {t("Unblock")}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
 
-                    <div className="lattice-settings-form-actions">
-                      <button type="button" className="lattice-btn is-small" onClick={() => setCatalogueOpen(false)}>
-                        {t("Cancel")}
+                      <div className="lattice-menu-row is-static">
+                        <Glyph d={ICON.startup} />
+                        <span className="lattice-menu-label">{t("Start with Windows")}</span>
+                        <label
+                          className="lattice-switch"
+                          title={t("Launch Lattice when you sign in, so your widgets are already there")}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(autostart?.enabled)}
+                            disabled={!autostartKnown || autostartBusy}
+                            onChange={() => void toggleAutostart()}
+                            aria-label={t("Start Lattice with Windows")}
+                          />
+                        </label>
+                      </div>
+
+                      {autostartHint ? (
+                        <p className={`lattice-menu-hint${autostartError ? " is-error" : ""}`}>{autostartHint}</p>
+                      ) : null}
+
+                      {placementCount > 0 ? (
+                        <div className="lattice-menu-row is-static">
+                          <Glyph d={ICON.pause} />
+                          <span className="lattice-menu-label">{t("Pause widgets")}</span>
+                          <label
+                            className="lattice-switch"
+                            title={t("Hide the widgets on your desktop and stop their timers, without closing Lattice")}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={paused}
+                              onChange={() => void togglePaused()}
+                              aria-label={t("Pause desktop widgets")}
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {section === "widgets" && !catalogueOpen && (
+                    <div className="lattice-settings-list">
+                      <button type="button" className="lattice-menu-row" onClick={startCatalogue}>
+                        <Glyph d={ICON.store} />
+                        <span className="lattice-menu-label">{t("Widget catalogue")}</span>
+                        <span className="lattice-menu-note">
+                          {isOfficialCatalogue(catalogueSource.url)
+                            ? t("Official")
+                            : catalogueSource.kind === "bundled"
+                              ? t("Bundled")
+                              : t("Custom URL")}
+                        </span>
+                        <Glyph d={ICON.chevron} size={13} />
                       </button>
+
                       <button
                         type="button"
-                        className="lattice-btn is-small is-primary"
-                        onClick={saveCatalogue}
-                        disabled={draftKind === "url" && !draftUrl.trim()}
+                        className={`lattice-menu-row${refreshing ? " is-spinning" : ""}`}
+                        onClick={onRefresh}
+                        disabled={refreshing}
+                        title={t("Rescan the widgets folder")}
                       >
-                        {t("Save")}
+                        <Glyph d={ICON.refresh} />
+                        <span className="lattice-menu-label">{t("Rescan widgets")}</span>
                       </button>
-                    </div>
-                  </div>
-                )}
 
-                {section === "assistant" && (
-                  <div className="lattice-settings-list">
-                    <div className="lattice-menu-row is-static">
-                      <Glyph d={ICON.agent} />
-                      <span className="lattice-menu-label">{t("Agent access")}</span>
-                      <span className="lattice-menu-note">
-                        {agentError
-                          ? agentError
-                          : agent?.enabled
-                            ? `127.0.0.1:${agent.port ?? "…"}`
-                            : ""}
-                      </span>
-                      <label
-                        className="lattice-switch"
-                        title={t("Let a local agent read and arrange the desktop over 127.0.0.1")}
-                      >
+                      <div className="lattice-menu-row is-static">
+                        <Glyph d={ICON.terminal} />
+                        <span className="lattice-menu-label">{t("Debug panel")}</span>
+                        <label
+                          className="lattice-switch"
+                          title={t("Bridge calls and widget console, live (Ctrl+Shift+D)")}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={debugOpen}
+                            onChange={onToggleDebug}
+                            aria-label={t("Toggle debug panel")}
+                          />
+                        </label>
+                      </div>
+
+                      <p className="lattice-settings-hint">
+                        {t("Widgets install from the library; this only decides where packages come from.")}
+                      </p>
+                    </div>
+                  )}
+
+                  {section === "widgets" && catalogueOpen && (
+                    <div className="lattice-settings-form">
+                      <div className="lattice-settings-form-head">
+                        <button type="button" className="lattice-icon-btn" onClick={() => setCatalogueOpen(false)}>
+                          <Glyph d={ICON.back} />
+                          <span className="lattice-sr-only">{t("Back")}</span>
+                        </button>
+                        <span>{t("Widget catalogue")}</span>
+                      </div>
+
+                      <div className="lattice-segmented is-full">
+                        <button
+                          type="button"
+                          className={`lattice-segment${draftKind === "official" ? " is-active" : ""}`}
+                          onClick={() => setDraftKind("official")}
+                        >
+                          {t("Official")}
+                        </button>
+                        <button
+                          type="button"
+                          className={`lattice-segment${draftKind === "url" ? " is-active" : ""}`}
+                          onClick={() => setDraftKind("url")}
+                        >
+                          {t("Custom URL")}
+                        </button>
+                        <button
+                          type="button"
+                          className={`lattice-segment${draftKind === "bundled" ? " is-active" : ""}`}
+                          onClick={() => setDraftKind("bundled")}
+                        >
+                          {t("Bundled")}
+                        </button>
+                      </div>
+
+                      <label className="lattice-textfield">
+                        <span>{t("Catalogue address")}</span>
                         <input
-                          type="checkbox"
-                          checked={Boolean(agent?.enabled)}
-                          disabled={!agent || agentBusy}
-                          onChange={() => void toggleAgent()}
-                          aria-label={t("Allow agent access")}
+                          value={draftKind === "official" ? OFFICIAL_CATALOGUE_URL : draftUrl}
+                          onChange={(event) => setDraftUrl(event.target.value)}
+                          placeholder="https://example.com/lattice/registry.json"
+                          disabled={draftKind !== "url"}
+                          spellCheck={false}
+                          autoComplete="off"
                         />
                       </label>
+
+                      <p className="lattice-account-hint">
+                        {draftKind === "bundled"
+                          ? t(
+                              "The catalogue that ships with the app — a demo for when the network is down. Its packages are signed with a public key, so switching back to a real catalogue later will ask you to confirm a different publisher.",
+                            )
+                          : t(
+                              "A plain JSON file — any static host works, no server needed. Packages are verified against the publisher key in that file before they are installed.",
+                            )}
+                      </p>
+
+                      <div className="lattice-blocked">
+                        <div className="lattice-blocked-head">
+                          <span>{t("Blocked publishers")}</span>
+                          <span className="lattice-blocked-count">{blockedKeys.length}</span>
+                        </div>
+                        {blockedKeys.length === 0 ? (
+                          <p className="lattice-account-hint">
+                            {t(
+                              "Nothing blocked. Blocking a publisher key means nothing signed with it will be installed — pinned keys do not help if the key itself leaks.",
+                            )}
+                          </p>
+                        ) : (
+                          <ul className="lattice-blocked-list">
+                            {blockedKeys.map((key) => (
+                              <li key={key}>
+                                <code title={key}>{keyFingerprint(key)}</code>
+                                <button type="button" className="lattice-btn is-small" onClick={() => unblockKey(key)}>
+                                  {t("Unblock")}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      <div className="lattice-settings-form-actions">
+                        <button type="button" className="lattice-btn is-small" onClick={() => setCatalogueOpen(false)}>
+                          {t("Cancel")}
+                        </button>
+                        <button
+                          type="button"
+                          className="lattice-btn is-small is-primary"
+                          onClick={saveCatalogue}
+                          disabled={draftKind === "url" && !draftUrl.trim()}
+                        >
+                          {t("Save")}
+                        </button>
+                      </div>
                     </div>
+                  )}
 
-                    <button
-                      type="button"
-                      className="lattice-menu-row"
-                      onClick={() => {
-                        close();
-                        onOpenAssistant();
-                      }}
-                      title={t("Talk to your own model with your own API key, and it arranges the desktop for you (Ctrl+K)")}
-                    >
-                      <Glyph d={ICON.agent} />
-                      <span className="lattice-menu-label">{t("AI assistant")}</span>
-                      <span className="lattice-menu-note">{t("Model · key · Ctrl+K")}</span>
-                      <Glyph d={ICON.chevron} size={13} />
-                    </button>
+                  {section === "assistant" && (
+                    <div className="lattice-settings-list">
+                      <div className="lattice-menu-row is-static">
+                        <Glyph d={ICON.agent} />
+                        <span className="lattice-menu-label">{t("Agent access")}</span>
+                        <span className="lattice-menu-note">
+                          {agentError
+                            ? agentError
+                            : agent?.enabled
+                              ? `127.0.0.1:${agent.port ?? "…"}`
+                              : ""}
+                        </span>
+                        <label
+                          className="lattice-switch"
+                          title={t("Let a local agent read and arrange the desktop over 127.0.0.1")}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(agent?.enabled)}
+                            disabled={!agent || agentBusy}
+                            onChange={() => void toggleAgent()}
+                            aria-label={t("Allow agent access")}
+                          />
+                        </label>
+                      </div>
 
-                    <p className="lattice-settings-hint">
-                      {t("The built-in assistant uses your own OpenAI-compatible endpoint. Its key never reaches a widget.")}
-                    </p>
-                  </div>
-                )}
-
-                {section === "about" && (
-                  <div className="lattice-settings-list">
-                    <div className="lattice-menu-row is-static">
-                      <Glyph d={ICON.info} />
-                      <span className="lattice-menu-label">{t("About Lattice")}</span>
-                      <span className="lattice-menu-note">
-                        {version ? `v${version}` : "…"} · {t("local-first")}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      className="lattice-menu-row"
-                      onClick={() => void runUpdate()}
-                      disabled={update.status === "checking" || update.status === "downloading"}
-                      title={updateHint}
-                    >
-                      <Glyph d={ICON.refresh} />
-                      <span className="lattice-menu-label">{t("Check for updates")}</span>
-                      <span className="lattice-menu-note">{updateNote}</span>
-                    </button>
-
-                    <div className="lattice-settings-danger">
                       <button
                         type="button"
-                        className="lattice-menu-row is-danger"
+                        className="lattice-menu-row"
                         onClick={() => {
                           close();
-                          onQuit();
+                          onOpenAssistant();
                         }}
+                        title={t("Talk to your own model with your own API key, and it arranges the desktop for you (Ctrl+K)")}
                       >
-                        <Glyph d={ICON.power} />
-                        <span className="lattice-menu-label">{t("Quit Lattice")}</span>
+                        <Glyph d={ICON.agent} />
+                        <span className="lattice-menu-label">{t("AI assistant")}</span>
+                        <span className="lattice-menu-note">{t("Model · key · Ctrl+K")}</span>
+                        <Glyph d={ICON.chevron} size={13} />
                       </button>
+
+                      <p className="lattice-settings-hint">
+                        {t("The built-in assistant uses your own OpenAI-compatible endpoint. Its key never reaches a widget.")}
+                      </p>
                     </div>
-                  </div>
-                )}
-              </div>
-            </section>
-          </div>
-        </div>
-      )}
+                  )}
+
+                  {section === "about" && (
+                    <div className="lattice-settings-list">
+                      <div className="lattice-menu-row is-static">
+                        <Glyph d={ICON.info} />
+                        <span className="lattice-menu-label">{t("About Lattice")}</span>
+                        <span className="lattice-menu-note">
+                          {version ? `v${version}` : "…"} · {t("local-first")}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="lattice-menu-row"
+                        onClick={() => void runUpdate()}
+                        disabled={update.status === "checking" || update.status === "downloading"}
+                        title={updateHint}
+                      >
+                        <Glyph d={ICON.refresh} />
+                        <span className="lattice-menu-label">{t("Check for updates")}</span>
+                        <span className="lattice-menu-note">{updateNote}</span>
+                      </button>
+
+                      <div className="lattice-settings-danger">
+                        <button
+                          type="button"
+                          className="lattice-menu-row is-danger"
+                          onClick={() => {
+                            close();
+                            onQuit();
+                          }}
+                        >
+                          <Glyph d={ICON.power} />
+                          <span className="lattice-menu-label">{t("Quit Lattice")}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
