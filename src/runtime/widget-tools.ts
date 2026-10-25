@@ -240,6 +240,53 @@ export interface WidgetToolCandidate extends WidgetToolSource {
   granted: boolean;
 }
 
+/**
+ * 一张"清单 × 摆放"的候选表：谁是这一轮可能答话的实例、它能不能答。
+ *
+ * 为什么在纯逻辑这一侧、而不是在面板里拼：这份表**两个窗口都要**。主窗口自己算，
+ * 桌面小窗问主窗口要（`assistant_widget_tools` → `platform/assistant.ts` 的
+ * `remoteSurface`）—— 各拼一遍的话，小窗那份迟早会漏掉 `granted` 那一条，
+ * 症状是"小窗里模型调一个没授权的工具、每次都失败"，而它没有任何办法学到该去授权。
+ *
+ * **这里只拼、不筛**：`installed` / `granted` / "一条工具都没声明"这三条判据只在
+ * `widgetToolSources` 里过一遍。预先筛一遍等于把判据变成两份。
+ */
+export interface WidgetToolRecord {
+  /** 组件 id（`lattice.todo`） */
+  id: string;
+  tools: readonly AgentToolSpec[];
+}
+
+/** 平台那两样只有它自己知道的事：摆了哪些、装没装、授没授权 */
+export interface WidgetToolState {
+  placements: ReadonlyArray<{ instanceId: string; widgetId: string }>;
+  installedIds: readonly string[];
+  grants: Readonly<Record<string, readonly string[] | undefined>>;
+}
+
+export function widgetToolCandidates(
+  records: readonly WidgetToolRecord[],
+  state: WidgetToolState,
+): WidgetToolCandidate[] {
+  const out: WidgetToolCandidate[] = [];
+  for (const record of records) {
+    for (const placement of state.placements) {
+      if (placement.widgetId !== record.id) continue;
+      out.push({
+        instanceId: placement.instanceId,
+        widgetId: record.id,
+        // 用 id 当"哪一份"的说明：它稳定、不用翻译，也不会因为两门语言各写一个
+        // 名字而让模型看到两个不同的东西
+        title: record.id,
+        tools: [...record.tools],
+        installed: state.installedIds.includes(record.id),
+        granted: (state.grants[record.id] ?? []).includes("agent:tools"),
+      });
+    }
+  }
+  return out;
+}
+
 export function widgetToolSources(candidates: WidgetToolCandidate[]): WidgetToolSource[] {
   return candidates
     .filter((item) => item.installed && item.granted && item.tools.length > 0)

@@ -112,10 +112,10 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | --- | --- |
 | Official widgets | 18 |
 | Permissions | 12 |
-| Tauri commands | 92 |
-| Browser assertions | 2 521 over 53 pages |
+| Tauri commands | 94 |
+| Browser assertions | 2 539 over 53 pages |
 | Rust tests | 415 |
-| Documented pitfalls | 84 |
+| Documented pitfalls | 85 |
 
 Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 364 `rustc --test` pure-logic cases plus 51 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
@@ -338,9 +338,9 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 23 030 lines |
+| TypeScript | 23 202 lines |
 | CSS | 6 103 lines |
-| Rust | 22 854 lines |
+| Rust | 22 899 lines |
 | SDK | 943 lines |
 | Widgets + example | 24 866 lines |
 | Scripts | 4 958 lines |

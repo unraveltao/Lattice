@@ -88,13 +88,8 @@ import {
   type SkillView,
 } from "../runtime/skills";
 import { useT } from "../runtime/i18n";
-import {
-  widgetToolSources,
-  widgetToolSpecs,
-  type WidgetToolSource,
-} from "../runtime/widget-tools";
+import { widgetToolSpecs, type WidgetToolSource } from "../runtime/widget-tools";
 import { ModelProfiles } from "./ModelProfiles";
-import { useLattice } from "./store";
 
 /** 一条要显示的东西。模型的消息和工具的执行结果分开排，读起来才像"过程" */
 type Entry =
@@ -283,33 +278,10 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
    * 数据平面：这一轮能调的组件工具。
    *
    * 三个条件全为真才进表（判据只在 `widgetToolSources` 里）：装上了、用户授了
-   * `agent:tools`、清单里真声明了。**小窗那一份没有清单**（`records` 不传），
-   * 于是它那一轮没有组件工具 —— 那是"执行者在主窗口"的延续，不是可以忽略的分叉，
-   * 缺口记在 ROADMAP 里。
+   * `agent:tools`、清单里真声明了。**这份清单不在这里拼** —— 每一轮开始时向
+   * `surface` 现问：主窗口自己算，桌面小窗问主窗口要（`assistant_widget_tools`）。
+   * 小窗没有 `useLattice` 的权威状态，也没有画布上那些 iframe，自己拼只会拼出空表。
    */
-  const placements = useLattice((state) => state.placements);
-  const grants = useLattice((state) => state.grants);
-  const installedIds = useLattice((state) => state.installedIds);
-  const widgetSources = useMemo<WidgetToolSource[]>(
-    () =>
-      widgetToolSources(
-        Array.from(records?.values() ?? []).flatMap((record) =>
-          placements
-            .filter((placement) => placement.widgetId === record.manifest.id)
-            .map((placement) => ({
-              instanceId: placement.instanceId,
-              widgetId: record.manifest.id,
-              // 用 id 当"哪一份"的说明：它稳定、不需要翻译，也不会因为两门语言
-              // 各写一个名字而让模型看到两个不同的东西
-              title: record.manifest.id,
-              tools: record.manifest.agent.tools,
-              installed: installedIds.includes(record.manifest.id),
-              granted: (grants[record.manifest.id] ?? []).includes("agent:tools"),
-            })),
-        ),
-      ),
-    [records, placements, grants, installedIds],
-  );
 
   // 收进 ref：`send` 的依赖里不放 surface，否则每次清单变化都会重建回调
   const surfaceRef = useRef(surface);
@@ -604,6 +576,15 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         extra = {};
       }
     }
+    /* 组件工具**这一轮现问**：清单会随装 / 卸 / 授权 / 摆放变，缓存一份就等于让
+     * 模型拿着过期的表；而它没有任何办法知道那是过期的。问不到就当没有 —— 这一轮
+     * 少几条工具，比整轮报错好（和上面 MCP 发现失败同一条规矩）。 */
+    let widgetSources: WidgetToolSource[] = [];
+    try {
+      widgetSources = await host.widgetTools();
+    } catch {
+      widgetSources = [];
+    }
     const table = allTools("platform", handsOn, extra, widgetToolSpecs(widgetSources));
     try {
       // 第一条永远是 system：桌面现状每次现拍，模型不该记着"上次的桌面"。
@@ -684,7 +665,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       // 每一轮都存：用户下一句很可能就在关掉面板之后（0003 §5 第一行）
       void persistSession(conversation);
     }
-  }, [active?.model, approve, busy, catalogue, draft, hands, mode, persistSession, skills, widgetSources]);
+  }, [active?.model, approve, busy, catalogue, draft, hands, mode, persistSession, skills]);
 
 
   const stop = useCallback(() => {

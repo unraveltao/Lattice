@@ -24,6 +24,8 @@ import { nextFreeSlot, useLattice, type Placement, type ThemeMode } from "./stor
 import type { WidgetRecord } from "../runtime/registry";
 import type { WidgetHelp } from "../runtime/help";
 import { pickText } from "../runtime/widget-text";
+import { callWidgetTool, listWidgetTools } from "./widget-tools";
+import type { WidgetToolReply } from "../runtime/widget-tools";
 
 const EVENT = "lattice:agent";
 
@@ -286,12 +288,62 @@ export function runAgentAction(
 
 export function runAgentRequest(request: AgentRequest, records: WidgetRecord[]): AgentReply {
   if (request.op === "state") return { ok: true, result: agentSnapshot(records) };
+  // 小窗那一轮要用的组件工具清单（0003 的 B 一类）：和 `state` 一样是**读**，
+  // 差别只在它是给提示词和工具表用的。判据在 `listWidgetTools` 里，这里不另判
+  if (request.op === "widget-tools") return { ok: true, result: { tools: listWidgetTools(records) } };
   if (request.op === "act") {
     return runAgentAction(request.action ?? "", request.args, records);
   }
   // `op: "ask"` 是**异步**的（要等模型），走 `startAgentBridge` 的 handlers，
   // 不在这个同步函数里 —— 到了这里说明没有人接，回绝掉
   return fail("unknown_action", `unknown op ${JSON.stringify(request.op)}`);
+}
+
+/**
+ * 小窗敲一份组件实例（`op: "widget-call"`）。
+ *
+ * 为什么这条是**异步**的、而且必须落在主窗口：答话的是画布上的那个 iframe，
+ * 它只存在于主窗口的 React 树里（`registerCanvasWidgetTools`）。小窗自己调
+ * `callWidgetTool` 只会拿到 `not-running` —— 而那句错误会让模型以为"组件没在跑"，
+ * 实际上它一直开着。
+ *
+ * 两道校验留在这儿：`listWidgetTools` 筛过一遍（装了 / 授了 / 真声明了），
+ * 这里再确认"这个 instanceId 是那个组件的一份、这条工具它真声明了"。小窗是
+ * 平台自己的界面，但"平台自己的界面"不是跳过校验的理由（和 `assistant_act` 同一条）。
+ *
+ * 返回值是 **`WidgetToolReply` 原样**，由 `startAgentBridge` 包进 `{ ok: true, result }`：
+ * 外层 `ok` 说的是"这一趟送到了没有"，里层那个 `ok` 才是"组件答成没答成"——
+ * 两者的区别模型要看得到（`not-running` 时它该换一句话说，不是重试）。
+ */
+export async function runWidgetCall(request: AgentRequest, records: WidgetRecord[]): Promise<WidgetToolReply> {
+  const args = (request.args ?? {}) as Record<string, unknown>;
+  const instanceId = typeof args.instanceId === "string" ? args.instanceId.trim() : "";
+  const widgetId = typeof args.widgetId === "string" ? args.widgetId.trim() : "";
+  const tool = typeof args.tool === "string" ? args.tool.trim() : "";
+  const payload =
+    args.args && typeof args.args === "object" && !Array.isArray(args.args)
+      ? (args.args as Record<string, unknown>)
+      : {};
+
+  if (!instanceId || !widgetId || !tool) {
+    return { ok: false, code: "bad_args", error: "widget-call needs instanceId, widgetId and tool" };
+  }
+
+  const source = listWidgetTools(records).find(
+    (item) => item.instanceId === instanceId && item.widgetId === widgetId,
+  );
+  if (!source) {
+    return {
+      ok: false,
+      code: "not_found",
+      error: `${instanceId} is not a callable copy of ${widgetId} (installed, granted agent:tools, and placed)`,
+    };
+  }
+  if (!source.tools.some((declared) => declared.name === tool)) {
+    return { ok: false, code: "not_found", error: `${widgetId} does not declare a tool named ${tool}` };
+  }
+
+  return await callWidgetTool({ instanceId, widgetId, tool, args: payload });
 }
 
 /**
@@ -339,6 +391,10 @@ export function startAgentBridge(
       if (request.op === "ask") {
         if (!handlers.ask) return fail("unknown_action", "this window cannot run assistant turns");
         return await handlers.ask(request, getRecords());
+      }
+      if (request.op === "widget-call") {
+        // 外层包一层：`ok` 说的是"送到了没有"，组件答成没答成在 `result` 里
+        return { ok: true, result: await runWidgetCall(request, getRecords()) };
       }
       return runAgentRequest(request, getRecords());
     };

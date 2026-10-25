@@ -202,22 +202,24 @@ boot → 再投递是一串会输的竞态，而"它没在跑，你让用户把�
 ### 2.4 调用链（谁在什么时候看哪张表）
 
 ```
-AssistantPanel（主窗口抽屉）
-  ├─ widgetToolSources(placements ∩ records ∩ grants["agent:tools"])   ← 谁有权答
+AssistantSurface（主窗口一份，桌面小窗一份）
+  ├─ widgetTools()  ← 主窗口：listWidgetTools(placements ∩ records ∩ grants["agent:tools"])
+  │                    小窗：assistant_widget_tools → 问主窗口要同一份（0013）
   ├─ widgetToolSpecs(...)  →  schema（instanceId 的 enum 在这里）
   └─ allTools(caller, hands, mcp, widgets)  ← 整张表唯一的合表处
         ├─ 审批：approvalFor("widget.…", 档)   ← 和手、桌面动作用同一个裁决
-        └─ 执行：executeCall → callWidgetTool(instanceId) → 画布那个 iframe
-                                                          ├─ agent-call（带 callId）
-                                                          └─ agent-result（同一个 callId）
+        └─ 执行：executeCall → surface.callWidget(instanceId)
+              ├─ 主窗口：callWidgetTool → 画布那个 iframe
+              └─ 小窗：assistant_widget_call → 主窗口同一份注册表
+                                            ├─ agent-call（带 callId）
+                                            └─ agent-result（同一个 callId）
 ```
 
 四条连带事实：
 
 - **组件借手那一轮（`assistant.ask`）没有组件工具**：那条路上没有确认条，给了就等于
   "A 组件借模型去改 B 组件的数据"。这条写死在 `allTools` 里，不靠调用方记得传。
-- **桌面上那个小窗那一轮也没有**：它没有清单（`records` 不传），只有主窗口握有
-  `manifest.agent.tools` 与 `grants`。这是"执行者在主窗口"的延续，缺口记在 ROADMAP。
+- **桌面上那个小窗那一轮也有一份**：清单与执行都问主窗口（`assistant_widget_tools` / `assistant_widget_call`），判据仍在 `listWidgetTools`；执行前主窗口再过一道「这份实例真能调吗 —— 清单不是授权」。见 [0013](./design/0013-widget-tools-across-windows.md)。
 - **返回值上限 4000 字符，超了拒绝不截断**：半截 JSON 会让模型把残片当真。
 - **审计**：和手一样只记形状（工具名、ok、耗时），不记返回值内容。
 

@@ -52,7 +52,7 @@ import {
   type WidgetToolReply,
   type WidgetToolSource,
 } from "../runtime/widget-tools";
-import { callWidgetTool } from "./widget-tools";
+import { callWidgetTool, listWidgetTools } from "./widget-tools";
 import { callHand, cancelHand, type HandsReply } from "./hands";
 
 /** 和 Rust 的 `ProfileView` 对齐。**没有 apiKey 字段**，只有掩码 */
@@ -280,6 +280,21 @@ export interface AssistantSurface {
   /** 这次请求要带上的"桌面现状"（已经压过的文本） */
   snapshot(): Promise<string>;
   act(action: string, args: unknown): Promise<AgentReply>;
+  /**
+   * 这一轮能调的组件工具（数据平面）。**清单和实例都问宿主**：
+   * 主窗口自己算（`listWidgetTools`），小窗问主窗口要。
+   *
+   * 为什么不做成面板里的 `useMemo`：小窗里那份 store 是空的（它不加载平台外壳），
+   * 算出来永远是"一个组件工具都没有" —— 而画布上的 iframe 全在主窗口里。
+   */
+  widgetTools(): Promise<WidgetToolSource[]>;
+  /** 真去敲一份组件实例。同样只有主窗口敲得到（iframe 在那儿） */
+  callWidget(input: {
+    instanceId: string;
+    widgetId: string;
+    tool: string;
+    args: Record<string, unknown>;
+  }): Promise<WidgetToolReply>;
 }
 
 /** 主窗口自己跑：快照现拍，动作走 `runAgentAction`，撤销/落盘照旧 */
@@ -291,6 +306,12 @@ export function localSurface(records: WidgetRecord[]): AssistantSurface {
     async act(action, args) {
       return runAgentAction(action, args, records);
     },
+    async widgetTools() {
+      return listWidgetTools(records);
+    },
+    async callWidget(input) {
+      return await callWidgetTool(input);
+    },
   };
 }
 
@@ -299,6 +320,9 @@ export function localSurface(records: WidgetRecord[]): AssistantSurface {
  *
  * 注意返回体是**主窗口给的 JSON 原样**（`AgentReply` 的形状），Rust 不解释它 ——
  * 和 `agent` 端点那条通道同一个约定：少一层转译，少一处会不一致的地方。
+ *
+ * `widgetTools` 拿不到就**当没有**（不抛）：主窗口还没接上桥时，这一轮少几条
+ * 组件工具远好过整轮报错 —— 和 MCP 发现失败同一条规矩。
  */
 export function remoteSurface(): AssistantSurface {
   return {
@@ -312,6 +336,32 @@ export function remoteSurface(): AssistantSurface {
       const raw = await callCommand<string>("assistant_act", { action, args });
       const reply = JSON.parse(raw) as AgentReply;
       return reply;
+    },
+    async widgetTools() {
+      try {
+        const raw = await callCommand<string>("assistant_widget_tools");
+        const reply = JSON.parse(raw) as AgentReply;
+        if (!reply.ok) return [];
+        const result = reply.result as { tools?: WidgetToolSource[] } | undefined;
+        return Array.isArray(result?.tools) ? result.tools : [];
+      } catch {
+        return [];
+      }
+    },
+    async callWidget(input) {
+      const raw = await callCommand<string>("assistant_widget_call", {
+        instanceId: input.instanceId,
+        widgetId: input.widgetId,
+        tool: input.tool,
+        args: input.args,
+      });
+      const reply = JSON.parse(raw) as AgentReply;
+      if (!reply.ok) throw new Error(reply.error);
+      const result = reply.result as WidgetToolReply | undefined;
+      // 形状不对不猜：宁可回一条"没答话"，也不把 undefined 当成功塞进对话
+      return result && typeof result === "object" && "ok" in result
+        ? result
+        : { ok: false, code: "bad-reply", error: `${input.widgetId}.${input.tool}: the main window sent nothing back` };
     },
   };
 }
@@ -376,7 +426,8 @@ export interface TurnOptions {
  * 真去执行一条调用。三种执行者，只有一个入口：
  *
  * 1. 手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP）—— 走 Rust 的 `assistant_tool`
- * 2. 组件自己声明的工具 —— 走画布那个 iframe（`callWidgetTool`）
+ * 2. 组件自己声明的工具 —— 走**宿主窗口**（`surface.callWidget`：iframe 只有主窗口里有，
+ *    小窗那条会转过去，见 `remoteSurface` 上面那段）
  * 3. 桌面动作 —— 走 `surface`（主窗口本地跑，小窗 IPC 转给主窗口）
  *
  * 放在这里而不是循环体里，是为了审批之后那两处分支**看到的是同一段代码** ——
@@ -404,7 +455,7 @@ async function executeCall(
     }
     // `instanceId` 是平台那一格（选哪一份），不是组件声明的参数：剥掉再递进去
     const { instanceId: _ignored, ...rest } = args;
-    return callWidgetTool({
+    return surface.callWidget({
       instanceId,
       widgetId: widget.widgetId,
       tool: widget.tool,

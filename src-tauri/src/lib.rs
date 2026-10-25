@@ -216,6 +216,8 @@ pub fn run() {
             agent::assistant_snapshot,
             agent::assistant_act,
             agent::assistant_ask,
+            agent::assistant_widget_tools,
+            agent::assistant_widget_call,
             assistant_window::assistant_window_toggle,
             assistant_window::assistant_window_hide,
             assistant_window::assistant_window_save_pos,

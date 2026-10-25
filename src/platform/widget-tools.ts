@@ -18,8 +18,13 @@ import {
   WIDGET_TOOL_TIMEOUT,
   normalizeToolReply,
   notRunningReply,
+  widgetToolCandidates,
+  widgetToolSources,
   type WidgetToolReply,
+  type WidgetToolSource,
 } from "../runtime/widget-tools";
+import { useLattice } from "./store";
+import type { WidgetRecord } from "../runtime/registry";
 
 /** 画布上的一个实例能答什么：给它工具名和参数，回它自己的 `agent-result` 载荷 */
 type ToolHandler = (tool: string, args: Record<string, unknown>) => Promise<unknown>;
@@ -41,6 +46,33 @@ export function unregisterCanvasWidgetTools(instanceId: string, handler?: ToolHa
 /** 这一份实例现在有没有人答话。面板据此决定要不要把它的工具写进提示词 */
 export function canvasWidgetAlive(instanceId: string): boolean {
   return handlers.has(instanceId);
+}
+
+/**
+ * 这一轮能调的组件工具：清单 × 摆放，再按"装了 / 授了 / 真声明了"筛一遍。
+ *
+ * 住在平台这一侧（而不是面板里）是因为**两个窗口都要这份表**：主窗口自己算，
+ * 桌面小窗问主窗口要（`assistant_widget_tools` → `remoteSurface().widgetTools()`）。
+ * 小窗没有 `useLattice` 的权威状态，问来的清单就是它这一轮的全部 —— 所以判据
+ * 必须在这儿、且只在这儿过一遍，两边各拼一份的话小窗迟早会漏掉 `granted`。
+ */
+export function listWidgetTools(records: WidgetRecord[]): WidgetToolSource[] {
+  const state = useLattice.getState();
+  return widgetToolSources(
+    widgetToolCandidates(
+      records.map((record) => ({
+        id: record.manifest.id,
+        // 夹具和将来的调用方可能拿裸清单来喂（归一化过的 record 一定带这一节，
+        // 手写的没有）—— 一个组件没声明工具，不该让整张表拿不到
+        tools: record.manifest.agent?.tools ?? [],
+      })),
+      {
+        placements: state.placements,
+        installedIds: state.installedIds,
+        grants: state.grants,
+      },
+    ),
+  );
 }
 
 export const TIMED_OUT: unique symbol = Symbol("widget-tool-timeout");

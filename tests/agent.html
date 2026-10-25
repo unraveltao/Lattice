@@ -37,7 +37,12 @@
         agentSnapshot,
         runAgentAction,
         runAgentRequest,
+        runWidgetCall,
       } from "../src/platform/agent.ts";
+      import {
+        registerCanvasWidgetTools,
+        unregisterCanvasWidgetTools,
+      } from "../src/platform/widget-tools.ts";
       import { useLattice } from "../src/platform/store.ts";
 
       const lines = [];
@@ -219,6 +224,68 @@
       const broken = runAgentAction("placement.move", null, records);
       eq(broken.ok, false, "args 为 null 时返回错误而不是抛");
       ok(typeof broken.error === "string" && broken.error.length > 0, "错误信息是人能读的一句话");
+
+      // ---- 10. 数据平面：小窗要的那份清单（op=widget-tools）----
+      //
+      // 小窗没有清单也没有画布，所以它问主窗口要；主窗口这一侧就是这两个 op。
+      // 判据全在 `listWidgetTools` 里，这里钉的是"问回来的东西长什么样"。
+
+      const toolRecord = (id, tools) => {
+        const base = record(id);
+        base.manifest.agent = { tools };
+        return base;
+      };
+      const withTools = [
+        ...records,
+        toolRecord("lattice.diagram", [
+          { name: "draw", description: "Draw a diagram", params: { text: "string" }, required: ["text"] },
+        ]),
+      ];
+
+      reset({ installedIds: ["lattice.clock", "lattice.todo", "lattice.diagram"], grants: {} });
+      runAgentAction("placement.add", { widgetId: "lattice.diagram" }, withTools);
+      const diagramId = useLattice.getState().placements[0].instanceId;
+
+      eq(runAgentRequest({ op: "widget-tools" }, withTools).result.tools, [], "没授 agent:tools = 清单是空的（小窗也就不会看见这条工具）");
+
+      useLattice.setState({
+        grants: { "lattice.diagram": ["storage", "agent:tools"] },
+      });
+      const listed = runAgentRequest({ op: "widget-tools" }, withTools).result.tools;
+      eq(listed.length, 1, "授了之后清单里有一条");
+      eq(listed[0].instanceId, diagramId, "带着那一份实例");
+      eq(listed[0].title, "lattice.diagram", "title 是 id（两门语言不会各写一个）");
+      eq(listed[0].tools[0].name, "draw", "工具声明原样带过去 —— 小窗要拿它拼 tool schema");
+
+      // ---- 11. 数据平面：小窗敲一份实例（op=widget-call）----
+
+      const call = (args) => runWidgetCall({ op: "widget-call", args }, withTools);
+
+      eq((await call({ instanceId: diagramId, widgetId: "lattice.diagram" })).code, "bad_args", "缺 tool 直接拒");
+      eq(
+        (await call({ instanceId: "diagram#nope", widgetId: "lattice.diagram", tool: "draw" })).code,
+        "not_found",
+        "不是这个组件的一份实例 = 拒（清单不是授权）",
+      );
+      eq(
+        (await call({ instanceId: diagramId, widgetId: "lattice.diagram", tool: "erase" })).code,
+        "not_found",
+        "它没声明过的工具 = 拒",
+      );
+
+      // 没人在画布上登记过这个实例：这一条要回 not-running 而不是抛
+      const idle = await call({ instanceId: diagramId, widgetId: "lattice.diagram", tool: "draw" });
+      eq(idle.code, "not-running", "画布上没有这份实例时不抛，回一句给模型看的话");
+
+      // 登记一个答话的实例（真实链路里由 WidgetFrame 挂载时登记）
+      registerCanvasWidgetTools(diagramId, async (tool, args) => ({ ok: true, result: { tool, ...args } }));
+      try {
+        const answered = await call({ instanceId: diagramId, widgetId: "lattice.diagram", tool: "draw", args: { text: "A -> B" } });
+        eq(answered.ok, true, "组件答了话，原样回来");
+        eq(answered.result, { tool: "draw", text: "A -> B" }, "组件自己的返回值原样带上");
+      } finally {
+        unregisterCanvasWidgetTools(diagramId);
+      }
 
       document.getElementById("out").innerHTML = lines
         .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)

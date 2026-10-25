@@ -33,6 +33,8 @@
        *   4. 授权轴分开：没授 `agent:tools` 的组件，工具**一条都不进表**
        *   5. 组件回话太长 / 形状不对时**拒绝**，不截断（截断过的 JSON 会让模型
        *      把半截数据当真）
+       *   6. 候选表（清单 × 摆放）**只拼不筛** —— 装没装、授没授权、有没有声明工具
+       *      三件事只在 `widgetToolSources` 里判一次，主窗口与小窗共用这一份
        */
       import {
         MAX_AGENT_TOOLS,
@@ -44,6 +46,7 @@
         notRunningReply,
         parseWidgetTool,
         resolveWidgetInstance,
+        widgetToolCandidates,
         widgetToolName,
         widgetToolSources,
         widgetToolSpecs,
@@ -159,6 +162,45 @@
       eq(widgetToolSources([candidate({ granted: false })]), [], "没授 agent:tools = 一条都不进表");
       eq(widgetToolSources([candidate({ installed: false })]), [], "没装 = 一条都不进表");
       eq(widgetToolSources([candidate({ tools: [] })]), [], "没声明工具 = 不进表");
+
+      // ---- 候选表：清单 × 摆放 ----
+
+      const records = [
+        { id: "lattice.todo", tools: [spec] },
+        { id: "lattice.clock", tools: [] },
+      ];
+      const table = widgetToolCandidates(records, {
+        placements: [
+          { instanceId: "todo#a", widgetId: "lattice.todo" },
+          { instanceId: "clock#1", widgetId: "lattice.clock" },
+          { instanceId: "todo#b", widgetId: "lattice.todo" },
+        ],
+        installedIds: ["lattice.todo", "lattice.clock"],
+        grants: { "lattice.todo": ["storage", "agent:tools"], "lattice.clock": ["clock"] },
+      });
+      eq(table.map((item) => item.instanceId), ["todo#a", "todo#b", "clock#1"], "一个 placement 一条，按清单里的组件顺序排");
+      eq(table[0]?.title, "lattice.todo", "title 用 id：两门语言各写一个名字也不会让模型看到两个东西");
+      eq(table[2]?.granted, false, "没授 agent:tools 的那份照实标（判据留给 widgetToolSources）");
+      eq(table[2]?.installed, true, "装没装也照实标");
+      eq(
+        widgetToolSources(table).map((item) => item.instanceId),
+        ["todo#a", "todo#b"],
+        "拼完再过一遍判据：只留装了的、授了的、真声明了的",
+      );
+      eq(
+        widgetToolCandidates([{ id: "lattice.note", tools: [spec] }], {
+          placements: [{ instanceId: "note#1", widgetId: "lattice.note" }],
+          installedIds: [],
+          grants: {},
+        }).length,
+        1,
+        "没装也留在候选表里 —— 筛是下一步的事，不然分不出「没装」和「没声明」",
+      );
+      eq(
+        widgetToolCandidates(records, { placements: [], installedIds: ["lattice.todo"], grants: {} }),
+        [],
+        "装了但没摆 = 没有实例可调",
+      );
 
       // ---- schema：一份 / 多份 ----
 

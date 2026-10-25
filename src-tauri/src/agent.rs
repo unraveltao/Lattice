@@ -48,6 +48,11 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(8);
 /// 不跟 `REPLY_TIMEOUT` 共用，是因为两者量的东西完全不同 —— 一个是"改一个字段"，
 /// 一个是"等一次生成"。共用的话要么把布局操作拖成三分钟，要么让组件那一轮必定超时。
 const ASK_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// 组件工具那条往返的上限。**必须比组件自己的超时长**（`WIDGET_TOOL_TIMEOUT`，
+/// 8 秒，在 `runtime/widget-tools.ts` 里）：那一条说的是"组件没答话"，这一条说的是
+/// "主窗口没答话"。两者撞在一起时用户看到的会是后者，而它指向完全错的地方。
+const WIDGET_CALL_TIMEOUT: Duration = Duration::from_secs(12);
 /// accept 循环的空转间隔。也是"关掉之后多久真的不听了"的上界。
 const POLL: Duration = Duration::from_millis(120);
 /// 同时处理的连接数上限。本机 agent 是串行干活的，8 条已经过分了。
@@ -643,6 +648,44 @@ pub async fn assistant_act(
     })
     .await
     .map_err(|error| format!("the action task failed: {error}"))?
+}
+
+/// 这一轮能调的组件工具（数据平面）。**清单在画布那一侧**：只有主窗口知道装了
+/// 哪些、授没授权、摆在哪儿。小窗问它要一份，原样交给提示词和工具表。
+#[tauri::command]
+pub async fn assistant_widget_tools(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || call_frontend(&app, json!({ "op": "widget-tools" })))
+        .await
+        .map_err(|error| format!("the widget tool list task failed: {error}"))?
+}
+
+/// 敲一份组件实例（数据平面）。**执行在主窗口**：答话的是画布上的 iframe，
+/// 它只存在于主窗口的 React 树里 —— 小窗自己调只会拿到 `not-running`。
+///
+/// 参数形状由前端再判一遍（`platform/agent.ts::runWidgetCall`），这里不解释它，
+/// 只保证"谁问的、问哪一份、问什么"原样过去，回来了原样带回。
+#[tauri::command]
+pub async fn assistant_widget_call(
+    app: AppHandle,
+    instance_id: String,
+    widget_id: String,
+    tool: String,
+    args: Value,
+) -> Result<String, String> {
+    let payload = json!({
+        "op": "widget-call",
+        "args": {
+            "instanceId": instance_id,
+            "widgetId": widget_id,
+            "tool": tool,
+            "args": args,
+        },
+    });
+    tauri::async_runtime::spawn_blocking(move || {
+        call_frontend_within(&app, payload, WIDGET_CALL_TIMEOUT)
+    })
+    .await
+    .map_err(|error| format!("the widget call task failed: {error}"))?
 }
 
 /// 组件借平台的手：一句话 + 一段语气，让主窗口跑完整的一轮。

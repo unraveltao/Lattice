@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **84 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **85 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -81,6 +81,7 @@
 | 组件自己调 `window.close()` 之后，用户摆好的布局跟着没了 | 一条命令兼着两种语义："窗口关了"就等于"用户把它删了"。于是任何一次意外调用都变成**静默的数据丢失**，连日志都不留一行 | `reason` 把两件事拆开：只有 `reason == "user"`（宿主页 ✕）才发 `lattice:widget-close` 删 placement；别的来路只关窗口，实例记进 `Runner.suppressed`，本次运行不再重建（否则下一次同步又把它变出来，看着像"关不掉"）。`suppressed` 只在内存里 —— placement 一直躺在 `state.json`，下次启动照样回来。真机验过：`reason: widget` 之后窗口消失、四条 placement 一条不少、等 3 秒也不再冒出来 |
 | 组件目录里放个文件，桌面上五个卡片一起重载 | `lattice:widgets-changed` 是广播（`emit` 到所有窗口），载荷如果不带路径，宿主页只能选择"全量重载" | 载荷带**相对路径**（`<id>/<file>`，第一段就是组件 id），宿主页按前缀筛；只有自己那份变了才 `reloadWidget()` |
 | 托盘菜单改了"暂停"，设置菜单里的开关还是老样子 | 暂停的真相在 Rust（`Runner.paused`），主窗口的 `paused` 只是镜像。托盘改状态时不发事件，主窗口就永远不知道 | `apply_pause` 里 `emit_to("main", "lattice:paused", ...)`，主窗口收到就落 store；另外主窗口挂载时主动拉一次 `widgets_paused` —— 事件是"变了才发"，页面可能在事件之后才加载 |
+| 小窗里问「帮我画个图」，它回「我没有画图的工具」，可那张图就摆在桌面上 | 组件工具清单是在面板里用 `useLattice` 现算的，而**小窗不加载平台外壳**：那份 store 里既没有 placements 也没有 grants，算出来永远是一张空表。答话的 iframe 更只在主窗口的 React 树里 —— 小窗就算把表拼对了也敲不动它。**看着像「这个能力还没做」，实际是算的地方不对** | 清单与执行都收进 `AssistantSurface`：主窗口自己算（`listWidgetTools`），小窗走两条命令问主窗口要（`assistant_widget_tools` / `assistant_widget_call`），判据仍只在 `widgetToolSources` 里过一遍；执行前在主窗口再过一道「这份实例真能调吗」（清单不是授权）。见 [design/0013](./design/0013-widget-tools-across-windows.md) |
 
 ## 可见性与调度
 
