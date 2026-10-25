@@ -31,7 +31,7 @@
 
 ### `.agents/skills/` 不在这张表里
 
-三份 `SKILL.md`（[`invariants`](../.agents/skills/invariants/SKILL.md) / [`new-widget`](../.agents/skills/new-widget/SKILL.md) / [`verify`](../.agents/skills/verify/SKILL.md)）是**给 agent 看的工序**，不是第四种文档：改代码之前查该守哪几条不变量、加组件按什么顺序、改完按什么阶梯验。
+四份 `SKILL.md`（[`invariants`](../.agents/skills/invariants/SKILL.md) / [`new-widget`](../.agents/skills/new-widget/SKILL.md) / [`verify`](../.agents/skills/verify/SKILL.md) / [`writing-for-agents`](../.agents/skills/writing-for-agents/SKILL.md)）是**给 agent 看的工序**，不是第四种文档：改代码之前查该守哪几条不变量、加组件按什么顺序、改完按什么阶梯验、写这一页和 `docs/` 下面的字该按什么工序。
 
 它们不进这张表，是因为它们**不构成事实的家**。每份开头都写着"正文在 `AGENTS.md` 第 N 节"，自己只给顺序和判据。所以它们过期的方式也不同：**结论错了去改 `AGENTS.md`，工序错了才改这里**。往这三份里补一句"权限一共 12 个"就是违规 —— 那已经是别人的家了。
 
@@ -65,7 +65,7 @@
 | 要编译 / 打包 / 发版 | [`reference/build.md`](./reference/build.md) | 15 分钟 |
 | 要动 agent 接入 | [`AGENT_ACCESS.md`](./AGENT_ACCESS.md) | 20 分钟 |
 | 要动签名 / 发布 | [`CODE_SIGNING.md`](./CODE_SIGNING.md) + `ROADMAP` v0.7 | 15 分钟 |
-| 让 agent 按这个仓库的规矩动手 | [`.agents/skills/`](../.agents/skills/invariants/SKILL.md) 三份（`invariants` / `new-widget` / `verify`） | 按需 |
+| 让 agent 按这个仓库的规矩动手 | [`.agents/skills/`](../.agents/skills/invariants/SKILL.md) 四份（`invariants` / `new-widget` / `verify` / `writing-for-agents`） | 按需 |
 | **要做一件还没做的事** | [`design/README.md`](./design/README.md) | 按需 |
 
 ## 三、新内容放哪
