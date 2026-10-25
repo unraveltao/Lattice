@@ -108,6 +108,27 @@ export function luminance([r, g, b]: [number, number, number]): number {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
+/** 底板上"深"和"浅"那两个常用值：就是主题里那两个 surface，不是新造的色 */
+export const TINT_DARK = "#17171d";
+export const TINT_LIGHT = "#fbfaf8";
+
+/**
+ * 这块底板看起来是深还是浅 —— 底板上那颗明暗开关靠它决定自己停在哪一边。
+ *
+ * `auto` 看当前主题；给了一个具体的色就**按那个色自己算**（用户可能存着一支
+ * 自定义深色，跟着主题走就会把开关摆到错误的一边）；认不出来的值退回主题
+ * —— 坏值不许看起来像"被设置过"。
+ *
+ * 阈值 0.55 和 `widgetHost.ts` 判"这块底板算不算浅色"用的是同一个数。
+ */
+export function isDarkTint(tint: string, theme: string): boolean {
+  const followsTheme = theme !== "light";
+  if (tint === "auto") return followsTheme;
+  const rgb = tintRgb(tint);
+  if (!rgb) return followsTheme;
+  return luminance(rgb) <= 0.55;
+}
+
 /**
  * 平台自己的 `--lattice-surface`，也就是"没有底板覆盖时卡片是什么颜色"。
  *

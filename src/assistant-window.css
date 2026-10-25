@@ -96,20 +96,23 @@
   color: var(--lattice-accent);
 }
 
-/* 底板小面板：从标题栏那头展开，浮在内容上面 */
+/* 底板小面板：从标题栏那头展开，浮在内容上面。
+ * 它是**唯一一块浮在对话上的东西**，所以用整份 `--lattice-shadow-2` 把它抬起来，
+ * 再加一道顶部高光（深色下 1px 的亮边才是"有厚度"的那个信号，纯黑投影落在
+ * #0d0d10 上等于没画 —— 这条写在 styles.css 头上，别处也一样） */
 .lattice-assistant-board {
   position: absolute;
   top: 36px;
   right: 6px;
   z-index: 3;
   display: grid;
-  gap: 8px;
-  width: 232px;
-  padding: 10px 12px;
+  gap: 10px;
+  width: 224px;
+  padding: 12px;
   border: 1px solid var(--lattice-border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--lattice-surface-2);
-  box-shadow: 0 10px 30px rgb(0 0 0 / 28%);
+  box-shadow: var(--lattice-shadow-2), var(--lattice-highlight);
 }
 
 .lattice-assistant-board-row {
@@ -125,26 +128,81 @@
   font-size: 11px;
 }
 
+/* 「深 / 浅」那个词贴在开关左边。**给个最小宽度**：Dark 和 Light 差一个字符，
+ * 不给宽度的话每次切换开关都会左右跳一下 */
+.lattice-assistant-board-value {
+  min-width: 30px;
+  margin-left: auto;
+  color: var(--lattice-text);
+  font-size: 11px;
+  text-align: right;
+}
+
+/* 一根滑杆：轨道 4px、拇指 12px，都按令牌取色。
+ * 浏览器默认那根（`accent-color` 给的那种）是 20px 粗的实心条 + 大圆拇指，
+ * 在这块 224px 的板子里像两个控件拼错了地方 */
 .lattice-assistant-board-row input[type="range"] {
   flex: 1;
   min-width: 0;
-  accent-color: var(--lattice-accent);
-}
-
-.lattice-assistant-chip {
-  padding: 2px 8px;
-  border: 1px solid var(--lattice-border);
-  border-radius: 999px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  appearance: none;
   background: transparent;
-  color: var(--lattice-text-muted);
-  font-size: 11px;
   cursor: pointer;
 }
 
-.lattice-assistant-chip[data-on="1"] {
-  border-color: transparent;
+.lattice-assistant-board-row input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: color-mix(in srgb, var(--lattice-text) 14%, transparent);
+  border-radius: 999px;
+}
+
+.lattice-assistant-board-row input[type="range"]::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  /* 轨道 4px、拇指 12px：往上提一半，让它骑在轨道中间 */
+  margin-top: -4px;
+  appearance: none;
+  background: var(--lattice-surface);
+  border: 2px solid var(--lattice-accent);
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+}
+
+/* 开关：34×18 的轨道 + 12px 的球。灭 = 浅色底，亮 = 深色底 */
+.lattice-assistant-switch {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 18px;
+  padding: 0;
+  background: color-mix(in srgb, var(--lattice-text) 14%, transparent);
+  border: 1px solid var(--lattice-border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.lattice-assistant-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--lattice-text-muted);
+  border-radius: 50%;
+  transition: transform 140ms ease, background-color 140ms ease;
+}
+
+.lattice-assistant-switch[data-on="1"] {
+  background: color-mix(in srgb, var(--lattice-accent) 30%, transparent);
+  border-color: color-mix(in srgb, var(--lattice-accent) 55%, transparent);
+}
+
+.lattice-assistant-switch[data-on="1"] .lattice-assistant-switch-knob {
   background: var(--lattice-accent);
-  color: var(--lattice-surface);
+  transform: translateX(16px);
 }
 
 /* 三个自绘手柄。锁上时它们压根不渲染（锁是**一处判据**，不是两处） */

@@ -30,7 +30,10 @@ import { setLanguage, useT } from "../runtime/i18n";
 import {
   APPEARANCE_TOKENS,
   MAX_BLUR,
+  TINT_DARK,
+  TINT_LIGHT,
   appearanceTokenValues,
+  isDarkTint,
   isPlainAppearance,
   luminance,
   normalizeAppearance,
@@ -40,7 +43,6 @@ import {
 } from "../runtime/appearance";
 import {
   migrateAssistantWindow,
-  type AssistantWindowMode,
   type AssistantWindowState,
   type AssistantWorkArea,
 } from "../runtime/assistant-window";
@@ -48,14 +50,42 @@ import {
 /** 磨砂要按 `2 × 半径` 外扩截图，和宿主页同一个值 */
 const WALLPAPER_PAD = MAX_BLUR * 2;
 
-/** 底板的三个色板。深/浅两支就是主题里那两个 surface，不是新造的色 */
-const TINT_CHOICES: Array<{ id: string; label: string }> = [
-  { id: "auto", label: "Follow theme" },
-  { id: "dark", label: "Dark" },
-  { id: "light", label: "Light" },
-];
-const TINT_DARK = "#17171d";
-const TINT_LIGHT = "#fbfaf8";
+/**
+ * 底板的明暗**只有一个开关**（用户 2026-10-25 指的那颗）。
+ *
+ * 原来这里是三颗药丸（跟随主题 / 深 / 浅），在 224px 的板子里挤成
+ * "Dar k" / "Ligh t" 两行 —— 三个状态里真正要用的是两个方向，第三个
+ * （跟随主题）本来就是出厂值：不去动它，它就一直是跟随主题。
+ * 所以开关只表达**方向**：亮着 = 深色底，灭着 = 浅色底。
+ * `auto` 在界面上的位置由当前主题决定（跟着主题走时，主题是深的就是深色）。
+ */
+
+/** 标题栏那颗锁。**不用 emoji**：🔒 是彩色的、粗细和基线都跟旁边那几颗
+ * 几何字形不是一套，一进标题栏就跳出来（用户原话"格格不入"） */
+function LockIcon({ open }: { open: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+      <rect
+        x="3"
+        y="6.2"
+        width="8"
+        height="5.6"
+        rx="1.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      />
+      <path
+        d={open ? "M5 6.2V4.6a2 2 0 0 1 4 0" : "M5 6.2V4.6a2 2 0 0 1 4 0v1.6"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+      <circle cx="7" cy="9" r="0.75" fill="currentColor" />
+    </svg>
+  );
+}
 
 /** 当前屏（逻辑像素）。窗口还没跟 Rust 对上时先用这一份算默认落点 */
 function screenWorkArea(): AssistantWorkArea {
@@ -153,6 +183,12 @@ export function AssistantWindow() {
   }, []);
 
   const appearance = state.appearance;
+  /* 主题的权威在 `data-theme` 上（`themeTick` 是它变化的信号）。`auto` 这一档
+   * 落在哪一边要看它 —— 跟着主题走时，主题是深的就是深色底 */
+  const darkTint = isDarkTint(
+    appearance.tint,
+    document.documentElement.dataset.theme === "light" ? "light" : "dark",
+  );
 
   /* 壁纸：只有真的要磨砂 / 要透出底色时才截（出厂外观一次都不截） */
   const capture = useCallback(async () => {
@@ -295,18 +331,6 @@ export function AssistantWindow() {
       });
   }, [patch, state.locked]);
 
-  const switchMode = useCallback(
-    (mode: AssistantWindowMode) => {
-      if (mode === state.mode) return;
-      void invoke<AssistantWindowState>("assistant_window_mode", { mode })
-        .then((disk) => setState((before) => ({ ...before, ...disk })))
-        .catch(() => {
-          /* 未接线：切不了，别把界面画成一个假的"已切换" */
-        });
-    },
-    [state.mode],
-  );
-
   /* 拖边缩放**交给系统**（`startResizeDragging`），不在页面里逐帧 `setSize`。
    * 上一版就是逐帧 `setSize`，真机上的表现是"拖了等于没拖"，原因很清楚：
    * 手柄贴在右 / 下边缘，光标往想要的方向挪 1px 就已经在客户区之外，而
@@ -372,19 +396,17 @@ export function AssistantWindow() {
           title={state.locked ? t("Unlock") : t("Lock position and size")}
           aria-label={state.locked ? t("Unlock") : t("Lock position and size")}
         >
-          {state.locked ? "🔒" : "🔓"}
+          <LockIcon open={!state.locked} />
         </button>
-        <button
-          type="button"
-          className="lattice-assistant-bar-btn"
-          data-on={state.mode === "desktop" ? "1" : "0"}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => switchMode(state.mode === "desktop" ? "floating" : "desktop")}
-          title={modeLabel}
-          aria-label={modeLabel}
-        >
-          {state.mode === "desktop" ? "▤" : "▢"}
-        </button>
+        {/*
+          这里原来还有一颗「浮窗 ↔ 贴桌面」的按钮（`▢` / `▤`）。删掉了
+          （2026-10-25，用户："那个放大窗口是没用的，可以删除了"）：它长在
+          最大化该在的位置、也长得像最大化，按下去却是把窗口换一层 ——
+          一个按钮最糟的错就是"看着像另一件事"。
+          `state.mode` 仍然照 `assistant-window.json` 读、仍然决定窗口的层级
+          （`data-mode` + 标题栏那颗药丸），只是**界面上不再有入口**。
+          要把它加回来，先换个不像最大化的样子 —— 底板面板里一行开关就够。
+        */}
         <button
           type="button"
           className="lattice-assistant-bar-btn"
@@ -401,27 +423,22 @@ export function AssistantWindow() {
         <div className="lattice-assistant-board" onPointerDown={(event) => event.stopPropagation()}>
           <div className="lattice-assistant-board-row">
             <span className="lattice-assistant-board-label">{t("Tint")}</span>
-            {TINT_CHOICES.map((choice) => (
-              <button
-                key={choice.id}
-                type="button"
-                className="lattice-assistant-chip"
-                data-on={tintId(appearance.tint) === choice.id ? "1" : "0"}
-                onClick={() =>
-                  saveAppearance({
-                    ...appearance,
-                    tint:
-                      choice.id === "auto"
-                        ? "auto"
-                        : choice.id === "dark"
-                          ? TINT_DARK
-                          : TINT_LIGHT,
-                  })
-                }
-              >
-                {t(choice.label)}
-              </button>
-            ))}
+            <span className="lattice-assistant-board-value">{darkTint ? t("Dark") : t("Light")}</span>
+            {/* 一个开关管明暗。**不要去动它就是跟随主题** —— 出厂值本来如此，
+                所以开关只需要表达"往深还是往浅"，不必为第三档再摆一颗 */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={darkTint}
+              aria-label={t("Tint")}
+              className="lattice-assistant-switch"
+              data-on={darkTint ? "1" : "0"}
+              onClick={() =>
+                saveAppearance({ ...appearance, tint: darkTint ? TINT_LIGHT : TINT_DARK })
+              }
+            >
+              <span className="lattice-assistant-switch-knob" aria-hidden="true" />
+            </button>
           </div>
           <label className="lattice-assistant-board-row">
             <span className="lattice-assistant-board-label">{t("Dim")}</span>
@@ -460,13 +477,6 @@ export function AssistantWindow() {
       )}
     </div>
   );
-}
-
-/** `#rrggbb` → 色板 id；认不出来算 `auto` */
-function tintId(tint: string): string {
-  if (tint === TINT_DARK) return "dark";
-  if (tint === TINT_LIGHT) return "light";
-  return "auto";
 }
 
 /** `auto` = 当前主题的那个 surface（和组件宿主页同一条） */

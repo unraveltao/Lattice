@@ -34,8 +34,11 @@
       import {
         DEFAULT_APPEARANCE,
         MAX_BLUR,
+        TINT_DARK,
+        TINT_LIGHT,
         compositeHex,
         hexFromRgb,
+        isDarkTint,
         isPlainAppearance,
         luminance,
         normalizeAppearance,
@@ -95,6 +98,15 @@
       const lightCard = luminance([250, 248, 244]);
       const darkCard = luminance([21, 21, 26]);
       log(lightCard > 0.55 && darkCard <= 0.55, `出厂两种主题分别落在阈值两侧（${lightCard.toFixed(2)} / ${darkCard.toFixed(2)}）`);
+
+      // ---- 明暗开关停在哪一边（`AssistantWindow` 底板面板那颗）----
+      log(isDarkTint("auto", "dark"), "auto + 深色主题 → 开关靠深");
+      log(!isDarkTint("auto", "light"), "auto + 浅色主题 → 开关靠浅");
+      log(isDarkTint(TINT_DARK, "light"), "存着深色时，浅色主题也靠深（按颜色自己算，不跟主题）");
+      log(!isDarkTint(TINT_LIGHT, "dark"), "存着浅色时，深色主题也靠浅");
+      log(isDarkTint("#000000", "light"), "自定义的纯黑也算深");
+      log(!isDarkTint("#ffffff", "dark"), "自定义的纯白也算浅");
+      log(isDarkTint("#zzz", "dark") && !isDarkTint("#zzz", "light"), "认不出来的值退回主题，不当成被设置过");
 
       document.getElementById("out").innerHTML = lines
         .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)

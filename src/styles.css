@@ -3676,28 +3676,75 @@ button.lattice-chip[aria-pressed="true"] {
 .lattice-assistant-composer {
   display: flex;
   flex: none;
-  flex-direction: column;
-  gap: 8px;
   padding: 10px 12px 12px;
   border-top: 1px solid var(--lattice-border);
+  /* 对话滑到它下面：一道很轻的投影比一条 1px 硬线更像"两层"。
+     负数扩散把它收在输入区上方那一条上，不往中间糊 */
+  box-shadow: 0 -12px 20px -18px rgb(0 0 0 / 70%);
 }
 
-.lattice-assistant-composer textarea {
+/*
+ * 输入区是**一张卡片**：输入位和下面那排（药丸 / 元信息 / 发送）在同一个表面里。
+ *
+ * 上一版是两块：输入框自己一个 `surface-2` 的浅色块 + 一圈 1px 白边，按钮们裸
+ * 在面板上。浅色块没有高光也没有影子，于是读起来像"盖了一层白纸"，那道白边又
+ * 把纸框住（用户原话"有白框"）；按钮和输入框分开摆，看起来像表单漏了样式。
+ *
+ * 现在合成一块，厚度靠三层影子：顶部 1px 高光（深色下唯一的厚度信号）、外面
+ * 一道短投影、里面一道内阴影。**层次来自光，不来自描边**。
+ */
+.lattice-assistant-field {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 8px 8px 10px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--lattice-text) 4%, transparent),
+      transparent 38%
+    ),
+    var(--lattice-surface-2);
+  border: 1px solid color-mix(in srgb, var(--lattice-border) 65%, transparent);
+  border-radius: 14px;
+  box-shadow:
+    var(--lattice-highlight),
+    0 1px 2px rgb(0 0 0 / 20%),
+    inset 0 1px 2px rgb(0 0 0 / 12%);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+/* 焦点落在**整块**上（`focus-within`），不是那条 1px 边框：光标在输入位里、
+ * 手可能正停在发送键上，两件事都属于"这一块正在被用"。
+ * 面板一打开就把光标放进输入框（`inputRef.current.focus()`），所以这一态
+ * **几乎等于常驻态** —— 画重了就是每时每刻都有一圈彩色描边 */
+.lattice-assistant-field:focus-within {
+  border-color: color-mix(in srgb, var(--lattice-focus) 22%, transparent);
+  box-shadow:
+    var(--lattice-highlight),
+    0 0 0 3px var(--lattice-focus-soft),
+    0 1px 2px rgb(0 0 0 / 20%);
+}
+
+.lattice-assistant-field textarea {
   width: 100%;
-  padding: 8px 10px;
+  padding: 2px;
   font-family: inherit;
   font-size: 12px;
   line-height: 1.5;
   color: var(--lattice-text);
   resize: none;
-  background: var(--lattice-surface-2);
-  border: 1px solid var(--lattice-border);
-  border-radius: 10px;
+  background: transparent;
+  border: 0;
+  /* 全局的 `:focus-visible` 会给它套一圈 2px 描边，而焦点已经由整块卡片表达，
+   * 再描一次就是两道 */
+  outline: none;
 }
 
-.lattice-assistant-composer textarea:focus {
-  outline: none;
-  border-color: var(--lattice-focus);
+.lattice-assistant-field textarea::placeholder {
+  color: var(--lattice-text-faint);
 }
 
 .lattice-assistant-foot {
