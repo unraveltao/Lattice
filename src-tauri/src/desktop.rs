@@ -120,6 +120,24 @@ pub fn clip_rounded(hwnd: isize, width: u32, height: u32, radius: f64) -> Result
     }
 }
 
+/// 按窗口**当前外框**裁圆角 —— 尺寸由 Win32 现量，调用方不用猜。
+///
+/// 为什么要有这一个：`SetWindowRgn` 的坐标是**窗口坐标（外框）**。拿客户区
+/// 尺寸当宽度，会把右边和下面各裁掉一条非客户区（`decorations(false)` 的窗口
+/// 也有 8px 的细边框），而那条正好压在页面自绘的缩放手柄上 ——
+/// 症状不是报错，是"手柄画在那儿，按下去掉到下面的窗口里"。
+pub fn clip_rounded_current(hwnd: isize, radius: f64) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        imp::clip_rounded_current(hwnd, radius)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (hwnd, radius);
+        Err("window clipping is only implemented on Windows".to_string())
+    }
+}
+
 /// 对给定窗口句柄应用层级、穿透与焦点设置
 pub fn apply_layer(
     hwnd: isize,
@@ -279,7 +297,7 @@ pub fn apply_window_layer(
 #[cfg(windows)]
 mod imp {
     use super::WindowLayer;
-    use windows_sys::Win32::Foundation::{HANDLE, HWND, LPARAM};
+    use windows_sys::Win32::Foundation::{HANDLE, HWND, LPARAM, RECT};
     use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_NCRENDERING_POLICY};
     use windows_sys::Win32::Graphics::Gdi::{
         CombineRgn, CreateEllipticRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject,
@@ -289,6 +307,7 @@ mod imp {
     use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetParent, GetPropW,
+        GetWindowRect,
         GetWindowLongPtrW, HWND_BOTTOM, HWND_TOPMOST, RemovePropW, SWP_FRAMECHANGED,
         SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageTimeoutW, SetParent,
         SetPropW, SetWindowLongPtrW, SetWindowPos, WINDOWPOS, WM_WINDOWPOSCHANGING, WS_BORDER,
@@ -331,6 +350,21 @@ mod imp {
             return Err("failed to apply the window region".to_string());
         }
         Ok(())
+    }
+
+    /// 现量外框再裁（见 `desktop::clip_rounded_current`）
+    pub fn clip_rounded_current(hwnd: isize, radius: f64) -> Result<(), String> {
+        if hwnd == 0 {
+            return Err("window handle is null".to_string());
+        }
+        let mut rect: RECT = unsafe { std::mem::zeroed() };
+        let measured = unsafe { GetWindowRect(hwnd as HWND, &mut rect) };
+        if measured == 0 {
+            return Err("could not measure the window".to_string());
+        }
+        let width = (rect.right - rect.left).max(0) as u32;
+        let height = (rect.bottom - rect.top).max(0) as u32;
+        clip_rounded(hwnd, width, height, radius)
     }
 
     fn wide(value: &str) -> Vec<u16> {

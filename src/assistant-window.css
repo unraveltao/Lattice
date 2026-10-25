@@ -141,7 +141,10 @@
   top: 34px;
   right: 0;
   bottom: 14px;
-  width: 6px;
+  /* 12 不是随手定的：外圈 4px 由系统的调整边框（`SM_CXFRAME`，
+   * 见 `tauri-runtime-wry` 的 `TAURI_DRAG_RESIZE_BORDERS`）吃掉，
+   * 手柄只剩里侧那 8px 能收到按下 —— 6px 的手柄在那条带上等于没有 */
+  width: 12px;
   cursor: ew-resize;
 }
 
@@ -149,7 +152,7 @@
   right: 14px;
   bottom: 0;
   left: 14px;
-  height: 6px;
+  height: 12px;
   cursor: ns-resize;
 }
 

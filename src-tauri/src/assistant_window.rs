@@ -260,6 +260,20 @@ fn apply_mode(window: &tauri::WebviewWindow, mode: Mode) -> Result<(), String> {
 }
 
 /// 把位置与尺寸落到窗口上（物理像素换算 + 跟着重裁圆角）
+/// 按窗口**当前外框**裁一次圆角（和组件卡片同一个半径）。
+///
+/// 两件事都靠它：建窗口 / 换模式时要裁，**尺寸变了也要重裁** —— 区域是
+/// "当时那个尺寸"的快照，放大之后新露出来的角落既不是圆的，也不在窗口的
+/// 可点区域里（区域之外对系统来说等于那里没有窗口）。
+fn reclip(window: &tauri::WebviewWindow) {
+    if let Ok(handle) = window.window_handle() {
+        if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+            let scale = window.scale_factor().unwrap_or(1.0);
+            let _ = desktop::clip_rounded_current(win32.hwnd.get() as isize, desktop::CORNER_RADIUS * scale);
+        }
+    }
+}
+
 fn apply_rect(app: &AppHandle, state: &WindowState) -> Result<(), String> {
     let Some(window) = app.get_webview_window(LABEL) else {
         // 窗口还没建 / 已经藏起来：只存盘，下次 `create` 会按这一份建
@@ -277,18 +291,7 @@ fn apply_rect(app: &AppHandle, state: &WindowState) -> Result<(), String> {
             (state.rect.y * scale).round() as i32,
         ))
         .map_err(|error| format!("could not move the assistant window: {error}"))?;
-    /* 圆角按新尺寸重裁：不重裁的话右下角会露出两块直角 ——
-     * 系统记着的还是建窗口时那个尺寸的区域 */
-    if let Ok(handle) = window.window_handle() {
-        if let RawWindowHandle::Win32(win32) = handle.as_raw() {
-            let _ = desktop::clip_rounded(
-                win32.hwnd.get() as isize,
-                width,
-                height,
-                desktop::CORNER_RADIUS * scale,
-            );
-        }
-    }
+    reclip(&window);
     Ok(())
 }
 
@@ -335,9 +338,15 @@ fn create(app: &AppHandle) -> Result<(), String> {
         .title("Lattice Assistant")
         .inner_size(state.rect.width, state.rect.height)
         .position(state.rect.x, state.rect.y)
-        // 尺寸由页面自绘的手柄管（和组件宿主页同一套做法），窗口本身不开可调整，
-        // 避免系统边框和自绘手柄打架
-        .resizable(false)
+        // **必须可调整**：Windows 上不可调整的窗口没有 `WS_THICKFRAME`，
+        // 于是 `startResizeDragging`（WM_NCLBUTTONDOWN + HTBOTTOMRIGHT）什么都不做，
+        // 页面自绘的手柄按下去等于按在一块石头上。上一版写 `resizable(false)` 是怕
+        // 系统边框和自绘手柄打架，实测那一点"打架"根本不存在：`decorations(false)`
+        // 之下没有可见边框，两个入口落到同一条 `Resized` 上。
+        .resizable(true)
+        // 下限交给系统再判一次：手柄和页面都在 320 × 420 处夹紧，但拖边那条路
+        // 根本不过页面
+        .min_inner_size(policy::MIN_W, policy::MIN_H)
         .decorations(false)
         .skip_taskbar(true)
         // 不置顶（见模块注释第 1 条）。`Ctrl+K` 会 `set_focus()` 把它提到前面
@@ -351,23 +360,21 @@ fn create(app: &AppHandle) -> Result<(), String> {
     apply_mode(&window, state.mode)?;
 
     // 圆角：浮窗模式下 `apply_mode` 不走 `apply_to`，所以这里补一次
-    if let Ok(handle) = window.window_handle() {
-        if let RawWindowHandle::Win32(win32) = handle.as_raw() {
-            let scale = window.scale_factor().unwrap_or(1.0);
-            let _ = desktop::clip_rounded(
-                win32.hwnd.get() as isize,
-                (state.rect.width * scale).round() as u32,
-                (state.rect.height * scale).round() as u32,
-                desktop::CORNER_RADIUS * scale,
-            );
-        }
-    }
+    reclip(&window);
 
     guard_close(&window);
     // 拖动与缩放的位置 / 尺寸由窗口自己记（页面不需要在松手时补一次 IPC）
     let moved_app = app.clone();
+    // Resized 要多做一件事：**重裁圆角**。区域记的是当时那个尺寸，
+    // 拖手柄放大之后新露出来的那一圈既不是圆角、也**点不到**
+    // （区域之外的部分属于"窗口不存在"，鼠标会掉到下面的窗口里）
+    let reclip_target = window.clone();
     window.on_window_event(move |event| match event {
-        WindowEvent::Moved(_) | WindowEvent::Resized(_) => schedule_save(moved_app.clone()),
+        WindowEvent::Moved(_) => schedule_save(moved_app.clone()),
+        WindowEvent::Resized(_) => {
+            reclip(&reclip_target);
+            schedule_save(moved_app.clone());
+        }
         _ => {}
     });
     window

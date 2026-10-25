@@ -78,10 +78,25 @@ tint 三档（auto / dark / light）+ 浓度 + 模糊，和属性面板的语义
 - 缩放：8 个方向里先做**右 / 下 / 右下**三个手柄，按下去调系统的
   `startResizeDragging('East' | 'South' | 'SouthEast')`。
   最小 `320 × 420`（再小输入框放不下），上限不设、但**每次应用都夹进当前屏工作区**。
-  为什么不自己逐帧 `setSize`（第一版就是这么写的，真机上「拖了等于没拖」）：手柄贴在右 / 下边缘，
-  光标往想要的方向挪 1px 就已经在**客户区之外**，而 `pointermove` 只在客户区内派发 —— 第一帧还没到，缩放就断了。
-  交给系统之后光标形状、多屏、吸附都不用我们管，也不产生 IPC 往返；尺寸的权威照旧在 Rust
-  （`Resized` → `schedule_save`），页面只在 `resize` 停 200ms 后补截一张壁纸（canvas 铺的是 `innerWidth + pad × 2`）。
+  尺寸的权威在 Rust（`Resized` → `schedule_save` 合并 400ms 写盘）；页面只在 `resize`
+  停 200ms 后补截一张壁纸（canvas 铺的是 `innerWidth + pad × 2`）。
+
+  这一条在真机上**改了三轮**，三个坑各自独立，读的人别只记住最后一个：
+
+  1. **页面自己逐帧 `setSize` 不行**。手柄贴在右 / 下边缘，光标往想要的方向挪 1px 就已经在
+     客户区之外，而 `pointermove` 只在客户区内派发 —— 第一帧还没到，缩放就断了。
+  2. **窗口必须 `resizable(true)`**。Windows 上不可调整的窗口没有 `WS_THICKFRAME`，
+     `startResizeDragging`（`WM_NCLBUTTONDOWN` + `HTBOTTOMRIGHT`）什么都不做，按下去等于
+     按在一块石头上。原来写 `false` 是怕系统边框和自绘手柄打架 —— 实测不打架：
+     `decorations(false)` 之下没有可见边框，两个入口都落到同一条 `Resized` 上。
+     顺手 `.min_inner_size(320, 420)`：拖边那条路根本不过页面，下限得让系统也认一遍。
+  3. **圆角区域必须按外框裁**（`clip_rounded_current`）。`SetWindowRgn` 用的是窗口坐标，
+     拿客户区尺寸当宽度就会把右边 16px、下面 9px 裁到区域之外 —— 那块正好压在页面的
+     手柄上，**症状不是报错，是按下去掉到下面的窗口里**（`WindowFromPoint` 会指到主窗口）。
+
+  手柄留 `12px` 宽不是随手定的：外圈那 4px（`SM_CXFRAME`）被 `tauri-runtime-wry` 的
+  `TAURI_DRAG_RESIZE_BORDERS` 覆盖层吃掉（它专门给无边框窗口做系统拖边），里侧必须还有
+  一截能收到 `pointerdown` —— 6px 的手柄在那条带上等于没有。
 - 尺寸与位置一起存在 `assistant-window.json` v2，拖动/缩放**松手时存一次**（不是每一帧写盘）。
 
 **拖标题栏走原生拖动区，不走 JS。** 标题栏带 `data-tauri-drag-region`（锁上时**不渲染**这个属性），
@@ -137,6 +152,8 @@ assistant 仍然是"平台的一部分，不是组件"（`assistant_window.rs` �
 | 桌面模式下它跑到别的应用上面去了 | 底层守卫没装上 / 装在了错的线程 | `install_guard` 只能在窗口自己的线程上调；切模式时先装守卫再落层级（顺序见 `apply_to` 注释） |
 | 切到浮窗之后它还沉在底下 | 只翻了守卫开关，没让它升上来 | 切回浮窗：`set_sink(false)` + `show` + `set_focus`，用户下一次点击就正常 |
 | 拖手柄完全没反应（尺寸不变） | 页面自己逐帧 `setSize`，而 `pointermove` 在客户区外就没了 —— 第一帧就没到 | 交给系统：`startResizeDragging(direction)` + 权限 `core:window:allow-start-resize-dragging` |
+| 手柄画着、按下去窗口**完全不动**，鼠标像点在下面的窗口上 | 圆角区域用了客户区尺寸（`SetWindowRgn` 要的是外框），右边 16px / 下面 9px 被裁到区域外，那块在系统看来「没有窗口」 | `clip_rounded_current(hwnd, radius)` 现量 `GetWindowRect` 再裁；`Resized` 之后也要重裁一次 |
+| 缩放正常，但右下角的圆角不见了 | 区域记的是建窗口时那个尺寸 | `Resized` 里 `reclip()`（区域是快照，不是跟随） |
 | 缩放之后输入框被挤没 / 溢出 | 内容没有最小高度，或者窗口尺寸没夹紧 | 面板是 flex 列，输入框 `min-height`；`clampRect` 在前后端各判一次 |
 | 锁上了还能拖 | 只拦了标题栏，没拦手柄 | 锁是**一处判据**：`locked` 为真时 `startDragging` 与手柄都不挂处理器 |
 | 多屏 / 换 DPI 之后窗口飞到屏幕外 | 存的是逻辑像素，换屏后工作区变了 | 每次应用前 `clampRect(工作区)`；读不到屏幕就退回默认角落 |
