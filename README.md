@@ -112,7 +112,7 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | --- | --- |
 | Official widgets | 17 |
 | Permissions | 12 |
-| Tauri commands | 87 |
+| Tauri commands | 92 |
 | Browser assertions | 2 377 over 51 pages |
 | Rust tests | 415 |
 | Documented pitfalls | 84 |
@@ -338,12 +338,12 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 22 220 lines |
+| TypeScript | 22 251 lines |
 | CSS | 5 968 lines |
-| Rust | 22 796 lines |
+| Rust | 22 854 lines |
 | SDK | 801 lines |
 | Widgets + example | 23 770 lines |
-| Scripts | 4 846 lines |
+| Scripts | 4 853 lines |
 
 **Read next**
 
