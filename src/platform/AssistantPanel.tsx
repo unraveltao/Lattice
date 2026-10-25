@@ -61,7 +61,13 @@ import {
 } from "../runtime/hands";
 import { historyChars, knownModel } from "../runtime/llm-models";
 import { useT } from "../runtime/i18n";
+import {
+  widgetToolSources,
+  widgetToolSpecs,
+  type WidgetToolSource,
+} from "../runtime/widget-tools";
 import { ModelProfiles } from "./ModelProfiles";
+import { useLattice } from "./store";
 
 /** 一条要显示的东西。模型的消息和工具的执行结果分开排，读起来才像"过程" */
 type Entry =
@@ -175,6 +181,38 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
   const surface = useMemo<AssistantSurface>(
     () => (records ? localSurface([...records.values()]) : remoteSurface()),
     [records],
+  );
+
+  /*
+   * 数据平面：这一轮能调的组件工具。
+   *
+   * 三个条件全为真才进表（判据只在 `widgetToolSources` 里）：装上了、用户授了
+   * `agent:tools`、清单里真声明了。**小窗那一份没有清单**（`records` 不传），
+   * 于是它那一轮没有组件工具 —— 那是"执行者在主窗口"的延续，不是可以忽略的分叉，
+   * 缺口记在 ROADMAP 里。
+   */
+  const placements = useLattice((state) => state.placements);
+  const grants = useLattice((state) => state.grants);
+  const installedIds = useLattice((state) => state.installedIds);
+  const widgetSources = useMemo<WidgetToolSource[]>(
+    () =>
+      widgetToolSources(
+        Array.from(records?.values() ?? []).flatMap((record) =>
+          placements
+            .filter((placement) => placement.widgetId === record.manifest.id)
+            .map((placement) => ({
+              instanceId: placement.instanceId,
+              widgetId: record.manifest.id,
+              // 用 id 当"哪一份"的说明：它稳定、不需要翻译，也不会因为两门语言
+              // 各写一个名字而让模型看到两个不同的东西
+              title: record.manifest.id,
+              tools: record.manifest.agent.tools,
+              installed: installedIds.includes(record.manifest.id),
+              granted: (grants[record.manifest.id] ?? []).includes("agent:tools"),
+            })),
+        ),
+      ),
+    [records, placements, grants, installedIds],
   );
 
   // 收进 ref：`send` 的依赖里不放 surface，否则每次清单变化都会重建回调
@@ -433,7 +471,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         extra = {};
       }
     }
-    const table = allTools("platform", hands, extra);
+    const table = allTools("platform", hands, extra, widgetToolSpecs(widgetSources));
     try {
       // 第一条永远是 system：桌面现状每次现拍，模型不该记着"上次的桌面"。
       // 快照可能是 IPC 往返（独立小窗那条路），所以先 await 再拼
@@ -455,6 +493,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         // 提示里说它做不到的工具"那种鬼故事
         tools: table,
         hands,
+        widgets: widgetSources,
         approve,
         onEvent: (event) => {
           if (event.type === "delta") {
@@ -504,7 +543,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       // 每一轮都存：用户下一句很可能就在关掉面板之后（0003 §5 第一行）
       void persistSession(conversation);
     }
-  }, [active?.model, approve, busy, draft, hands, persistSession]);
+  }, [active?.model, approve, busy, draft, hands, persistSession, widgetSources]);
 
 
   const stop = useCallback(() => {

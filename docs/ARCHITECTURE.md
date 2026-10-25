@@ -38,7 +38,7 @@
 | # | 动哪 | 文件 | 漏了会怎样 |
 | --- | --- | --- | --- |
 | 1 | **桥方法表** | `src/runtime/bridge.ts` 的 `defineMethod(name, permission, handler)`（现在 23 条） | 组件调不到，`unknown_method` |
-| 2 | **权限清单** | `src/runtime/catalogue.ts` 的 `KNOWN_PERMISSIONS` + `src/runtime/manifest.ts` 的 `Permission` 联合类型与文案（现在 11 项） | 清单校验把它当"未知权限"只警告不拦，于是装得上、永远授权不了 |
+| 2 | **权限清单** | `src/runtime/catalogue.ts` 的 `KNOWN_PERMISSIONS` + `src/runtime/manifest.ts` 的 `Permission` 联合类型与文案（现在 12 项） | 清单校验把它当"未知权限"只警告不拦，于是装得上、永远授权不了 |
 | 3 | **Rust 命令** | `src-tauri/src/<module>.rs` + `src-tauri/src/lib.rs` 的 `generate_handler!`（现在 61 条） | 前端以为能用，一点就 `internal` |
 | 4 | **落盘** | `state.json` 或 `widget-data/<widgetId>.json` | 重启后数据没了，或者旧数据读不出来（要迁移） |
 | 5 | **断言与文档** | `tests/*.html`、`*_policy.rs`、`WIDGET_SPEC` 对应节、`AGENTS` 模块表 | 下一个人改坏没人拦，三个月后没人记得为什么这么写 |

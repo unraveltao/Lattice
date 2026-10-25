@@ -43,6 +43,13 @@ import type { AuthShape } from "../runtime/llm-models";
 import type { WidgetRecord } from "../runtime/registry";
 import { agentSnapshot, runAgentAction, type AgentReply } from "./agent";
 import { callCommand, hasRust } from "./devLlm";
+import {
+  parseWidgetTool,
+  resolveWidgetInstance,
+  type WidgetToolReply,
+  type WidgetToolSource,
+} from "../runtime/widget-tools";
+import { callWidgetTool } from "./widget-tools";
 import { callHand, cancelHand, type HandsReply } from "./hands";
 
 /** 和 Rust 的 `ProfileView` 对齐。**没有 apiKey 字段**，只有掩码 */
@@ -323,8 +330,59 @@ export interface TurnOptions {
   maxChars?: number;
   /** 用户拨开的手（`assistant_hands` 读来的那份）。不传 = 一条都没有 */
   hands?: HandsSettings;
+  /**
+   * 这一轮能调的组件工具（数据平面）。不传 = 一条都没有。
+   *
+   * 它**不是**工具表的一部分：表由 `allTools` 拼（那是唯一一处合表），这里要的
+   * 是"这条工具名能落到哪些实例上"—— `instanceId` 补全和校验都靠它。两边必须
+   * 来自同一份清单，否则会出现"表里有、却谁都调不到"。
+   */
+  widgets?: WidgetToolSource[];
   /** 危险动作的审批。不传 = 一律拒绝（安全默认，不是"自动放行"） */
   approve?: Approver;
+}
+
+/**
+ * 真去执行一条调用。三种执行者，只有一个入口：
+ *
+ * 1. 手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP）—— 走 Rust 的 `assistant_tool`
+ * 2. 组件自己声明的工具 —— 走画布那个 iframe（`callWidgetTool`）
+ * 3. 桌面动作 —— 走 `surface`（主窗口本地跑，小窗 IPC 转给主窗口）
+ *
+ * 放在这里而不是循环体里，是为了审批之后那两处分支**看到的是同一段代码** ——
+ * 以前它们各写一遍 `group ? runHand : surface.act`，加第三种执行者时漏一处的
+ * 症状是"自动档能跑、问一次之后反而跑不了"。
+ */
+async function executeCall(
+  name: string,
+  args: Record<string, unknown>,
+  surface: AssistantSurface,
+  widgets: WidgetToolSource[],
+): Promise<AgentReply | WidgetToolReply> {
+  const group = handGroup(name);
+  if (group) return runHand(name, args);
+
+  const widget = parseWidgetTool(name);
+  if (widget) {
+    const instanceId = resolveWidgetInstance(widgets, widget.widgetId, args.instanceId);
+    if (!instanceId) {
+      return {
+        ok: false,
+        code: "bad_args",
+        error: `${name}: instanceId must be one of this widget's live copies — check the enum in the tool schema`,
+      };
+    }
+    // `instanceId` 是平台那一格（选哪一份），不是组件声明的参数：剥掉再递进去
+    const { instanceId: _ignored, ...rest } = args;
+    return callWidgetTool({
+      instanceId,
+      widgetId: widget.widgetId,
+      tool: widget.tool,
+      args: rest,
+    });
+  }
+
+  return surface.act(name, args);
 }
 
 /** 跑一只手：带一个自己的 requestId，停止时能精确地叫停它 */
@@ -354,7 +412,8 @@ function budgetNote(kind: "time" | "tokens"): string {
  * 返回 `false` 表示是被 `shouldStop` 叫停的，界面可以据此不写"完成"。
  */
 export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
-  const { messages, surface, onEvent, shouldStop, tools, maxChars, hands, approve } = options;
+  const { messages, surface, onEvent, shouldStop, tools, maxChars, hands, approve, widgets } = options;
+  const widgetSources = widgets ?? [];
   const defs = toolDefs(tools);
   const active = hands ?? HANDS_OFF;
   const startedAt = Date.now();
@@ -404,7 +463,7 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
 
       const parsed = parseArguments(call.arguments);
       const group = handGroup(call.name);
-      let result: HandsReply;
+      let result: HandsReply | AgentReply | WidgetToolReply;
 
       if (!parsed.ok) {
         result = { ok: false, code: "bad_args", error: parsed.error };
@@ -443,16 +502,12 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
               error: "the user declined this action — do not retry it; ask what they want instead",
             };
           } else {
-            result = group
-              ? await runHand(call.name, parsed.value)
-              : await surface.act(call.name, parsed.value);
+            result = await executeCall(call.name, parsed.value, surface, widgetSources);
           }
         } else {
           // 桌面动作走 surface（主窗口本地跑，小窗 IPC 转给主窗口）。
           // 循环不需要知道区别 —— 它只要一个 `AgentReply`
-          result = group
-            ? await runHand(call.name, parsed.value)
-            : await surface.act(call.name, parsed.value);
+          result = await executeCall(call.name, parsed.value, surface, widgetSources);
         }
       }
 

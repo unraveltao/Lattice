@@ -61,7 +61,8 @@
         trimHistory,
       } from "../src/runtime/assistant.ts";
       import { AGENT_ACTIONS } from "../src/platform/agent.ts";
-      import { APPROVAL_MODES, HANDS_OFF, normalizeApproval } from "../src/runtime/hands.ts";
+      import { APPROVAL_MODES, HANDS_OFF, approvalSummary, normalizeApproval } from "../src/runtime/hands.ts";
+      import { widgetToolSources, widgetToolSpecs } from "../src/runtime/widget-tools.ts";
 
       const lines = [];
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
@@ -534,6 +535,52 @@
       ok(
         !systemPrompt("{}", {}).includes("file.read"),
         "没开手时系统提示里没有任何工具名（否则模型会调一个它没被给的工具）",
+      );
+
+      // ---- 0003 §2 的数据平面：组件声明的工具怎么进表、怎么裁决 ----
+      //
+      // 三处必须同源：schema（组件自己声明的参数）、裁决（`approvalFor`）、提示词
+      // 里那一段。少一样就是"能调但不该调"或者"表里有、提示里说做不到"。
+      //
+      // 判据那几条在 `tests/widget-tools.html` 里钉着（归一化、拆名字、选实例）；
+      // 这里只钉**和 assistant 的接缝**：合表、裁决、提示。
+
+      const todoSpec = { name: "add", description: "Add one item", params: { text: "string" }, required: ["text"] };
+      const widgetSpecs = widgetToolSpecs(
+        widgetToolSources([
+          {
+            instanceId: "todo#a",
+            widgetId: "lattice.todo",
+            title: "lattice.todo",
+            tools: [todoSpec],
+            installed: true,
+            granted: true,
+          },
+        ]),
+      );
+      const withWidget = allTools("platform", HANDS_OFF, {}, widgetSpecs);
+      ok("widget.lattice.todo.add" in withWidget, "组件工具进了这一轮的表");
+      eq(withWidget["widget.lattice.todo.add"]?.parameters.required, ["text"], "schema 跟着组件声明走");
+      eq(
+        Object.keys(allTools("widget", HANDS_OFF, {}, widgetSpecs)).filter((name) => name.startsWith("widget.")),
+        [],
+        "组件借手那一轮**没有**组件工具：不然它能借平台去点另一个组件（那条路没有确认条）",
+      );
+      eq(approvalFor("widget.lattice.todo.add", "ask"), "ask", "ask 档：调组件工具要点头");
+      eq(approvalFor("widget.lattice.todo.add", "auto"), "allow", "auto 档：不问");
+      eq(
+        approvalFor("widget.lattice.todo.add", "readonly"),
+        "deny",
+        "只读档：拒 —— 认不出来的名字一律按「会改东西」算",
+      );
+      eq(
+        approvalSummary("widget.lattice.todo.add", {}),
+        "Call widget.lattice.todo.add",
+        "确认条上写清要调谁的工具",
+      );
+      ok(
+        systemPrompt("desktop", { hands: HANDS_OFF, tools: withWidget }).includes("widget."),
+        "提示词里说了这几种工具是组件自己声明的（不说的话规则 3「组件数据你碰不到」会和它打架）",
       );
 
       // ---- 输出 ----

@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>widget-tools test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 数据平面（0003 的 B 一类）的纯逻辑。
+       *
+       * 这一页钉的是"组件声明的东西怎么进工具表、怎么落到某一份实例上"——
+       * 全是**看不见就会静默错**的地方：
+       *
+       *   1. 清单里写坏一条**只丢那一条**，不整包失败（和不变量 17 同一条规矩）
+       *   2. 工具名必须能拆回来，而且组件 id 自带点 —— 所以**从右边切**
+       *   3. 同一组件的多份实例合成一条工具，`instanceId` 只在多份时 required
+       *   4. 授权轴分开：没授 `agent:tools` 的组件，工具**一条都不进表**
+       *   5. 组件回话太长 / 形状不对时**拒绝**，不截断（截断过的 JSON 会让模型
+       *      把半截数据当真）
+       */
+      import {
+        MAX_AGENT_TOOLS,
+        MAX_AGENT_TOOL_DESCRIPTION,
+        MAX_WIDGET_TOOL_RESULT,
+        WIDGET_TOOL_PREFIX,
+        normalizeAgentTools,
+        normalizeToolReply,
+        notRunningReply,
+        parseWidgetTool,
+        resolveWidgetInstance,
+        widgetToolName,
+        widgetToolSources,
+        widgetToolSpecs,
+      } from "../src/runtime/widget-tools.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text} — ${JSON.stringify(actual)}`,
+        );
+      const ok = (value, text) => log(!!value, text);
+
+      // ---- 归一化：坏条目逐条丢 ----
+
+      eq(normalizeAgentTools(undefined), [], "没有这一段 = 一条工具都没有");
+      eq(normalizeAgentTools({ tools: "nope" }), [], "tools 不是数组 = 一条都没有");
+      eq(
+        normalizeAgentTools({ tools: [{ name: "add", description: "Add one item", params: { text: "string" }, required: ["text"] }] }),
+        [{ name: "add", description: "Add one item", params: { text: "string" }, required: ["text"] }],
+        "正常的一条原样留下",
+      );
+
+      const dropped = normalizeAgentTools({
+        tools: [
+          { name: "add", description: "ok" },
+          { name: "Add", description: "大写字母开头的名字不收" },
+          { name: "has space", description: "空格不收" },
+          { name: "", description: "空名字不收" },
+          "add",
+          null,
+          { name: "list", description: "留下" },
+        ],
+      });
+      eq(
+        dropped.map((tool) => tool.name),
+        ["add", "list"],
+        "写坏的那几条各自丢，好的照留（不让一条笔误把整包废掉）",
+      );
+
+      const dupes = normalizeAgentTools({
+        tools: [
+          { name: "add", description: "先来的那个" },
+          { name: "add", description: "后来的这个应该被丢掉" },
+        ],
+      });
+      eq(dupes.length, 1, "撞名只留一条");
+      eq(dupes[0]?.description, "先来的那个", "撞名时先来的赢");
+
+      const capped = normalizeAgentTools({
+        tools: Array.from({ length: MAX_AGENT_TOOLS + 4 }, (_, index) => ({ name: `t${index}` })),
+      });
+      eq(capped.length, MAX_AGENT_TOOLS, `最多 ${MAX_AGENT_TOOLS} 条`);
+
+      // ---- 参数 ----
+
+      const params = normalizeAgentTools({
+        tools: [
+          {
+            name: "add",
+            params: { text: "string", when: "number", done: "boolean", bogus: "object", "9x": "string", instanceId: "string" },
+            required: ["text", "bogus", "nope"],
+          },
+        ],
+      })[0];
+      eq(
+        params?.params,
+        { text: "string", when: "number", done: "boolean" },
+        "只认 string / number / boolean，名字不合法的和平台那一格 instanceId 都不收",
+      );
+      eq(params?.required, ["text"], "required 只留 params 里真有的那些");
+
+      const tooMany = normalizeAgentTools({
+        tools: [{ name: "wide", params: { a: "string", b: "string", c: "string", d: "string", e: "string", f: "string", g: "string" } }],
+      })[0];
+      eq(Object.keys(tooMany?.params ?? {}).length, 6, "参数最多 6 个");
+
+      const longText = normalizeAgentTools({
+        tools: [{ name: "add", description: "x".repeat(MAX_AGENT_TOOL_DESCRIPTION + 40) }],
+      })[0];
+      eq(longText?.description.length, MAX_AGENT_TOOL_DESCRIPTION, "描述超长截断（不是拒绝：描述短一点不影响它能不能用）");
+
+      // ---- 工具名的形状 ----
+
+      eq(widgetToolName("lattice.todo", "add"), "widget.lattice.todo.add", "完整名字");
+      eq(parseWidgetTool("widget.lattice.todo.add"), { widgetId: "lattice.todo", tool: "add" }, "从右边切，所以点组成的 id 也能拆回来");
+      eq(parseWidgetTool("widget.lattice.bookmarks.save"), { widgetId: "lattice.bookmarks", tool: "save" }, "两级 id");
+      eq(parseWidgetTool("placement.move"), null, "平台动作不是组件工具");
+      eq(parseWidgetTool("mcp.obsidian.search"), null, "MCP 的不是组件工具");
+      eq(
+        parseWidgetTool("widget.lattice.todo"),
+        { widgetId: "lattice", tool: "todo" },
+        "只有一个点的名字按最右边那个点切 —— 顺序上没法分辨，而落地时会在 resolveWidgetInstance 里被拦下",
+      );
+      eq(parseWidgetTool("widget..add"), null, "空 id = 认不出来");
+      ok(WIDGET_TOOL_PREFIX === "widget.", "前缀只写在一个地方");
+
+      // ---- 授权轴：装上了 ≠ 允许 agent 调 ----
+
+      const spec = { name: "add", description: "Add one item", params: { text: "string" }, required: ["text"] };
+      const candidate = (over) => ({
+        instanceId: "todo#a",
+        widgetId: "lattice.todo",
+        title: "lattice.todo",
+        tools: [spec],
+        installed: true,
+        granted: true,
+        ...over,
+      });
+
+      eq(widgetToolSources([candidate({})]).length, 1, "装了 + 授了 = 能调");
+      eq(widgetToolSources([candidate({ granted: false })]), [], "没授 agent:tools = 一条都不进表");
+      eq(widgetToolSources([candidate({ installed: false })]), [], "没装 = 一条都不进表");
+      eq(widgetToolSources([candidate({ tools: [] })]), [], "没声明工具 = 不进表");
+
+      // ---- schema：一份 / 多份 ----
+
+      const one = widgetToolSpecs(widgetToolSources([candidate({})]));
+      const oneSpec = one["widget.lattice.todo.add"];
+      ok(oneSpec, "工具进了表");
+      eq(oneSpec?.parameters.required, ["text"], "只有一份时不逼模型抄 instanceId");
+      eq(
+        oneSpec?.parameters.properties.instanceId.enum,
+        ["todo#a"],
+        "instanceId 那一格列出能答的那一份",
+      );
+      eq(oneSpec?.parameters.properties.text, { type: "string" }, "组件声明的参数原样进 schema");
+      ok(
+        oneSpec?.description.includes("lattice.todo"),
+        "描述里写着这是谁的工具（否则模型分不清两个 add）",
+      );
+
+      const two = widgetToolSpecs(
+        widgetToolSources([
+          candidate({ instanceId: "todo#a" }),
+          candidate({ instanceId: "todo#b" }),
+        ]),
+      );
+      eq(Object.keys(two).length, 1, "同一个组件的两份实例合成一条工具");
+      eq(
+        two["widget.lattice.todo.add"]?.parameters.required,
+        ["text", "instanceId"],
+        "多份时 instanceId 变成必填",
+      );
+      eq(
+        two["widget.lattice.todo.add"]?.parameters.properties.instanceId.enum,
+        ["todo#a", "todo#b"],
+        "两份都在 enum 里",
+      );
+
+      const other = widgetToolSpecs(
+        widgetToolSources([candidate({}), candidate({ instanceId: "cal#1", widgetId: "lattice.calendar", tools: [{ ...spec, name: "addEvent" }] })]),
+      );
+      eq(
+        Object.keys(other).sort(),
+        ["widget.lattice.calendar.addEvent", "widget.lattice.todo.add"],
+        "两个组件各一条，谁也不盖谁",
+      );
+
+      // ---- 落到哪一份实例 ----
+
+      const sources = widgetToolSources([candidate({}), candidate({ instanceId: "todo#b" })]);
+      eq(resolveWidgetInstance(sources, "lattice.todo", "todo#a"), "todo#a", "模型点名的那一份");
+      eq(resolveWidgetInstance(sources, "lattice.todo", undefined), null, "多份又没说 = 让它报错，不替它猜");
+      eq(resolveWidgetInstance(sources, "lattice.todo", "clock#1"), null, "不能借别家的 instanceId");
+      eq(resolveWidgetInstance(sources, "lattice.nope", "todo#a"), null, "这个组件根本不在表里");
+      eq(resolveWidgetInstance([sources[0]], "lattice.todo", undefined), "todo#a", "只有一份就自动选它");
+
+      // ---- 回话的归一化 ----
+
+      eq(normalizeToolReply("lattice.todo", "add", undefined), {
+        ok: false,
+        code: "bad-reply",
+        error: "widget.lattice.todo.add: the widget sent nothing back",
+      }, "没回 = bad-reply");
+
+      eq(
+        normalizeToolReply("lattice.todo", "add", { ok: false, error: "the list is full" }),
+        { ok: false, code: "failed", error: "the list is full" },
+        "组件说的失败原样带回（它比平台更懂自己为什么失败）",
+      );
+      eq(
+        normalizeToolReply("lattice.todo", "add", { ok: false }),
+        { ok: false, code: "failed", error: "widget.lattice.todo.add: the widget reported a failure" },
+        "只回 ok:false 也得有一句人话",
+      );
+
+      eq(normalizeToolReply("lattice.todo", "add", { ok: true, result: { id: "3" } }), { ok: true, result: { id: "3" } }, "成功的返回值原样带上");
+      eq(normalizeToolReply("lattice.todo", "add", { ok: true }), { ok: true }, "什么也不返回也算成功");
+
+      const big = normalizeToolReply("lattice.todo", "add", { ok: true, result: "x".repeat(MAX_WIDGET_TOOL_RESULT + 10) });
+      eq(big.ok, false, "返回值太大 = 失败");
+      eq(big.ok === false ? big.code : "", "too-big", "而且说得清是哪一种失败");
+      ok(
+        big.ok === false && big.error.includes(String(MAX_WIDGET_TOOL_RESULT)),
+        "错误里写着上限（模型能据此要少一点）",
+      );
+
+      // ---- 没在跑 ----
+
+      const dead = notRunningReply("lattice.todo", "add");
+      eq(dead.ok, false, "没人答话就是失败");
+      eq(dead.ok === false ? dead.code : "", "not-running", "和别的失败分开：这一条让模型别重试");
+      ok(dead.ok === false && dead.error.includes("widget.lattice.todo.add"), "错误里带着工具名");
+
+      // ---- 输出 ----
+
+      const pass = lines.filter((line) => line.startsWith("PASS")).length;
+      const fail = lines.length - pass;
+      document.getElementById("out").innerHTML =
+        lines.map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`).join("\n") +
+        `\n\n${pass} passed, ${fail} failed`;
+      document.title = fail === 0 ? `widget-tools ${pass}/${lines.length}` : `widget-tools FAIL ${fail}`;
+    </script>
+  </body>
+</html>

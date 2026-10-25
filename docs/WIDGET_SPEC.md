@@ -8,7 +8,7 @@
 | --- | --- |
 | [1. 组件包结构](#1-组件包结构) | 一个目录、两个文件、没有构建步骤 |
 | [2. manifest.json](#2-manifestjson) | 清单的全部字段，含尺寸、配置项、双语文案 |
-| [3. 权限](#3-权限) | 11 项能力各自意味着什么，以及什么时候该拒绝 |
+| [3. 权限](#3-权限) | 12 项能力各自意味着什么，以及什么时候该拒绝 |
 | [4. 桥 API](#4-桥-api) | 23 个方法、参数、错误码 |
 | [5. 沙箱限制](#5-沙箱限制) | 为什么有些最普通的写法在这里不成立 |
 | [6. 排版](#6-排版) | 卡片里能用的单位、字号、留白 |
@@ -97,6 +97,8 @@ npm run pack:widget -- examples/counter --out out/  # 指定目录
 | `shape` | 否 | `rect` | `rect` = 平台圆角卡片；`region` = 轮廓由组件上报（桌宠、挂件），见 §2.5 |
 | `appearance` | 否 | `{ "tint": "auto", "alpha": 1, "blur": 0 }` | 底板外观的出厂值，见 §2.2 |
 | `config` | 否 | `[]` | 可配置项，平台据此渲染属性面板表单，见 §2.3 |
+| `help` / `changelog` | 否 | — | 怎么用、改了什么，见 §2.4 |
+| `agent` | 否 | `{ "tools": [] }` | 组件声明成工具的能力（要 `agent:tools` 权限），见 §3.6 |
 | `sdk` | 否 | `^0.1` | 依赖的 SDK 版本区间 |
 
 清单不合法时组件不会消失，而是出现在组件库底部的「加载失败的组件」里并给出原因 —— 便于排错。
@@ -474,6 +476,7 @@ if (data.type === "config-changed") {
 | `agent:activity` | `agent.activity`（本机 agent 做过的操作，读的是审计日志） | 可用 |
 | `llm:chat` | `llm.chat`（用**用户自己配的**模型说一句话，花的是用户的额度，见 §3.4） | 可用 |
 | `desktop:control` | `assistant.ask`（让平台的模型**替你动桌面**，见 §3.5） | 可用 |
+| `agent:tools` | 组件清单里 `agent.tools` 声明的那几条工具可以被 agent / assistant 调用（见 §3.6） | 可用 |
 
 只申请你真正用到的。申请一堆用不上的权限，用户会直接不装。
 
@@ -615,6 +618,70 @@ const { text, actions } = await lattice.assistant.ask({
 
 平台侧每次调用都会写一行审计（`widget.ask`，记组件 id 与字数，不记内容）。
 
+### 3.6 把能力声明成工具（`agent.tools`）
+
+`assistant.ask` 是组件**借平台的手**；这一条是反过来：组件把自己的能力**声明成工具**，模型（内置 assistant，以及将来走同一个执行器的 agent）来调你。它要 `agent:tools` 权限。
+
+**为什么不让 agent 直接读你的存储**：`widget-data/<id>.json` 没有 schema，agent 读了只能瞎猜。要数据走你声明的工具 —— 暴露什么、怎么解释，由你的代码决定，平台不当数据出口（`docs/AGENT_ACCESS.md` §2.3）。
+
+清单里声明：
+
+```jsonc
+{
+  "id": "com.example.todo",
+  "permissions": ["storage", "agent:tools"],
+  "agent": {
+    "tools": [
+      {
+        "name": "add",
+        "description": "Add one item to the todo list",
+        "params": { "text": "string" },
+        "required": ["text"]
+      },
+      { "name": "list", "description": "List the items still open", "params": {} }
+    ]
+  }
+}
+```
+
+五条硬规矩：
+
+- **名字 `[a-z][a-z0-9_-]{0,31}`，最多 8 条工具、每条最多 6 个参数**。参数类型只有 `string` / `number` / `boolean` —— 够写待办和时间，不够"传一个对象进来让我猜"。`instanceId` 是平台留的那一格，写了也不收。
+- **写坏一条只丢那一条**，包照常加载（和不变量 17 同一条规矩）。描述超长会截到 120 字，而不是把这条丢掉。
+- **工具名会变成 `widget.<你的 id>.<工具名>`**，例如 `widget.com.example.todo.add`。前缀是平台加的：`widget.` 这一段是"这是组件自己的工具"的唯一判据，别在描述里重复它。
+- **`agent:tools` 是独立的授权轴**。"允许这个组件联网"不等于"允许 agent 往里塞数据" —— 没授这条权限，你声明的工具**一条都不会出现在模型那一侧**，一次都不会被调用。授权界面上那行字叫 "Agent tool calls"。
+- **一个组件摆了几份时，调用带 `instanceId`**。只摆一份的话模型可以不写（平台替你补上），摆两三份就必须写——三份天气各在哪个城市，只有实例 id 分得清。
+
+组件这一侧的协议是**一条消息进、一条消息出**，走和桥同一个 `postMessage` 通道，只是方向相反：
+
+```js
+window.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || data.__lattice !== 1 || data.type !== "agent-call") return;
+  const { callId, tool, args } = data.payload;
+  const reply = (payload) =>
+    event.source?.postMessage({ __lattice: 1, type: "agent-result", payload: { callId, ...payload } }, "*");
+
+  if (tool === "add") {
+    const text = String(args.text ?? "").trim();
+    if (!text) return reply({ ok: false, error: "the text is empty" });
+    items.push(text);
+    save();
+    return reply({ ok: true, result: { count: items.length } });
+  }
+  reply({ ok: false, error: `unknown tool ${tool}` });
+});
+```
+
+四件事必须做到：
+
+- **一定回话，而且带上同一个 `callId`**。不回的那一次，平台等 8 秒然后回去告诉模型"它没应"，用户看到的是"这个组件不听话"。
+- **`ok: false` 要写一句能读的原因**。模型会把它转述给用户，也会据此改参数重来；一句空的 `false` 等于让它猜。
+- **返回值会被 `JSON.stringify` 之后交给模型，上限 4000 字符**。超了是**拒绝**（`too-big`），不是截断 —— 半截 JSON 会让模型把残片当真。所以别把整份列表塞回去，回摘要或者回前几条。
+- **`instanceId` 不进 `args`**。它是平台那一格（选哪一份实例），调用方已经替你选完了。
+
+还没解决的两件事（写在 `docs/AGENT_ACCESS.md` §2.2）：**答话的是画布上那一份实例**（桌面窗口那份不参与，但它和画布那份共用同一份 `widget-data`，收到 `store-changed` 会自己重读；你的工具实现按"跑在自己的 iframe 里"写就行）；组件没装、或者画布上那张已经是破卡时，调用回 `not-running` —— v1 **不唤醒**窗口（建窗口 → 等宿主页 boot → 再投递是一串会输的竞态），模型会转述给用户而不是重试。另外 `npm run dev` 的浏览器预览里没有模型，这条链路只有桌面应用能跑完整。
+
 
 ## 4. 桥 API
 
@@ -734,6 +801,7 @@ await call("schedule.clear", { id: grant.id });
 | `{ __lattice: 1, type: "tick", payload }` | `schedule.every` 到期 | `{ id, at }`，`id` 就是订阅号 |
 | `{ __lattice: 1, type: "store-changed", payload }` | 本组件的私有存储被**任意**实例写入了 | `{ key }`，`key` 为空串表示整份文件被替换 |
 | `{ __lattice: 1, type: "config-changed", payload }` | 这个实例的配置被改了（属性面板） | `{ config }`，完整对象，见 §2.3 |
+| `{ __lattice: 1, type: "agent-call", payload }` | agent / assistant 调了你声明的工具 | `{ callId, tool, args }`；**必须**回一条 `agent-result` 带上同一个 `callId`，见 §3.6 |
 | `{ __lattice: 1, type: "ready" }` | 组件主动发出，表示已就绪 | 宿主收到后会立刻推一次主题和配置 |
 
 `store-changed` 的标准处理方式（两个示例组件都是这么写的）：

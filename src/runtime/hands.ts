@@ -551,7 +551,9 @@ export function approvalSummary(name: string, args: Record<string, unknown>): st
       // 桌面动作里唯一要点头的那个（`auto` 档也问）：删掉 8 秒后就没得撤了
       return t("Remove the widget {instanceId}", { instanceId: clip(text("instanceId"), 60) });
     default:
-      if (name.startsWith("mcp.")) return t("Call {tool}", { tool: name });
+      if (name.startsWith("mcp.") || name.startsWith("widget.")) {
+        return t("Call {tool}", { tool: name });
+      }
       return name;
   }
 }

@@ -13,7 +13,7 @@
 | | 是什么 | 状态 | 要动什么 |
 | --- | --- | --- | --- |
 | **A 控制平面** | 外部 agent 摆组件、改布局、换主题、暂停 | `[已实现]` | 一条通道 + 一个新身份 + 审计 |
-| **B 数据平面** | agent 读待办、加日历事件、查天气 | `[设计]` | 组件清单加一节 `agent.tools`，**所有组件作者要跟着改** |
+| **B 数据平面** | agent 读待办、加日历事件、查天气 | `[已实现]`（第 2 节） | 组件清单加一节 `agent.tools` + 一条 `agent:tools` 权限，**所有组件作者要跟着改** |
 | **C agent 当组件** | 一块看板：agent 刚才说了什么、改了什么 | `[已实现，组件在 v0.10 删了]` | 一个官方组件 + 一条 `say` 通道 + 一项新权限（桥与权限留着，第三方仍可自己画一块） |
 | **D 内置 assistant** | 平台自己带模型（用户填地址 / 模型 / key），Ctrl+K 说话，它照着改桌面 | `[已实现]`（第 4 节） | 传输层 + key 落盘 + 工具循环 + 抽屉 |
 
@@ -137,10 +137,11 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 任何能跑 shell 的 agent 都能用这三条。MCP 那一层是**薄适配**，不是主入口 ——
 把业务逻辑写进 MCP server，换个宿主就要重写一遍。
 
-## 2. B 数据平面 `[设计]`
+## 2. B 数据平面 `[已实现：清单 + 调用链]`
 
-组件把自己的能力声明成工具，agent 通过平台调用。这是长期真正的价值，但它是一次
-**规范变更**，所以放到最后。
+组件把自己的能力声明成工具，agent 通过平台调用。这是一次**规范变更**，所以放到最后；
+规范本身在 [WIDGET_SPEC §3.6](./WIDGET_SPEC.md#36-把能力声明成工具agenttools)，这一节只记
+**为什么这么定**。
 
 ### 2.1 清单里加一节
 
@@ -168,20 +169,57 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 `instanceId`，而 agent 得能从 `state` 里看到这些实例 —— 这就是快照里 `placements`
 带 `instanceId` 的原因。
 
+*定下来的做法*：同一组件的多份实例**合成一条工具**（`widget.lattice.weather.now`），
+`instanceId` 那一格是枚举，**只在多于一份时必填** —— 一份时逼模型抄一遍 id 只是多一个
+写错的机会，而它抄错的样子（一个不存在的 id）和"这个组件没在跑"长得一样。
+
 **二、组件没在跑怎么办？** 这是最容易漏的一条。三种情况都会让调用落空：窗口不存在
 （只在画布上，而主窗口收起）、被暂停、被别的窗口完全挡住（`occlusion.rs` 会把心跳
 停掉）。桥调用本身不是定时器，被挡住也能回；**但窗口不存在时没有宿主页，没人能答**。
 所以 `tool` 要么能唤醒（先把窗口建出来），要么回一句能看懂的话，而不是超时。
 
+*定下来的做法*：**答话的是画布上那一份实例**，不要求它投放到桌面 —— 每个 placement
+在画布上都有一个 iframe，主窗口只是 hide，React 树和 iframe 都还在（暂停只是停时间轴，
+postMessage 照收）。于是"没在跑"缩成一种情况：**组件没装 / 画布上那张是破卡**，那种
+情况下没有处理器，回 `not-running` 而不是等超时。**v1 不唤醒**：建窗口 → 等宿主页
+boot → 再投递是一串会输的竞态，而"它没在跑，你让用户把它装回来"这个答案对模型已经够用。
+代价写在 ROADMAP 的缺口里。
+
 **三、要不要单独的授权轴？** 组件的 `grants` 是"这个组件能不能联网"，不是"agent 能不
 能操作它"。这两个必须分开：用户允许天气组件联网，不等于允许 agent 往里塞数据。建议
 一条独立授权：**allow agent to call this widget's tools**，默认关，按 `widgetId` 记。
+
+*定下来的做法*：就是一条新权限 `agent:tools`（授权界面上那行字叫 "Agent tool calls"），
+按 `widgetId` 记、默认拒 —— 复用现成的 `grants` 与属性面板，不另造一套授权界面。判据
+只有一处（`widgetToolSources`）：**装上了 + 授了 + 清单里真声明了**，三条全真才进表。
 
 ### 2.3 一条原则
 
 **agent 永远不碰原始存储。** 组件的 `widget-store/<id>.json` 是用户的便签和待办，
 没有 schema，agent 读了也只能瞎猜。要数据就走组件自己声明的工具 —— 由组件的代码决定
 暴露什么、怎么解释。平台不当数据出口。
+
+### 2.4 调用链（谁在什么时候看哪张表）
+
+```
+AssistantPanel（主窗口抽屉）
+  ├─ widgetToolSources(placements ∩ records ∩ grants["agent:tools"])   ← 谁有权答
+  ├─ widgetToolSpecs(...)  →  schema（instanceId 的 enum 在这里）
+  └─ allTools(caller, hands, mcp, widgets)  ← 整张表唯一的合表处
+        ├─ 审批：approvalFor("widget.…", 档)   ← 和手、桌面动作用同一个裁决
+        └─ 执行：executeCall → callWidgetTool(instanceId) → 画布那个 iframe
+                                                          ├─ agent-call（带 callId）
+                                                          └─ agent-result（同一个 callId）
+```
+
+四条连带事实：
+
+- **组件借手那一轮（`assistant.ask`）没有组件工具**：那条路上没有确认条，给了就等于
+  "A 组件借模型去改 B 组件的数据"。这条写死在 `allTools` 里，不靠调用方记得传。
+- **桌面上那个小窗那一轮也没有**：它没有清单（`records` 不传），只有主窗口握有
+  `manifest.agent.tools` 与 `grants`。这是"执行者在主窗口"的延续，缺口记在 ROADMAP。
+- **返回值上限 4000 字符，超了拒绝不截断**：半截 JSON 会让模型把残片当真。
+- **审计**：和手一样只记形状（工具名、ok、耗时），不记返回值内容。
 
 ## 3. C agent 当组件 `[已实现，组件后来删了]`
 

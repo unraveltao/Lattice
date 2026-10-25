@@ -34,6 +34,7 @@ import { languagePayload, useLang, useT } from "../runtime/i18n";
 import { useText } from "../runtime/widget-text";
 import { isWidgetLog, trace } from "../runtime/debug";
 import { WidgetIconMark } from "./icons";
+import { registerCanvasWidgetTools, unregisterCanvasWidgetTools } from "./widget-tools";
 import { snap, useLattice, type Placement } from "./store";
 
 /** 画布上最多记几条。这里只显示一条，其余靠 +N 提示，不需要留太多 */
@@ -139,6 +140,42 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
   }, []);
 
   /*
+   * 在飞的组件工具调用：`callId` → 兑现那次 Promise 的函数。
+   *
+   * 用 ref 而不是 state：这些 Promise 没人渲染，改动它们不该让组件重渲染
+   * （一次调用进来就重画一次画布，代价比它解决的问题大得多）。
+   */
+  const agentCalls = useRef(new Map<string, (reply: unknown) => void>());
+
+  /*
+   * 数据平面（AGENT_ACCESS §2）：把"这一份实例"登记成一个能答话的东西。
+   *
+   * 登记的是"能把话送进 iframe"这件事本身，答复从下面那个消息监听器回来 ——
+   * 也就是说组件工具和桥走**同一条** postMessage，只是方向相反：桥是组件问宿主，
+   * 工具是宿主问组件。卸载时按 handler 身份删，见 `unregisterCanvasWidgetTools`。
+   */
+  useEffect(() => {
+    let seq = 0;
+    const handler = (tool: string, args: Record<string, unknown>) =>
+      new Promise<unknown>((resolve) => {
+        const frame = iframeRef.current;
+        if (!frame?.contentWindow) {
+          resolve({ ok: false, code: "not-running", error: "the widget frame is gone" });
+          return;
+        }
+        seq += 1;
+        const callId = `c${seq}`;
+        agentCalls.current.set(callId, resolve);
+        frame.contentWindow.postMessage(
+          { [BRIDGE_TAG]: 1, type: "agent-call", payload: { callId, tool, args } },
+          "*",
+        );
+      });
+    registerCanvasWidgetTools(placement.instanceId, handler);
+    return () => unregisterCanvasWidgetTools(placement.instanceId, handler);
+  }, [placement.instanceId]);
+
+  /*
    * 画布上的每个组件实例也有一条自己的时间轴。
    *
    * 主窗口最小化时整个文档变成 hidden，`createScheduler` 内部会把定时器
@@ -191,6 +228,19 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
           ms: 0,
           text: String((data.payload as { text?: unknown })?.text ?? ""),
         });
+        return;
+      }
+
+      if (data && data[BRIDGE_TAG] === 1 && data.type === "agent-result") {
+        const payload = (data.payload ?? {}) as Record<string, unknown>;
+        const callId = typeof payload.callId === "string" ? payload.callId : "";
+        const settle = agentCalls.current.get(callId);
+        if (settle) {
+          agentCalls.current.delete(callId);
+          // 整条载荷交回去：`normalizeToolReply` 认的是 `ok` / `result` / `error`，
+          // 多一个 `callId` 它不当回事。这里不先拆一遍，是为了只有一处解释形状
+          settle(payload);
+        }
         return;
       }
 

@@ -26,7 +26,7 @@
 | v0.8 | Agent 接入 | 🟡 进行中 | 默认关的回环端点：只绑 127.0.0.1、令牌、审计日志、8 个白名单动作（读日志用 `npm run agent -- state`）；还差一次 CLI 往返的真机验收 |
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
-| v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的**会话与观察已落地**（`assistant-sessions/<id>.json` 一条会话一个文件，50 份 / 200 条 / 1 MB 三道额度，面板顶部一条能挑回 / 新开 / 删的会话条，提示词里补了组件说明首句与商店那一段），**审批档也落了**（`approvalMode` 三档 `ask` / `auto` / `readonly`，`readonly` 连 schema 都不给、Rust 再拒一次，`auto` 仍然问删除），剩下的只有 B 数据平面 |
+| v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的**会话与观察已落地**（`assistant-sessions/<id>.json` 一条会话一个文件，50 份 / 200 条 / 1 MB 三道额度，面板顶部一条能挑回 / 新开 / 删的会话条，提示词里补了组件说明首句与商店那一段），**审批档也落了**（`approvalMode` 三档 `ask` / `auto` / `readonly`，`readonly` 连 schema 都不给、Rust 再拒一次，`auto` 仍然问删除），**B 数据平面也落了**（组件清单加 `agent.tools`：工具名 `widget.<id>.<tool>`、多份实例合成一条、新权限 `agent:tools` 独立授权、答话的是画布那一份实例、回话超 4000 字符拒绝不截断；留了三处缺口，见下面那条） |
 
 **当前规模**（截至本次改动，2026-10-25）：
 
@@ -38,11 +38,11 @@
 | 组件 SDK | 713 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
 | 官方组件 + 示例 | 13 338 行 | 14 个官方包 + 1 个示例（示例里那份 SDK 副本也算在内；未跟踪的桌宠不计） |
 | 构建脚本 | 2 629 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
-| 浏览器断言 | 1 998 条 | 46 个自检页，跑一遍的真实计数（0 failed） |
+| 浏览器断言 | 2 091 条 | 47 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 33 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条，都不依赖 dev server |
-| Rust 单测 | 366 条 | 324 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`mcp_policy` 17 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `assistant_session_policy` 15 + `fs_policy` 14 + `hands_policy` 12 + `shell_policy` 9），42 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
+| Rust 单测 | 370 条 | 328 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`mcp_policy` 17 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `assistant_session_policy` 15 + `fs_policy` 14 + `hands_policy` 16 + `shell_policy` 9），42 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 80 个 | |
-| 权限 | 11 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐 |
+| 权限 | 12 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐 |
 | 踩过的坑 | 75 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
 ---
@@ -268,7 +268,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **状态码只表达传输层的事**。`200` = 处理了（哪怕业务上失败）、`401` 令牌不对、`403` 动作在白名单外、`503` 窗口没答上来；业务失败用 `ok:false` + `code`。混在一起 agent 就分不清"重试有用"和"重试也没用"。
   - **白名单要改三处**：`agent_policy.rs` 的 `ACTIONS`、`platform/agent.ts` 的 `AGENT_ACTIONS`、文档那张表。`tests/agent.html` 第一条断言就把两张表逐字比一遍 —— 少改一处会红。
   - **测试分三块，各测各的**：`agent_policy.rs` 26 条（HTTP 解析的"没收全 / 畸形 / 超长"三态、Bearer、白名单、`say` 的单行化与超长拒绝、响应头）；`tests/agent.html` 57 条（跑的是**真 store**，不是替身 —— 用替身测等于只测了 if 分支）；`npm run test:agent` 14 条（起假端点，测 CLI 发出去的请求形状、`say` 的整句传递、失败时的退出码）。
-- [ ] **数据平面** —— 组件清单加一节 `agent.tools`，agent 经平台调组件自己声明的方法。三个必须先回答的问题写在 AGENT_ACCESS.md §2.2：调**哪个实例**（`lattice.weather` 能同时摆三份）、**组件没在跑怎么办**（窗口不存在 / 被暂停 / 被完全挡住，桥不是定时器所以被挡住也能回，但窗口不存在时没人答）、**要不要单独的授权轴**（"允许天气组件联网"不等于"允许 agent 往里塞数据"）。一条原则：**agent 永远不碰原始存储**，要数据走组件声明的工具，平台不当数据出口。
+- [x] **数据平面** —— 组件清单加一节 `agent.tools`，agent 经平台调组件自己声明的方法。三个先回答的问题的答案、以及调用链，写在 AGENT_ACCESS.md §2.2 / §2.4；规范在 WIDGET_SPEC §3.6。落下来的形状：工具名 `widget.<组件 id>.<工具名>`（和 `mcp.<server>.<tool>` 同一副形状）、同一组件的多份实例**合成一条工具**（`instanceId` 只在多于一份时必填）、新权限 `agent:tools` 是**独立的授权轴**（默认拒，"允许联网"≠"允许 agent 往里塞数据"）、答话的是**画布上那一份实例**（每个 placement 都有一个 iframe，主窗口只是 hide，于是"没在跑"缩成"没装 / 破卡"）、回话超 4000 字符**拒绝不截断**。一条原则没变：**agent 永远不碰原始存储**，要数据走组件声明的工具，平台不当数据出口。三处留着的缺口：① 小窗那一轮没有组件工具（它没有清单，只有主窗口有）；② 不唤醒窗口（`not-running` 直接回给模型）；③ SDK 还没包一层 `agentTools()`，作者要自己听 `agent-call`。
 - [x] **agent 当组件** —— 一个官方组件 `lattice.agent`，但**不是聊天窗，也不带模型**：没有 baseUrl、没有 API key、没有 `network` 权限、不碰网络，只读审计日志把"agent 说了什么、改了什么"列出来。当初的聊天窗方案要付三笔钱，第三笔最贵：组件的配置里存用户的 API key、`network.fetch` 的主机白名单因为用户能自己填 baseUrl 而形同虚设、**有嘴就有手**（一个能发请求的组件离"能改布局"只差一条桥方法，那条口子开出去收不回来）。而它要解决的问题是"我看不见 agent 在干什么"—— agent 宿主本来就有自己的界面，它只是**说不出话**。
   - **所以给它一条 `say`**：`{"op": "say", "text": "…"}` 是 agent 唯一的嘴，`agent.rs` 直接写进 `agent/audit.log`，**不走前端往返** —— 说一句话不需要等窗口答上来，窗口没开的时候这句话也该留下。两条约束：压成一行（审计日志是 JSONL，多行会把后面每一行拆坏）；**超长拒绝，不截断**（上限 500 字符 —— 截断等于替 agent 决定"后半句不重要"，而它会以为自己说完了）。
   - **看板骗不了人**：`act` 那几行是**平台**写的，`say` 那几行是 agent 自己的话，在数据里就是不同的 `op`。组件只负责显示，不解释、不执行、没有任何调用动作的接口 —— 它结构上做不了事，也就没法被诱导去做事。另外加了第七项权限 `agent:activity`：审计日志里有用户的操作历史，白给不合适。`agent` 关着时照样显示历史（发生过的事不会因为关掉开关就变成没发生过），只是不再有新行进来。
@@ -371,7 +371,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **一次调用一条连接，不复用**：省掉"连接池 + 谁负责重启 + 半死连接怎么判"三个问题；代价写明 —— stdio 的 `npx` 服务每次调用都要重付一次启动（几秒），慢但不会错。额度：握手 30s、调用 120s、返回文本 40k 字、描述 300 字、`tools/list` 缓存一份。
   - **MCP 一律问，而且没有沙箱**：`mcp.*` 全部走审批（`needsApproval` 认前缀），因为服务器是用户自己配的可执行文件、跑起来之后平台关不住它 —— 没有文件、网络、命令那三道收窄，`AGENTS.md` §7 第 15 条把这条写作承诺而不是缺口。审计只记工具名本身（哪台服务、哪个工具），不记参数、不记返回。
   - 验证：`tests/hands.html` **97 条**（P1 建、P5 补、P6 补）、`tests/assistant.html` 122 条、`input_policy.rs` 23 + `screen_policy.rs` 21 + `web_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9 条 `rustc --test`、`mcp_policy.rs` 17 条 `rustc --test`、全量自检 **46 页 / 1 981 条 / 0 failed**。`hands.rs` 那 7 条与 `mcp.rs` 那 8 条只有 `cargo test` 跑得了（本机跑不了）。**真机还没走**：读一个中文路径的文件、`echo 你好`、`Deny` 之后磁盘没变化、Stop 之后子进程真的没了、取一个真页面并跟一次 302、列一次窗口、在一张空白画布上点一下再 `Ctrl+S`；P6 再走一条：`npx -y @modelcontextprotocol/server-filesystem D:\` 存进 `mcp.json`、点 Refresh 看到工具、真调一个（列一次目录）、`Deny` 之后什么都没发生 —— 记在 `AGENTS.md` §8。
-- 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P6 全落了 —— **六只手到这里齐全**；0003 的会话、观察与审批三档随后也落了（会话落盘 + 提示词里的观察段 + `approvalMode`）。接下来是 B 数据平面（组件把能力声明成工具），以及 P6 留下的几条实用缺口：HTTP 服务的 OAuth / 自定义头、websocket 传输、连接复用（现在一次调用一条连接，`npx` 那类服务首调慢几秒）。
+- 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P6 全落了 —— **六只手到这里齐全**；0003 的会话、观察与审批三档随后也落了（会话落盘 + 提示词里的观察段 + `approvalMode`），最后 B 数据平面也落了（组件把能力声明成工具）。接下来的实用缺口：组件工具的三处遗留（小窗那一轮没有组件工具、不唤醒窗口、SDK 还没包一层 `agentTools()`），以及 P6 留下的几条：HTTP 服务的 OAuth / 自定义头、websocket 传输、连接复用（现在一次调用一条连接，`npx` 那类服务首调慢几秒）。
 
 ## 长期要盯的风险
 

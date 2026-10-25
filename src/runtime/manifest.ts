@@ -11,6 +11,7 @@ import { normalizeConfig, type ConfigField } from "./config";
 import { normalizeChangelog, normalizeHelp, type ChangelogEntry, type WidgetHelp } from "./help";
 import { t } from "./i18n";
 import { normalizeText, type LocalizedText } from "./widget-text";
+import { normalizeAgentTools, type AgentToolSpec } from "./widget-tools";
 
 /** 组件在桌面上的层级 */
 export type WidgetLayer = "desktop" | "top";
@@ -40,6 +41,7 @@ export type Permission =
   | "shell:open" // 把 http/https 链接交给系统默认浏览器
   | "agent:activity" // 读 agent 在本机做过的操作（审计日志）
   | "llm:chat" // 用用户配的模型说话（花的是用户自己的额度）
+  | "agent:tools" // 让 agent / assistant 调用这个组件自己声明的工具（数据平面）
   | "desktop:control"; // 让平台替你动桌面（借的是那八个白名单动作）
 
 export interface WidgetSize {
@@ -148,6 +150,15 @@ export interface WidgetManifest {
    * `notes` 是目录侧摘要、只在联网更新时看得到。
    */
   changelog: ChangelogEntry[];
+  /**
+   * 数据平面：这个组件把自己会做的事**声明成工具**，agent / assistant 经平台调它。
+   *
+   * 只有清单里同时申请了 `agent:tools` 权限、并且用户授予了，这些工具才会出现在
+   * 模型那一侧 —— "允许天气组件联网"不等于"允许 agent 往里塞数据"，两个轴分开。
+   * 上限与逐条丢弃的规则见 `runtime/widget-tools.ts`；协议（`agent-call` /
+   * `agent-result`）见 WIDGET_SPEC §3.6。
+   */
+  agent: { tools: AgentToolSpec[] };
 }
 
 export const DEFAULT_SIZE: WidgetSize = { w: 240, h: 140, minW: 120, minH: 80 };
@@ -223,6 +234,7 @@ export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest
     config: normalizeConfig(input.config),
     help: normalizeHelp(input.help),
     changelog: normalizeChangelog(input.changelog),
+    agent: { tools: normalizeAgentTools(input.agent) },
   };
 }
 
@@ -299,6 +311,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "shell:open": "Open links",
   "agent:activity": "Agent activity",
   "llm:chat": "Use my AI model",
+  "agent:tools": "Agent tool calls",
   "desktop:control": "Rearrange my desktop",
 };
 
@@ -319,8 +332,9 @@ export function permissionLabel(permission: Permission): string {
  * `normalizePermissions` 也读这一份 —— 以前那里另抄了一份同样的名单，两处
  * 各改各的，漏一处的表现是"清单里写了、界面上没有"，不报错。
  *
- * 九项现在全齐了（`media:control` 在 v0.4、`agent:activity` 在 v0.8、
- * `audio:level` / `shell:open` 在 v0.9 补上、`desktop:control` 在 v0.10 末尾补上）。
+ * 十二项现在全齐了（`media:control` 在 v0.4、`agent:activity` 在 v0.8、
+ * `audio:level` / `shell:open` 在 v0.9 补上、`desktop:control` 在 v0.10 末尾补上、
+ * `agent:tools` 在数据平面那一版补上）。
  * 加一项权限要**四处一起改**：
  *
  * 1. `Permission` 联合类型
@@ -347,6 +361,7 @@ export const PERMISSION_READY: ReadonlySet<Permission> = new Set<Permission>([
   "shell:open",
   "agent:activity",
   "llm:chat",
+  "agent:tools",
   "desktop:control",
 ]);
 

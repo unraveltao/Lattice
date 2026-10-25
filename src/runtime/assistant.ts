@@ -28,6 +28,9 @@ import {
   type ApprovalMode,
   type HandsSettings,
 } from "./hands";
+// 只借一个常量：工具名前缀（`widget.`）是"这条工具是组件自己的"的唯一判据，
+// 提示词、审批、执行三处读的都是它，别各写一遍字面量
+import { WIDGET_TOOL_PREFIX } from "./widget-tools";
 
 /**
  * 一次对话里最多几轮"模型 → 工具 → 模型"。到顶就停，别让它自己转圈。
@@ -260,24 +263,40 @@ export function toolsFor(
 }
 
 /**
- * 这一轮真正发给模型的整张表 = 桌面动作 + 手。
+ * 这一轮真正发给模型的整张表 = 桌面动作 + 手 + 组件自己声明的工具。
  *
- * 两张表在这里第一次也是唯一一次合并。`caller` 一路传下去：组件那条路
+ * 三段在这里第一次也是唯一一次合并。`caller` 一路传下去：组件那条路
  * （`widget`）拿到的手是空表 —— "组件能不能跑命令"这个问题的答案写死在
  * `handsTools` 里，不靠调用方记得传什么。
  *
+ * `extra` 和 `widgets` 是**两个参数**，别并成一个：`extra` 是 MCP 发现的那批，
+ * 它归"外部服务（MCP）"那个开关管；组件工具归 `agent:tools` 这个权限管，
+ * 两个轴各开各的门。第一版把它们并进 `extra`，症状是"组件授权了、工具还是
+ * 不出现"—— 因为那张门是 MCP 的。
+ *
+ * 组件借手那一轮（`caller === "widget"`）**一条组件工具都不给**：那条路上没有
+ * 确认条，给了就等于"A 组件借模型去改 B 组件的数据"。
+ *
  * 审批档也是**从这里进去的**：它住在 `hands` 里，所以"给什么工具"和
- * "要不要点头"读的是同一份东西。
+ * "要不要点头"读的是同一份东西。只读档里 `deny` 的那些连 schema 都不给 ——
+ * 只给不执行，模型会反复调一个永远失败的工具，然后开始编。
  */
 export function allTools(
   caller: Caller = "platform",
   hands?: HandsSettings,
   extra: Record<string, ToolSpec> = {},
+  widgets: Record<string, ToolSpec> = {},
 ): Record<string, ToolSpec> {
   const mode = hands ? normalizeApproval(hands.approvalMode) : "ask";
   const desktop = toolsFor(caller, mode);
-  if (!hands) return desktop;
-  return { ...desktop, ...handsTools(hands, caller, extra) };
+  const widgetTable =
+    caller === "widget"
+      ? {}
+      : Object.fromEntries(
+          Object.entries(widgets).filter(([name]) => approvalFor(name, mode) !== "deny"),
+        );
+  if (!hands) return { ...desktop, ...widgetTable };
+  return { ...desktop, ...handsTools(hands, caller, extra), ...widgetTable };
 }
 
 /** OpenAI 兼容协议要的形状 */
@@ -490,6 +509,16 @@ export function systemPrompt(snapshot: string, options: PromptOptions = {}): str
     if (catalogue.length > shown.length) {
       lines.push(`（还有 ${catalogue.length - shown.length} 个没列出来。）`);
     }
+  }
+  // 组件声明的工具（数据平面）。和手分开说：它们是**用户自己的组件**暴露的能力，
+  // 返回值就是用户的数据。这一段也顺手补掉规则 3 的那个"读写组件的数据做不到"——
+  // 组件自己开了口子，那条规则就有了一个例外，而例外必须写在提示里，不能靠模型猜
+  const widgetTools = Object.keys(tools).filter((name) => name.startsWith(WIDGET_TOOL_PREFIX));
+  if (widgetTools.length > 0) {
+    lines.push(
+      "",
+      "下面还有几个名字以 widget. 开头的工具，它们是**组件自己声明**的：调用它们就是读或写那个组件里的东西。返回值是组件给的，你只负责把它讲清楚，不要替它编字段。同一个组件摆了好几份时，用 instanceId 选一份（每份的 id 在快照里）。这是规则 3 唯一的例外 —— 其它组件的数据你仍然碰不到。",
+    );
   }
   lines.push("", "当前桌面：", snapshot);
   return lines.join("\n");

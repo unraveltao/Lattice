@@ -14,7 +14,7 @@
 
 **棂 / Lattice** —— 可扩展的 Windows 桌面小组件平台。第三方用纯 HTML/CSS/JS 写组件，平台负责把它们安全地放到桌面上。
 
-当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志，`npm run agent -- state` 看它干了什么），数据平面（组件把能力声明成工具）还没做；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，**模型档能存好几条**并存——DeepSeek 和本地 Ollama 各一条，key 只在 Rust 里，**回答是流式的**（SSE 逐字出来，按 Stop 当场断），工具调用走同一套 8 个动作，**外加六组"手"**（读文件 / 跑命令 / 取网页 / 看窗口 / 点键鼠 / MCP —— 默认**全关**，读自动放行、写与命令与点击先问一句，审计只记形状）；组件那侧只有 `llm:chat`，另有一条**借手**的 `assistant.ask` —— 桌宠这类组件说一句话，平台替它跑一整轮（工具表砍掉删除），要 `desktop:control`）。**对话在重启之后还在**：一轮一轮落在 `assistant-sessions/<id>.json`（一条会话一个文件），面板顶上那行能挑回来接着聊。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
+当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志，`npm run agent -- state` 看它干了什么），数据平面（组件把能力声明成工具）也做了 —— 组件清单加一节 `agent.tools`，要一条独立的 `agent:tools` 权限；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，**模型档能存好几条**并存——DeepSeek 和本地 Ollama 各一条，key 只在 Rust 里，**回答是流式的**（SSE 逐字出来，按 Stop 当场断），工具调用走同一套 8 个动作，**外加六组"手"**（读文件 / 跑命令 / 取网页 / 看窗口 / 点键鼠 / MCP —— 默认**全关**，读自动放行、写与命令与点击先问一句，审计只记形状）；组件那侧只有 `llm:chat`，另有一条**借手**的 `assistant.ask` —— 桌宠这类组件说一句话，平台替它跑一整轮（工具表砍掉删除），要 `desktop:control`）。**对话在重启之后还在**：一轮一轮落在 `assistant-sessions/<id>.json`（一条会话一个文件），面板顶上那行能挑回来接着聊。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
 
 想先知道"为什么现在是这样"，读 [ROADMAP 的「被推翻的九个决定」](./docs/ROADMAP.md#被推翻的九个决定)——每个决定都写着当初怎么选、被什么撞翻、现在怎么补。
 
@@ -52,7 +52,7 @@ src/
   platform/
     store.ts              Zustand + 文件落盘适配器（Placement / 授权 / 主题 / desktopRects）
     Canvas.tsx            画布：放置、空态、缺失组件占位
-    WidgetFrame.tsx       画布里的一个组件实例 = 一个沙箱 iframe + 拖拽缩放
+    WidgetFrame.tsx       画布里的一个组件实例 = 一个沙箱 iframe + 拖拽缩放；**也是数据平面答话的那一份**（挂载时登记 `agent-call` 处理器，卸载按 handler 身份删）
     LibraryPanel.tsx      组件库：已安装 / 可安装 / 加载失败 + 搜索过滤 + 评分与举报入口
     LibSection.tsx        可折叠的一段：标题行（开合 + 计数）+ 右侧动作位（组件库与属性面板共用）
     CatalogueSection.tsx  商店区：目录条目的卡片、权限对比、安装 / 更新 / 换钥匙确认
@@ -69,10 +69,12 @@ src/
     DebugPanel.tsx        调试面板：桥调用与组件 console 的实时抽屉（Ctrl+Shift+D）
     assistant.ts          assistant 的 IPC 面：读写模型档（profiles）、列模型（测试连接）、跑一轮对话（工具循环 ≤24 步、审批、预算）、会话的读存删（`listSessions` / `loadSession` / `saveSession` / `deleteSession`，一条会话一个文件）；动作交给 surface（主窗口本地跑 / 小窗转给主窗口），新手交给 `platform/hands.ts`（走 Rust）—— `handGroup(name)` 非空就是后者（`AssistantSurface`）
     hands.ts              assistant 的手的 IPC 面：`assistant_tool` / `hands_cancel` / 开关读写（`assistant_hands*`）；参数序列化成字符串递过去，返回 `AgentReply` 形状
+    agent.ts              agent 动作执行器：白名单动作走真 store，回快照（带每个组件的说明首句 `about`，没写说明就是空串）（`tests/agent.html` 59 条）
+    widget-tools.ts       数据平面的执行面：画布实例的登记表（一个 instanceId 一个「能答话的 iframe」）+ `callWidgetTool`（8 秒超时、回话归一化、`not-running`）；纯逻辑在 runtime/widget-tools.ts
     AssistantPanel.tsx    assistant 的面板：一列模型档 + 表单 + 六组能力开关 + **审批档三选一**（Ask / Automatic / Read-only，`APPROVAL_LABELS`）+ 审批确认条 + 对话（顶上一行会话列表：挑回 / 新开 / 删），工具结果一行一个（抽屉与小窗共用这一个组件）
     AssistantWindow.tsx   assistant 小窗的壳：一条能拖的标题栏 + 面板；**没有 store**，动作走 `remoteSurface()`
   runtime/
-    manifest.ts           清单校验与归一化；Permission 类型与中文标签（唯一真源）
+    manifest.ts           清单校验与归一化；Permission 类型与中文标签（唯一真源）；`agent.tools`（组件声明的工具，规则在 runtime/widget-tools.ts）
     config.ts             每实例配置：清单 schema（5 类字段）、归一化、值合并
     help.ts               组件说明与变更记录：清单里的 `help` / `changelog`、上限、逐条丢弃（纯函数，`tests/help.html` 钉着）
     registry.ts           组件发现：bundled（public/widgets）+ user（%APPDATA%）；入口地址解析
@@ -83,8 +85,7 @@ src/
     schedule.ts           心跳时间轴：可见性取"与"、不可见停摆、回来补一拍
     screen-fit.ts         纯几何：锚点选屏、夹紧（入参一律物理像素，`tests/screen-fit.html` 钉着）
     close-guard.ts        ✕ 该不该认这一下：指针序列 + 命中测试（纯函数，`tests/close-guard.html` 钉着）
-    agent.ts              agent 动作执行器：白名单动作走真 store，回快照（带每个组件的说明首句 `about`，没写说明就是空串）（`tests/agent.html` 59 条）
-    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、工具表裁剪（`toolsFor`）与合表（`allTools` = 桌面动作 + 手）、**三档审批的唯一判据 `approvalFor(name, mode)`**（`allow` / `ask` / `deny`，只读档连桌面表一起剪空）、system prompt（含手那一段与只读档的开口）、人设片段、历史裁剪（条数 + 字符数两道上限）、线上形状（`parseAskMessages` / `normalizeAskMessages`）、OpenAI 消息形状、快照压缩、商店里还没装的组件那一段（`CatalogueHint` / `aboutLine`，最多 8 条）（`tests/assistant.html` 172 条）
+    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、工具表裁剪（`toolsFor`）与合表（`allTools` = 桌面动作 + 手 + MCP + **组件声明的工具**，四路都从这一个口进）、**三档审批的唯一判据 `approvalFor(name, mode)`**（`allow` / `ask` / `deny`，只读档连桌面表一起剪空）、system prompt（含手那一段、组件工具那一段与只读档的开口）、人设片段、历史裁剪（条数 + 字符数两道上限）、线上形状（`parseAskMessages` / `normalizeAskMessages`）、OpenAI 消息形状、快照压缩、商店里还没装的组件那一段（`CatalogueHint` / `aboutLine`，最多 8 条）（`tests/assistant.html` 180 条）
     hands.ts              assistant 的手的纯逻辑（0004）：六个能力组、11 个工具的 JSON Schema、`HAND_READY`（拨得动 ≠ 接好了）、`handGroup` / `needsApproval` / `handsTools` / `handsPrompt` / 确认条那一行、MCP 发现结果合表（`mcpToolSpecs`）与命令行切词、一轮的预算（`tests/hands.html` 97 条）
     llm-models.ts         模型档的纯知识：按模型名前缀查能力（能不能调工具 / 能不能给 temperature / 上下文多大）、历史字符预算、三种鉴权形状（bearer / api-key-header / none）、七个服务商的预置填写（纯函数，`tests/llm-models.html` 26 条）
     align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
@@ -92,6 +93,7 @@ src/
     i18n.ts               界面文案的中英切换：**key 就是英文原句**、缺翻译退化成英文、`useT()`（组件）/ `t()`（模块）/ `setLanguage()` / `languagePayload()`（给组件看的"现在是哪一门"，`tests/i18n.html` 钉着）
     i18n/*.ts             中文表按域分片（common / shell / library / panels / settings / assistant / misc）；**纯数据，一个 import 都不许有**
     widget-text.ts        组件**作者写的**文案：字符串或 `{ zh, en }`、`pickText` 按语言挑（缺一门退另一门）、`textVariants` 给搜索建两门索引、`normalizeLine` 管日期/单位（`tests/widget-text.html` 钉着）
+    widget-tools.ts       数据平面的**纯逻辑**：清单 `agent.tools` 的归一化（坏条目逐条丢、最多 8 条 / 每条 6 个参数）、工具名 `widget.<组件 id>.<工具名>` 的拼与拆（**从右边切**）、给模型的 schema（同一组件的多份实例合成一条，`instanceId` 只在多于一份时必填）、谁能进表的唯一判据 `widgetToolSources`（装上了 + 授了 `agent:tools` + 真声明了）、回话归一化（超 4000 字符**拒绝不截断**）（`tests/widget-tools.html` 48 条）
     debug.ts              调试总线：环形缓冲 400 条、攒批镜像到主窗口、过滤 / 统计纯函数
     semver.ts             版本号与范围：解析 / 比较 / `^ ~ >= <= > < =` / 通配 / `||`（纯函数，`tests/semver.html` 钉着）
     usage.ts              使用记录与热力图：本地日键、固定阈值分档、53 周网格、连续天数、两种读回形状（纯函数，`tests/usage.html` 钉着）
@@ -403,7 +405,7 @@ if (data.type === "language") { lang = data.payload.lang; repaint(); }
 1. **模型档与 key 落在 `assistant.json`，不落 `state.json`**。`llm.rs` 独占读写（临时文件 + 原子替换）。文件是 **v3** 的形状：`{version: 3, activeId, hands: {files, shell, web, screen, input, mcp}, approvalMode, workspace, profiles[]}`（`approvalMode` 由 0003 §3 的三档审批用；文件和前端同名同义），每条档自带 `baseUrl` / `auth` / `apiKey` / `model` / `temperature`，所以在一台机器上同时留 DeepSeek 和本地 Ollama 是正常用法（**一条档一个端点**，同一端点存两条只会让用户自己分不清）。v1 的扁平 `{baseUrl, model, …}` 读到时就地升级成一条档，**key 跟着搬过去**，不要重输；**手一律落成"全关"**（升级不能替用户开一扇他自己没开过的门），`workspace` 落空串。加新字段时照着 `..AssistantConfig::default()` 补，别手写字面量 —— 以后再加字段就不会漏。前端拿到的是 `ProfilesView`：每条档一个 `keyHint`（`sk-1…cdef` 这种掩码），**任何命令都不回明文 key**。为什么不放 `state.json`：那份是前端整体回写的，两个入口（面板、组件宿主）会互相盖；而且把 key 交给渲染进程，等于任何一个组件 XSS 都直接拿到它。环境变量 `LATTICE_LLM_KEY` / `_BASE_URL` / `_MODEL` 只盖**当前那条档**（`keySource: "env"`），CI 与临时试验用这条路。
 2. **协议只认 OpenAI 兼容形状，归一化只有一处**。`llm_policy::normalize_base` 补 `https://`、去尾斜杠、剥掉用户顺手粘进来的 `/chat/completions` `/completions` `/models`；`http://` **只放回环**（`127.0.0.1` / `localhost` / `[::1]`，IPv6 要走 `host_of` 拆括号，别用 `split(':')`）。鉴权只有三种形状（`llm_policy::normalize_auth` + 前端的 `runtime/llm-models.ts`），**两边必须认同一组别名**：`bearer`（`Authorization: Bearer …`，默认）、`api-key-header`（`api-key: …`，Azure 那类）、`none`（本地 Ollama / LM Studio，没 key 也算配好了）。别在 `AssistantPanel.tsx` 里再补一套——两套规则迟早不一致，症状是"设置里能测通、一发消息就 404"。
 3. **模型能力按名字前缀查，不按用户填的服务商查**。`runtime/llm-models.ts` 的 `knownModel()` 取最长前缀：`deepseek-reasoner` 不能调工具也不能给 temperature、`o1` / `o3` 同理、`gpt-4o` 上下文 128k，**认不出来的一律从宽**（`{tools: true, temperature: true, context: 32_000}`）。所以界面上"这个模型不能调工具"是一条**警告**，不是禁用——猜错的代价是不许用户用，那比多试一次 API 更糟。`historyChars()` 把上下文折成字符预算（1 token ≈ 1 字符，上限 60k），`trimHistory` 的 `maxChars` 就吃它。
-4. **加一个工具要改两处，且必须相等**：`runtime/agent.ts` 的 `AGENT_ACTIONS`（真执行器）+ `runtime/assistant.ts` 的 `TOOL_SPECS`（名字、参数名、类型、required）。`tests/assistant.html` 会比对两边——名字集合相等、每个动作的参数键与执行器的 `EXECUTOR_KEYS` 对得上、`required` 是子集。**别在 `AGENT_ACTIONS` 之外新写一个"给模型用的"执行器**：那等于给模型开一条不受审计、不走 store 的旁路。
+4. **加一个工具要改两处，且必须相等**：`platform/agent.ts` 的 `AGENT_ACTIONS`（真执行器）+ `runtime/assistant.ts` 的 `TOOL_SPECS`（名字、参数名、类型、required）。`tests/assistant.html` 会比对两边——名字集合相等、每个动作的参数键与执行器的 `EXECUTOR_KEYS` 对得上、`required` 是子集。**别在 `AGENT_ACTIONS` 之外新写一个"给模型用的"执行器**：那等于给模型开一条不受审计、不走 store 的旁路。**组件声明的工具是第四条路**（数据平面）：schema 从 `manifest.agent.tools` 来、执行走画布那个 iframe，四路都只从 `allTools` 这一个口进表，裁决仍然是 `approvalFor` —— 协议与限额见 WIDGET_SPEC §3.6，取舍见 AGENT_ACCESS §2。
 5. **工具循环只在 `platform/assistant.ts`**：≤24 步（`MAX_STEPS`）、每步把执行器返回的 JSON 字符串当 `tool` 消息回填、`shouldStop` 让"停止"立刻断掉；一轮还带两道预算 —— 300 秒（`MAX_TURN_MS`）与 20 万字符（`MAX_TURN_TOKENS`），`overBudget()` 返回 `"time" | "tokens" | null`，到点了就把这一轮收尾而不是继续调工具。步数从 6 抬到 24 是因为"读三个文件再改一个"这种正经任务在 6 步里做不完。Rust 侧另有两道闸：`MAX_TOOL_STEPS = 8`（单条请求里模型一口气要调几个工具）、请求间 300ms（`MIN_GAP`，在 `spawn_blocking` 里 sleep）。
 6. **工具只借不送**。`llm.chat` 永远 `tools: null`（模型真要调工具就抛 `internal`，"widgets cannot use tools"）；组件想要手，只有 `assistant.ask` 这一条（权限 `desktop:control`，标签 "Rearrange my desktop"）。它是**借**：整轮循环仍然只在主窗口里跑，桥那边只是一次转发，工具表用 `toolsFor("widget")` 砍掉 `placement.remove`（用户能自己按 ✕，"让桌宠替我删组件"不行），系统提示里另加一句告诉模型这件事。三条别拆：① 组件宿主里不许跑执行器 —— 桌面窗口连 store 都没有，跑了就是拿旧快照往回写（和下面第 11 条小窗那个坑同源）；② 同一窗口上一轮没回来时新的直接拒，不排队；③ 它慢，180 秒（`ASK_TIMEOUT`）不是 8 秒，SDK 那侧也单独给了 185 秒。这条是不变量 2 的延伸：**能改变桌面的是平台，不是组件**，否则"你信不信任这段代码"就变成"你敢不敢让它动你的布局"。
 7. **错误话要分得清是谁的错**。`describe_status` 把 401/403 说成"provider 拒了这把 key（HTTP 401）—— 去 Assistant settings 换一把"、404 提 `/v1`、429 说配额。别统一成"网络问题"——那条教训是拿更新器换来的（见不变量 16）。
@@ -683,7 +685,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 
 - `npm run typecheck` —— 必跑，当前是干净的
 - **`npm run check:tokens`** —— 三张表（字号 / 圆角 / 间距）的守门人，扫 `src/**/*.css`，越界就红并指出行号；`npm run test:tokens` 钉规则本身（半像素、`font` 简写、豁免、以及"仓库现状是干净的"）。改样式前后各跑一次，比肉眼数 `10.5px` 靠谱。真要写规矩外的值，行尾加 `/* token-ok 理由 */`，理由不写会被报。
-- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（46 页 / 1973 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。
+- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（47 页 / 2091 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。
 - **断言页别等 iframe**。`--virtual-time-budget` 会让虚拟时钟一路快进到 9 秒，而 iframe 的 `load` 走真实网络 —— 谁先到看运气，快进赢了就 dump 到一个空的 `<pre>`，`test:browser` 报"0 条 —— 一条断言都没跑完"。那个症状和"页面没有断言"一模一样，别去调 budget（调大只是让赌局更偏一点，还是赌）。正确做法是**同步加载**：组件把纯逻辑挂在 `window.__latticeXxx` 上，普通 `<script src>` 引进来就能断言；拿不到那个对象时也要先 `log(false, …)` 再 `flush()`，否则页面永远吐 0 条。
 - 改了组件 UI：`npm run dev` 后在浏览器里看；要截固定尺寸的图，用 Edge headless：
   ```bash
@@ -709,6 +711,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
   - **目录里显示的名字 / 描述 / 图标取自最新那一版包的清单**（`build.mjs` 里按版本挑，不是按文件名）。所以"本地清单改成 `{ zh, en }` 了、商店里还是英文名"只有一个原因：新版本还没发上去。三个连带事实：改了名要发新版本，只改本地清单不够；图标要另放一份 `registry/icons/<id>.svg`（包里的 `icon.svg` 不会被目录读）；`registry.json` 的排序遇到 `{ zh, en }` 先挑 `en` 再比，别把 `localeCompare` 直接用在对象上。
 - 改了**调试面板**：`tests/debug.html`（43 条，总线 + 过滤 / 统计纯函数）+ `tests/debug-panel.html`（15 条，把真组件挂起来点按钮）。后者**必须 `import "../src/styles.css"`**，否则面板渲染成裸 HTML。它同时也是一张验收图：`--screenshot` 出来的就是面板长什么样。
 - 改了**媒体控制 / 声音折线**：`tests/music.html`（66 条）自带假宿主，覆盖"有会话 / 没会话 / 权限被拒 / 直播没时长 / 点按钮 / 改轮询间隔"。它替身的坑记住一条：`setConfig()` 要 `Object.assign` 到 handler 捕获的那个对象上，否则 `config.get` 回的还是启动时那份，用例会假通过。
+- 改了**数据平面**（`agent.tools` / `agent-call`）：纯逻辑跑 `tests/widget-tools.html`（48 条：归一化逐条丢、名字从右边拆、多份实例合成一条、授权轴、回话超长拒绝），接缝跑 `tests/assistant.html`（合表 / 审批三档 / 提示词那一段）。**端到端只能在真机**：给一个组件加上 `agent.tools` 与 `agent:tools` 权限，在抽屉里说一句"往待办里加一条"，看它是不是调了 `widget.<id>.<tool>`、确认条上写着工具名、加完之后组件真的变了。
 - 改了组件库（列表 / 搜索 / 安装态）：`tests/library-search.html` 钉的是**判定规则**（空查询不筛、大小写与空白归一、多词 AND、权限名算命中、不做模糊匹配）。搜索的边界只在 `runtime/library-search.ts` 里写一份，组件里别再复制一遍 —— 复制的后果是"测试过了，界面上还是不对"。
 - 改了错误通道 / 兜底页：`tests/diagnostics.html`（识别边界、两条通道不撞、去重指纹、主错误选择）。注入规则本身跑 `npm run test:injection`（9 条，`node:test`，**不需要 dev server**，fixture 和 Rust 单测是同一批：`<head>` 带属性、`<header>` 别认错、doctype 兜底、幂等、压行后行号不变、多字节安全）。Rust 那边 14 条单测在 `diagnostics.rs` 里，但**这台机器跑不了 `cargo test`**（安全策略拦 `target/debug/deps` 下新写的 exe，见 [docs/PITFALLS.md](./docs/PITFALLS.md)「构建、工具链与验证」）。绕法：写个只有一行的壳子 `#[path = "../src-tauri/src/diagnostics.rs"] mod diagnostics;`，然后 `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe` —— 断言还是模块里那一份，不复制。
 - 改了内置组件的注入：**两条路都要看**。dev 下 `curl -s http://localhost:1420/widgets/lattice.clock/index.html | grep -c 'data-lattice="diagnostics"'` 应该是 `1`（不是 `2`：中间件要幂等，否则 vite 自己把 `public/` 也注一遍就重了）；`npm run build` 之后再看 `dist/widgets/*/index.html`，构建日志末尾会有一行 `[lattice] 错误上报已注入 N 份内置组件文档`，`N` 要等于内置组件个数。**行数也要对**：`wc -l dist/widgets/<id>/index.html` 必须和 `public/widgets/<id>/index.html` 一样多，多一行就是压行失效、行号全错。
