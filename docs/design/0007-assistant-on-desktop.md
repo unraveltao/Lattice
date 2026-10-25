@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-25
 code: src-tauri/src/assistant_window.rs, src-tauri/src/desktop.rs, src/platform/AssistantWindow.tsx, src/runtime/assistant-window.ts, src/assistantMain.tsx, src/assistant-window.css
 ---
@@ -15,8 +15,10 @@ code: src-tauri/src/assistant_window.rs, src-tauri/src/desktop.rs, src/platform/
 > 并在 `lib.rs` 的 `invoke_handler` 里注册（`toggle` / `hide` / `save_pos` / `state` / `mode` /
 > `appearance` / `locked` / `save_rect`，一律 `async fn` —— 同步命令会占着主线程去等主线程）。
 > 面板开局读 `state`、改底板与改锁都拿返回值覆盖本地，所以标题栏那颗药丸、底板面板、锁
-> 已经真的生效了。**还剩的**只有第 6 节那几条真机验收（要人点一次：桌面模式下打字、
-> 锁上拖不动、拉大之后重启还是这个尺寸）。
+> 已经真的生效了。层级开关按这节的"换个样子"落在**底板面板里一行开关**（`On the desktop`），
+> 标题栏不再有入口。**还剩的**只有第 6 节那几条真机验收（要人点一次：桌面模式下打字、
+> 锁上拖不动、拉大之后重启还是这个尺寸）。`status` 因此从 `draft` 抬成 `accepted`：
+> 决定已经落地，剩下的不是"还没想清楚"，是"还没人点过"。
 > 下面第 1 节描述的是**动手之前**的样子，别拿它当现状读。
 
 ## 1. 问题
@@ -52,8 +54,9 @@ A 否得再补一句：`runner` 的窗口表是按 placement 生成的，assista
 > **2026-10-25 补：标题栏那颗切换按钮删了。** 用户原话："那个放大窗口是没用的，可以删除了"
 > —— 它长在最大化该在的位置（`▢`，`×` 左边），也长得像最大化，按下去却是把窗口换一层。
 > 一个按钮最糟的错就是"看着像另一件事"。`mode` 仍然照 `assistant-window.json` 读、仍然
-> 决定窗口层级（标题栏那颗药丸写着当前是哪一档），**只是界面上不再有入口**。
-> 要加回来就换个样子：底板面板里一行开关就够，别放回标题栏。
+> 决定窗口层级（标题栏那颗药丸写着当前是哪一档）。
+> **换了个样子加回来了**：入口是底板面板里一行 `On the desktop` 开关（和明暗 / 浓度 / 模糊
+> 同属"窗口看起来是什么样"），标题栏那颗 `▢` 不回来。
 
 | | 浮窗（默认，现状） | 桌面 |
 | --- | --- | --- |

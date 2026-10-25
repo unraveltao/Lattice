@@ -143,7 +143,7 @@ export function AssistantWindow() {
     void invoke<AssistantWindowState>("assistant_window_state")
       .then((disk) => setState(migrateAssistantWindow(disk, screenWorkArea())))
       .catch(() => {
-        /* 未接线 / 文件读不到：留在出厂状态，标题栏照常能用 */
+        /* 文件坏了 / 读失败：留在出厂状态，标题栏照常能用 */
       });
   }, []);
 
