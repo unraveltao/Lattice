@@ -26,6 +26,7 @@
 | v0.8 | Agent 接入 | 🟡 进行中 | 默认关的回环端点：只绑 127.0.0.1、令牌、审计日志、8 个白名单动作（读日志用 `npm run agent -- state`）；还差一次 CLI 往返的真机验收 |
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
+| v0.11 | 模型的形状与 agent 纪律 | 📝 设计中 | 还没写代码：两份设计文档先落地 —— 模型从一档变多档 + 能力表 + 流式（`0002`），agent 加会话 / 审批 / 预算 / 观察、手仍是那 8 个（`0003`） |
 
 **当前规模**（截至本次改动，2026-10-25）：
 
@@ -37,10 +38,10 @@
 | 组件 SDK | 724 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
 | 官方组件 + 示例 | 13 758 行 | 14 个官方包 + 1 个示例（示例里那份 SDK 副本也算在内；未跟踪的桌宠不计） |
 | 构建脚本 | 2 397 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试 |
-| 浏览器断言 | 1709 条 | 40 个自检页，跑一遍的真实计数（0 failed） |
+| 浏览器断言 | 1850 条 | 44 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 25 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条，都不依赖 dev server |
-| Rust 单测 | 178 条 | 157 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 21 条），21 条要 `cargo test`（本机跑不了），见 AGENTS §11 |
-| Tauri 命令 | 61 个 | |
+| Rust 单测 | 186 条 | 165 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 21 条、`usage_policy` 的 8 条），21 条要 `cargo test`（本机跑不了），见 AGENTS §11 |
+| Tauri 命令 | 63 个 | |
 | 权限 | 11 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐 |
 | 踩过的坑 | 75 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
@@ -333,6 +334,14 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - 每个组件都抬了一个 patch 位（`0.2.0 → 0.2.1` 这种）并在 changelog 最前面补一条双语记录 —— 它是包的一部分，改了却不抬版本，商店里那个条目永远显示"已是最新"。
   - 验证：`tests/help.html` **33 条**（新增的第 5 段钉两件事：清单里该双语的字段两门齐全；每个组件的源码里既有 `lang.get` 也有 `language` 推送），14 个组件的测试页各自补了中文断言（课程表 152、天气 108、日历 97、音乐 71、系统 63、秒表 60、专注 59、换算 55、书签 48、计算器 46、待办 29、便签 11 + 10），`npm run typecheck` 干净、`npm run test:sdk` 干净、全量自检 **40 页 / 1709 条 / 0 failed**（比上一版 +66 条）。真机两处都点过：设置里选中文之后，组件库卡片上那颗 `?` 的标题是「收藏夹 怎么用」、正文六节全中文；右侧属性面板的「怎么用」、配置项标签与选项、权限名也全中文 —— 再切英文，整份换回去。`npm run store:index` 重新打了 15 个包，`registry.json` 里 `name` / `description` 现在都带 `zh`（内置目录读的就是这一份，不重打就还是英文名）。**线上目录也重发了一遍**：14 个组件各自 `publish:widget` 到 `lattice-registry`（`bd104d1`），`registry.json` 从 5 个组件 5 条英文名变成 14 个组件、每条 `{ zh, en }`、九份新图标 —— 顺带发现并修了那边 `build.mjs` 的一个静默 bug：条目级字段（名字 / 描述 / 图标 / 主页）取的是**最旧**那一版包的清单（`packages/` 按文件名排序），所以本地清单改了名、线上纹丝不动，一行报错都没有。现在取最新那一版；排序遇到 `{ zh, en }` 先挑 `en` 再比（`localeCompare` 对对象会直接抛）。
 - 验证：`llm_policy.rs` **21 条** `rustc --test`（归一化、回环、请求体、消息与工具校验、应答解析、401/404/429 的话）、`tests/assistant.html` **114 条**、`tests/i18n.html` **50 条**、`tests/widget-text.html` **40 条**（新增：两门归一化、按门截断、缺一门退另一门、搜索索引），`tests/help.html` / `config.html` / `catalogue.html` / `library-search.html` / `sdk.html`（**47 条**，新增 `assistant.ask` 的参数形状与它自己那条超时）各补了双语与 `lang.get` 的断言；`npm run typecheck` 干净、`npm run test:sdk` 干净（内嵌 SDK 副本已同步）、全量自检 **40 页 / 1643 条 / 0 failed**（比上一版少一页 57 条 —— 看板组件删了）。真机走过三条：先是假端点（卡片从 (32,40) 挪到 (300,120)、错的 key 得到那句 401），再是**真厂商** —— 天枢 Dubhe 的 OpenAI 兼容根是 `…/v1/8686/v1`（`/v1/8686` 本身返回一张 HTML SPA，少写那截 `/v1` 会得到 404 而不是"地址不对"）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受；第三条是**组件借手那条路**：给桌宠勾上「替我调整桌面」后，主窗口里打一轮"把 lattice.pet#49898d37 挪到 700, 240 并置顶"，`actions` 两条 `ok`、盘上那只真的到了 `(700,240)`、审计里 `widget.ask` 加每一步的 `assistant.chat`；再问"把 lattice.pet#demo01 删掉"，她回"我删不了自己呀，手里没有删除工具"，`actions: []`、`placements` 一个字没动；最后在画布上的桌宠气泡里真打一句"把 lattice.pet#9c90cc09 挪到 900, 100"，气泡里出现回话加"· 移动 lattice.pet#9c90cc09"，盘上那只到了 `900,100`。中英切换在真机上也点过一遍（设置里三档来回点：`<html lang>` 跟着变、菜单整份换语言、切回"跟随系统"后按 WebView2 报的 `en-US` 落回英文）。**没走的**："断网时那句话对不对"（要拔网线），以及 agent 端点的 CLI 往返（见 §8 已知缺口）。
+
+## v0.11 —— 模型的形状与 agent 纪律（设计中）
+
+用户的原话是"实现一个功能可以像使用 dsh 一样配置 model，可以调用模型"。v0.10 已经把"通路"修好了（一个档、五个命令、八个动作、真厂商往返走通），这一版补的是**形状**：配置的形状像 DSH（多档、可选模型、能力差异），干活的形状有纪律（会话、审批、预算、观察）。**这一版还没动代码**：先写两份设计文档，因为两件事都会动持久化格式，做错了要重做。
+
+- [ ] **模型从"一个表单"变成"几档 + 流式"**（[`design/0002-model-profiles.md`](./design/0002-model-profiles.md)）—— `assistant.json` 升 v2（`profiles[]`，每条自带 key / auth / model / temperature），预设只填表不进数据模型，能力表按模型名决定送不送 temperature，`/chat/completions` 走 SSE。代价：v1 迁移 + 4 个命令 + 只有真机能验的传输层（WinHTTP 读循环、1 秒超时取消、工具参数分片累加）。
+- [ ] **agent 加纪律，手不扩**（[`design/0003-agent-discipline.md`](./design/0003-agent-discipline.md)）—— 会话落 `assistant-sessions/`（关掉应用还能接着聊）、审批默认 `ask` 只拦不可逆动作、每轮 token / 墙钟上限、提示词补一段"装了哪些组件、它们怎么用"。**装组件、卸组件、授权、写存储仍然不进工具表**：那等于让一段提示词替用户点"信任这把新钥匙"（不变量 15 / 8）。
+- 顺序：先 0002 再 0003。审批和会话都挂在 `AssistantSurface` 与工具循环上，配置的地基不稳，先做那两样会返工。
 
 ## 长期要盯的风险
 
