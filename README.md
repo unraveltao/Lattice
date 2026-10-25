@@ -294,6 +294,8 @@ npm run typecheck        # tsc --noEmit
 npm run test:injection   # the diagnostics reporter is injected identically on both paths
 npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
+npm run test:tokens      # the three scales' rules themselves (half-pixels, exemptions, font shorthand)
+npm run check:tokens     # the repo actually obeys them: sizes, radii, 2 px spacing grid
 npm run test:browser     # 1 850 assertions over 44 pages, real Chrome, real dev server
 ```
 

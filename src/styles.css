@@ -8,7 +8,8 @@
  * 层次约定（改样式前先看这个）：
  *   1. 三层表面：bg（画布） < surface（面板） < surface-2 / surface-3（卡片、控件）。
  *      相邻两层至少差一档明度，否则整屏会糊成一片。
- *   2. 圆角只有四档：6 / 10 / 14 / 999，外加组件卡片那一个 12。
+ *   2. 圆角只有六档：0 / 2 / 6 / 10 / 12 / 14 / 999（外加 50% 表示正圆）。
+ *      2 是微型块专用（热力图格子、气泡尾巴），再小就没有形状了。
  *      12 不是漏网的：桌面窗口在 Rust 里被 clip 成 12（`desktop::CORNER_RADIUS`），
  *      画布上的卡片必须跟它一样，否则同一个组件在设计器和桌面是两个角。
  *   3. 阴影只给"浮起来的东西"：卡片 hover、选中的组件、弹出的提示。
@@ -18,6 +19,11 @@
  *      **不要出现半像素**（10.5 / 11.5 / 12.5）—— 100% 缩放下取整不一致，中文会发虚。
  *   5. 间距落 2px 网格：padding / margin / gap 一律偶数。奇数值会让相邻两行的
  *      基线差半个像素，一列扫下来就是"说不上哪里不齐"。
+ *
+ * 后三条**有命令盯着**：`npm run check:tokens`（CI 里跑）会扫 src 下所有样式文件，
+ * 越界就红并指出行号。真有理由的例外，在那一行末尾写一个 token-ok 注释，
+ * 例如「margin: 7px;」后面跟 `token-ok 16px 图标在 30px 格子里居中，14/2=7`。
+ * 理由必须写 —— 下一个人看到 7px 只会觉得是漏网，不会知道它在对齐什么。
  */
 
 :root,
@@ -376,7 +382,7 @@ button {
   flex: none;
   width: 16px;
   height: 16px;
-  margin: 7px;
+  margin: 7px; /* token-ok 16px 图标在 30px 格子里居中，14/2=7 */
 }
 
 .lattice-panel-rail-label {
@@ -1207,7 +1213,7 @@ button {
   position: relative;
   width: 132px;
   height: 92px;
-  margin-bottom: 22px;
+  margin-bottom: 24px;
   border: 1px dashed var(--lattice-border-strong);
   border-radius: 14px;
   background-image:
@@ -2309,7 +2315,7 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-account-stats {
   display: flex;
-  gap: 22px;
+  gap: 24px;
 }
 
 .lattice-account-stats > div {
@@ -3029,7 +3035,7 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-debug-empty {
   margin: 0;
-  padding: 22px 16px;
+  padding: 24px 16px;
   color: var(--lattice-text-faint);
   font-size: 12px;
   text-align: center;
@@ -3768,7 +3774,7 @@ button.lattice-chip[aria-pressed="true"] {
   height: min(620px, 100%);
   overflow: hidden;
   border: 1px solid var(--lattice-border-strong);
-  border-radius: 18px;
+  border-radius: 14px;
   background: var(--lattice-surface-2);
   box-shadow: var(--lattice-shadow-2);
   animation: lattice-panel-in 0.16s ease-out;
@@ -3851,7 +3857,7 @@ button.lattice-chip[aria-pressed="true"] {
   height: 34px;
   padding: 0 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 10px;
   background: transparent;
   color: var(--lattice-text-muted);
   font: inherit;
@@ -3911,7 +3917,7 @@ button.lattice-chip[aria-pressed="true"] {
 }
 
 .lattice-settings-list .lattice-menu-row {
-  border-radius: 9px;
+  border-radius: 10px;
 }
 
 .lattice-settings-form {
@@ -3983,13 +3989,13 @@ button.lattice-chip[aria-pressed="true"] {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
 }
 
 .lattice-profile-name {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -4020,7 +4026,7 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-stat b {
   overflow: hidden;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
@@ -4110,7 +4116,7 @@ button.lattice-chip[aria-pressed="true"] {
   height: 13px;
   margin-left: 26px;
   overflow: hidden;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   color: var(--lattice-text-faint);
 }
@@ -4131,7 +4137,7 @@ button.lattice-chip[aria-pressed="true"] {
   grid-template-rows: repeat(7, var(--lattice-heat-cell));
   gap: var(--lattice-heat-gap);
   width: 18px;
-  font-size: 9px;
+  font-size: 11px;
   line-height: var(--lattice-heat-cell);
   color: var(--lattice-text-faint);
   text-align: right;
@@ -4182,7 +4188,7 @@ button.lattice-chip[aria-pressed="true"] {
   align-items: center;
   gap: 4px;
   margin-left: 26px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--lattice-text-faint);
 }
 

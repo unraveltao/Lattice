@@ -1,10 +1,15 @@
 name: ci
 
 # 三件事分开跑，谁红看谁：
-#   frontend —— 类型 + 构建 + 三个 node:test（注入规则、SDK 副本一致性、agent CLI）
-#   browser  —— tests/*.html 里的 1060 条断言（以前靠人肉开 33 个标签页）
+#   frontend —— 类型 + 构建 + 四个 node:test（注入规则、SDK 副本一致性、agent CLI、
+#               三张表的守门人）+ 文档体检
+#   browser  —— tests/*.html 里的全部断言（以前靠人肉开几十个标签页）
 #   rust     —— cargo test。本机跑不了（安全策略拦 target/debug/deps 下的 exe），
-#               所以那 21 条断言从来没有在任何人的机器上跑过，runner 是唯一的机会
+#               所以那些断言从来没有在任何人的机器上跑过，runner 是唯一的机会
+#
+# 这里**不写具体条数**。写过一次（"1060 条断言 / 33 个标签页"），而写这段的时候
+# 实际已经是 44 页 1850 条 —— 没有人会去核一个注释。要数字就看 `npm run test:browser`
+# 的输出，或者 README，那个有 `npm run check:docs` 盯着。
 #
 # 都跑在 push/PR 上，`workflow_dispatch` 留着手动触发。
 on:
@@ -31,6 +36,11 @@ jobs:
       - run: npm run test:sdk
       # agent CLI：起一个假端点，测请求形状和退出码。不需要应用在跑
       - run: npm run test:agent
+      # 三张表（字号 / 圆角 / 间距）的守门人。规矩写在 styles.css 头部，
+      # 但注释拦不住人 —— 收敛完的当天下午，同一个文件里就又长回了 10.5px。
+      # test:tokens 钉规则本身（半像素、豁免、font 简写），check:tokens 钉仓库现状。
+      - run: npm run test:tokens
+      - run: npm run check:tokens
       # 文档体检：相对链接是否可达、README 的数字和代码对不对得上。
       # 这两件事过期了不会报错，只能靠一条命令盯着
       - run: npm run check:docs

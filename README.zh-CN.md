@@ -286,6 +286,8 @@ npm run typecheck        # tsc --noEmit
 npm run test:injection   # 上报脚本在两条发文档的路上注入得一模一样
 npm run test:sdk         # 每份内嵌 SDK 副本都和 packages/sdk 一致
 npm run test:agent       # agent 客户端的请求形状与退出码
+npm run test:tokens      # 三张表（字号 / 圆角 / 间距）的规则本身：半像素、豁免、font 简写
+npm run check:tokens     # 仓库真的遵守了它们：字号、圆角、2px 间距网格
 npm run test:browser     # 44 个页面、1850 条断言，真 Chrome、真 dev server
 ```
 
