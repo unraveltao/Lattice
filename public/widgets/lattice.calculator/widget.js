@@ -481,7 +481,6 @@
   // -------------------------------------------------------------------------
 
   var root = document.getElementById("root");
-  var titleEl = document.querySelector(".calc-title");
   var exprEl = document.getElementById("expr");
   var resultEl = document.getElementById("result");
   var historyEl = document.getElementById("history");
@@ -542,9 +541,8 @@
             : say("复制", "Copy");
   }
 
-  /** 页面上那些写死的字：标题、页签、占位符、aria-label、空态 */
+  /** 页面上那些写死的字：页签、占位符、aria-label、空态 */
   function applyStaticText() {
-    titleEl.textContent = say("计算器", "Calculator");
     Array.prototype.forEach.call(document.querySelectorAll(".calc-tab"), function (tab) {
       var labels = TAB_LABELS[tab.dataset.pane];
       if (labels) tab.textContent = labels[lang];

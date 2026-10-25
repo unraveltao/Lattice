@@ -32,26 +32,6 @@ body {
   gap: 6px;
 }
 
-/* ---------- 标题栏（同时给窗饰让位） ---------- */
-
-.calc-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  height: 22px;
-  /* 120px 是窗饰的实际占地，与待办 / 系统监视器 / 媒体保持一致 */
-  padding-right: 120px;
-}
-
-.calc-title {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
 /* ---------- 页签 ---------- */
 
 .calc-tabs {
@@ -61,6 +41,9 @@ body {
   border-radius: 7px;
   background: color-mix(in srgb, var(--fg) 7%, transparent);
   flex: 0 0 auto;
+  /* 120px 是窗饰的实际占地。它原本在标题栏的 padding-right 上，标题栏删掉
+     之后挪到这儿：页签行现在是第一行，不留这条就会被「收回」按钮盖住 */
+  margin-right: 120px;
 }
 
 .calc-tab {

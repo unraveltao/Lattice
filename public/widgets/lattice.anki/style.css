@@ -76,20 +76,15 @@ body {
   padding-right: 108px;
 }
 
-.anki-title {
-  margin: 0;
-  font-size: 12.5px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 .anki-meta {
-  margin-left: auto;
-  font-size: 10.5px;
+  /* 这行现在只有它和右侧那颗按钮：靠左，字号按"这一行唯一的内容"给 */
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /*
@@ -104,6 +99,9 @@ body {
 .anki-icon {
   appearance: none;
   flex: none;
+  /* 计数靠左，这颗按钮仍然钉在窗饰左边 —— 它以前靠 meta 的 margin-left:auto
+     顶过去，meta 改成左对齐之后得自己顶 */
+  margin-left: auto;
   display: grid;
   place-items: center;
   width: 20px;

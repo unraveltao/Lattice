@@ -411,7 +411,6 @@
   // DOM
   // ---------------------------------------------------------------------------
 
-  var titleEl = document.getElementById("title");
   var metaEl = document.getElementById("meta");
   var tagsEl = document.getElementById("tags");
   var cardEl = document.getElementById("card");
@@ -586,7 +585,6 @@
   // ---------------------------------------------------------------------------
 
   function paintStatic() {
-    titleEl.textContent = say("背单词", "Word Drill");
     revealEl.textContent = say("显示答案", "Show answer");
     pasteEl.textContent = say("粘贴词表", "Paste a deck");
     editEl.title = say("词表", "Deck");

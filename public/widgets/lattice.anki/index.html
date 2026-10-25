@@ -11,8 +11,12 @@
       回来再把它们翻成英文（不变量 18）。别在这里放"加载中"。
     -->
     <main class="anki">
+      <!--
+        这一行是给窗饰让位的那一条（WIDGET_SPEC §5.1），它以前写的是组件名。
+        画布上平台标题条已经写着「背单词」，这里再写一遍就是同一句话出现两次，
+        而且白占一行 —— 所以现在只放真正有用的东西：还剩几张、今天做了几张。
+      -->
       <header class="anki-head">
-        <h1 class="anki-title" id="title">背单词</h1>
         <span class="anki-meta" id="meta"></span>
         <button class="anki-icon" id="edit" type="button" title="词表" aria-label="词表">✎</button>
       </header>
