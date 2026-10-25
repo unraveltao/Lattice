@@ -807,6 +807,115 @@ async function main() {
     "那句话旁边就是“加一个来源”，不是只让人自己去翻设置",
   );
 
+  /*
+   * ---- 12. 回收站（有内容才画）----
+   *
+   * 判据（7 天 / 20 条 / 同一实例一个坑 / `canRestore`）在 `tests/trash.html` 里
+   * 钉着；这一段验的是接线：空着连标题都不出、恢复按钮按"组件还装着"变灰、
+   * 两颗删除按钮真的叫到了回调、以及清空是两段式（第一下只换文案）。
+   */
+  const trashSection = () =>
+    [...document.querySelectorAll<HTMLElement>(".lattice-lib-section")].find((node) =>
+      (node.querySelector(".lattice-lib-section-name")?.textContent ?? "").includes(
+        "Recently removed",
+      ),
+    );
+  const sectionAction = () =>
+    [
+      ...(trashSection()?.querySelectorAll<HTMLButtonElement>(
+        ".lattice-lib-section-action button",
+      ) ?? []),
+    ].map((node) => (node.textContent ?? "").trim());
+  const pressAction = (label: string) => {
+    const button = [
+      ...(trashSection()?.querySelectorAll<HTMLButtonElement>(
+        ".lattice-lib-section-action button",
+      ) ?? []),
+    ].find((node) => (node.textContent ?? "").trim() === label);
+    if (button) act(() => button.click());
+    return button !== undefined;
+  };
+
+  render({ trash: [] });
+  await sleep(60);
+  log(trashSection() === undefined, "回收站空着时连标题都不出");
+
+  const nowMs = Date.now();
+  render({
+    trash: [
+      { placement: { instanceId: "clock#a", widgetId: "lattice.clock" }, at: nowMs - 30_000 },
+      { placement: { instanceId: "gone#b", widgetId: "demo.gone" }, at: nowMs - 3_600_000 },
+    ],
+  });
+  await sleep(60);
+
+  log(trashSection() !== undefined, "里面有东西才铺这一段");
+  eq(
+    trashSection()?.querySelector(".lattice-lib-count")?.textContent,
+    "2",
+    "标题行右边是条数",
+  );
+
+  // 和别的段一样默认收着，点标题才画行
+  const trashToggle = trashSection()?.querySelector<HTMLButtonElement>(
+    ".lattice-lib-section-toggle",
+  );
+  if (trashToggle) {
+    act(() => trashToggle.click());
+    await sleep(60);
+  }
+  eq(
+    [...document.querySelectorAll(".lattice-trash-row .lattice-card-name")].map(
+      (node) => node.textContent?.trim() ?? "",
+    ),
+    ["Clock", "demo.gone"],
+    "装着的显示名字，没装的回落到 id（不是一条空行）",
+  );
+  const whens = [...document.querySelectorAll(".lattice-trash-when")].map(
+    (node) => node.textContent?.trim() ?? "",
+  );
+  log(whens.length === 2 && whens.every((line) => line.length > 0), "每条都写着多久以前删的");
+  log(
+    whens[1]?.includes("Its widget isn't installed") === true,
+    "组件不在的时候，说明行写清了为什么不能恢复",
+  );
+
+  const restoreButtons = [
+    ...document.querySelectorAll<HTMLButtonElement>(".lattice-trash-row button"),
+  ].filter((node) => (node.textContent ?? "").trim() === "Restore");
+  eq(restoreButtons.length, 2, "两条各有一颗 Restore");
+  log(restoreButtons[0]?.disabled === false, "组件还装着 → Restore 可点");
+  log(restoreButtons[1]?.disabled === true, "组件没装 → Restore 是灰的");
+  const firstRestore = restoreButtons[0];
+  if (firstRestore) {
+    act(() => firstRestore.click());
+  }
+  log(calls.includes("restore-trash:clock#a"), "点 Restore 调到的是那一条的 instanceId");
+
+  const trashGlyphs = [
+    ...document.querySelectorAll<HTMLButtonElement>(".lattice-trash-row .lattice-icon-btn"),
+  ];
+  eq(trashGlyphs.length, 2, "每条还有一个彻底删掉的垃圾桶");
+  const firstGlyph = trashGlyphs[0];
+  if (firstGlyph) {
+    act(() => firstGlyph.click());
+  }
+  log(calls.includes("delete-trash:clock#a"), "垃圾桶调到的是彻底删除，不是恢复");
+
+  eq(sectionAction(), ["Empty"], "“清空”一开始只有一颗按钮");
+  log(pressAction("Empty"), "第一下只把按钮换掉");
+  await sleep(60);
+  eq(sectionAction(), ["Empty?", "Keep"], "第一下之后是“确定清空？”加“留着”");
+  log(!calls.includes("empty-trash"), "第一下还没真的清（这一栏本身就是最后一层撤销）");
+  log(pressAction("Keep"), "旁边那颗“留着”也在");
+  await sleep(60);
+  eq(sectionAction(), ["Empty"], "按“留着”就退回去");
+  pressAction("Empty");
+  await sleep(60);
+  pressAction("Empty?");
+  await sleep(60);
+  log(calls.includes("empty-trash"), "两下之后才真的清空");
+
   document.getElementById("out")!.innerHTML = lines
     .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
     .join("\n");

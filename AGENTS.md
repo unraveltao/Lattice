@@ -691,7 +691,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 
 - `npm run typecheck` —— 必跑，当前是干净的
 - **`npm run check:tokens`** —— 三张表（字号 / 圆角 / 间距）的守门人，扫 `src/**/*.css`，越界就红并指出行号；`npm run test:tokens` 钉规则本身（半像素、`font` 简写、豁免、以及"仓库现状是干净的"）。改样式前后各跑一次，比肉眼数 `10.5px` 靠谱。真要写规矩外的值，行尾加 `/* token-ok 理由 */`，理由不写会被报。
-- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（55 页 / 2 707 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。**改断言就顺手 `grep -n '<页名>' AGENTS.md docs/`**：这一页和 §3 / §7 / `docs/AGENT_ACCESS.md` 里有十几处手写的「N 条」，条数没人替你核（`check:docs` 只对账总数），飘了不会红。
+- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（55 页 / 2 726 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。**改断言就顺手 `grep -n '<页名>' AGENTS.md docs/`**：这一页和 §3 / §7 / `docs/AGENT_ACCESS.md` 里有十几处手写的「N 条」，条数没人替你核（`check:docs` 只对账总数），飘了不会红。
 - **断言页别等 iframe**。`--virtual-time-budget` 会让虚拟时钟一路快进到 9 秒，而 iframe 的 `load` 走真实网络 —— 谁先到看运气，快进赢了就 dump 到一个空的 `<pre>`，`test:browser` 报"0 条 —— 一条断言都没跑完"。那个症状和"页面没有断言"一模一样，别去调 budget（调大只是让赌局更偏一点，还是赌）。正确做法是**同步加载**：组件把纯逻辑挂在 `window.__latticeXxx` 上，普通 `<script src>` 引进来就能断言；拿不到那个对象时也要先 `log(false, …)` 再 `flush()`，否则页面永远吐 0 条。
 - 改了组件 UI：`npm run dev` 后在浏览器里看；要截固定尺寸的图，用 Edge headless：
   ```bash
@@ -708,7 +708,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 - 改了 **SDK**（`packages/sdk/lattice.js`）：改完**立刻** `npm run sdk:sync`，再 `npm run test:sdk`（2 条，`node:test`，不需要 dev server：所有内嵌副本必须和源字节一致、`SUPPORTED_SDK` 的主次版本必须和 SDK 包版本对得上）。行为本身看 `tests/sdk.html`（55 条）—— 它自带一个假宿主，覆盖请求配对、超时、`permission_denied`、主题长名 / 别名、存储往返、`store-changed`、`config-changed`、`tick` 路由、`stop()`、网络透传、`assistant.ask`（参数形状 + 它自己那条 185 秒超时盖过实例的短 `timeout`）、顶层窗口立刻失败。**跨窗口的断言要用 `waitFor` 轮询**：`postMessage` 是宏任务，`await` 子窗口的 promise 只排微任务，直接断言会偶发失败。
 - 改了 **`.lattice` 打包 / 安装**：`npm run pack:widget -- examples/counter`，产物在 `dist-packs/`（已 gitignore）。打包要验**确定性**：连打两次，`sha256` 必须一样。解包侧用壳子跑 `package_policy.rs` 的 11 条（含篡改 CRC、路径穿越、绝对路径；`package.rs` 自己一条 `#[test]` 都没有，它是 `#[cfg(windows)]` 的胶水），装完看 `%APPDATA%\com.iron-tom.lattice\widgets\<id>\` 里是不是原样。交叉验一下更稳：Node 打的包用 Python 的 `zipfile.ZipFile(...).testzip()` 读一遍。
 - 改了**商店 / 签名 / 更新**：
-  - 纯逻辑：`tests/semver.html`（43 条）+ `tests/catalogue.html`（92 条）+ `tests/store-ui.html`（75 条，挂的是真的 `LibraryPanel`）。前两个是纯函数，第三个验的是"接上 React 之后还对不对"（按钮接没接上回调、文案用的是不是过滤后的数据）。
+  - 纯逻辑：`tests/semver.html`（43 条）+ `tests/catalogue.html`（92 条）+ `tests/store-ui.html`（94 条，挂的是真的 `LibraryPanel`）。前两个是纯函数，第三个验的是"接上 React 之后还对不对"（按钮接没接上回调、文案用的是不是过滤后的数据）。
   - 目录缓存 / 断网兜底 / 默认源：`tests/catalogue-cache.html`（30 条，含 `persist` 的 v0 → v1 迁移和那条 "Showing an older copy" 的横幅）。改默认目录源、改 `CatalogueSnapshot` 的字段、抬 `STATE_VERSION`，都先跑它 —— 迁移写错的表现是"老用户看不到官方目录"，没有任何报错。
   - 签名两侧：`npm run sign:widget -- --selftest`（一条 Node 自己签、自己验的向量）；Rust 侧那条向量是**用 Node 生成后贴进去的**，别凭印象写。
   - 端到端只有真机：`npm run store:index` 之后起 `tauri:dev`，在设置里把目录切成 Bundled，装一个 → 改版本再装一次（看 `widget-backups/` 出现）→ 回滚（看两个版本互换）→ 举报（看 `%APPDATA%\com.iron-tom.lattice\reports\<id>-<时间戳>.json`）。**验签失败的三条要各自单独造**：改目录里的 `sha256`（摘要不符）、改包里的一个字节（同上）、把 `publisher.key` 换成另一把（签名不符）。三条报的错必须**不一样**，否则等于没验。
