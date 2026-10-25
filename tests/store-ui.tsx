@@ -584,6 +584,55 @@ async function main() {
     "钉的是别的发布者钥匙 -> 照样要人点头（这道闸没被上面的例外拆掉）",
   );
 
+  /*
+   * ---- 9. 组件库的行：静止一行，详情按需 ----
+   *
+   * 这一段的判据是**量出来的**，不是"看起来更安静"：行高多少、静止时哪几块
+   * 不画、行尾那几颗动作能不能误触、展开之后版本和来源出不出来。
+   *
+   * 为什么要钉：这一列的本职是让人一行行扫过去。谁要是哪天把说明、权限、
+   * 五星重新摊回每一行，界面不会报错 —— 它只会悄悄从"一屏十几行"退回"一屏四行"。
+   */
+  render();
+  await sleep(60);
+
+  const rowOf = (id: string) =>
+    [...document.querySelectorAll<HTMLElement>(".lattice-card.is-row")].find((node) => idOf(node) === id);
+  const todoRow = rowOf("lattice.todo");
+  log(Boolean(todoRow), "已安装的组件在组件库里是一行（不是一张卡）");
+
+  const rowHeight = todoRow?.getBoundingClientRect().height ?? 0;
+  log(rowHeight > 0 && rowHeight <= 40, `静止的行高 ≤ 40px（量到 ${Math.round(rowHeight)}）`);
+
+  eq(
+    [".lattice-card-desc", ".lattice-card-meta", ".lattice-card-rating"].map(
+      (selector) => getComputedStyle(todoRow!.querySelector(selector)!).display,
+    ),
+    ["none", "none", "none"],
+    "静止时不画说明 / 版本 / 评分（节点还在，展开不用重建）",
+  );
+
+  const quietButtons = [...todoRow!.querySelectorAll<HTMLElement>(".lattice-card-actions .is-quiet")];
+  log(
+    quietButtons.length === 3 &&
+      quietButtons.every((node) => getComputedStyle(node).pointerEvents === "none"),
+    "行尾的 ? / 举报 / 卸载平时点不到（指到或键盘聚焦才亮）",
+  );
+
+  todoRow!.querySelector<HTMLButtonElement>(".lattice-card-more")!.click();
+  await sleep(60);
+  const expandedMeta = todoRow!.querySelector(".lattice-card-meta");
+  log(
+    getComputedStyle(expandedMeta!).display !== "none" &&
+      (expandedMeta?.textContent ?? "").includes("Bundled"),
+    "点开之后版本、作者和来源一起出现",
+  );
+
+  // 一次只开一行：开第二行，第一行自己收回去
+  rowOf("lattice.clock")!.querySelector<HTMLButtonElement>(".lattice-card-more")!.click();
+  await sleep(60);
+  log(!todoRow!.classList.contains("is-expanded"), "展开第二行时第一行自己收回去");
+
   // ---- 7. 搜索同时过滤目录段，而且无视折叠 ----
   render();
   await sleep(60);

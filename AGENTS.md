@@ -625,7 +625,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 ## 11. 验证
 
 - `npm run typecheck` —— 必跑，当前是干净的
-- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（41 页 / 1762 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。
+- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（41 页 / 1768 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。
 - **断言页别等 iframe**。`--virtual-time-budget` 会让虚拟时钟一路快进到 9 秒，而 iframe 的 `load` 走真实网络 —— 谁先到看运气，快进赢了就 dump 到一个空的 `<pre>`，`test:browser` 报"0 条 —— 一条断言都没跑完"。那个症状和"页面没有断言"一模一样，别去调 budget（调大只是让赌局更偏一点，还是赌）。正确做法是**同步加载**：组件把纯逻辑挂在 `window.__latticeXxx` 上，普通 `<script src>` 引进来就能断言；拿不到那个对象时也要先 `log(false, …)` 再 `flush()`，否则页面永远吐 0 条。
 - 改了组件 UI：`npm run dev` 后在浏览器里看；要截固定尺寸的图，用 Edge headless：
   ```bash

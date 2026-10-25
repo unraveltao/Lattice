@@ -42,6 +42,8 @@ export const LIBRARY_ZH: Record<string, string> = {
   "Restore {version} (the version you had before this update)": "回滚到 {version}（更新前的版本）",
   "Back to {version}": "回到 {version}",
   "How to use this widget": "这个组件怎么用",
+  Details: "详情",
+  "Details for {name}": "{name} 的详情",
   Report: "举报",
 
   // —— 分区标题行（调用方给英文原文，LibSection 负责翻译） ——

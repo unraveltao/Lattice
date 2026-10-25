@@ -72,13 +72,28 @@ function Avatar({ name, size }: { name?: string; size: number }) {
 interface SettingsMenuProps {
   installedCount: number;
   placementCount: number;
+  /** 调试面板开着没有。开关要显示真实状态，否则用户不知道再点一次是开还是关 */
+  debugOpen: boolean;
+  onToggleDebug: () => void;
+  /** 正在重新扫描组件目录 —— 转一圈，让"点了"和"正在扫"区分得开 */
+  refreshing: boolean;
+  onRefresh: () => void;
   /** 真的退出应用。关主窗口只是收起来（桌面上还有组件时），退出走这里 */
   onQuit: () => void;
   /** 打开 assistant 抽屉（设置菜单里那一条） */
   onOpenAssistant: () => void;
 }
 
-export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAssistant }: SettingsMenuProps) {
+export function SettingsMenu({
+  installedCount,
+  placementCount,
+  debugOpen,
+  onToggleDebug,
+  refreshing,
+  onRefresh,
+  onQuit,
+  onOpenAssistant,
+}: SettingsMenuProps) {
   const profile = useLattice((state) => state.profile);
   const signIn = useLattice((state) => state.signIn);
   const signOut = useLattice((state) => state.signOut);
@@ -596,6 +611,39 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                   <Glyph d={ICON.user} />
                   <span className="lattice-menu-label">{t("Profile")}</span>
                   <Glyph d={ICON.chevron} size={13} />
+                </button>
+
+                {/*
+                  调试面板和"重新扫描"以前是顶栏的两颗圆钮。挪到这里不是降级：
+                  那颗调试钮是个**开发者动作**（快捷键 Ctrl+Shift+D 才是主入口），
+                  而"重新扫描"一次安装只按一次 —— 顶栏留给"要不要送到桌面"这一件事。
+                  两条都**不关菜单**：开关要看得到自己翻过去，扫描要看得见转圈。
+                */}
+                <div className="lattice-menu-row is-static">
+                  <Glyph d={ICON.terminal} />
+                  <span className="lattice-menu-label">{t("Debug panel")}</span>
+                  <label
+                    className="lattice-switch"
+                    title={t("Bridge calls and widget console, live (Ctrl+Shift+D)")}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={debugOpen}
+                      onChange={onToggleDebug}
+                      aria-label={t("Toggle debug panel")}
+                    />
+                  </label>
+                </div>
+
+                <button
+                  type="button"
+                  className={`lattice-menu-row${refreshing ? " is-spinning" : ""}`}
+                  onClick={onRefresh}
+                  disabled={refreshing}
+                  title={t("Rescan the widgets folder")}
+                >
+                  <Glyph d={ICON.refresh} />
+                  <span className="lattice-menu-label">{t("Rescan widgets")}</span>
                 </button>
 
                 <div className="lattice-menu-row is-static">

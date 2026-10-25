@@ -90,6 +90,14 @@ export function LibraryPanel({
   const [query, setQuery] = useState("");
   /** 正在看"怎么用"的那个组件。null = 没开 */
   const [helpTarget, setHelpTarget] = useState<WidgetRecord | null>(null);
+  /*
+   * 展开了详情的那一行（一次只开一行）。
+   *
+   * 为什么默认全收着：装到十五个包之后，一屏能看到的行数就是这一屏的"分辨率"。
+   * 版本、作者、权限、评分、回滚每行都摊开的话，一屏只剩四行 —— 而那五样
+   * 一个月用不上一次。收起来不等于藏起来：`⋯` 常亮，一次点击全都在。
+   */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   // 按空格切成多个词，每个词都得命中（"clock 24" 这种组合才有意义）
   const tokens = useMemo(() => tokenize(query), [query]);
   const filtering = tokens.length > 0;
@@ -124,13 +132,15 @@ export function LibraryPanel({
     const review = store.reviews[record.manifest.id];
     const backup = backups[record.manifest.id] ?? null;
     const rating = ratings[record.manifest.id]?.stars ?? 0;
+    const expanded = expandedId === record.manifest.id;
 
     return (
       <div
         key={record.manifest.id}
-        className={`lattice-card${isInstalled ? "" : " is-available"}`}
+        className={`lattice-card is-row${isInstalled ? "" : " is-available"}${expanded ? " is-expanded" : ""}`}
         role="button"
         tabIndex={0}
+        aria-expanded={expanded}
         draggable={isInstalled}
         onDragStart={(event) => {
           event.dataTransfer.setData("application/x-lattice-widget", record.manifest.id);
@@ -156,13 +166,86 @@ export function LibraryPanel({
             <span className="lattice-card-name">{text(record.manifest.name)}</span>
             <code className="lattice-card-id">{record.manifest.id}</code>
           </span>
-          {review ? (
-            <span className="lattice-chip is-warn">{t("Review")}</span>
-          ) : isInstalled ? (
-            <span className="lattice-chip is-accent">{t("Installed")}</span>
-          ) : (
-            <span className="lattice-chip">{record.source === "bundled" ? t("Bundled") : t("Local")}</span>
-          )}
+          {/*
+            静止时只留一颗 Review（它是"要你处理"的事）。"已安装"和"内置 / 本地"
+            都很安静地搬进了展开区：前者和上面那一段的标题重复，后者一次装完就不用再看。
+          */}
+          {review ? <span className="lattice-chip is-warn">{t("Review")}</span> : null}
+
+          {/*
+            动作按在行尾，装好的那几颗平时淡出、指到才亮 —— 一列 15 行，
+            15 个"卸载 / 举报"同时亮着比 15 个名字还吵。`⋯` 是唯一常亮的一颗，
+            因为它也是"没有鼠标时怎么看到详情"的唯一入口。
+          */}
+          <div className="lattice-card-actions">
+            {/*
+              "怎么用"放在这一行的最左边：右边的 Install / Uninstall / Report
+              是"对这份包动手"，`?` 是"先看看它是怎么用的"，两类不同。
+              没写说明的组件不画这颗按钮 —— 点开一个空框比没有按钮更差。
+            */}
+            {hasHelp(record.manifest.help) && (
+              <button
+                type="button"
+                className="lattice-icon-btn is-tiny lattice-card-help is-quiet"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setHelpTarget(record);
+                }}
+                title={t("How to use this widget")}
+                aria-label={t("How to use {name}", { name: text(record.manifest.name) })}
+              >
+                <Glyph d={ICON.info} size={12} />
+              </button>
+            )}
+            {isInstalled ? (
+              <>
+                <button
+                  type="button"
+                  className="lattice-link-btn is-quiet"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onReport(record);
+                  }}
+                >
+                  {t("Report")}
+                </button>
+                <button
+                  type="button"
+                  className="lattice-link-btn is-quiet"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onUninstall(record);
+                  }}
+                >
+                  {t("Uninstall")}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="lattice-btn is-small is-primary"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onInstall(record);
+                }}
+              >
+                {t("Install")}
+              </button>
+            )}
+            <button
+              type="button"
+              className="lattice-icon-btn is-tiny lattice-card-more"
+              onClick={(event) => {
+                event.stopPropagation();
+                setExpandedId(expanded ? null : record.manifest.id);
+              }}
+              aria-expanded={expanded}
+              aria-label={t("Details for {name}", { name: text(record.manifest.name) })}
+              title={t("Details")}
+            >
+              <Glyph d={ICON.chevron} size={12} />
+            </button>
+          </div>
         </div>
 
         <p className="lattice-card-desc">
@@ -172,6 +255,9 @@ export function LibraryPanel({
         <div className="lattice-card-meta">
           <span className="lattice-mono">v{record.manifest.version}</span>
           <span className="lattice-mono">{record.manifest.author}</span>
+          <span className="lattice-mono">
+            {record.source === "bundled" ? t("Bundled") : t("Local")}
+          </span>
         </div>
 
         {record.manifest.permissions.length > 0 && (
@@ -195,6 +281,8 @@ export function LibraryPanel({
         {/*
           评分只对已安装的组件显示：没装过的人没有资格评价它 ——
           更重要的是，卡片上再挂一排星星会让"安装"这个动作更难看见。
+          它和"回到上一版"都只在展开区里（`is-expanded` 才显示）：
+          这两件事一个月用一次，没理由每行都占一条。
         */}
         {isInstalled && (
           <div className="lattice-card-rating" onClick={(event) => event.stopPropagation()}>
@@ -225,63 +313,6 @@ export function LibraryPanel({
             ) : null}
           </div>
         )}
-
-        <div className="lattice-card-actions">
-          {/*
-            "怎么用"放在这一行的最左边：右边的 Install / Uninstall / Report
-            是"对这份包动手"，`?` 是"先看看它是怎么用的"，两类不同。
-            没写说明的组件不画这颗按钮 —— 点开一个空框比没有按钮更差。
-          */}
-          {hasHelp(record.manifest.help) && (
-            <button
-              type="button"
-              className="lattice-icon-btn is-tiny lattice-card-help"
-              onClick={(event) => {
-                event.stopPropagation();
-                setHelpTarget(record);
-              }}
-              title={t("How to use this widget")}
-              aria-label={t("How to use {name}", { name: text(record.manifest.name) })}
-            >
-              <Glyph d={ICON.info} size={12} />
-            </button>
-          )}
-          {isInstalled ? (
-            <>
-              <button
-                type="button"
-                className="lattice-link-btn"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onReport(record);
-                }}
-              >
-                {t("Report")}
-              </button>
-              <button
-                type="button"
-                className="lattice-link-btn"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onUninstall(record);
-                }}
-              >
-                {t("Uninstall")}
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="lattice-btn is-small"
-              onClick={(event) => {
-                event.stopPropagation();
-                onInstall(record);
-              }}
-            >
-              {t("Install")}
-            </button>
-          )}
-        </div>
       </div>
     );
   };

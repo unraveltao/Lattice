@@ -4,9 +4,7 @@
  * key 就是英文原文（见 `runtime/i18n.ts`）。带 `{name}` 的句子两边占位符要一致。
  */
 export const SHELL_ZH: Record<string, string> = {
-  // —— 顶栏：统计与三颗动作按钮 ——
-  "on canvas": "个在画布",
-  installed: "个已安装",
+  // —— 顶栏：一句"要不要送到桌面" ——
   "Turn canvas widgets into real desktop windows; the main window will step aside":
     "把画布上的组件变成真正的桌面窗口；主窗口会让到一边",
   "Not available in browser preview — run npm run tauri:dev":
@@ -18,9 +16,13 @@ export const SHELL_ZH: Record<string, string> = {
   "Toggle assistant": "开关助手",
   "Theme: {current} — click for {next}": "主题：{current} —— 点击切换到 {next}",
   "Theme: {current}": "主题：{current}",
-  "Debug panel — bridge calls and widget console (Ctrl+Shift+D)":
-    "调试面板 —— 桥调用与组件控制台（Ctrl+Shift+D）",
+
+  // —— 设置菜单里原来长在顶栏的两项 ——
+  "Debug panel": "调试面板",
+  "Bridge calls and widget console, live (Ctrl+Shift+D)":
+    "桥调用与组件控制台，实时（Ctrl+Shift+D）",
   "Toggle debug panel": "开关调试面板",
+  "Rescan widgets": "重新扫描组件",
   "Rescan the widgets folder": "重新扫描组件文件夹",
   "Refresh widgets": "刷新组件",
 

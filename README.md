@@ -104,7 +104,7 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | Official widgets | 15 |
 | Permissions | 11 |
 | Tauri commands | 61 |
-| Browser assertions | 1 762 over 41 pages |
+| Browser assertions | 1 768 over 41 pages |
 | Rust tests | 178 |
 | Documented pitfalls | 75 |
 
@@ -294,7 +294,7 @@ npm run typecheck        # tsc --noEmit
 npm run test:injection   # the diagnostics reporter is injected identically on both paths
 npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
-npm run test:browser     # 1 709 assertions over 40 pages, real Chrome, real dev server
+npm run test:browser     # 1 768 assertions over 41 pages, real Chrome, real dev server
 ```
 
 The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.

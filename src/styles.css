@@ -179,47 +179,10 @@ button {
   line-height: 1.2;
 }
 
-.lattice-brand-sub {
-  padding-top: 1px;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--lattice-text-faint);
-  line-height: 1.2;
-}
-
 .lattice-topbar-actions {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-/* 计数是一块"读数"，不是文案，所以用等宽 + 胶囊底 */
-.lattice-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--lattice-border);
-  border-radius: 999px;
-  background: var(--lattice-surface-2);
-  color: var(--lattice-text-muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.lattice-stat b {
-  font-weight: 500;
-  color: var(--lattice-text);
-}
-
-.lattice-stat-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--lattice-accent);
 }
 
 .lattice-main {
@@ -535,6 +498,182 @@ button {
 .lattice-link-btn:hover {
   background: var(--lattice-danger-soft);
   color: var(--lattice-danger);
+}
+
+/* ---------- 组件库的行（照着图层栏排） ---------- */
+
+/*
+ * 组件库里的一行 = `.lattice-card.is-row`。
+ *
+ * 它和商店卡（`.lattice-card.is-store`）是两个物种，只是历史原因共用 `.lattice-card`：
+ * 商店卡是"要不要装这个版本"的决策面，权限差集、指纹、版本按钮都得摊开；库里这一行
+ * 是"我装过哪些东西"的清单，职责是让眼睛一行行扫过去。所以这一段的规矩是
+ * **一行只画名字，其余按需**：
+ *
+ *   - 静止：图标 + 名字 +（可安装的才有一行说明）+ 行尾的 `Install` / `⋯`；
+ *   - 指到 / 键盘聚焦：`?` / Report / Uninstall 淡入（它们平时占位但不发光）；
+ *   - 点 `⋯`：这一行展开，版本、作者、来源、权限、评分、回滚一起现身。
+ *
+ * 四条别踩回去：
+ *
+ *   1. **行高由 `min-height` 钉住**（34px），不靠内容撑。有没有说明的两行差 18px，
+ *      一列扫下来就是参差不齐的砖墙 —— 而"齐"是这一列唯一能提供的秩序。
+ *   2. **说明只在可安装的行上出现**。自己的东西不需要介绍；决定装不装才需要。
+ *   3. **收起来用 `display: none`，不要 `hidden` 属性**。展开与否纯靠类名，
+ *      React 不重建节点 —— 不然点一颗星就把焦点弄丢了。
+ *   4. **`id` 只是身份，不是内容**。它留在 DOM 里（无障碍名和测试定位都用它），
+ *      视觉上用 clip 藏掉，真正的展示位置是展开区那一行。
+ */
+.lattice-card.is-row {
+  position: relative;
+  gap: 0;
+  min-height: 34px;
+  padding: 4px 6px;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+}
+
+.lattice-card.is-row:hover {
+  border-color: transparent;
+  background: var(--lattice-surface-2);
+  box-shadow: none;
+  transform: none;
+}
+
+.lattice-card.is-row.is-expanded {
+  gap: 8px;
+  padding-bottom: 10px;
+  background: var(--lattice-surface-2);
+}
+
+/* 未安装的行不再用虚线：虚线在行里像一条画歪了的分隔线，而不像"还没装" */
+.lattice-card.is-row.is-available,
+.lattice-card.is-row.is-available:hover {
+  border-style: solid;
+  border-color: transparent;
+}
+
+.lattice-card.is-row.is-available:hover {
+  background: var(--lattice-accent-soft);
+}
+
+.lattice-card.is-row .lattice-card-top {
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+/* 图标小一档：行里它只是身份，别跟名字抢位置 */
+.lattice-card.is-row .lattice-card-glyph {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lattice-text-muted);
+  font-size: 11px;
+}
+
+.lattice-card.is-row:hover .lattice-card-glyph,
+.lattice-card.is-row.is-expanded .lattice-card-glyph {
+  color: var(--lattice-text);
+}
+
+.lattice-card.is-row .lattice-card-heading {
+  gap: 0;
+}
+
+.lattice-card.is-row .lattice-card-name {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lattice-card.is-row .lattice-card-id {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.lattice-card.is-row .lattice-card-actions {
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 0 auto;
+}
+
+/* 平时淡出、指到才亮。仍然占位，指针扫过时不会把名字挤得跳一下 */
+.lattice-card.is-row .lattice-card-actions .is-quiet {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.lattice-card.is-row:hover .lattice-card-actions .is-quiet,
+.lattice-card.is-row:focus-within .lattice-card-actions .is-quiet,
+.lattice-card.is-row.is-expanded .lattice-card-actions .is-quiet {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* `⋯` 那颗其实是"详情"：箭头指右 = 收着，转 90° = 展开，和上面分段标题同一个动作语言 */
+.lattice-card.is-row .lattice-card-more .lattice-glyph {
+  transition: transform 0.14s ease;
+}
+
+.lattice-card.is-row.is-expanded .lattice-card-more .lattice-glyph {
+  transform: rotate(90deg);
+}
+
+/* 收起时这四块都不画 */
+.lattice-card.is-row:not(.is-expanded) .lattice-card-desc,
+.lattice-card.is-row:not(.is-expanded) .lattice-card-meta,
+.lattice-card.is-row:not(.is-expanded) .lattice-perm-list,
+.lattice-card.is-row:not(.is-expanded) .lattice-card-rating {
+  display: none;
+}
+
+/* 可安装的那几行静止留一行说明：装不装它，取决于它是干什么的 */
+.lattice-card.is-row.is-available:not(.is-expanded) .lattice-card-desc {
+  display: -webkit-box;
+  margin: 0 0 0 30px;
+  overflow: hidden;
+  color: var(--lattice-text-faint);
+  font-size: 11px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+/* 展开区：左边让出图标那一格，和名字对齐 */
+.lattice-card.is-row.is-expanded .lattice-card-desc,
+.lattice-card.is-row.is-expanded .lattice-card-meta,
+.lattice-card.is-row.is-expanded .lattice-perm-list,
+.lattice-card.is-row.is-expanded .lattice-card-rating {
+  padding-left: 30px;
+}
+
+.lattice-card.is-row.is-expanded .lattice-card-desc {
+  margin: 0;
+  color: var(--lattice-text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/*
+ * 行和行之间只留 1px 的呼吸：它们是一张清单，不是一叠卡片。
+ * 用 `:has()` 限定只有"整段都是行"的时候才收，商店那一段照旧 8px。
+ */
+.lattice-lib-section-body:has(> .lattice-card.is-row) {
+  gap: 1px;
 }
 
 /* ---------- 组件库搜索 ---------- */
@@ -1062,6 +1201,18 @@ button {
   opacity: 1;
 }
 
+/*
+ * 标题条：静止时几乎消失，指到 / 选中才实体化。
+ *
+ * 画布上要看的是这些卡**里面**画了什么，不是十五个灰头。桌宠那类卡片
+ * （`.is-region`）早就这么干了（整条 `opacity: .35`），现在普通卡片也跟上。
+ *
+ * 两条别踩回去：
+ *   1. **只降对比，不动几何**。26px 仍是拖拽命中区 —— 它是画布上唯一能拖的地方，
+ *      "看不见"绝不等于"可以变矮"。
+ *   2. **图层徽标跟着一起隐**。它是"这张卡钉在最上面"的提示，平时不需要，
+ *      指到卡片时再看就够；一直亮着等于把"在顶层"这件事说两遍。
+ */
 .lattice-widget-bar {
   display: flex;
   align-items: center;
@@ -1072,8 +1223,25 @@ button {
   padding: 0 9px;
   cursor: move;
   user-select: none;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.lattice-widget:hover .lattice-widget-bar,
+.lattice-widget.is-selected .lattice-widget-bar {
   background: var(--lattice-surface-2);
-  border-bottom: 1px solid var(--lattice-border);
+  border-bottom-color: var(--lattice-border);
+}
+
+.lattice-widget-bar .lattice-chip {
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+
+.lattice-widget:hover .lattice-widget-bar .lattice-chip,
+.lattice-widget.is-selected .lattice-widget-bar .lattice-chip {
+  opacity: 1;
 }
 
 /* 图层徽标顶到最右；标题条改成 flex-start 之后不能再靠 space-between */
@@ -2176,6 +2344,14 @@ button.lattice-chip[aria-pressed="true"] {
 
 /* 刷新时转一圈，让"点了"和"正在扫目录"区分得开 */
 .lattice-icon-btn.is-spinning .lattice-glyph {
+  animation: lattice-spin 0.9s linear infinite;
+}
+
+/*
+ * 设置菜单里那行"重新扫描"用的是同一圈：顶栏那颗刷新钮挪进去之后，
+ * 用户唯一能看到"正在扫"的地方就是菜单里这一行（菜单不会因为点击而关掉）。
+ */
+.lattice-menu-row.is-spinning .lattice-glyph {
   animation: lattice-spin 0.9s linear infinite;
 }
 

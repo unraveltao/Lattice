@@ -1050,22 +1050,28 @@ export default function App() {
     return { widgetId, entry, name: pickText(records.get(widgetId)?.manifest.name) || widgetId };
   }, [permissionReviews, records]);
 
+  /*
+   * 顶栏只回答一件事：**现在要不要把画布送到桌面去**。
+   *
+   * 以前这里还挂着"几个在画布 / 几个已安装"的胶囊，加上调试和刷新两颗圆钮，
+   * 右侧一共七件东西 —— 而那两颗数字在组件库头部和设置菜单里各有一份，
+   * 刷新一次安装只按一次，调试是开发者动作。它们都挪进设置菜单了。
+   *
+   * 两条别踩回去：
+   *   - 数字只在**一个**地方显示。想加"又有多少组件"之前先看 `lattice-panel-count`
+   *     和设置菜单里那两行 —— 同一件事说三遍，用户就不信其中任何一遍。
+   *   - 挪走的动作必须留第二条入口。调试有 `Ctrl+Shift+D`，刷新只剩设置菜单
+   *     里那一行，所以那一行不许再被折叠起来。
+   */
   return (
     <div className="lattice-shell">
       <header className="lattice-topbar">
         <div className="lattice-brand">
           <span className="lattice-brand-mark" aria-hidden />
           <span className="lattice-brand-name">Lattice</span>
-          <span className="lattice-brand-sub">widgets</span>
         </div>
 
         <div className="lattice-topbar-actions">
-          <span className="lattice-stat">
-            <span className="lattice-stat-dot" aria-hidden />
-            <b>{placements.length}</b> {t("on canvas")} · <b>{installedSet.size}</b>{" "}
-            {t("installed")}
-          </span>
-
           <button
             type="button"
             className={`lattice-btn${desktopMode ? " is-active" : " is-primary"}`}
@@ -1103,29 +1109,13 @@ export default function App() {
             <ThemeGlyph mode={theme} />
           </button>
 
-          <button
-            type="button"
-            className={`lattice-icon-btn is-large${debugOpen ? " is-active" : ""}`}
-            onClick={() => setDebugOpen((value) => !value)}
-            title={t("Debug panel — bridge calls and widget console (Ctrl+Shift+D)")}
-            aria-label={t("Toggle debug panel")}
-          >
-            <Glyph d={ICON.terminal} />
-          </button>
-
-          <button
-            type="button"
-            className={`lattice-icon-btn is-large${loading ? " is-spinning" : ""}`}
-            onClick={() => void refresh()}
-            title={t("Rescan the widgets folder")}
-            aria-label={t("Refresh widgets")}
-          >
-            <Glyph d={ICON.refresh} />
-          </button>
-
           <SettingsMenu
             installedCount={installedSet.size}
             placementCount={placements.length}
+            debugOpen={debugOpen}
+            onToggleDebug={() => setDebugOpen((value) => !value)}
+            refreshing={loading}
+            onRefresh={() => void refresh()}
             onQuit={() => {
               if (isTauri()) void invoke("quit_app");
             }}
