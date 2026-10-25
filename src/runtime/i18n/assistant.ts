@@ -23,6 +23,13 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Make this the profile the assistant uses": "让助手改用这一档",
   "No model profile yet.": "还没有任何模型档。",
   "Add a model profile": "添加一档模型",
+  "Add model provider": "添加一个模型服务",
+  "Enter your API keys to use models from the following providers.":
+    "填上 API key，就能用下面这些服务里的模型。",
+  Ready: "可用",
+  "No key": "缺 key",
+  "Read the file again": "重新读取",
+  "Read the file again.": "已经从文件里重读了一遍。",
   Name: "名字",
   "Leave empty to use the host name": "留空就用主机名",
   "API base URL": "接口地址",

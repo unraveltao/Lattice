@@ -182,6 +182,8 @@ pub fn run() {
             llm::llm_profile_activate,
             llm::llm_set_key,
             llm::llm_models,
+            llm::assistant_config_path,
+            llm::assistant_config_open,
             llm::llm_chat,
             llm::llm_chat_stream,
             llm::llm_chat_cancel,

@@ -4387,40 +4387,101 @@ button.lattice-chip[aria-pressed="true"] {
 }
 
 /* ------------------------------------------------------------------------
- * assistant 设置：一列档 + 预设
+ * 模型档：设置里那一页（也复用在助手面板的设置态里）
  *
- * 一档 = 一个端点（地址 / 鉴权形状 / key / 模型）。列表行只放"认得出是哪一档"
- * 的三样：名字、模型、能不能用。点行是编辑，右边的 Use 才是切过去 ——
- * 把两件事合成一个点击，会让"我只是想改个模型名"变成"我把全局切走了"。
+ * 一档 = 一个端点（地址 / 鉴权形状 / key / 模型）。行上只放"认得出是哪一档"
+ * 的三样：名字、模型、能不能用。点名字是**打开编辑器**，右边的 Use 才是切
+ * 过去 —— 把两件事合成一个点击，会让"我只是想改个模型名"变成"我把全局切
+ * 走了"，而下一条消息就悄悄发到了另一个端点。
+ *
+ * 行的底色故意是透明的：这一页的底是 surface-2，而 surface / surface-3
+ * 跟它的差都不到 1.3:1（见文件头那条明度下限），填上去只会在深色下糊成
+ * 一块。所以靠一圈边框划边界。
  * ------------------------------------------------------------------------ */
 
-.lattice-profile-list {
+.lattice-models {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
+  max-width: 620px;
 }
 
-.lattice-profile-row {
+.lattice-models.is-panel {
+  /* 抽屉里没有"整页"这回事：宽度跟着面板，段落间距也收一点 */
+  gap: 10px;
+  max-width: none;
+}
+
+/*
+ * 抽屉只有 320px 宽，一行放不下"名字 + 状态 + 模型 + 三颗按钮"。
+ * 让它换行而不是把名字压成省略号：那一行唯一能认人的东西就是名字，
+ * 名字被截成 "siflow-ch…" 之后这一档就没法选了。
+ */
+.lattice-models.is-panel .lattice-model-row {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.lattice-models.is-panel .lattice-model-ident {
+  flex: 1 1 100%;
+}
+
+.lattice-models.is-panel .lattice-model-actions {
+  margin-left: auto;
+}
+
+/*
+ * 抽屉里不显示"这一档用哪个模型"：314px 里名字和模型只能活一个，而名字是
+ * 唯一能认人的东西（默认还就是主机名，一长串）。模型名在面板标题上写着，
+ * 点开 Edit 也在，不必在这儿再挤一遍。
+ */
+.lattice-models.is-panel .lattice-model-endpoint {
+  display: none;
+}
+
+.lattice-models.is-panel .lattice-model-name {
+  max-width: none;
+}
+
+.lattice-models-intro {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--lattice-text-faint);
+}
+
+.lattice-model-list {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  padding: 6px 8px;
-  background: var(--lattice-surface-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lattice-model-card {
+  padding: 10px 12px;
   border: 1px solid var(--lattice-border);
   border-radius: 10px;
 }
 
-.lattice-profile-row.is-editing {
+.lattice-model-card.is-open {
   border-color: var(--lattice-focus);
 }
 
-.lattice-profile-pick {
+.lattice-model-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lattice-model-ident {
   display: flex;
   flex: 1;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 0;
+  padding: 2px 0;
   font: inherit;
   color: var(--lattice-text);
   text-align: left;
@@ -4429,25 +4490,41 @@ button.lattice-chip[aria-pressed="true"] {
   border: 0;
 }
 
-.lattice-profile-dot {
+.lattice-model-name {
   flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lattice-model-status {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--lattice-text-faint);
+}
+
+.lattice-model-status.is-ok {
+  color: var(--lattice-accent);
+}
+
+.lattice-model-status.is-bad {
+  color: var(--lattice-danger);
+}
+
+.lattice-model-dot {
   width: 6px;
   height: 6px;
-  background: var(--lattice-text-faint);
+  background: currentcolor;
   border-radius: 50%;
 }
 
-.lattice-profile-dot.is-on {
-  background: var(--lattice-accent);
-}
-
-.lattice-profile-name {
-  flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.lattice-profile-model {
+.lattice-model-endpoint {
   overflow: hidden;
   font-family: var(--lattice-mono);
   font-size: 11px;
@@ -4456,13 +4533,97 @@ button.lattice-chip[aria-pressed="true"] {
   white-space: nowrap;
 }
 
-.lattice-profile-badge {
+.lattice-model-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  align-items: center;
+}
+
+.lattice-model-badge {
   flex-shrink: 0;
   padding: 2px 6px;
   font-size: 11px;
   color: var(--lattice-text-muted);
   background: var(--lattice-surface-3);
   border-radius: 6px;
+}
+
+.lattice-model-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  margin-top: 8px;
+  border-top: 1px solid var(--lattice-border);
+}
+
+/* 两列：名字和模型可以并排，地址要整行 —— 它长到一眼看不完 */
+.lattice-model-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.lattice-model-grid .is-wide {
+  grid-column: 1 / -1;
+}
+
+.lattice-models.is-panel .lattice-model-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lattice-model-editor-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 虚线：它长得像"再放一个进来"的空位，不像一颗已经存在的按钮 */
+.lattice-model-add {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--lattice-text-muted);
+  cursor: pointer;
+  background: none;
+  border: 1px dashed var(--lattice-border-strong);
+  border-radius: 10px;
+}
+
+.lattice-model-add:hover {
+  color: var(--lattice-text);
+  border-color: var(--lattice-focus);
+}
+
+.lattice-model-file {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--lattice-border);
+}
+
+.lattice-model-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--lattice-mono);
+  font-size: 11px;
+  color: var(--lattice-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lattice-settings-head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .lattice-preset-row {

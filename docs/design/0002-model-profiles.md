@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-25
-code: src-tauri/src/llm.rs, src-tauri/src/llm_policy.rs, src-tauri/src/network.rs, src/platform/assistant.ts, src/platform/AssistantPanel.tsx, src/runtime/llm-models.ts
+code: src-tauri/src/llm.rs, src-tauri/src/llm_policy.rs, src-tauri/src/network.rs, src/platform/assistant.ts, src/platform/ModelProfiles.tsx, src/platform/SettingsMenu.tsx, src/runtime/llm-models.ts
 ---
 
 # 0002 —— 模型配置从"一个表单"变成"几档 + 流式"
@@ -114,4 +114,17 @@ llm_chat_cancel({ requestId })
 - **增量只在气泡里滚，不参与拼装**。设计里写的是"命令结束时返回拼好的完整消息"，实现在此之上又定了一条：前端**不**拿增量拼最终消息，最后用返回值整条覆盖。这样"拼增量拼错了"最多让字闪一下，不会留下一句错话。工具参数仍然不进事件。
 - **`SseBuffer` 按 `\n` 切，不按 `\n\n` 切**。第 5 节表格里写的是"切到 `\n\n` 才解码"；实现是"按字节切行 → 攒 `data:` 字段 → 空行收尾成一条事件"。两者等价，但后者顺带把"一条事件多行 `data:`"这件事做对了，而多字节字符永远不会被切开（`\n` 不在任何多字节序列内部）。
 - 断言数：`llm_policy.rs` 新增 **23** 条（不是 24），`tests/llm-models.html` 26 条、`tests/assistant.html` 118 条。全仓 Rust 单测 219 条。
+
+## 8. 后续：档列表搬了家（2026-10-25）
+
+第 5 节把档列表放在助手面板的设置态里，设置里只有一个入口链接。用下来两个问题：一是"模型"是配置，不是对话的一部分，找它要先进助手再点齿轮；二是那一块有三百行状态，删档、切 active 都得在那个窄抽屉里做。
+
+现在那一整块抽成了 `src/platform/ModelProfiles.tsx`，**一处实现、两个入口**：
+
+- 设置 → **Models**：整页，带说明、配置文件入口（`Open configuration file` 打开 `assistant.json`，改完点"重新读取"）
+- 助手面板的设置态：同一个组件，`variant="panel"`，下面接着"它能不能动手"和外部服务
+
+面板那边只保留一份**只读的**档列表，用来在标题上显示"正在用哪个模型"。为什么不是各写一份：那三百行里没有一行是"面板专用"的，抄一份的代价不是多写一遍，是以后每次改都要改两遍，而只有一处会被真的点到。
+
+顺带加了两条命令：`assistant_config_path`（设置里显示文件位置）和 `assistant_config_open`（交给系统默认程序打开）。**都不是"导入"** —— 导入要先定义合并语义（同 id 覆盖还是新增？key 怎么算？导一半失败怎么办？），那是一个功能，不是一行代码。现在这条路是"打开真文件去改，回来重读"，后端每次现读磁盘、没有缓存。
 

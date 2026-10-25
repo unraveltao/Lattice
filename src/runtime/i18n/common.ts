@@ -16,6 +16,7 @@ export const COMMON_ZH: Record<string, string> = {
   Close: "关闭",
   Back: "返回",
   Delete: "删除",
+  Edit: "编辑",
   Remove: "移除",
   Retry: "重试",
   "Try again": "再试一次",

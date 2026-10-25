@@ -95,8 +95,8 @@
 | --- | --- |
 | 官方组件 | 15 个 |
 | 权限 | 11 项 |
-| Tauri 命令 | 74 条 |
-| 浏览器断言 | 46 个页面、1981 条 |
+| Tauri 命令 | 76 条 |
+| 浏览器断言 | 46 个页面、1983 条 |
 | Rust 单测 | 351 条 |
 | 记下来的坑 | 75 个 |
 
@@ -288,7 +288,7 @@ npm run test:sdk         # 每份内嵌 SDK 副本都和 packages/sdk 一致
 npm run test:agent       # agent 客户端的请求形状与退出码
 npm run test:tokens      # 三张表（字号 / 圆角 / 间距）的规则本身：半像素、豁免、font 简写
 npm run check:tokens     # 仓库真的遵守了它们：字号、圆角、2px 间距网格
-npm run test:browser     # 46 个页面、1981 条断言，真 Chrome、真 dev server
+npm run test:browser     # 46 个页面、1983 条断言，真 Chrome、真 dev server
 ```
 
 浏览器那套是里面最有意思的。每个 `tests/*.html` 都是一张真的断言页 —— 纯逻辑（semver、config、目录、参考线、关闭守卫、屏幕夹紧）、布局预算、组件行为 —— 由 dev server 伺服，Chrome 驱动。它存在的原因是"我这儿是好的"这句话反复地说错：书签第六行实测 36px，而它的注释写着 30px，就这么被 `overflow: hidden` 静默切掉，直到有人去量。

@@ -41,12 +41,15 @@ import { parseUsage, type UsageData } from "../runtime/usage";
 import { appVersion, checkForUpdate, installUpdate, type UpdateState } from "./updater";
 import { useT, type LangPref } from "../runtime/i18n";
 import { Avatar } from "./Avatar";
+import { openConfigFile } from "./assistant";
+import { ModelProfiles } from "./ModelProfiles";
 import { ProfilePanel } from "./ProfilePanel";
 
-type Section = "account" | "appearance" | "language" | "desktop" | "widgets" | "assistant" | "about";
+type Section = "account" | "models" | "appearance" | "language" | "desktop" | "widgets" | "assistant" | "about";
 
 const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
   { id: "account", label: "Account", icon: ICON.user },
+  { id: "models", label: "Models", icon: ICON.chip },
   { id: "appearance", label: "Appearance", icon: ICON.appearance },
   { id: "language", label: "Language", icon: ICON.language },
   { id: "desktop", label: "Desktop", icon: ICON.monitor },
@@ -129,6 +132,8 @@ export function SettingsMenu({
   const [catalogueOpen, setCatalogueOpen] = useState(false);
   const [draftKind, setDraftKind] = useState<CatalogueDraftKind>("official");
   const [draftUrl, setDraftUrl] = useState("");
+  /** 「打开配置文件」失败时的原话。成功不说话 —— 编辑器自己会跳出来 */
+  const [configNote, setConfigNote] = useState<string | null>(null);
 
   /** 使用记录只在打开面板时读一次；清空后原地更新，不重新请求 */
   const [usage, setUsage] = useState<UsageData>(EMPTY_USAGE);
@@ -384,6 +389,22 @@ export function SettingsMenu({
 
   const sectionLabel = SECTIONS.find((item) => item.id === section)?.label ?? "Account";
 
+  /**
+   * 「打开配置文件」：交给系统默认程序打开 `assistant.json`。
+   *
+   * 它**不是导入**：导入要先定义合并语义（同 id 覆盖还是新增？key 怎么算？
+   * 导一半失败怎么办？），那是一个功能。这里只让人打开真正的那个文件去改，
+   * 改完在 Models 页里点「重新读取」—— 后端每次都是现读磁盘，没有缓存。
+   */
+  const openConfig = useCallback(async () => {
+    setConfigNote(null);
+    try {
+      await openConfigFile();
+    } catch (problem) {
+      setConfigNote(String(problem instanceof Error ? problem.message : problem));
+    }
+  }, []);
+
   return (
     <div className="lattice-settings">
       <button
@@ -451,18 +472,34 @@ export function SettingsMenu({
               <section className="lattice-settings-body">
                 <header className="lattice-settings-head">
                   <h2>{t(sectionLabel)}</h2>
-                  <button
-                    type="button"
-                    className="lattice-icon-btn"
-                    onClick={close}
-                    title={t("Close settings")}
-                    aria-label={t("Close settings")}
-                  >
-                    <Glyph d={ICON.close} />
-                  </button>
+                  <div className="lattice-settings-head-actions">
+                    {/* 只在 Models 页出现：这个按钮打开的就是这一页管的那份文件。
+                        浏览器预览里没有磁盘文件这回事，藏掉比显示一个假路径诚实 */}
+                    {section === "models" && isTauri() && (
+                      <button type="button" className="lattice-btn is-small" onClick={() => void openConfig()}>
+                        {t("Open configuration file")}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="lattice-icon-btn"
+                      onClick={close}
+                      title={t("Close settings")}
+                      aria-label={t("Close settings")}
+                    >
+                      <Glyph d={ICON.close} />
+                    </button>
+                  </div>
                 </header>
 
                 <div className="lattice-settings-content">
+                  {section === "models" && (
+                    <>
+                      {configNote && <p className="lattice-modal-error">{configNote}</p>}
+                      <ModelProfiles variant="settings" />
+                    </>
+                  )}
+
                   {section === "account" && (
                     <ProfilePanel
                       profile={profile}

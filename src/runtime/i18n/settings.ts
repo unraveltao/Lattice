@@ -91,11 +91,13 @@ export const SETTINGS_ZH: Record<string, string> = {
 
   // —— 设置面板的分区 ——
   Account: "账户",
+  Models: "模型",
   Desktop: "桌面",
   About: "关于",
   Theme: "主题",
   "Settings sections": "设置分区",
   "Close settings": "关闭设置",
+  "Open configuration file": "打开配置文件",
   "Applies to this window and every widget on your desktop.": "主窗口和桌面上的每个组件都会跟着变。",
   "The whole platform switches immediately. Widgets pick it up on their next frame.":
     "整个平台立即切换；组件在下一帧跟上。",

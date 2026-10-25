@@ -34,6 +34,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::hands_policy;
 use crate::llm_policy;
@@ -343,6 +344,37 @@ fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(config_dir(app)?.join("assistant.json"))
+}
+
+/// 配置文件在磁盘上的位置。设置面板要把它显示出来，所以单独一条命令 ——
+/// 不能靠 `assistant_config_open` 的返回值，那是"点过之后才知道"。
+#[tauri::command]
+pub fn assistant_config_path(app: AppHandle) -> Result<String, String> {
+    Ok(config_path(&app)?.display().to_string())
+}
+
+/// 把配置文件交给系统默认程序（记事本 / VS Code / 用户自己设的那个）。
+///
+/// **这不是"导入"**。导入要先回答一串问题：同 id 覆盖还是新增？别人的 key
+/// 要不要搬过来？导入一半失败怎么办？那是一个功能，不是一行代码。这里只做
+/// 一件事 —— 让用户能打开**真正的那个文件**去改。改完回来点"重新读取"：
+/// `llm_profiles` 每次都是现读磁盘，没有任何缓存。
+///
+/// 文件不存在时先落一份当前 schema 的空配置：点下去却弹"找不到文件"，
+/// 等于让人先去猜一个路径。走 `normalize` 而不是手写版本号 —— 骨架的形状
+/// 必须和读的时候认的形状是同一个来源。
+#[tauri::command]
+pub fn assistant_config_open(app: AppHandle) -> Result<String, String> {
+    let path = config_path(&app)?;
+    if !path.exists() {
+        let mut skeleton = AssistantConfig::default();
+        normalize(&mut skeleton);
+        write_config(&app, &skeleton)?;
+    }
+    app.opener()
+        .open_path(path.display().to_string(), None::<&str>)
+        .map_err(|error| format!("could not open the settings file: {error}"))?;
+    Ok(path.display().to_string())
 }
 
 fn read_config(app: &AppHandle) -> AssistantConfig {

@@ -133,6 +133,27 @@ export async function activateLlmProfile(id: string): Promise<ProfilesView> {
   return await callCommand<ProfilesView>("llm_profile_activate", { id });
 }
 
+/**
+ * 配置文件的绝对路径（`…/assistant.json`）。设置里那行小字要显示它。
+ *
+ * 浏览器预览里没有这条命令，调用方要自己 catch —— 预览里没有"磁盘上的文件"
+ * 这回事，藏掉那一行比显示一个假的路径诚实。
+ */
+export async function configPath(): Promise<string> {
+  return await callCommand<string>("assistant_config_path");
+}
+
+/**
+ * 交给系统默认程序打开（记事本 / VS Code / 用户自己设的那个）。返回路径。
+ *
+ * **不是"导入"**：导入要先定义合并语义（同 id 覆盖还是新增？key 怎么算？
+ * 导一半失败怎么办？），那是一个功能。这里只让用户打开**真正的那个文件**
+ * 去改，改完点"重新读取" —— `readLlmProfiles` 每次都是现读磁盘，没有缓存。
+ */
+export async function openConfigFile(): Promise<string> {
+  return await callCommand<string>("assistant_config_open");
+}
+
 export type TurnEvent =
   | { type: "text"; text: string }
   | { type: "delta"; text: string }
