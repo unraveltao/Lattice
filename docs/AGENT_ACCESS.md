@@ -607,22 +607,22 @@ cwd 在 workspace 里照样问（一条命令能做的事不止"写这个目录"
 
 | 部分 | 怎么验 |
 | --- | --- |
-| `agent_policy.rs`（HTTP 解析 / 令牌 / 白名单 / `say`） | 26 条 `rustc --test`，见 `.scratch/agent-test.rs` |
-| `platform/agent.ts`（动作执行器） | `tests/agent.html` 57 条，跑的是**真 store** |
+| `agent_policy.rs`（HTTP 解析 / 令牌 / 白名单 / `say`） | 26 条 `rustc --test`（壳子按 [AGENTS.md §11](../AGENTS.md) 那条命令现拼，`.scratch/` 不进仓库） |
+| `platform/agent.ts`（动作执行器） | `tests/agent.html` 70 条，跑的是**真 store**；数据平面那条缝（`runWidgetCall` 的二次校验）也钉在这页 |
 | `scripts/lattice-agent.mjs`（客户端） | `npm run test:agent`，14 条，起假端点测请求形状、`say` 的整句传递与退出码 |
-| `llm_policy.rs`（地址 / 请求体 / 响应 / 工具调用 / 错误翻译） | 50 条 `rustc --test`，见 `.scratch/llm-test.rs` |
+| `llm_policy.rs`（地址 / 请求体 / 响应 / 工具调用 / 错误翻译） | 50 条 `rustc --test`（同上的壳子，不复制断言） |
 | `runtime/assistant.ts`（工具表 / 工具表裁剪 / 人设 / 历史裁剪 / 快照预算） | `tests/assistant.html` |
 | `hands_policy.rs`（六组开关 / 审批三档 / 两个模式 / 预算） | 21 条 `rustc --test`；`runtime/hands.ts` 那一侧见 `tests/hands.html` |
 | `skills_policy.rs`（正文上限 / 启用清单 / 坏条目） | 19 条 `rustc --test`；面板那侧见 `tests/skills.html` |
-| `runtime/widget-tools.ts`（`agent.tools` 归一化 / 全局 32 条 / 4 000 字拒绝） | `tests/widget-tools.html` |
+| `runtime/widget-tools.ts`（`agent.tools` 归一化 / 全局 32 条 / 4 000 字拒绝） | `tests/widget-tools.html` 55 条；抬头字面量与失败码的跨端一致由 `npm run test:llm-proxy` 那 28 条里的一条钉住 |
 | `assistant_window.rs` + 小窗那条转发 | **2026-10-25 实机验过**：`assistant_window_toggle` 回 `true`，CDP 查到 `assistant.html` 的 DOM（标题栏、面板、`Assistant · deepseek-v4.1-flash`、跟随主题），窗口里说一句 → 工具真的挪了桌宠（`lattice.pet#demo01` → 60,80）并回话；藏起来再叫回来还是同一个 webview、同一轮对话；拖完 `assistant-window.json` 落成 `{x:1300.0,y:444.0}` |
 | `llm.rs` + 工具循环 + 组件那条路 | **2026-10-25 实机验过**：先起一个假的 OpenAI 兼容服务（`.scratch/fake-llm.mjs`），真点开、真打字 —— 卡片从 (32,40) 挪到 (300,120)，气泡里出现"✓ 移动 lattice.pet#demo01"和回复；两个 pet iframe 的 `llm.chat` 都回到 `{ok:true,text:"…"}`；把 key 换成错的之后 `listModels` 报"the provider rejected the API key (HTTP 401)"。**之后换成了真厂商**（天枢 Dubhe 网关，OpenAI 兼容根是 `…/v1/8686/v1`）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受 |
 | `assistant_ask` + 组件那条路（借手） | **2026-10-25 实机验过**：先在属性面板给 `lattice.pet` 勾上「替我调整桌面」（`grants` 变成 `["llm:chat","desktop:control"]`，卡片当场按新权限重载），再从主窗口 `invoke("assistant_ask", { widgetId: "lattice.pet", messages: JSON.stringify([{ role: "user", content: "把 lattice.pet#49898d37 这只挪到 700, 240，然后置顶" }]), persona: "你是一只桌宠…" })` —— 真网关回"挪到 700, 240 了，也置顶了…"，`actions` 两条都 `ok`，那只从 `(24,460)` 到 `(700,240)`；审计是 `widget.ask · lattice.pet · 71 chars`，加每一步的 `assistant.chat`（`tools: placement.move, placement.front`）。**删除真被挡住**：问"把 lattice.pet#demo01 删掉"，回的是"我删不了自己呀，手里没有删除工具。你在画布上点一下那个 ✕ 就行。"，`actions: []`，`placements` 一个字没动。**组件自己那条路也走通了**：画布里的桌宠点开气泡打"把 lattice.pet#9c90cc09 挪到 900, 100" → 气泡里出现回话加一行"· 移动 lattice.pet#9c90cc09"，盘上那只真的到了 `900,100`。中途踩的坑（`messages` 在线上是 JSON 文本）见 ROADMAP 那条 |
-| `platform/llm.ts`（前端唯一的门）与 dev server 那条 `/api/llm` | **2026-10-25 验过**（`npx vite --port 1431`）：页面里 `await import("/src/platform/llm.ts")` 拿到 19 个值导出，`readLlmProfiles()` 回 `keyHint: "sk-d…1-hA"`（明文没出来）、`readHands()` 六组开关齐全、`listModels()` 列 4 个模型、`callCommand("llm_chat_stream")` 对真网关回 `"ok"`（`usage 38 → 24`）。三道闸（回环地址 / 回环 `Origin` / POST 必须 `application/json`）由 `npm run test:llm-proxy` 的 24 条钉着 |
+| `platform/llm.ts`（前端唯一的门）与 dev server 那条 `/api/llm` | **2026-10-25 验过**（`npx vite --port 1431`）：页面里 `await import("/src/platform/llm.ts")` 拿到 19 个值导出，`readLlmProfiles()` 回 `keyHint: "sk-d…1-hA"`（明文没出来）、`readHands()` 六组开关齐全、`listModels()` 列 4 个模型、`callCommand("llm_chat_stream")` 对真网关回 `"ok"`（`usage 38 → 24`）。三道闸（回环地址 / 回环 `Origin` / POST 必须 `application/json`）由 `npm run test:llm-proxy` 的 28 条钉着 |
 | agent 端点的真机往返 | **2026-10-25 验过**：`agent_set_enabled` 从窗口里打开 → `%APPDATA%\…\agent\endpoint.json` 落成 `{port: 52276, token}`；`npm run agent -- ping / state / say` 三条都成（`state` 回 16 个组件的快照，`say` 回 `{ok:true}`）；`theme.set light` 经端点在真 store 上生效再还原成 dark；不带令牌回 401 `missing or wrong bearer token`；关掉之后 `endpoint.json` 消失、端口 0 个监听、CLI 退出 1 并说清"Lattice 没在跑，或者 Agent access 关着"。curl 8.21 用同一条 `POST /rpc` 也通（PowerShell 那次 `timed out reading the request` 是它自己把 JSON 里的引号吃了，不是端点的事） |
 | 六只手（`assistant_tool`） | **2026-10-25 真机逐只跑过**：文件（中文目录 `中文 目录/hello.txt` 读出 `第一行：你好，世界`；二进制回 `binary`；`file.search` 命中中文；`file.write` 落 40 字节 UTF-8 无 BOM，`parents: true` 建出两层新目录）、`shell.run`（`Write-Output '你好，世界 😀'` 原样回、`exit 3` 回 `code: 3`、stderr 有内容、cwd 是 workspace；按 Stop 1517ms 后回 `cancelled` 且子进程没了；`timeoutMs: 2000` 跑 20 秒的睡眠 → 2013ms 回 `timedOut: true`、没留孤儿）、`web.fetch`（example.com 折成正文；`http://github.com` 跟到 `https://github.com/` 并报新地址；`ftp://` 回 `bad_args`）、屏幕（`screen.windows` 22 个窗口、焦点窗口排第一、认得出 `Tauri Window` 那份；`screen.capture` 落 3456×1081 PNG，签名与 IHDR 都对）、MCP（自建 stdio 探针：起 `node` 进程 → `initialize` → `tools/list` → `mcp.probe.echo` → `tools/call` 回 `probe echo: 你好 MCP`，第二次发现走缓存 3ms）、键鼠（`input.click` 落在算好的点、`input.type` 打出 `你好 😀!`、`input.key` 的 `Enter` 进到 contenteditable） |
 | 一轮完整对话（Deny / Allow） | **2026-10-25 真机**：真网关、真 `runAssistantTurn`。让它写文件并 `approve → false`：确认条请求是 `Write 12 characters to …\denied-写.txt`，工具结果 `the user declined this action…`，模型回"你拒绝了这次写入，所以我没有改动任何东西"，**磁盘上确实没有那个文件**；换成 `approve → true`：写文件 + `shell.run Get-Date` 两条都 `ok`，落盘 19 字节 UTF-8、内容 `probe-write-允许`。读（`file.list` / `file.read`）不弹确认，和 `needsApproval` 一致 |
 
-每页的断言条数以**跑一遍**为准（`npm run test:browser`：50 页 / 2 325 条 / 0 failed）。表里只写
+每页的断言条数以**跑一遍**为准（`npm run test:browser`：53 页 / 2 555 条 / 0 failed）。表里只写
 "哪一页钉住哪一块"，不写死每页多少条 —— 那个数字改一次断言就要同步改三份文档，而它本来只回答
 "这一块有没有人看着"。
