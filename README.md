@@ -29,7 +29,7 @@ at 2× and placed on a plain wallpaper. Nothing from a real desktop is in the fr
 
 Those windows have no frame, stay out of the taskbar, and do not steal focus from whatever you are typing into. They can be pinned above everything else, or tucked under ordinary windows against the wallpaper. Position is remembered per monitor, so a mix of display scalings will not fling a card off the edge; data lives on disk and everything is back where it was after a restart.
 
-The difference from other desktop toys: **widgets are not built in, they are installed.** The 15 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
+The difference from other desktop toys: **widgets are not built in, they are installed.** The 14 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
 
 The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame every pane is set into.
 
@@ -42,6 +42,7 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 | To know what the machine is doing | System | CPU and memory with a one-minute trace, per-core load, commit charge, disk, network, uptime |
 | To work for a stretch | Focus · Stopwatch | A pomodoro that is still right after you close the lid and come back; a stopwatch |
 | A quick sum | Calculator · Convert | Arithmetic you can copy out; two-way conversion for length / mass / temperature / data / time / speed |
+| The desktop to move with the music | Music | What is playing, skip and pause, a level that follows the sound |
 | One look before you go out | Weather | Current conditions for one city, refreshed on a timer, still readable when the network is gone |
 | To let a model do the clicking | `Ctrl+K` assistant + `npm run agent` | You bring the model, the key never leaves Rust; the hands are the same 8 allowlisted actions, and the CLI shows you what they did |
 | None of the above | Write one | See [Writing a widget](#writing-a-widget) |
@@ -62,7 +63,7 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 
 The important part is that a widget *becomes a window* while never touching Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are ten permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
 
-**The platform ships empty.** The 15 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
+**The platform ships empty.** The 14 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
 
 So is the absence of a server. The catalogue is a static `registry.json`, the packages are signed files, the hosting is GitHub Pages, and updates are a release asset. When a design starts to need a backend, the design is wrong — that constraint is argued out in [docs/ROADMAP.md](./docs/ROADMAP.md), not assumed.
 
@@ -83,16 +84,16 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | **v0.7** | Delivery: NSIS installer, in-app updater, draft-first releases, and the SmartScreen problem written down instead of hidden |
 | **v0.8** | Agent access: an opt-in loopback HTTP endpoint, a token, an audit log, 8 allowlisted actions, and an activity board widget |
 | **v0.9** | `lattice.music`, `audio:level`, `lattice.bookmarks`, `shell:open` |
-| **v0.10** | The built-in assistant: your own model behind an OpenAI-compatible URL, the key kept in Rust, tool calling over the same 8 actions, `llm:chat` for widgets. The Music and Agent-board widgets were dropped in this version |
+| **v0.10** | The built-in assistant: your own model behind an OpenAI-compatible URL, the key kept in Rust, tool calling over the same 8 actions, `llm:chat` for widgets. The Agent-board widget was dropped in this version |
 
 **By the numbers**
 
 | Metric | Value |
 | --- | --- |
-| Official widgets | 15 |
+| Official widgets | 14 |
 | Permissions | 10 |
 | Tauri commands | 59 |
-| Browser assertions | 1 540 over 39 pages |
+| Browser assertions | 1 606 over 40 pages |
 | Rust tests | 178 |
 | Documented pitfalls | 72 |
 
@@ -152,12 +153,12 @@ Every capability is a permission, and every permission is a gate in `runtime/bri
 | Permission | What it unlocks | Asked for by |
 | --- | --- | --- |
 | `clock` | The system clock, as an absolute instant | Clock, Countdown |
-| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 10 of the 13 |
+| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 10 of the 14 |
 | `clipboard:write` | Put text on the clipboard | Calculator |
 | `network` | HTTP requests to the hosts listed in the manifest | Weather |
 | `system:monitor` | CPU, memory, disk, network, uptime | System monitor |
-| `media:control` | Read and drive the Windows media session (SMTC) | Nothing built in — third-party only |
-| `audio:level` | One number in `0..1`: how loud the output is | Nothing built in — third-party only |
+| `media:control` | Read and drive the Windows media session (SMTC) | Music |
+| `audio:level` | One number in `0..1`: how loud the output is | Music |
 | `shell:open` | Hand an http/https URL to the default browser | Bookmarks |
 | `agent:activity` | Read the agent's audit log | Nothing built in — third-party only |
 | `llm:chat` | Send a conversation to the assistant's model, get text back | Desktop pet |
@@ -279,7 +280,7 @@ npm run typecheck        # tsc --noEmit
 npm run test:injection   # the diagnostics reporter is injected identically on both paths
 npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
-npm run test:browser     # 1 540 assertions over 39 pages, real Chrome, real dev server
+npm run test:browser     # 1 606 assertions over 40 pages, real Chrome, real dev server
 ```
 
 The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.
@@ -291,7 +292,7 @@ Release: push a `v*` tag. Actions builds on `windows-latest`, signs the updater 
 ```
 src/                 React shell, canvas, inspector, settings, store
   runtime/           manifest · config · bridge · schedule · catalogue · agent · guides (pure logic)
-public/widgets/      the 15 official packages
+public/widgets/      the 14 official packages
 public/store/        the bundled catalogue (generated, not committed)
 packages/sdk/        @lattice/sdk — the single source of truth for the widget API
 examples/counter/    a drag-and-drop sample widget

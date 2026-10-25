@@ -33,9 +33,9 @@
 | 样式 CSS | 3 746 行 | 纯手写，无 UI 库 |
 | Rust | 13 145 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗 |
 | 组件 SDK | 724 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
-| 官方组件 + 示例 | 12 668 行 | 13 个官方包 + 1 个示例（示例里那份 SDK 副本也算在内；未跟踪的桌宠不计） |
+| 官方组件 + 示例 | 13 758 行 | 14 个官方包 + 1 个示例（示例里那份 SDK 副本也算在内；未跟踪的桌宠不计） |
 | 构建脚本 | 2 397 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试 |
-| 浏览器断言 | 1540 条 | 39 个自检页，跑一遍的真实计数（0 failed） |
+| 浏览器断言 | 1606 条 | 40 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 25 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条，都不依赖 dev server |
 | Rust 单测 | 178 条 | 157 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 21 条），21 条要 `cargo test`（本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 60 个 | |
@@ -748,12 +748,13 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **HTML 里的字由组件自己挑**：桥加了 `lang.get`（不要权限，返回 `{ lang, locale }`）和一条 `language` 推送。两个宿主都在 `ready`、iframe `load`、语言变化三处推 —— 只读一次的话用户换语言组件不动，只听推送的话组件停在建文档那一刻（重载、热更新都会碰上）。SDK 把它包成 `lattice.language` + `lattice.on("language")`，启动时自动拉一次。
   - **桌宠整只双语**：清单里那 175 行文案（名字、说明、三项配置、三节说明、八条变更记录）全部写成两门，抬到 0.8.0 并按不变量 17 补了 changelog；`pet.js` 里气泡标题、`发送`、`收起`、输入提示、她那几句"我还不会说话"都按 `say(zh, en)` 挑。换语言时**已经说出口的那些提示行原地换掉**（模型说的话不换 —— 那不是作者写的）。
   - 顺手补的两个坑：**搜索要两种语言都建索引**（`textVariants`），否则英文名在中文界面里搜不到；**商店索引脚本**拿字段当字符串排序会在双语条目上抛错（`localeCompare` 不在对象上），挑一门再排。
-- [x] **删掉两块没什么用的官方组件：`lattice.music` 和 `lattice.agent`**。用户原话："widgets 里的 now playing 和 agent 没有什么作用，是可以删除的。" 两块都是"能看见、但不解决任何事"：`lattice.music` 要 `media:control` 才能干活，可真正在放歌的那个播放器自己就有窗口；`lattice.agent` 只念审计日志，而终端里 `npm run agent -- state` 一行就到手。删的是**组件包**（连 `tests/music.html` 66 条、`tests/agent-widget.html` 57 条一起），**不是那两条口子**：`media.get` / `media.control` / `agent.activity` 和 `media:control` / `agent:activity` 两项权限仍在 `WIDGET_SPEC` 的方法表里 —— 它们是写给第三方组件的公开面，谁想自己做一块播放器或日志看板都还能用。删包带走的连带改动四样，都不难，但都得记：
-  - **索引是生成的，要重跑**：`public/widgets/index.json`（`npm run widgets:index`）和内置商店目录（`npm run store:index`）都不是手写的，仓库里少两个包它们不会自己知道。
-  - **文档里"拿示例当事实"的句子会变成死链**：AGENTS.md 写着"`media.rs` 的唯一用户是 `lattice.music`"、WIDGET_SPEC 拿 `lattice.music` 当"先本地翻转再校正"的范例、README 说"`lattice.agent` 是读的那一侧"—— 组件一删，这些句子就从陈述变成了指向空目录的指针。改成陈述能力本身（谁都能用），别改成"曾经有个组件"。
-  - **用户的 `state.json` 里会留一条找不到的 id**：`installedIds` 有 `lattice.music`，包没了它就变成"加载失败"的一条。这个平台没有 id 迁移机制，也没有"官方撤包"的通道（v0.9 改名那次就是同一个坑），只能在装机现场手工摘掉 —— 记在这里，是因为下一次删官方组件还会撞上。
-  - **断言总数与页面数要跟着改**：两页 123 条一起消失，规模表里那两格（这次重新数成 1540 条 / 39 页）不重跑一遍就是假的。
-- 验证：`llm_policy.rs` **21 条** `rustc --test`（归一化、回环、请求体、消息与工具校验、应答解析、401/404/429 的话）、`tests/assistant.html` **83 条**、`tests/i18n.html` **50 条**、`tests/widget-text.html` **40 条**（新增：两门归一化、按门截断、缺一门退另一门、搜索索引），`tests/help.html` / `config.html` / `catalogue.html` / `library-search.html` / `sdk.html` 各补了双语与 `lang.get` 的断言；`npm run typecheck` 干净、`npm run test:sdk` 干净（内嵌 SDK 副本已同步）、全量自检 **39 页 / 1540 条 / 0 failed**（比上一版少两页 123 条 —— 音乐与看板两块组件删了）。真机走过两条：先是假端点（卡片从 (32,40) 挪到 (300,120)、错的 key 得到那句 401），再是**真厂商** —— 天枢 Dubhe 的 OpenAI 兼容根是 `…/v1/8686/v1`（`/v1/8686` 本身返回一张 HTML SPA，少写那截 `/v1` 会得到 404 而不是"地址不对"）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受。中英切换在真机上也点过一遍（设置里三档来回点：`<html lang>` 跟着变、菜单整份换语言、切回"跟随系统"后按 WebView2 报的 `en-US` 落回英文）。**没走的**："断网时那句话对不对"（要拔网线），以及 agent 端点的 CLI 往返（见 §8 已知缺口）。
+- [x] **删掉一块没什么用的官方组件：`lattice.agent`**。用户原话："widgets 里的 now playing 和 agent 没有什么作用，是可以删除的。" —— 但那句里的"now playing"**不在这个仓库**，见第一条连带。`lattice.agent` 只念审计日志，而终端里 `npm run agent -- state` 一行就到手，删的是**组件包**（连 `tests/agent-widget.html` 57 条一起），**不是那条口子**：`agent.activity` 与 `agent:activity` 权限仍在 `WIDGET_SPEC` 的方法表里 —— 那是写给第三方组件的公开面，谁想自己画一块日志看板都还能用。（同一句话里被点到的音乐组件**留了下来**：用户随后明确"music 是我需要的组件"，包和 `tests/music.html` 66 条一起恢复。）
+  - **"Now Playing" 是商店目录里的幽灵，不是仓库里的组件**：用户看到的"可装 1"那一条来自线上 `registry.json`（`lattice.media`，v0.9 改名成 `lattice.music` 之前的旧 id），它的家在姊妹仓库 `lattice-registry`，这个仓库早就没有它的目录。修法在那边：`git rm` 掉 `packages/lattice.media-0.1.0.*` 与 `icons/lattice.media.svg`，跑 `node scripts/build.mjs`（5 个组件），推上去等 Pages 重建。**教训**：改名时只改了本仓库的包名，没管已经发布出去的旧条目 —— 目录是另一份事实，它有自己的一份家。
+  - **索引是生成的，要重跑**：`public/widgets/index.json`（`npm run widgets:index`）和内置商店目录（`npm run store:index`）都不是手写的，仓库里少一个包它们不会自己知道。
+  - **文档里"拿示例当事实"的句子会变成死链**：README 说"`lattice.agent` 是读的那一侧"、ROADMAP 的 v0.8 行写着"一块看板组件"、AGENT_ACCESS 的 C 那一行标 `[已实现]` —— 组件一删，这些句子就从陈述变成了指向空目录的指针。改成陈述能力本身（谁都能用），别改成"曾经有个组件"。
+  - **用户的 `state.json` 里会留一条找不到的 id**：`installedIds` 有 `lattice.agent`，包没了它就变成"加载失败"的一条。这个平台没有 id 迁移机制，也没有"官方撤包"的通道（v0.9 改名那次就是同一个坑），只能在装机现场手工摘掉 —— 记在这里，是因为下一次删官方组件还会撞上。
+  - **断言总数与页面数要跟着改**：一页 57 条一起消失，规模表里那两格（这次重新数成 1606 条 / 40 页）不重跑一遍就是假的。
+- 验证：`llm_policy.rs` **21 条** `rustc --test`（归一化、回环、请求体、消息与工具校验、应答解析、401/404/429 的话）、`tests/assistant.html` **83 条**、`tests/i18n.html` **50 条**、`tests/widget-text.html` **40 条**（新增：两门归一化、按门截断、缺一门退另一门、搜索索引），`tests/help.html` / `config.html` / `catalogue.html` / `library-search.html` / `sdk.html` 各补了双语与 `lang.get` 的断言；`npm run typecheck` 干净、`npm run test:sdk` 干净（内嵌 SDK 副本已同步）、全量自检 **40 页 / 1606 条 / 0 failed**（比上一版少一页 57 条 —— 看板组件删了）。真机走过两条：先是假端点（卡片从 (32,40) 挪到 (300,120)、错的 key 得到那句 401），再是**真厂商** —— 天枢 Dubhe 的 OpenAI 兼容根是 `…/v1/8686/v1`（`/v1/8686` 本身返回一张 HTML SPA，少写那截 `/v1` 会得到 404 而不是"地址不对"）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受。中英切换在真机上也点过一遍（设置里三档来回点：`<html lang>` 跟着变、菜单整份换语言、切回"跟随系统"后按 WebView2 报的 `en-US` 落回英文）。**没走的**："断网时那句话对不对"（要拔网线），以及 agent 端点的 CLI 往返（见 §8 已知缺口）。
 
 ## 长期要盯的风险
 

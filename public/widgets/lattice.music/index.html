@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Music</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="mu">
+      <!--
+        第一行直接放曲名，没有单独的标题条。
+        右上角那排窗口按钮浮在卡片上（top:6 right:6，约 120×28），所以这一行
+        自己让出 120px —— 曲名提前省略，但至少不会被按钮压住。
+      -->
+      <section class="mu-track">
+        <p class="mu-name"><span class="mu-name-text" id="track">Nothing playing</span></p>
+        <p class="mu-sub">
+          <span class="mu-artist" id="artist"></span>
+          <span class="mu-source" id="source"></span>
+        </p>
+      </section>
+
+      <section class="mu-progress" id="progress">
+        <div class="mu-bar"><i id="bar"></i></div>
+        <div class="mu-times">
+          <span id="position">0:00</span>
+          <span id="duration">0:00</span>
+        </div>
+      </section>
+
+      <!--
+        声音高低的折线。viewBox 由脚本按实际像素重设（见 widget.js 的 resizeWave），
+        所以这里的初始值只是个占位，第一帧就会被换掉。
+      -->
+      <section class="mu-wave" id="wave">
+        <svg class="mu-wave-svg" id="wave-svg" viewBox="0 0 244 44" aria-hidden="true">
+          <line class="mu-wave-base" id="wave-base" x1="0" y1="43" x2="244" y2="43" />
+          <polyline class="mu-wave-line" id="wave-line" points="" />
+        </svg>
+      </section>
+
+      <footer class="mu-controls">
+        <button type="button" class="mu-btn" id="prev" title="Previous" aria-label="Previous">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4.4 3.4v9.2" />
+            <path d="M12.4 3.6 6.2 8l6.2 4.4z" fill="currentColor" />
+          </svg>
+        </button>
+        <button type="button" class="mu-btn is-main" id="toggle" title="Play / pause" aria-label="Play or pause">
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" id="toggle-glyph">
+            <path d="M5 3.2 12.4 8 5 12.8z" />
+          </svg>
+        </button>
+        <button type="button" class="mu-btn" id="next" title="Next" aria-label="Next">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M11.6 3.4v9.2" />
+            <path d="M3.6 3.6 9.8 8l-6.2 4.4z" fill="currentColor" />
+          </svg>
+        </button>
+      </footer>
+
+      <p class="mu-hint" id="hint"></p>
+    </main>
+    <script src="widget.js"></script>
+  </body>
+</html>
