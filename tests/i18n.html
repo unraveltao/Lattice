@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>i18n test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 界面文案的双语表：查的是"这张表还能不能信任"。
+       *
+       * 五件事：
+       *   1. 英文就是原文 —— 英文环境下一律原样返回（en 表是空的，故意的）
+       *   2. 缺翻译退化成英文，而不是露出键名（这条是选这套方案的全部理由）
+       *   3. 占位符两边对得上 —— 中文把 `{version}` 写成 `{版本}` 的话，
+       *      界面上会直接显示 "{版本}"，而且只有那一句坏，最难发现
+       *   4. 同一句在两片表里给了**不同**的译法 —— 这是真正会让人困惑的那种坏，
+       *      合并时后写的赢，于是界面上同一句话在两个地方长得不一样
+       *   5. 切换语言确实通知了订阅者（组件靠它重渲染），偏好变了也要通知
+       *
+       * 纯逻辑，不碰 DOM 渲染；改了 `i18n/*.ts` 就该跑这一页。
+       */
+      import {
+        ZH_TABLES,
+        lang,
+        langPref,
+        locale,
+        resolveLang,
+        setLanguage,
+        subscribe,
+        t,
+        translate,
+      } from "/src/runtime/i18n.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text}（得到 ${JSON.stringify(actual)}）`,
+        );
+
+      /** 一句话里的占位符名字，排好序好比较 */
+      const placeholders = (text) => {
+        const found = text.match(/\{[a-zA-Z_][a-zA-Z0-9_]*\}/g) ?? [];
+        return [...new Set(found.map((item) => item.slice(1, -1)))].sort();
+      };
+
+      // ---- 1. 英文 = 原文 ----
+      eq(translate("Snap to grid", undefined, "en"), "Snap to grid", "英文环境原样返回");
+      eq(translate("拿这句话去查中文表", undefined, "en"), "拿这句话去查中文表", "中文原文在英文环境也不翻");
+      eq(translate("", undefined, "en"), "", "空串原样返回，不崩");
+
+      // ---- 2. 缺翻译退化成英文 ----
+      eq(translate("No such sentence anywhere", undefined, "zh"), "No such sentence anywhere", "中文表里没有就退回英文原句");
+      log(
+        !/^[a-z]+(\.[a-zA-Z]+)+$/.test(translate("No such sentence anywhere", undefined, "zh")),
+        "退化后不露出点分键名",
+      );
+      eq(t("Snap to grid"), t("Snap to grid"), "t() 与 translate() 同一条路");
+
+      // ---- 3. 占位符 ----
+      eq(placeholders("Install v{version}"), ["version"], "占位符提取只认 {name} 这种");
+      eq(translate("Install v{version}", { version: "1.2.3" }, "en"), "Install v1.2.3", "英文插值");
+      eq(translate("Hello v{version}", { version: "1.2.3" }, "zh"), "Hello v1.2.3", "表里没有时插值照样生效");
+      eq(
+        translate("Hello {a} and {b}", { a: "A" }, "en"),
+        "Hello A and {b}",
+        "少给一个变量时它留在原地，不变成 undefined",
+      );
+      eq(translate("100% {ok}", { ok: "没问题" }, "en"), "100% 没问题", "百分号不被当成占位符");
+      eq(translate("a {x} b", { x: "{y}" }, "en"), "a {y} b", "变量里带花括号也只替换一层");
+
+      // ---- 4. 表本身：形状 ----
+      const shards = Object.entries(ZH_TABLES);
+      eq(
+        shards.map(([name]) => name),
+        ["common", "shell", "library", "panels", "settings", "assistant", "misc"],
+        "七个分片都在",
+      );
+
+      let total = 0;
+      for (const [name, table] of shards) {
+        const entries = Object.entries(table);
+        total += entries.length;
+        log(entries.length > 0, `${name}: 有 ${entries.length} 条中文`);
+        const bad = entries.filter(
+          ([key, value]) =>
+            typeof value !== "string" ||
+            value.trim() !== value ||
+            value.length === 0 ||
+            key.trim() !== key ||
+            key.length === 0,
+        );
+        log(bad.length === 0, `${name}: 键和值都没有首尾空白、没有空串${bad.length ? `（${bad.length} 条坏）` : ""}`);
+      }
+      log(total > 120, `中文表一共 ${total} 条`);
+
+      // ---- 5. 占位符两边必须一致 ----
+      for (const [name, table] of shards) {
+        const mismatched = Object.entries(table).filter(
+          ([key, value]) => JSON.stringify(placeholders(key)) !== JSON.stringify(placeholders(value)),
+        );
+        log(
+          mismatched.length === 0,
+          `${name}: 每条译文的占位符都与英文一致${mismatched.length ? `（${mismatched.map(([key]) => key).join(" / ")}）` : ""}`,
+        );
+      }
+
+      // ---- 6. 同一句不许有两种译法 ----
+      const seen = new Map();
+      const clashes = [];
+      for (const [name, table] of shards) {
+        for (const [key, value] of Object.entries(table)) {
+          const previous = seen.get(key);
+          if (!previous) seen.set(key, { name, value });
+          else if (previous.value !== value) clashes.push(`${key}（${previous.name} → ${previous.value} / ${name} → ${value}）`);
+        }
+      }
+      log(clashes.length === 0, `没有两种译法的句子${clashes.length ? `（${clashes.join("；")}）` : ""}`);
+      log(seen.size > 0, `合并后共 ${seen.size} 句`);
+
+      // ---- 7. 语言状态机 ----
+      eq(resolveLang("zh"), "zh", "偏好 zh 解析成 zh");
+      eq(resolveLang("en"), "en", "偏好 en 解析成 en");
+      log(["zh", "en"].includes(resolveLang("system")), "跟随系统解析成两种之一");
+
+      setLanguage("en");
+      eq(lang(), "en", "切到英文后 lang() 是 en");
+      eq(langPref(), "en", "存下来的偏好也是 en");
+      eq(locale(), "en-US", "英文的 locale 是 en-US");
+      eq(document.documentElement.lang, "en", "<html lang> 跟着变");
+
+      let fired = 0;
+      const off = subscribe(() => {
+        fired += 1;
+      });
+      setLanguage("zh");
+      eq(fired, 1, "切语言通知了订阅者");
+      eq(locale(), "zh-CN", "中文的 locale 是 zh-CN");
+      eq(document.documentElement.lang, "zh-CN", "<html lang> 跟着变");
+      off();
+      setLanguage("zh");
+      eq(fired, 1, "取消订阅之后不再收到通知");
+      eq(langPref(), "zh", "重复设同一个偏好也没有副作用");
+
+      /*
+       * 偏好变了但解析结果没变，也**要**通知：系统是中文时，"中文"和
+       * "跟随系统"是同一个界面语言，可设置里那颗亮的格子必须换 ——
+       * 不通知的话用户点了没反应，会以为点失败了。
+       */
+      const before = langPref();
+      let firedPref = 0;
+      const off2 = subscribe(() => {
+        firedPref += 1;
+      });
+      setLanguage("system");
+      log(langPref() === "system" && firedPref >= 1, `偏好变了即通知（${before} → system，通知 ${firedPref} 次）`);
+      off2();
+
+      setLanguage("system");
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

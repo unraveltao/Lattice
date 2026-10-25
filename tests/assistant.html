@@ -169,10 +169,10 @@
         "移动的标签带上实例 id",
       );
       ok(describeToolCall("theme.set", '{"theme":"dark"}').includes("dark"), "主题的标签带上目标");
-      eq(describeToolCall("widgets.pause", '{"paused":true}'), "暂停全部组件", "暂停");
-      eq(describeToolCall("widgets.pause", '{"paused":false}'), "恢复全部组件", "恢复");
-      ok(describeToolCall("placement.pin", '{"instanceId":"a","pinned":true}').includes("钉住"), "钉住");
-      ok(describeToolCall("placement.remove", "{bad json").includes("组件"), "参数坏了也要出一个能看的标签");
+      eq(describeToolCall("widgets.pause", '{"paused":true}'), "Pause every widget", "暂停");
+      eq(describeToolCall("widgets.pause", '{"paused":false}'), "Resume every widget", "恢复");
+      ok(describeToolCall("placement.pin", '{"instanceId":"a","pinned":true}').includes("Pin "), "钉住");
+      ok(describeToolCall("placement.remove", "{bad json").includes("a widget"), "参数坏了也要出一个能看的标签");
       eq(describeToolCall("nope.nope", "{}"), "nope.nope", "未知动作原样显示，不崩");
 
       // ---- 8. 系统提示 ----

@@ -27,6 +27,7 @@ import {
   type CatalogueEntry,
   type CataloguePackage,
 } from "../runtime/catalogue";
+import { t } from "../runtime/i18n";
 import { appBaseUrl, isTauri } from "../runtime/registry";
 import type { CatalogueSource } from "./store";
 
@@ -101,13 +102,13 @@ function dirOf(url: string): string {
  */
 export function describeAge(atSeconds: number, now = Date.now()): string {
   const seconds = Math.max(0, Math.round(now / 1000 - atSeconds));
-  if (seconds < 90) return "just now";
+  if (seconds < 90) return t("just now");
   const minutes = Math.round(seconds / 60);
-  if (minutes < 90) return `${minutes} minutes ago`;
+  if (minutes < 90) return t("{minutes} minutes ago", { minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 36) return `${hours} hours ago`;
+  if (hours < 36) return t("{hours} hours ago", { hours });
   const days = Math.round(hours / 24);
-  return `${days} days ago`;
+  return t("{days} days ago", { days });
 }
 
 function empty(error: string, origin: string, at: number): CatalogueSnapshot {
@@ -120,12 +121,12 @@ function read(text: string, origin: string, at: number, notice: CatalogueNotice 
   try {
     raw = JSON.parse(text);
   } catch (error) {
-    return empty(`the catalogue is not valid JSON: ${String(error)}`, origin, at);
+    return empty(t("the catalogue is not valid JSON: {error}", { error: String(error) }), origin, at);
   }
 
   const parsed = parseCatalogue(raw, dirOf(origin));
   if (!parsed.catalogue) {
-    return empty(parsed.warnings[0] ?? "the catalogue could not be read", origin, at);
+    return empty(parsed.warnings[0] ?? t("the catalogue could not be read"), origin, at);
   }
   return {
     catalogue: parsed.catalogue,
@@ -142,7 +143,11 @@ async function readBundled(url: string): Promise<{ text: string } | { error: str
   try {
     const response = await fetch(url, { cache: "no-store" });
     if (!response.ok) {
-      return { error: `the bundled catalogue is missing (HTTP ${response.status}) — run npm run store:index` };
+      return {
+        error: t("the bundled catalogue is missing (HTTP {status}) — run npm run store:index", {
+          status: response.status,
+        }),
+      };
     }
     return { text: await response.text() };
   } catch (error) {
@@ -162,7 +167,7 @@ export async function loadCatalogue(source: CatalogueSource): Promise<CatalogueS
 
   const url = source.url.trim();
   if (!isTauri()) {
-    return empty("a remote catalogue needs the desktop app — run npm run tauri:dev", url, at);
+    return empty(t("a remote catalogue needs the desktop app — run npm run tauri:dev"), url, at);
   }
 
   let fetched: CatalogueText;
@@ -178,14 +183,21 @@ export async function loadCatalogue(source: CatalogueSource): Promise<CatalogueS
     if ("error" in fallback) return empty(String(error), url, at);
     return read(fallback.text, bundledUrl, at, {
       kind: "fallback",
-      message: `${url} could not be reached (${String(error)}). This is the catalogue that ships with the app.`,
+      message: t("{url} could not be reached ({reason}). This is the catalogue that ships with the app.", {
+        url,
+        reason: String(error),
+      }),
     });
   }
 
   const notice: CatalogueNotice | null = fetched.stale
     ? {
         kind: "stale",
-        message: `${url} could not be reached (${fetched.error ?? "no reason given"}). Showing the copy from ${describeAge(fetched.at)}.`,
+        message: t("{url} could not be reached ({reason}). Showing the copy from {age}.", {
+          url,
+          reason: fetched.error ?? t("no reason given"),
+          age: describeAge(fetched.at),
+        }),
       }
     : null;
 
@@ -219,7 +231,9 @@ export async function installCataloguePackage(
   pkg: CataloguePackage,
 ): Promise<StoreInstallResult> {
   const key = entry.publisher?.key;
-  if (!key) throw new Error(`${entry.id} has no publisher key — refusing to install an unsigned package`);
+  if (!key) {
+    throw new Error(t("{id} has no publisher key — refusing to install an unsigned package", { id: entry.id }));
+  }
 
   const common = {
     id: entry.id,
@@ -231,7 +245,9 @@ export async function installCataloguePackage(
 
   if (pkg.url.startsWith(appBaseUrl())) {
     const response = await fetch(pkg.url, { cache: "no-store" });
-    if (!response.ok) throw new Error(`could not download ${pkg.url} (HTTP ${response.status})`);
+    if (!response.ok) {
+      throw new Error(t("could not download {url} (HTTP {status})", { url: pkg.url, status: response.status }));
+    }
     const bytes = new Uint8Array(await response.arrayBuffer());
     return invoke<StoreInstallResult>("store_install", { ...common, bytes: toBase64(bytes) });
   }

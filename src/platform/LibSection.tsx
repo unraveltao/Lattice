@@ -15,6 +15,7 @@
  */
 
 import { useState, type ReactNode } from "react";
+import { useT } from "../runtime/i18n";
 import { Glyph, ICON } from "./icons";
 
 interface LibSectionProps {
@@ -40,7 +41,13 @@ export function LibSection({
   className,
   children,
 }: LibSectionProps) {
+  const t = useT();
   const [open, setOpen] = useState(defaultOpen);
+  /*
+   * `title` 收的是英文原文（`Installed` / `Available` / 商店自己的名字），
+   * 在这一层翻译：标题行和开合提示必须用同一个说法，不能让调用方各译一遍。
+   */
+  const label = t(title);
   const expanded = forceOpen || open;
 
   return (
@@ -52,12 +59,12 @@ export function LibSection({
             className="lattice-lib-section-toggle"
             aria-expanded={expanded}
             onClick={() => setOpen((value) => !value)}
-            title={expanded ? `Collapse ${title}` : `Expand ${title}`}
+            title={t(expanded ? "Collapse {title}" : "Expand {title}", { title: label })}
           >
             <span className={`lattice-lib-chevron${expanded ? " is-open" : ""}`} aria-hidden>
               <Glyph d={ICON.chevron} size={12} />
             </span>
-            <span className="lattice-lib-section-name">{title}</span>
+            <span className="lattice-lib-section-name">{label}</span>
             {count !== null && <span className="lattice-lib-count">{count}</span>}
           </button>
         </h3>

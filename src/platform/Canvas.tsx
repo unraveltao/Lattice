@@ -9,6 +9,7 @@ import { useCallback, useRef, useState } from "react";
 import { useLattice } from "./store";
 import { WidgetFrame } from "./WidgetFrame";
 import { guideLines, type AlignGuideState } from "../runtime/align-guides";
+import { useT } from "../runtime/i18n";
 import type { WidgetRecord } from "../runtime/registry";
 
 interface CanvasProps {
@@ -19,6 +20,7 @@ interface CanvasProps {
 }
 
 export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
+  const t = useT();
   const placements = useLattice((state) => state.placements);
   const snapToGrid = useLattice((state) => state.snapToGrid);
   const select = useLattice((state) => state.select);
@@ -92,16 +94,16 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
           <div className="lattice-empty-art" aria-hidden />
           {hasInstalled ? (
             <>
-              <p className="lattice-empty-title">The desktop is still empty</p>
+              <p className="lattice-empty-title">{t("The desktop is still empty")}</p>
               <p className="lattice-empty-hint">
-                Drag one from the library, or just click a widget card
+                {t("Drag one from the library, or just click a widget card")}
               </p>
             </>
           ) : (
             <>
-              <p className="lattice-empty-title">Empty — exactly as intended</p>
+              <p className="lattice-empty-title">{t("Empty — exactly as intended")}</p>
               <p className="lattice-empty-hint">
-                The platform ships with no widgets. Install a pack on the left, or drop your own into the widgets/ folder.
+                {t("The platform ships with no widgets. Install a pack on the left, or drop your own into the widgets/ folder.")}
               </p>
             </>
           )}
@@ -125,7 +127,7 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
             >
               <div className="lattice-broken-body">
                 <span className="lattice-broken-title">
-                  {record ? "Widget not installed" : "Widget missing"}
+                  {record ? t("Widget not installed") : t("Widget missing")}
                 </span>
                 <code className="lattice-mono">{placement.widgetId}</code>
               </div>

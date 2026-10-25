@@ -17,7 +17,7 @@ import {
   tintRgb,
   type Appearance,
 } from "../runtime/appearance";
-import { PERMISSION_LABELS, isPermissionReady, type Permission } from "../runtime/manifest";
+import { isPermissionReady, permissionLabel, type Permission } from "../runtime/manifest";
 import {
   hasConfigOverrides,
   resolveConfig,
@@ -27,6 +27,7 @@ import {
 } from "../runtime/config";
 import { isTauri, type WidgetRecord } from "../runtime/registry";
 import { hasHelp } from "../runtime/help";
+import { useT } from "../runtime/i18n";
 import { HelpContent } from "./HelpContent";
 import { LibSection } from "./LibSection";
 import { PanelGlyph, WidgetIconMark } from "./icons";
@@ -78,6 +79,7 @@ function SliderRow({
   onChange,
   ariaLabel,
 }: SliderRowProps) {
+  const t = useT();
   const [draft, setDraft] = useState<string | null>(null);
   const shown = decimals > 0 ? value.toFixed(decimals) : String(Math.round(value));
 
@@ -119,7 +121,7 @@ function SliderRow({
             event.currentTarget.blur();
           }
         }}
-        aria-label={`${ariaLabel} value`}
+        aria-label={t("{label} value", { label: ariaLabel })}
       />
     </div>
   );
@@ -253,7 +255,9 @@ function ConfigNumber({
   );
 }
 
-export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps) {  const selectedId = useLattice((state) => state.selectedInstanceId);
+export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps) {
+  const t = useT();
+  const selectedId = useLattice((state) => state.selectedInstanceId);
   const placements = useLattice((state) => state.placements);
   const grants = useLattice((state) => state.grants);
   const desktopRects = useLattice((state) => state.desktopRects);
@@ -321,13 +325,13 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
           type="button"
           className="lattice-icon-btn is-large"
           onClick={onToggle}
-          title="Show the inspector"
-          aria-label="Show the inspector"
+          title={t("Show the inspector")}
+          aria-label={t("Show the inspector")}
           aria-expanded={false}
         >
           <PanelGlyph side="right" />
         </button>
-        <span className="lattice-panel-rail-label">Inspector</span>
+        <span className="lattice-panel-rail-label">{t("Inspector")}</span>
       </aside>
     );
   }
@@ -336,14 +340,14 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
     return (
       <aside className="lattice-panel lattice-panel-right">
         <header className="lattice-panel-head">
-          <h2 className="lattice-panel-title">Inspector</h2>
+          <h2 className="lattice-panel-title">{t("Inspector")}</h2>
           <div className="lattice-panel-actions">
             <button
               type="button"
               className="lattice-icon-btn"
               onClick={onToggle}
-              title="Collapse the inspector"
-              aria-label="Collapse the inspector"
+              title={t("Collapse the inspector")}
+              aria-label={t("Collapse the inspector")}
               aria-expanded
             >
               <PanelGlyph side="right" />
@@ -353,7 +357,9 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
         <div className="lattice-panel-body is-empty">
           <div className="lattice-panel-empty">
             <span className="lattice-panel-empty-art" aria-hidden />
-            <p className="lattice-hint">Select a widget on the canvas to see its layer, size and permissions.</p>
+            <p className="lattice-hint">
+              {t("Select a widget on the canvas to see its layer, size and permissions.")}
+            </p>
           </div>
         </div>
       </aside>
@@ -413,14 +419,14 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
             className="lattice-btn is-danger"
             onClick={() => remove(placement.instanceId)}
           >
-            Remove
+            {t("Remove")}
           </button>
           <button
             type="button"
             className="lattice-icon-btn"
             onClick={onToggle}
-            title="Collapse the inspector"
-            aria-label="Collapse the inspector"
+            title={t("Collapse the inspector")}
+            aria-label={t("Collapse the inspector")}
             aria-expanded
           >
             <PanelGlyph side="right" />
@@ -429,7 +435,7 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
       </header>
 
       <div className="lattice-panel-body">
-        <p className="lattice-card-desc">{manifest.description || "No description"}</p>
+        <p className="lattice-card-desc">{manifest.description || t("No description")}</p>
 
         {/*
           "怎么用"放在最上面、默认收起：它是选中共一个组件时最先想知道的事，
@@ -437,13 +443,13 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
           说明来自清单（`runtime/help.ts`），没写就不画这一段。
         */}
         {hasHelp(manifest.help) && (
-          <LibSection title="How to use" count={manifest.help.sections.length}>
+          <LibSection title={t("How to use")} count={manifest.help.sections.length}>
             <HelpContent help={manifest.help} changelog={manifest.changelog} />
           </LibSection>
         )}
 
         <section className="lattice-field">
-          <span className="lattice-label">Layer</span>
+          <span className="lattice-label">{t("Layer")}</span>
           <div className="lattice-segmented">
             {(["desktop", "top"] as const).map((layer) => (
               <button
@@ -452,14 +458,14 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
                 className={`lattice-segment${placement.layer === layer ? " is-active" : ""}`}
                 onClick={() => update(placement.instanceId, { layer })}
               >
-                {layer === "desktop" ? "Desktop" : "On top"}
+                {layer === "desktop" ? t("Desktop") : t("On top")}
               </button>
             ))}
           </div>
           <p className="lattice-hint">
             {placement.layer === "desktop"
-              ? "Sits above desktop icons and below normal windows, so switching apps never covers it."
-              : "Floats above every window — good for monitors and readouts."}
+              ? t("Sits above desktop icons and below normal windows, so switching apps never covers it.")
+              : t("Floats above every window — good for monitors and readouts.")}
           </p>
         </section>
 
@@ -472,21 +478,23 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
                 update(placement.instanceId, { clickThrough: event.target.checked })
               }
             />
-            <span>Click-through</span>
+            <span>{t("Click-through")}</span>
           </label>
-          <p className="lattice-hint">Mouse events pass straight through — useful for purely decorative widgets.</p>
+          <p className="lattice-hint">
+            {t("Mouse events pass straight through — useful for purely decorative widgets.")}
+          </p>
         </section>
 
         <section className="lattice-field">
           <div className="lattice-field-head">
-            <span className="lattice-label">Backplate</span>
+            <span className="lattice-label">{t("Backplate")}</span>
             <button
               type="button"
               className="lattice-link-btn"
               onClick={() => update(placement.instanceId, { appearance: undefined })}
               disabled={isPlainAppearance(appearance)}
             >
-              Reset to theme
+              {t("Reset to theme")}
             </button>
           </div>
 
@@ -494,13 +502,13 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
             <label
               className="lattice-swatch"
               style={{ background: tintHex }}
-              title="Pick a colour"
+              title={t("Pick a colour")}
             >
               <input
                 type="color"
                 value={tintHex}
                 onChange={(event) => patchAppearance({ tint: event.target.value })}
-                aria-label="Backplate colour"
+                aria-label={t("Backplate colour")}
               />
             </label>
             <code className="lattice-mono lattice-tint-code">{isAuto ? "auto" : tintHex}</code>
@@ -509,9 +517,9 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
               className="lattice-chip"
               onClick={() => patchAppearance({ tint: "auto" })}
               aria-pressed={isAuto}
-              title="Follow the light / dark theme"
+              title={t("Follow the light / dark theme")}
             >
-              Auto
+              {t("Auto")}
             </button>
           </div>
 
@@ -524,54 +532,56 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
               max={255}
               step={1}
               onChange={(value) => setChannel(index as 0 | 1 | 2, value)}
-              ariaLabel={`Backplate ${channel === "R" ? "red" : channel === "G" ? "green" : "blue"}`}
+              ariaLabel={t(
+                channel === "R" ? "Backplate red" : channel === "G" ? "Backplate green" : "Backplate blue",
+              )}
             />
           ))}
 
           <SliderRow
-            label="Fill"
+            label={t("Fill")}
             value={appearance.alpha}
             min={0}
             max={1}
             step={0.01}
             decimals={2}
             onChange={(value) => patchAppearance({ alpha: value })}
-            ariaLabel="Backplate fill"
+            ariaLabel={t("Backplate fill")}
           />
           <SliderRow
-            label="Blur"
+            label={t("Blur")}
             value={appearance.blur}
             min={0}
             max={MAX_BLUR}
             step={0.5}
             decimals={1}
             onChange={(value) => patchAppearance({ blur: value })}
-            ariaLabel="Backplate blur"
+            ariaLabel={t("Backplate blur")}
           />
 
           <p className="lattice-hint">
             {appearance.alpha === 1 && appearance.blur > 0
-              ? "Fill is at 100%, so nothing shows through — lower Fill to see the frosted wallpaper."
+              ? t("Fill is at 100%, so nothing shows through — lower Fill to see the frosted wallpaper.")
               : appearance.blur === 0 && appearance.alpha < 1
-                ? "The wallpaper shows through but is still sharp — raise Blur to frost it."
-                : "Fill is how much of the colour covers the backplate, not window transparency. At 0 you get only the frosted wallpaper."}
+                ? t("The wallpaper shows through but is still sharp — raise Blur to frost it.")
+                : t("Fill is how much of the colour covers the backplate, not window transparency. At 0 you get only the frosted wallpaper.")}
           </p>
         </section>
 
         <section className="lattice-field">
           <div className="lattice-field-head">
-            <span className="lattice-label">Size</span>
+            <span className="lattice-label">{t("Size")}</span>
             <button
               type="button"
               className="lattice-link-btn"
               onClick={() => applySize(manifest.size.w, manifest.size.h)}
             >
-              Reset to {manifest.size.w} × {manifest.size.h}
+              {t("Reset to {w} × {h}", { w: manifest.size.w, h: manifest.size.h })}
             </button>
           </div>
           <div className="lattice-size-grid">
             <label className="lattice-size-input">
-              <span>W</span>
+              <span>{t("W")}</span>
               <input
                 type="number"
                 inputMode="numeric"
@@ -591,11 +601,11 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
                     event.currentTarget.blur();
                   }
                 }}
-                aria-label="Widget width"
+                aria-label={t("Widget width")}
               />
             </label>
             <label className="lattice-size-input">
-              <span>H</span>
+              <span>{t("H")}</span>
               <input
                 type="number"
                 inputMode="numeric"
@@ -615,27 +625,30 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
                     event.currentTarget.blur();
                   }
                 }}
-                aria-label="Widget height"
+                aria-label={t("Widget height")}
               />
             </label>
           </div>
           <p className="lattice-hint">
-            Minimum {manifest.size.minW} × {manifest.size.minH}. Drag the edges on the canvas, or type an exact value here.
+            {t("Minimum {w} × {h}. Drag the edges on the canvas, or type an exact value here.", {
+              w: manifest.size.minW,
+              h: manifest.size.minH,
+            })}
           </p>
         </section>
 
         {manifest.config.length > 0 && (
           <section className="lattice-field">
             <div className="lattice-field-head">
-              <span className="lattice-label">Options</span>
+              <span className="lattice-label">{t("Options")}</span>
               <button
                 type="button"
                 className="lattice-link-btn"
                 onClick={() => resetConfig(placement.instanceId)}
                 disabled={!hasConfigOverrides(configOverrides)}
-                title="Back to the defaults this widget ships with"
+                title={t("Back to the defaults this widget ships with")}
               >
-                Reset
+                {t("Reset")}
               </button>
             </div>
 
@@ -649,16 +662,15 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
             ))}
 
             <p className="lattice-hint">
-              Options belong to this copy only — two widgets of the same kind can be set up
-              differently.
+              {t("Options belong to this copy only — two widgets of the same kind can be set up differently.")}
             </p>
           </section>
         )}
 
         <section className="lattice-field">
-          <span className="lattice-label">Permissions</span>
+          <span className="lattice-label">{t("Permissions")}</span>
           {manifest.permissions.length === 0 ? (
-            <p className="lattice-hint">This widget needs no platform permissions.</p>
+            <p className="lattice-hint">{t("This widget needs no platform permissions.")}</p>
           ) : (
             manifest.permissions.map((permission: Permission) => {
               const enabled = granted.includes(permission);
@@ -667,7 +679,7 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
                 <label
                   key={permission}
                   className={`lattice-switch is-row${ready ? "" : " is-pending"}`}
-                  title={ready ? undefined : "No bridge method backs this permission yet"}
+                  title={ready ? undefined : t("No bridge method backs this permission yet")}
                 >
                   <input
                     type="checkbox"
@@ -679,24 +691,26 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
                         : revoke(manifest.id, permission)
                     }
                   />
-                  <span className="lattice-perm-name">{PERMISSION_LABELS[permission]}</span>
+                  <span className="lattice-perm-name">{permissionLabel(permission)}</span>
                   <code className="lattice-mono lattice-perm-code">{permission}</code>
-                  {!ready && <span className="lattice-perm-soon">soon</span>}
+                  {!ready && <span className="lattice-perm-soon">{t("soon")}</span>}
                 </label>
               );
             })
           )}
-          <p className="lattice-hint">Calls without a granted permission are rejected by the bridge; widgets must degrade gracefully.</p>
+          <p className="lattice-hint">
+            {t("Calls without a granted permission are rejected by the bridge; widgets must degrade gracefully.")}
+          </p>
           {manifest.permissions.some((permission) => !isPermissionReady(permission)) && (
             <p className="lattice-hint">
-              Permissions marked <code className="lattice-mono">soon</code> are declared by the widget
-              but the platform has no bridge method behind them yet — granting them would change nothing.
+              {t("Permissions marked")} <code className="lattice-mono">{t("soon")}</code>{" "}
+              {t("are declared by the widget but the platform has no bridge method behind them yet — granting them would change nothing.")}
             </p>
           )}
         </section>
 
         <section className="lattice-field">
-          <span className="lattice-label">Source</span>
+          <span className="lattice-label">{t("Source")}</span>
           <code className="lattice-mono lattice-path">{record.dir}</code>
         </section>
       </div>

@@ -20,7 +20,8 @@
 import { useMemo, useState } from "react";
 import type { WidgetLoadError, WidgetRecord } from "../runtime/registry";
 import { matchesWidget, tokenize } from "../runtime/library-search";
-import { PERMISSION_LABELS, isPermissionReady } from "../runtime/manifest";
+import { permissionLabel, isPermissionReady } from "../runtime/manifest";
+import { useT } from "../runtime/i18n";
 import { hasHelp } from "../runtime/help";
 import { CatalogueSection, type StoreBinding } from "./CatalogueSection";
 import { HelpDialog } from "./HelpContent";
@@ -82,6 +83,7 @@ export function LibraryPanel({
   open,
   onToggle,
 }: LibraryPanelProps) {
+  const t = useT();
   const [query, setQuery] = useState("");
   /** 正在看"怎么用"的那个组件。null = 没开 */
   const [helpTarget, setHelpTarget] = useState<WidgetRecord | null>(null);
@@ -152,16 +154,16 @@ export function LibraryPanel({
             <code className="lattice-card-id">{record.manifest.id}</code>
           </span>
           {review ? (
-            <span className="lattice-chip is-warn">Review</span>
+            <span className="lattice-chip is-warn">{t("Review")}</span>
           ) : isInstalled ? (
-            <span className="lattice-chip is-accent">Installed</span>
+            <span className="lattice-chip is-accent">{t("Installed")}</span>
           ) : (
-            <span className="lattice-chip">{record.source === "bundled" ? "Bundled" : "Local"}</span>
+            <span className="lattice-chip">{record.source === "bundled" ? t("Bundled") : t("Local")}</span>
           )}
         </div>
 
         <p className="lattice-card-desc">
-          {record.manifest.description || "No description yet"}
+          {record.manifest.description || t("No description yet")}
         </p>
 
         <div className="lattice-card-meta">
@@ -178,10 +180,10 @@ export function LibraryPanel({
                 title={
                   isPermissionReady(permission)
                     ? undefined
-                    : "Declared by the widget, but the platform has no bridge method for it yet"
+                    : t("Declared by the widget, but the platform has no bridge method for it yet")
                 }
               >
-                {PERMISSION_LABELS[permission]}
+                {permissionLabel(permission)}
               </span>
             ))}
           </div>
@@ -193,16 +195,16 @@ export function LibraryPanel({
         */}
         {isInstalled && (
           <div className="lattice-card-rating" onClick={(event) => event.stopPropagation()}>
-            <div className="lattice-stars" role="group" aria-label={`Rate ${record.manifest.name}`}>
+            <div className="lattice-stars" role="group" aria-label={t("Rate {name}", { name: record.manifest.name })}>
               {[1, 2, 3, 4, 5].map((value) => (
                 <button
                   key={value}
                   type="button"
                   className={`lattice-star${value <= rating ? " is-on" : ""}`}
                   onClick={() => onRate(record, value === rating ? 0 : value)}
-                  aria-label={`${value} star${value === 1 ? "" : "s"}`}
+                  aria-label={t(value === 1 ? "{count} star" : "{count} stars", { count: value })}
                   aria-pressed={value <= rating}
-                  title={value === rating ? "Click again to clear" : undefined}
+                  title={value === rating ? t("Click again to clear") : undefined}
                 >
                   ★
                 </button>
@@ -213,9 +215,9 @@ export function LibraryPanel({
                 type="button"
                 className="lattice-link-btn is-tiny"
                 onClick={() => onRollback(record)}
-                title={`Restore ${backup.version} (the version you had before this update)`}
+                title={t("Restore {version} (the version you had before this update)", { version: backup.version })}
               >
-                Back to {backup.version}
+                {t("Back to {version}", { version: backup.version })}
               </button>
             ) : null}
           </div>
@@ -235,8 +237,8 @@ export function LibraryPanel({
                 event.stopPropagation();
                 setHelpTarget(record);
               }}
-              title="How to use this widget"
-              aria-label={`How to use ${record.manifest.name}`}
+              title={t("How to use this widget")}
+              aria-label={t("How to use {name}", { name: record.manifest.name })}
             >
               <Glyph d={ICON.info} size={12} />
             </button>
@@ -251,7 +253,7 @@ export function LibraryPanel({
                   onReport(record);
                 }}
               >
-                Report
+                {t("Report")}
               </button>
               <button
                 type="button"
@@ -261,7 +263,7 @@ export function LibraryPanel({
                   onUninstall(record);
                 }}
               >
-                Uninstall
+                {t("Uninstall")}
               </button>
             </>
           ) : (
@@ -273,7 +275,7 @@ export function LibraryPanel({
                 onInstall(record);
               }}
             >
-              Install
+              {t("Install")}
             </button>
           )}
         </div>
@@ -288,13 +290,13 @@ export function LibraryPanel({
           type="button"
           className="lattice-icon-btn is-large"
           onClick={onToggle}
-          title="Show the widget library"
-          aria-label="Show the widget library"
+          title={t("Show the widget library")}
+          aria-label={t("Show the widget library")}
           aria-expanded={false}
         >
           <PanelGlyph side="left" />
         </button>
-        <span className="lattice-panel-rail-label">Widgets</span>
+        <span className="lattice-panel-rail-label">{t("Widgets")}</span>
       </aside>
     );
   }
@@ -302,15 +304,15 @@ export function LibraryPanel({
   return (
     <aside className="lattice-panel lattice-panel-left">
       <header className="lattice-panel-head">
-        <h2 className="lattice-panel-title">Widgets</h2>
+        <h2 className="lattice-panel-title">{t("Widgets")}</h2>
         <span className="lattice-panel-count">{installed.length}</span>
         <div className="lattice-panel-actions">
           <button
             type="button"
             className="lattice-icon-btn"
             onClick={onOpenWidgetsDir}
-            title="Open the widgets folder in Explorer"
-            aria-label="Open widgets folder"
+            title={t("Open the widgets folder in Explorer")}
+            aria-label={t("Open widgets folder")}
           >
             <Glyph d={ICON.folder} />
           </button>
@@ -318,8 +320,8 @@ export function LibraryPanel({
             type="button"
             className="lattice-icon-btn"
             onClick={onToggle}
-            title="Collapse the widget library"
-            aria-label="Collapse the widget library"
+            title={t("Collapse the widget library")}
+            aria-label={t("Collapse the widget library")}
             aria-expanded
           >
             <PanelGlyph side="left" />
@@ -334,7 +336,7 @@ export function LibraryPanel({
             type="button"
             className="lattice-notice-close"
             onClick={onDismissNotice}
-            aria-label="Dismiss notice"
+            aria-label={t("Dismiss notice")}
           >
             ×
           </button>
@@ -358,8 +360,8 @@ export function LibraryPanel({
               if (query) setQuery("");
               else event.currentTarget.blur();
             }}
-            placeholder="Search widgets"
-            aria-label="Search widgets"
+            placeholder={t("Search widgets")}
+            aria-label={t("Search widgets")}
             spellCheck={false}
             autoComplete="off"
           />
@@ -368,8 +370,8 @@ export function LibraryPanel({
               type="button"
               className="lattice-lib-search-clear"
               onClick={() => setQuery("")}
-              aria-label="Clear search"
-              title="Clear search"
+              aria-label={t("Clear search")}
+              title={t("Clear search")}
             >
               <Glyph d={ICON.close} size={11} />
             </button>
@@ -378,22 +380,23 @@ export function LibraryPanel({
       )}
 
       <div className="lattice-panel-body">
-        {loading && <p className="lattice-hint">Scanning widgets…</p>}
+        {loading && <p className="lattice-hint">{t("Scanning widgets…")}</p>}
 
         {!loading && widgets.length === 0 && (
           <div className="lattice-lib-note">
-            <p className="lattice-lib-note-title">No widgets at all</p>
+            <p className="lattice-lib-note-title">{t("No widgets at all")}</p>
             <p className="lattice-hint">
-              Drag a widget folder or a <code>.lattice</code> package from Explorer into this window to install it.
+              {t("Drag a widget folder or a")} <code>.lattice</code>{" "}
+              {t("package from Explorer into this window to install it.")}
             </p>
           </div>
         )}
 
         {!loading && !filtering && widgets.length > 0 && installed.length === 0 && (
           <div className="lattice-lib-note">
-            <p className="lattice-lib-note-title">The platform is empty</p>
+            <p className="lattice-lib-note-title">{t("The platform is empty")}</p>
             <p className="lattice-hint">
-              Nothing below is installed yet. Install one and the desktop has something to show.
+              {t("Nothing below is installed yet. Install one and the desktop has something to show.")}
             </p>
             {officialPack.length > 0 && (
               <button
@@ -401,7 +404,7 @@ export function LibraryPanel({
                 className="lattice-btn is-small is-primary"
                 onClick={() => onInstallPack(officialPack)}
               >
-                Install the official pack ({officialPack.length})
+                {t("Install the official pack ({count})", { count: officialPack.length })}
               </button>
             )}
           </div>
@@ -409,12 +412,14 @@ export function LibraryPanel({
 
         {nothingMatched && (
           <div className="lattice-lib-note">
-            <p className="lattice-lib-note-title">Nothing matches “{query.trim()}”</p>
+            <p className="lattice-lib-note-title">
+              {t("Nothing matches “{query}”", { query: query.trim() })}
+            </p>
             <p className="lattice-hint">
-              Search covers names, ids, descriptions, authors and permissions.
+              {t("Search covers names, ids, descriptions, authors and permissions.")}
             </p>
             <button type="button" className="lattice-btn is-small" onClick={() => setQuery("")}>
-              Clear search
+              {t("Clear search")}
             </button>
           </div>
         )}
@@ -447,9 +452,9 @@ export function LibraryPanel({
                   type="button"
                   className="lattice-btn is-small"
                   onClick={() => onInstallPack(officialPack)}
-                  title={`Install all ${officialPack.length} bundled widgets at once`}
+                  title={t("Install all {count} bundled widgets at once", { count: officialPack.length })}
                 >
-                  Install all
+                  {t("Install all")}
                 </button>
               ) : null
             }
@@ -467,7 +472,7 @@ export function LibraryPanel({
 
         {errors.length > 0 && (
           <div className="lattice-errors">
-            <h3 className="lattice-errors-title">Widgets that failed to load</h3>
+            <h3 className="lattice-errors-title">{t("Widgets that failed to load")}</h3>
             {errors.map((error) => (
               <div key={error.dir} className="lattice-error-row">
                 <code className="lattice-mono">{error.dir}</code>
@@ -478,7 +483,7 @@ export function LibraryPanel({
         )}
 
         <p className="lattice-lib-drop">
-          Drop a widget folder or a .lattice package anywhere in this window to install it.
+          {t("Drop a widget folder or a .lattice package anywhere in this window to install it.")}
         </p>
       </div>
 

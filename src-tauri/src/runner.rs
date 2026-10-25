@@ -66,6 +66,11 @@ pub struct WidgetWindowSpec {
     /// 平台当前解析出来的明暗，桌面窗口据此上色，
     /// 不跟随系统 —— 否则用户把平台切成深色，桌面卡片还是白的
     pub theme: String,
+    /// 平台当前生效的界面语言（`"zh"` / `"en"`）。桌面窗口的窗饰提示
+    /// 与"组件坏了"那张卡片用它 —— 那两个宿主页不加载 store，从这儿拿初值，
+    /// 之后的变化走 `lattice:language` 广播（和 `theme` 同一套）
+    #[serde(default)]
+    pub lang: String,
     /// 底板外观。老前端不带这个字段时按默认值（跟随主题、不透明、不模糊）走
     #[serde(default)]
     pub appearance: Appearance,
@@ -154,6 +159,8 @@ pub struct HostConfig {
     pub entry: String,
     pub permissions: Vec<String>,
     pub theme: String,
+    /// 平台当前生效的界面语言，宿主页拿它当提示语的初值
+    pub lang: String,
     pub pinned: bool,
     pub min_w: f64,
     pub min_h: f64,
@@ -486,6 +493,7 @@ fn create(app: &AppHandle, spec: &WidgetWindowSpec, runner: &Runner) -> Result<(
             entry: spec.entry.clone(),
             permissions: normalize_permissions(&spec.permissions),
             theme: spec.theme.clone(),
+            lang: spec.lang.clone(),
             pinned: spec.pinned,
             min_w: spec.min_w,
             min_h: spec.min_h,
@@ -1207,6 +1215,17 @@ pub async fn widget_close(
 #[tauri::command]
 pub fn widget_set_theme(app: AppHandle, theme: String) -> Result<(), String> {
     let _ = app.emit("lattice:theme", theme);
+    Ok(())
+}
+
+/// 平台换了界面语言，把已经在桌面上的组件窗口一起改过来。
+///
+/// 和主题同一套：`lang` 在建窗口时随 `HostConfig` 下去当初值，之后的切换走
+/// 这条广播（宿主页不加载 store，读不到设置里那档偏好）。组件**自己的**文案
+/// 不跟着变 —— 那是作者写的，平台只翻自己的窗饰提示和错误卡片。
+#[tauri::command]
+pub fn widget_set_language(app: AppHandle, lang: String) -> Result<(), String> {
+    let _ = app.emit("lattice:language", lang);
     Ok(())
 }
 

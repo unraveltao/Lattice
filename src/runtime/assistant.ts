@@ -17,6 +17,8 @@
  * 信息、撤销、落盘）。混在一起的话，改一句描述就要读一遍 store 的实现。
  */
 
+import { t } from "./i18n";
+
 /** 一次对话里最多几轮"模型 → 工具 → 模型"。到顶就停，别让它自己转圈 */
 export const MAX_STEPS = 6;
 
@@ -201,27 +203,37 @@ export function trimHistory(messages: ChatMessage[], limit = MAX_HISTORY): ChatM
   ];
 }
 
-/** 把一条调用翻译成界面上的小标签，例如 `移动时钟 → (40, 40)` */
+/**
+ * 把一条调用翻译成界面上的小标签，例如 `Move lattice.clock#a1`。
+ *
+ * 这一行是**用户看得见**的（对话里工具结果那一行），所以走 `t()`：英文原句在
+ * 这里，中文在 `runtime/i18n/assistant.ts`。**不是**给模型看的那份 ——
+ * 回给模型的是原始 JSON（`toWire` 的 `content`），它不认识这几句。
+ */
 export function describeToolCall(name: string, rawArguments: string): string {
   const args = parseArguments(rawArguments);
   const pick = (key: string) => (args.ok && typeof args.value[key] === "string" ? String(args.value[key]) : "");
+  /** 参数坏了 / 没给的时候，标签上写"某个组件"，而不是空着 */
+  const target = (key: string) => pick(key) || t("a widget");
   switch (name) {
     case "placement.add":
-      return `放一个 ${pick("widgetId") || "组件"}`;
+      return t("Add {widget}", { widget: target("widgetId") });
     case "placement.move":
-      return `移动 ${pick("instanceId") || "组件"}`;
+      return t("Move {instance}", { instance: target("instanceId") });
     case "placement.resize":
-      return `缩放 ${pick("instanceId") || "组件"}`;
+      return t("Resize {instance}", { instance: target("instanceId") });
     case "placement.remove":
-      return `删掉 ${pick("instanceId") || "组件"}`;
+      return t("Remove {instance}", { instance: target("instanceId") });
     case "placement.pin":
-      return `${args.ok && args.value.pinned ? "钉住" : "取消钉住"} ${pick("instanceId") || "组件"}`;
+      return args.ok && args.value.pinned
+        ? t("Pin {instance}", { instance: target("instanceId") })
+        : t("Unpin {instance}", { instance: target("instanceId") });
     case "placement.front":
-      return `把 ${pick("instanceId") || "组件"} 提到前面`;
+      return t("Bring {instance} to front", { instance: target("instanceId") });
     case "theme.set":
-      return `主题切到 ${pick("theme") || "?"}`;
+      return t("Switch theme to {theme}", { theme: pick("theme") || "?" });
     case "widgets.pause":
-      return args.ok && args.value.paused ? "暂停全部组件" : "恢复全部组件";
+      return args.ok && args.value.paused ? t("Pause every widget") : t("Resume every widget");
     default:
       return name;
   }

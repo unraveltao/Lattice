@@ -13,10 +13,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import { AssistantPanel } from "./AssistantPanel";
+import { isTauri } from "../runtime/registry";
+import { setLanguage, useT } from "../runtime/i18n";
 
 export function AssistantWindow() {
+  const t = useT();
   const [ready, setReady] = useState(false);
   const close = useCallback(() => {
     void invoke("assistant_window_hide");
@@ -28,7 +32,11 @@ export function AssistantWindow() {
     void invoke<string | null>("state_read")
       .then((raw) => {
         if (!raw) return;
-        const theme = (JSON.parse(raw) as { theme?: string }).theme;
+        const state = JSON.parse(raw) as { theme?: string; language?: string };
+        /* 语言同理：小窗不加载 store，这档偏好只能从磁盘上这一份拿；
+         * 之后的变化走 `lattice:language` 广播（见下面那个 effect） */
+        setLanguage(state.language === "zh" || state.language === "en" ? state.language : "system");
+        const theme = state.theme;
         if (theme === "light" || theme === "dark") {
           document.documentElement.dataset.theme = theme;
         } else if (theme === "system") {
@@ -40,6 +48,29 @@ export function AssistantWindow() {
         /* 读不出来就用默认深色，不至于因为这个开不了面板 */
       })
       .finally(() => setReady(true));
+  }, []);
+
+  /* 主窗口切了语言：和 `lattice:theme` 同一套广播，小窗不加载 store 只能这样收到 */
+  useEffect(() => {
+    if (!isTauri()) return;
+    let dispose: (() => void) | undefined;
+    let disposed = false;
+
+    void listen<string>("lattice:language", (event) => {
+      setLanguage(event.payload === "zh" ? "zh" : "en");
+    })
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else dispose = unlisten;
+      })
+      .catch(() => {
+        /* 事件通道不可用就停在开局读到的那个语言上 */
+      });
+
+    return () => {
+      disposed = true;
+      dispose?.();
+    };
   }, []);
 
   /* 拖标题栏。`startDragging` 会一直占着直到松手，所以位置在那之后存一次 */
@@ -56,14 +87,14 @@ export function AssistantWindow() {
     <div className="lattice-assistant-window">
       <header className="lattice-assistant-bar" onPointerDown={startDrag}>
         <span className="lattice-assistant-bar-dot" aria-hidden="true" />
-        <span className="lattice-assistant-bar-title">Assistant</span>
+        <span className="lattice-assistant-bar-title">{t("Assistant")}</span>
         <button
           type="button"
           className="lattice-assistant-bar-btn"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={close}
-          title="收起（Ctrl+K 再叫回来）"
-          aria-label="Hide assistant"
+          title={t("Hide (Ctrl+K brings it back)")}
+          aria-label={t("Hide assistant")}
         >
           ×
         </button>

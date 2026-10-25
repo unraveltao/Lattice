@@ -21,6 +21,7 @@ import { Glyph, ICON, ThemeGlyph } from "./icons";
 import { keyFingerprint } from "../runtime/catalogue";
 import { useLattice, isOfficialCatalogue, OFFICIAL_CATALOGUE_SOURCE, OFFICIAL_CATALOGUE_URL, type ThemeMode } from "./store";
 import { appVersion, checkForUpdate, installUpdate, type UpdateState } from "./updater";
+import { useT, type LangPref } from "../runtime/i18n";
 
 type View = "menu" | "signin" | "profile" | "catalogue";
 
@@ -37,6 +38,18 @@ const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
   { value: "light", label: "Light" },
   { value: "system", label: "System" },
   { value: "dark", label: "Dark" },
+];
+
+/**
+ * 界面语言的三档。
+ *
+ * label 里那两个语言名**永远是自己的语言**（中文 / English），只有第三档
+ * 跟着界面翻。这是有意的：看不懂当前界面语言的人，要能认出回自己那一档。
+ */
+const LANGUAGE_OPTIONS: Array<{ value: LangPref; label: string }> = [
+  { value: "zh", label: "中文" },
+  { value: "en", label: "English" },
+  { value: "system", label: "System" },
 ];
 
 function Avatar({ name, size }: { name?: string; size: number }) {
@@ -71,6 +84,11 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
   const signOut = useLattice((state) => state.signOut);
   const theme = useLattice((state) => state.theme);
   const setTheme = useLattice((state) => state.setTheme);
+  /** 存的是**偏好**（中文 / English / 跟随系统），不是解析后的结果 */
+  const language = useLattice((state) => state.language);
+  const setLanguage = useLattice((state) => state.setLanguage);
+  /** 语言一变就重渲染 —— 菜单是浮层，切完立刻能看到效果 */
+  const t = useT();
   const snapToGrid = useLattice((state) => state.snapToGrid);
   const toggleSnap = useLattice((state) => state.toggleSnap);
   const restoreOnLaunch = useLattice((state) => state.restoreOnLaunch);
@@ -186,23 +204,23 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
 
   const updateNote =
     update.status === "checking"
-      ? "Checking…"
+      ? t("Checking…")
       : update.status === "current"
-        ? "Up to date"
+        ? t("Up to date")
         : update.status === "available"
-          ? `Install v${update.version}`
+          ? t("Install v{version}", { version: update.version })
           : update.status === "downloading"
             ? `${update.percent}%`
             : update.status === "error"
-              ? "Failed"
-              : "Check";
+              ? t("Failed")
+              : t("Check");
 
   const updateHint =
     update.status === "error"
       ? update.message
       : update.status === "available"
-        ? `Update to v${update.version}, then Lattice restarts`
-        : "Ask the release page whether a newer version exists";
+        ? t("Update to v{version}, then Lattice restarts", { version: update.version })
+        : t("Ask the release page whether a newer version exists");
 
   // Ctrl+, 打开设置（和大多数桌面应用的约定一致），Esc 关闭
   useEffect(() => {
@@ -323,7 +341,7 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
   const autostartHint = autostartError
     ? autostartError
     : staleAutostart
-      ? "Registered for a different build — flip this off and on to point it at this one."
+      ? t("Registered for a different build — flip this off and on to point it at this one.")
       : null;
 
   return (
@@ -340,21 +358,21 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
         }}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title="Settings (Ctrl+,)"
+        title={t("Settings (Ctrl+,)")}
       >
         <Avatar name={profile?.name} size={24} />
       </button>
 
       {open && (
-        <div className="lattice-menu" role="dialog" aria-label="Settings">
+        <div className="lattice-menu" role="dialog" aria-label={t("Settings")}>
           {view === "menu" && (
             <>
               <header className="lattice-account">
                 <Avatar name={profile?.name} size={38} />
                 <div className="lattice-account-text">
-                  <div className="lattice-account-name">{profile?.name ?? "Not signed in"}</div>
+                  <div className="lattice-account-name">{profile?.name ?? t("Not signed in")}</div>
                   <div className="lattice-account-sub">
-                    {profile ? profile.email || "Local profile" : "Sign in to keep your preferences"}
+                    {profile ? profile.email || t("Local profile") : t("Sign in to keep your preferences")}
                   </div>
                 </div>
               </header>
@@ -362,11 +380,11 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
               <div className="lattice-account-card">
                 <div className="lattice-account-stats">
                   <div>
-                    <span>Installed</span>
+                    <span>{t("Installed")}</span>
                     <b>{installedCount}</b>
                   </div>
                   <div>
-                    <span>On canvas</span>
+                    <span>{t("On canvas")}</span>
                     <b>{placementCount}</b>
                   </div>
                 </div>
@@ -375,14 +393,14 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                   className={`lattice-btn is-small${profile ? "" : " is-primary"}`}
                   onClick={profile ? startProfile : startSignIn}
                 >
-                  {profile ? "Edit profile" : "Sign in"}
+                  {profile ? t("Edit profile") : t("Sign in")}
                 </button>
               </div>
 
               <div className="lattice-menu-list">
                 <div className="lattice-menu-row is-static">
                   <Glyph d={ICON.appearance} />
-                  <span className="lattice-menu-label">Appearance</span>
+                  <span className="lattice-menu-label">{t("Appearance")}</span>
                   <div className="lattice-segmented is-compact is-icons">
                     {THEME_OPTIONS.map((option) => (
                       <button
@@ -391,8 +409,8 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                         className={`lattice-segment${theme === option.value ? " is-active" : ""}`}
                         onClick={() => setTheme(option.value)}
                         aria-pressed={theme === option.value}
-                        title={option.label}
-                        aria-label={option.label}
+                        title={t(option.label)}
+                        aria-label={t(option.label)}
                       >
                         <ThemeGlyph mode={option.value} />
                       </button>
@@ -400,31 +418,58 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                   </div>
                 </div>
 
+                {/*
+                  界面语言。三档，和外观那一行同一个形状，但用文字不用图标：
+                  "中文"和"English"本来就是字，画两个图标（文/A）反而要猜。
+
+                  注意两个语言名**各写自己的语言**，不跟着界面翻：界面正显示
+                  英文时，"中文"那一档仍然是"中文"。否则一个看不懂英文的人
+                  在英文界面里会找不到换回去的路 —— 那正是他要找的那一档。
+                */}
+                <div className="lattice-menu-row is-static">
+                  <Glyph d={ICON.language} />
+                  <span className="lattice-menu-label">{t("Language")}</span>
+                  <div className="lattice-segmented is-compact">
+                    {LANGUAGE_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`lattice-segment${language === option.value ? " is-active" : ""}`}
+                        onClick={() => setLanguage(option.value)}
+                        aria-pressed={language === option.value}
+                        title={option.value === "system" ? t("Follow Windows") : option.label}
+                      >
+                        {option.value === "system" ? t("System") : option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="lattice-menu-row is-static">
                   <Glyph d={ICON.grid} />
-                  <span className="lattice-menu-label">Snap to grid</span>
-                  <label className="lattice-switch" title="Align to an 8px grid while dragging">
+                  <span className="lattice-menu-label">{t("Snap to grid")}</span>
+                  <label className="lattice-switch" title={t("Align to an 8px grid while dragging")}>
                     <input
                       type="checkbox"
                       checked={snapToGrid}
                       onChange={toggleSnap}
-                      aria-label="Snap to grid"
+                      aria-label={t("Snap to grid")}
                     />
                   </label>
                 </div>
 
                 <div className="lattice-menu-row is-static">
                   <Glyph d={ICON.monitor} />
-                  <span className="lattice-menu-label">Restore on launch</span>
+                  <span className="lattice-menu-label">{t("Restore on launch")}</span>
                   <label
                     className="lattice-switch"
-                    title="Put your desktop widgets back when Lattice starts"
+                    title={t("Put your desktop widgets back when Lattice starts")}
                   >
                     <input
                       type="checkbox"
                       checked={restoreOnLaunch}
                       onChange={toggleRestoreOnLaunch}
-                      aria-label="Restore widgets on launch"
+                      aria-label={t("Restore widgets on launch")}
                     />
                   </label>
                 </div>
@@ -435,17 +480,17 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                 */}
                 <div className="lattice-menu-row is-static">
                   <Glyph d={ICON.startup} />
-                  <span className="lattice-menu-label">Start with Windows</span>
+                  <span className="lattice-menu-label">{t("Start with Windows")}</span>
                   <label
                     className="lattice-switch"
-                    title="Launch Lattice when you sign in, so your widgets are already there"
+                    title={t("Launch Lattice when you sign in, so your widgets are already there")}
                   >
                     <input
                       type="checkbox"
                       checked={Boolean(autostart?.enabled)}
                       disabled={!autostartKnown || autostartBusy}
                       onChange={() => void toggleAutostart()}
-                      aria-label="Start Lattice with Windows"
+                      aria-label={t("Start Lattice with Windows")}
                     />
                   </label>
                 </div>
@@ -459,10 +504,10 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                 */}
                 <div
                   className="lattice-menu-row is-static"
-                  title="Token lives in %APPDATA%\com.iron-tom.lattice\agent\endpoint.json"
+                  title={t("Token lives in %APPDATA%\\com.iron-tom.lattice\\agent\\endpoint.json")}
                 >
                   <Glyph d={ICON.agent} />
-                  <span className="lattice-menu-label">Agent access</span>
+                  <span className="lattice-menu-label">{t("Agent access")}</span>
                   <span className="lattice-menu-note">
                     {agentError
                       ? agentError
@@ -472,14 +517,14 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                   </span>
                   <label
                     className="lattice-switch"
-                    title="Let a local agent read and arrange the desktop over 127.0.0.1"
+                    title={t("Let a local agent read and arrange the desktop over 127.0.0.1")}
                   >
                     <input
                       type="checkbox"
                       checked={Boolean(agent?.enabled)}
                       disabled={!agent || agentBusy}
                       onChange={() => void toggleAgent()}
-                      aria-label="Allow agent access"
+                      aria-label={t("Allow agent access")}
                     />
                   </label>
                 </div>
@@ -496,11 +541,11 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                     close();
                     onOpenAssistant();
                   }}
-                  title="用你自己的模型和 API key 说话，它替你把桌面摆好（Ctrl+K）"
+                  title={t("Talk to your own model with your own API key, and it arranges the desktop for you (Ctrl+K)")}
                 >
                   <Glyph d={ICON.agent} />
-                  <span className="lattice-menu-label">AI assistant</span>
-                  <span className="lattice-menu-note">模型 · key · Ctrl+K</span>
+                  <span className="lattice-menu-label">{t("AI assistant")}</span>
+                  <span className="lattice-menu-note">{t("Model · key · Ctrl+K")}</span>
                 </button>
 
                 {autostartHint ? (
@@ -515,16 +560,16 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                 {placementCount > 0 ? (
                   <div className="lattice-menu-row is-static">
                     <Glyph d={ICON.pause} />
-                    <span className="lattice-menu-label">Pause widgets</span>
+                    <span className="lattice-menu-label">{t("Pause widgets")}</span>
                     <label
                       className="lattice-switch"
-                      title="Hide the widgets on your desktop and stop their timers, without closing Lattice"
+                      title={t("Hide the widgets on your desktop and stop their timers, without closing Lattice")}
                     >
                       <input
                         type="checkbox"
                         checked={paused}
                         onChange={() => void togglePaused()}
-                        aria-label="Pause desktop widgets"
+                        aria-label={t("Pause desktop widgets")}
                       />
                     </label>
                   </div>
@@ -532,13 +577,13 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
 
                 <button type="button" className="lattice-menu-row" onClick={startCatalogue}>
                   <Glyph d={ICON.store} />
-                  <span className="lattice-menu-label">Widget catalogue</span>
+                  <span className="lattice-menu-label">{t("Widget catalogue")}</span>
                   <span className="lattice-menu-note">
                     {isOfficialCatalogue(catalogueSource.url)
-                      ? "Official"
+                      ? t("Official")
                       : catalogueSource.kind === "bundled"
-                        ? "Bundled"
-                        : "Custom URL"}
+                        ? t("Bundled")
+                        : t("Custom URL")}
                   </span>
                   <Glyph d={ICON.chevron} size={13} />
                 </button>
@@ -549,15 +594,15 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                   onClick={profile ? startProfile : startSignIn}
                 >
                   <Glyph d={ICON.user} />
-                  <span className="lattice-menu-label">Profile</span>
+                  <span className="lattice-menu-label">{t("Profile")}</span>
                   <Glyph d={ICON.chevron} size={13} />
                 </button>
 
                 <div className="lattice-menu-row is-static">
                   <Glyph d={ICON.info} />
-                  <span className="lattice-menu-label">About Lattice</span>
+                  <span className="lattice-menu-label">{t("About Lattice")}</span>
                   <span className="lattice-menu-note">
-                    {version ? `v${version}` : "…"} · local-first
+                    {version ? `v${version}` : "…"} · {t("local-first")}
                   </span>
                 </div>
 
@@ -569,7 +614,7 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                   title={updateHint}
                 >
                   <Glyph d={ICON.refresh} />
-                  <span className="lattice-menu-label">Check for updates</span>
+                  <span className="lattice-menu-label">{t("Check for updates")}</span>
                   <span className="lattice-menu-note">{updateNote}</span>
                 </button>
               </div>
@@ -586,7 +631,7 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                     }}
                   >
                     <Glyph d={ICON.logout} />
-                    <span className="lattice-menu-label">Sign out</span>
+                    <span className="lattice-menu-label">{t("Sign out")}</span>
                   </button>
                 </>
               )}
@@ -605,7 +650,7 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                 }}
               >
                 <Glyph d={ICON.power} />
-                <span className="lattice-menu-label">Quit Lattice</span>
+                <span className="lattice-menu-label">{t("Quit Lattice")}</span>
               </button>
             </>
           )}
@@ -615,33 +660,33 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
               <header className="lattice-account-form-head">
                 <button type="button" className="lattice-icon-btn" onClick={() => setView("menu")}>
                   <Glyph d={ICON.back} />
-                  <span className="lattice-sr-only">Back</span>
+                  <span className="lattice-sr-only">{t("Back")}</span>
                 </button>
-                <span>{view === "profile" ? "Profile" : "Sign in"}</span>
+                <span>{view === "profile" ? t("Profile") : t("Sign in")}</span>
               </header>
 
               <div className="lattice-account-form-body">
                 <div className="lattice-account-preview">
                   <Avatar name={draftName || profile?.name} size={46} />
                   <div>
-                    <div className="lattice-account-name">{draftName.trim() || "Your name"}</div>
-                    <div className="lattice-account-sub">{draftEmail.trim() || "No email yet"}</div>
+                    <div className="lattice-account-name">{draftName.trim() || t("Your name")}</div>
+                    <div className="lattice-account-sub">{draftEmail.trim() || t("No email yet")}</div>
                   </div>
                 </div>
 
                 <label className="lattice-textfield">
-                  <span>Display name</span>
+                  <span>{t("Display name")}</span>
                   <input
                     value={draftName}
                     onChange={(event) => setDraftName(event.target.value)}
-                    placeholder="What should we call you?"
+                    placeholder={t("What should we call you?")}
                     maxLength={24}
                     autoFocus
                   />
                 </label>
 
                 <label className="lattice-textfield">
-                  <span>Email (optional)</span>
+                  <span>{t("Email (optional)")}</span>
                   <input
                     value={draftEmail}
                     onChange={(event) => setDraftEmail(event.target.value)}
@@ -652,20 +697,22 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                 </label>
 
                 <p className="lattice-account-hint">
-                  Stored on this computer only. Nothing is uploaded, no password needed, and it is removed with the rest of the platform data.
+                  {t(
+                    "Stored on this computer only. Nothing is uploaded, no password needed, and it is removed with the rest of the platform data.",
+                  )}
                 </p>
               </div>
 
               <footer className="lattice-account-form-foot">
                 <button type="button" className="lattice-btn is-small" onClick={() => setView("menu")}>
-                  Cancel
+                  {t("Cancel")}
                 </button>
                 <button
                   type="submit"
                   className="lattice-btn is-small is-primary"
                   disabled={!draftName.trim()}
                 >
-                  {view === "profile" ? "Save" : "Sign in"}
+                  {view === "profile" ? t("Save") : t("Sign in")}
                 </button>
               </footer>
             </form>
@@ -682,9 +729,9 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
               <header className="lattice-account-form-head">
                 <button type="button" className="lattice-icon-btn" onClick={() => setView("menu")}>
                   <Glyph d={ICON.back} />
-                  <span className="lattice-sr-only">Back</span>
+                  <span className="lattice-sr-only">{t("Back")}</span>
                 </button>
-                <span>Widget catalogue</span>
+                <span>{t("Widget catalogue")}</span>
               </header>
 
               <div className="lattice-account-form-body">
@@ -694,26 +741,26 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                     className={`lattice-segment${draftKind === "official" ? " is-active" : ""}`}
                     onClick={() => setDraftKind("official")}
                   >
-                    Official
+                    {t("Official")}
                   </button>
                   <button
                     type="button"
                     className={`lattice-segment${draftKind === "url" ? " is-active" : ""}`}
                     onClick={() => setDraftKind("url")}
                   >
-                    Custom URL
+                    {t("Custom URL")}
                   </button>
                   <button
                     type="button"
                     className={`lattice-segment${draftKind === "bundled" ? " is-active" : ""}`}
                     onClick={() => setDraftKind("bundled")}
                   >
-                    Bundled
+                    {t("Bundled")}
                   </button>
                 </div>
 
                 <label className="lattice-textfield">
-                  <span>Catalogue address</span>
+                  <span>{t("Catalogue address")}</span>
                   <input
                     value={draftKind === "official" ? OFFICIAL_CATALOGUE_URL : draftUrl}
                     onChange={(event) => setDraftUrl(event.target.value)}
@@ -726,8 +773,12 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
 
                 <p className="lattice-account-hint">
                   {draftKind === "bundled"
-                    ? "The catalogue that ships with the app — a demo for when the network is down. Its packages are signed with a public key, so switching back to a real catalogue later will ask you to confirm a different publisher."
-                    : "A plain JSON file — any static host works, no server needed. Packages are verified against the publisher key in that file before they are installed."}
+                    ? t(
+                        "The catalogue that ships with the app — a demo for when the network is down. Its packages are signed with a public key, so switching back to a real catalogue later will ask you to confirm a different publisher.",
+                      )
+                    : t(
+                        "A plain JSON file — any static host works, no server needed. Packages are verified against the publisher key in that file before they are installed.",
+                      )}
                 </p>
 
                 {/*
@@ -738,13 +789,14 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                 */}
                 <div className="lattice-blocked">
                   <div className="lattice-blocked-head">
-                    <span>Blocked publishers</span>
+                    <span>{t("Blocked publishers")}</span>
                     <span className="lattice-blocked-count">{blockedKeys.length}</span>
                   </div>
                   {blockedKeys.length === 0 ? (
                     <p className="lattice-account-hint">
-                      Nothing blocked. Blocking a publisher key means nothing signed with it will be
-                      installed — pinned keys do not help if the key itself leaks.
+                      {t(
+                        "Nothing blocked. Blocking a publisher key means nothing signed with it will be installed — pinned keys do not help if the key itself leaks.",
+                      )}
                     </p>
                   ) : (
                     <ul className="lattice-blocked-list">
@@ -756,7 +808,7 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
                             className="lattice-btn is-small"
                             onClick={() => unblockKey(key)}
                           >
-                            Unblock
+                            {t("Unblock")}
                           </button>
                         </li>
                       ))}
@@ -767,14 +819,14 @@ export function SettingsMenu({ installedCount, placementCount, onQuit, onOpenAss
 
               <footer className="lattice-account-form-foot">
                 <button type="button" className="lattice-btn is-small" onClick={() => setView("menu")}>
-                  Cancel
+                  {t("Cancel")}
                 </button>
                 <button
                   type="submit"
                   className="lattice-btn is-small is-primary"
                   disabled={draftKind === "url" && !draftUrl.trim()}
                 >
-                  Save
+                  {t("Save")}
                 </button>
               </footer>
             </form>

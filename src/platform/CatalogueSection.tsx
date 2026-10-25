@@ -27,7 +27,8 @@ import {
   type CataloguePackage,
   type InstallPlan,
 } from "../runtime/catalogue";
-import { PERMISSION_LABELS, type Permission } from "../runtime/manifest";
+import { PERMISSION_LABELS, permissionLabel, type Permission } from "../runtime/manifest";
+import { useLang, useT } from "../runtime/i18n";
 import type { CatalogueSnapshot } from "./catalogue";
 import type { PermissionReview } from "./store";
 import { Glyph, ICON } from "./icons";
@@ -78,7 +79,11 @@ function matches(entry: CatalogueEntry, tokens: string[]): boolean {
     entry.id,
     entry.description,
     entry.author,
-    ...entry.versions.flatMap((item) => item.permissions.map((p) => PERMISSION_LABELS[p])),
+    // 权限名中英各放一份：英文名保持原样（与 `library-search.ts` 一致），
+    // 另一份按当前界面语言取 —— 中文界面下搜"网络"要能命中要联网的包。
+    ...entry.versions.flatMap((item) =>
+      item.permissions.flatMap((p) => [PERMISSION_LABELS[p] ?? p, permissionLabel(p)]),
+    ),
   ]
     .join(" ")
     .toLowerCase();
@@ -100,6 +105,11 @@ export function CatalogueSection({
   installedIds,
   forceOpen = false,
 }: CatalogueSectionProps) {
+  const t = useT();
+  /** 中文里列举用「、」，英文里是逗号 —— 拼出来的是句子，标点要跟着语言走 */
+  const isZh = useLang() === "zh";
+  const listSep = isZh ? "、" : ", ";
+  const notesSep = isZh ? "、" : " and ";
   const { snapshot } = store;
   /** 批量安装正在进行：期间把按钮按住，免得点两遍 */
   const [batchBusy, setBatchBusy] = useState(false);
@@ -107,7 +117,8 @@ export function CatalogueSection({
   const entries = useMemo(() => {
     const list = snapshot?.catalogue?.entries ?? [];
     return list.filter((entry) => matches(entry, tokens));
-  }, [snapshot, tokens]);
+    // 切换界面语言会换一套权限名，命中结果要跟着重算
+  }, [snapshot, tokens, isZh]);
 
   /*
    * 每条的处置在这里一次算完，再分堆。
@@ -154,15 +165,15 @@ export function CatalogueSection({
     return (
       <LibSection
         title="Catalogue"
-        count={snapshot.catalogue ? null : "offline"}
+        count={snapshot.catalogue ? null : t("Offline")}
         defaultOpen
         className="lattice-store"
       >
         <div className="lattice-lib-note">
-          <p className="lattice-lib-note-title">The catalogue could not be read</p>
+          <p className="lattice-lib-note-title">{t("The catalogue could not be read")}</p>
           <p className="lattice-hint">{snapshot.error}</p>
           <button type="button" className="lattice-btn is-small" onClick={store.onRefresh}>
-            Try again
+            {t("Try again")}
           </button>
         </div>
       </LibSection>
@@ -219,20 +230,20 @@ export function CatalogueSection({
   const upToDate = tally((row) => row.versionPlan.kind === "current");
   const behind = tally((row) => row.versionPlan.kind === "older");
   const unsigned = tally((row) => row.versionPlan.kind === "unsigned");
-  if (upToDate) versionParts.push(`${upToDate} up to date`);
-  if (behind) versionParts.push(`${behind} older than your copy`);
-  if (unsigned) versionParts.push(`${unsigned} unsigned`);
+  if (upToDate) versionParts.push(t("{count} up to date", { count: upToDate }));
+  if (behind) versionParts.push(t("{count} older than your copy", { count: behind }));
+  if (unsigned) versionParts.push(t("{count} unsigned", { count: unsigned }));
 
   const keyNotes: string[] = [];
   const changedKey = tally((row) => row.plan.kind === "untrusted");
   const blockedKey = tally((row) => row.plan.kind === "blocked");
-  if (changedKey) keyNotes.push(`a changed publisher key`);
-  if (blockedKey) keyNotes.push(`a blocked publisher key`);
+  if (changedKey) keyNotes.push(t("a changed publisher key"));
+  if (blockedKey) keyNotes.push(t("a blocked publisher key"));
 
   return (
     <LibSection
       title={name}
-      count={store.busy ? "loading…" : rows.length}
+      count={store.busy ? t("Loading…") : rows.length}
       forceOpen={forceOpen}
       className="lattice-store"
       action={
@@ -240,8 +251,12 @@ export function CatalogueSection({
           type="button"
           className={`lattice-icon-btn is-tiny${store.busy ? " is-spinning" : ""}`}
           onClick={store.onRefresh}
-          title={updated ? `Catalogue updated ${updated} — click to reload` : "Reload the catalogue"}
-          aria-label="Reload the catalogue"
+          title={
+            updated
+              ? t("Catalogue updated {date} — click to reload", { date: updated })
+              : t("Reload the catalogue")
+          }
+          aria-label={t("Reload the catalogue")}
         >
           <Glyph d={ICON.refresh} size={12} />
         </button>
@@ -250,18 +265,18 @@ export function CatalogueSection({
       {snapshot.notice && (
         <div className="lattice-lib-note is-stale">
           <p className="lattice-lib-note-title">
-            {snapshot.notice.kind === "stale" ? "Showing an older copy" : "Offline"}
+            {snapshot.notice.kind === "stale" ? t("Showing an older copy") : t("Offline")}
           </p>
           <p className="lattice-hint">{snapshot.notice.message}</p>
           <button type="button" className="lattice-btn is-small" onClick={store.onRefresh}>
-            Try again
+            {t("Try again")}
           </button>
         </div>
       )}
 
       {snapshot.warnings.length > 0 && (
         <details className="lattice-store-warnings">
-          <summary>{snapshot.warnings.length} entries were skipped</summary>
+          <summary>{t("{count} entries were skipped", { count: snapshot.warnings.length })}</summary>
           <ul>
             {snapshot.warnings.slice(0, 8).map((line, index) => (
               <li key={`${line}-${index}`}>{line}</li>
@@ -272,14 +287,16 @@ export function CatalogueSection({
 
       {rows.length === 0 && (
         <p className="lattice-hint">
-          {tokens.length > 0 ? "Nothing in the catalogue matches your search." : "This catalogue is empty."}
+          {tokens.length > 0
+            ? t("Nothing in the catalogue matches your search.")
+            : t("This catalogue is empty.")}
         </p>
       )}
 
       {actionable.length > 0 && (
         <div className="lattice-lib-group-head">
           <span className="lattice-lib-group-name">
-            {routine ? "Can be installed" : "Needs a decision"}
+            {routine ? t("Can be installed") : t("Needs a decision")}
             <span className="lattice-lib-count">{actionable.length}</span>
           </span>
           {/*
@@ -302,9 +319,9 @@ export function CatalogueSection({
                   setBatchBusy(false);
                 }
               }}
-              title={`Install all ${fresh.length} widgets at once`}
+              title={t("Install all {count} widgets at once", { count: fresh.length })}
             >
-              {batchBusy ? "Installing…" : "Install all"}
+              {batchBusy ? t("Installing…") : t("Install all")}
             </button>
           )}
         </div>
@@ -326,11 +343,15 @@ export function CatalogueSection({
       */}
       {quiet.length > 0 && (
         <p className="lattice-store-note lattice-store-quiet">
-          Already installed — {versionParts.join(", ")}.
+          {t("Already installed — {versions}.", { versions: versionParts.join(listSep) })}
           {keyNotes.length > 0
-            ? ` ${changedKey + blockedKey === 1 ? "1 of them has" : `${changedKey + blockedKey} of them have`} ${keyNotes.join(" and ")}.`
-            : ""}{" "}
-          They are listed under Installed above.
+            ? `${isZh ? "" : " "}${t(
+                changedKey + blockedKey === 1 ? "1 of them has {notes}." : "{count} of them have {notes}.",
+                { count: changedKey + blockedKey, notes: keyNotes.join(notesSep) },
+              )}`
+            : ""}
+          {isZh ? "" : " "}
+          {t("They are listed under Installed above.")}
         </p>
       )}
 
@@ -368,6 +389,8 @@ function CatalogueCard({
   store: StoreBinding;
   installed: boolean;
 }) {
+  const t = useT();
+  const listSep = useLang() === "zh" ? "、" : ", ";
   const review = store.reviews[entry.id];
   const busy = store.busyId === entry.id;
 
@@ -393,17 +416,17 @@ function CatalogueCard({
           <code className="lattice-card-id">{entry.id}</code>
         </span>
         {plan.kind === "blocked" ? (
-          <span className="lattice-chip is-warn">Blocked</span>
+          <span className="lattice-chip is-warn">{t("Blocked")}</span>
         ) : review ? (
-          <span className="lattice-chip is-warn">Review</span>
+          <span className="lattice-chip is-warn">{t("Review")}</span>
         ) : installed ? (
-          <span className="lattice-chip is-accent">Installed</span>
+          <span className="lattice-chip is-accent">{t("Installed")}</span>
         ) : (
-          <span className="lattice-chip">{entry.publisher ? "Signed" : "Unsigned"}</span>
+          <span className="lattice-chip">{entry.publisher ? t("Signed") : t("Unsigned")}</span>
         )}
       </div>
 
-      <p className="lattice-card-desc">{entry.description || "No description yet"}</p>
+      <p className="lattice-card-desc">{entry.description || t("No description yet")}</p>
 
       <div className="lattice-card-meta">
         <span className="lattice-mono">v{plan.pkg.version}</span>
@@ -419,9 +442,13 @@ function CatalogueCard({
             <span
               key={permission}
               className={`lattice-perm${added.includes(permission) ? " is-new" : ""}`}
-              title={added.includes(permission) ? "This version asks for a permission you have not granted" : undefined}
+              title={
+                added.includes(permission)
+                  ? t("This version asks for a permission you have not granted")
+                  : undefined
+              }
             >
-              {PERMISSION_LABELS[permission]}
+              {permissionLabel(permission)}
             </span>
           ))}
         </div>
@@ -429,7 +456,10 @@ function CatalogueCard({
 
       {key && (
         <p className="lattice-store-key" title={`ed25519 ${key}`}>
-          Signed by {entry.publisher?.name} · {keyFingerprint(key)}
+          {t("Signed by {name} · {fingerprint}", {
+            name: entry.publisher?.name ?? "",
+            fingerprint: keyFingerprint(key),
+          })}
         </p>
       )}
 
@@ -441,7 +471,7 @@ function CatalogueCard({
             disabled={busy}
             onClick={() => store.onInstall(entry, plan.pkg, false)}
           >
-            {busy ? "Installing…" : "Install"}
+            {busy ? t("Installing…") : t("Install")}
           </button>
         )}
 
@@ -453,17 +483,19 @@ function CatalogueCard({
             onClick={() => store.onInstall(entry, plan.pkg, false)}
             title={
               added.length > 0
-                ? `This update asks for ${added.map((item) => PERMISSION_LABELS[item]).join(", ")}`
+                ? t("This update asks for {permissions}", {
+                    permissions: added.map((item) => permissionLabel(item)).join(listSep),
+                  })
                 : undefined
             }
           >
-            {busy ? "Updating…" : `Update to ${plan.pkg.version}`}
+            {busy ? t("Updating…") : t("Update to {version}", { version: plan.pkg.version })}
           </button>
         )}
 
         {plan.kind === "current" && (
           <span className="lattice-store-note">
-            {installed ? "Up to date" : `Already installed (${plan.pkg.version})`}
+            {installed ? t("Up to date") : t("Already installed ({version})", { version: plan.pkg.version })}
           </span>
         )}
 
@@ -474,36 +506,43 @@ function CatalogueCard({
         */}
         {plan.kind === "older" && (
           <span className="lattice-store-note">
-            The catalogue only has {plan.pkg.version} — you have {plan.installed}. Nothing to do.
+            {t("The catalogue only has {version} — you have {installed}. Nothing to do.", {
+              version: plan.pkg.version,
+              installed: plan.installed,
+            })}
           </span>
         )}
 
         {plan.kind === "blocked" && (
           <div className="lattice-store-trust">
             <span className="lattice-store-note is-warn">
-              You blocked this publisher key ({keyFingerprint(plan.key)}). Nothing signed with it
-              will be installed.
+              {t("You blocked this publisher key ({fingerprint}). Nothing signed with it will be installed.", {
+                fingerprint: keyFingerprint(plan.key),
+              })}
             </span>
             <button
               type="button"
               className="lattice-btn is-small"
               onClick={() => store.onUnblockKey(plan.key)}
             >
-              Unblock this key
+              {t("Unblock this key")}
             </button>
           </div>
         )}
 
         {plan.kind === "unsigned" && (
           <span className="lattice-store-note is-warn">
-            No publisher signature — this catalogue entry cannot be installed
+            {t("No publisher signature — this catalogue entry cannot be installed")}
           </span>
         )}
 
         {plan.kind === "untrusted" && (
           <div className="lattice-store-trust">
             <span className="lattice-store-note is-warn">
-              Publisher key changed: was {keyFingerprint(plan.pinned)}, now {keyFingerprint(plan.offered)}.
+              {t("Publisher key changed: was {old}, now {new}.", {
+                old: keyFingerprint(plan.pinned),
+                new: keyFingerprint(plan.offered),
+              })}
             </span>
             <button
               type="button"
@@ -511,7 +550,7 @@ function CatalogueCard({
               disabled={busy}
               onClick={() => store.onInstall(entry, plan.pkg, true)}
             >
-              Trust the new key and install
+              {t("Trust the new key and install")}
             </button>
             {/*
               换钥匙是"私钥泄露"最像的样子：旧钥匙还在本地被钉着，而它可能已经
@@ -519,15 +558,15 @@ function CatalogueCard({
               点完之后这把钥匙进拉黑名单，将来哪怕它又签了什么，也装不进来。
             */}
             {pinnedBlocked ? (
-              <span className="lattice-store-note">The old key is blocked — it can no longer ship to you.</span>
+              <span className="lattice-store-note">{t("The old key is blocked — it can no longer ship to you.")}</span>
             ) : (
               <button
                 type="button"
                 className="lattice-btn is-small"
                 onClick={() => store.onBlockKey(plan.pinned)}
-                title="Stop trusting the previous key entirely — use this if it may have leaked"
+                title={t("Stop trusting the previous key entirely — use this if it may have leaked")}
               >
-                Block the old key instead
+                {t("Block the old key instead")}
               </button>
             )}
           </div>
@@ -536,7 +575,9 @@ function CatalogueCard({
 
       {plan.kind === "update" && added.length > 0 && (
         <p className="lattice-store-note is-warn">
-          Adds {added.map((item) => PERMISSION_LABELS[item]).join(", ")} — you will be asked to allow it.
+          {t("Adds {permissions} — you will be asked to allow it.", {
+            permissions: added.map((item) => permissionLabel(item)).join(listSep),
+          })}
         </p>
       )}
     </div>

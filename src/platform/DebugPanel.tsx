@@ -34,6 +34,7 @@ import {
   type DebugRecord,
 } from "../runtime/debug";
 import { Glyph, ICON } from "./icons";
+import { useT } from "../runtime/i18n";
 
 /** 面板过滤的三档 */
 type Mode = "all" | DebugKind;
@@ -73,6 +74,7 @@ interface DebugPanelProps {
 }
 
 export function DebugPanel({ open, onClose }: DebugPanelProps) {
+  const t = useT();
   const [records, setRecords] = useState<readonly DebugRecord[]>(() => [...snapshot()]);
   const [mode, setMode] = useState<Mode>("all");
   const [query, setQuery] = useState("");
@@ -135,20 +137,20 @@ export function DebugPanel({ open, onClose }: DebugPanelProps) {
   if (!open) return null;
 
   return (
-    <section className="lattice-debug" aria-label="Widget debug panel">
+    <section className="lattice-debug" aria-label={t("Widget debug panel")}>
       <header className="lattice-debug-head">
-        <span className="lattice-debug-title">Debug</span>
+        <span className="lattice-debug-title">{t("Debug")}</span>
         <span className="lattice-debug-stats">
-          <b>{stats.calls}</b> bridge · <b>{stats.logs}</b> console
+          <b>{stats.calls}</b> {t("bridge calls")} · <b>{stats.logs}</b> {t("console lines")}
           {stats.failures > 0 && (
             <>
               {" · "}
-              <b className="is-bad">{stats.failures}</b> failed
+              <b className="is-bad">{stats.failures}</b> {t("failed")}
             </>
           )}
         </span>
 
-        <div className="lattice-debug-modes" role="group" aria-label="Record type">
+        <div className="lattice-debug-modes" role="group" aria-label={t("Record type")}>
           {MODES.map((item) => (
             <button
               key={item.value}
@@ -156,7 +158,7 @@ export function DebugPanel({ open, onClose }: DebugPanelProps) {
               className={`lattice-debug-mode${mode === item.value ? " is-active" : ""}`}
               onClick={() => setMode(item.value)}
             >
-              {item.label}
+              {t(item.label)}
             </button>
           ))}
         </div>
@@ -167,14 +169,14 @@ export function DebugPanel({ open, onClose }: DebugPanelProps) {
             checked={onlyFailures}
             onChange={(event) => setOnlyFailures(event.target.checked)}
           />
-          Failures only
+          {t("Failures only")}
         </label>
 
         <input
           className="lattice-input lattice-debug-search"
           type="search"
           value={query}
-          placeholder="Filter by method, widget or text"
+          placeholder={t("Filter by method, widget or text")}
           onChange={(event) => setQuery(event.target.value)}
         />
 
@@ -182,19 +184,23 @@ export function DebugPanel({ open, onClose }: DebugPanelProps) {
           type="button"
           className={`lattice-btn is-small${frozen ? " is-active" : ""}`}
           onClick={() => setFrozen((value) => !value)}
-          title={frozen ? "Resume — catch up with what arrived meanwhile" : "Freeze the view so you can read a row"}
+          title={
+            frozen
+              ? t("Resume — catch up with what arrived meanwhile")
+              : t("Freeze the view so you can read a row")
+          }
         >
-          {frozen ? "Resume" : "Pause"}
+          {frozen ? t("Resume") : t("Pause")}
         </button>
         <button type="button" className="lattice-btn is-small" onClick={() => clear()}>
-          Clear
+          {t("Clear")}
         </button>
         <button
           type="button"
           className="lattice-icon-btn"
           onClick={onClose}
-          title="Close (Ctrl+Shift+D)"
-          aria-label="Close debug panel"
+          title={t("Close (Ctrl+Shift+D)")}
+          aria-label={t("Close debug panel")}
         >
           <Glyph d={ICON.close} size={14} />
         </button>
@@ -203,8 +209,8 @@ export function DebugPanel({ open, onClose }: DebugPanelProps) {
       {visible.length === 0 ? (
         <p className="lattice-debug-empty">
           {records.length === 0
-            ? "Nothing yet. Bridge calls and console output from widgets show up here as they happen."
-            : "No record matches the current filter."}
+            ? t("Nothing yet. Bridge calls and console output from widgets show up here as they happen.")
+            : t("No record matches the current filter.")}
         </p>
       ) : (
         <ol className="lattice-debug-list" ref={listRef} onScroll={onScroll}>
@@ -216,7 +222,7 @@ export function DebugPanel({ open, onClose }: DebugPanelProps) {
             >
               <span className="lattice-debug-time">{stamp(record.at)}</span>
               <span className={`lattice-debug-kind is-${record.kind}`}>
-                {KIND_LABEL[record.kind]}
+                {t(KIND_LABEL[record.kind])}
               </span>
               <span className="lattice-debug-widget">{record.widgetId || "—"}</span>
               <span className="lattice-debug-name">{record.name}</span>

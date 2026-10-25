@@ -82,6 +82,8 @@ src/
     assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、system prompt、历史裁剪、OpenAI 消息形状、快照压缩（`tests/assistant.html` 83 条）
     align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 单包命中判定（纯函数，`tests/library-search.html` 钉着）
+    i18n.ts               界面文案的中英切换：**key 就是英文原句**、缺翻译退化成英文、`useT()`（组件）/ `t()`（模块）/ `setLanguage()`（`tests/i18n.html` 钉着）
+    i18n/*.ts             中文表按域分片（common / shell / library / panels / settings / assistant / misc）；**纯数据，一个 import 都不许有**
     debug.ts              调试总线：环形缓冲 400 条、攒批镜像到主窗口、过滤 / 统计纯函数
     semver.ts             版本号与范围：解析 / 比较 / `^ ~ >= <= > < =` / 通配 / `||`（纯函数，`tests/semver.html` 钉着）
     catalogue.ts          目录解析与安装计划：三道校验、挑版本、权限差集（纯函数，`tests/catalogue.html` 钉着）
@@ -342,6 +344,25 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 
 第 3 步最后那个 `Applied` 最容易漏。`Applied` 是"已经写进 Win32 的状态"，不在里面的字段永远不会触发窗口更新——撤销权限对已打开的桌面窗口无效，就是这么来的。
 
+### 加一句界面文案 / 改一句文案
+
+**平台自己的界面文案只有一套来源**：英文原句写在代码里，中文写在 `runtime/i18n/*.ts`。不新增第二套 key，也不在别处硬编码中文。
+
+```tsx
+const t = useT();                      // 组件里：语言一变就重渲染
+<span>{t("Snap to grid")}</span>
+<span>{t("Install v{version}", { version })}</span>
+```
+
+- **key 就是英文原句**（不是 `settings.snap`）。表里没有的句子原样显示英文 —— 漏一条的代价是"这句还是英文"，不是界面上出现一串点分键名。
+- **组件里必须用 `useT()`**，模块级（`platform/*.ts`、`widgetHost.ts`）用 `t()`。模块顶层算出来的常量数组（`THEME_OPTIONS` 那种）**不能**在初始化时 `t()`：英文留在常量里，渲染时 `t(option.label)`。
+- **中文写进哪个分片看归谁**：`common`（多处在用的词）、`shell`（外壳 / 画布）、`library`（组件库与商店）、`panels`（属性面板 / 说明 / 举报）、`settings`（设置浮层）、`assistant`（assistant 与调试面板）、`misc`（`platform/*.ts`、清单校验、权限名）。**同一句只有一种译法**，`tests/i18n.html` 会查。
+- **英文必须写好**：它就是 en 这一门的成品。中文不许改 `{占位符}` 的名字，位置随意（可以把变量放句子中间）。
+- **不翻**：组件清单里的 `name` / `description` / `help` / `changelog`（作者写的）、代码注释、`console.*`、错误码与枚举、URL 与路径、日志与审计。
+- **翻**：可见文字、`placeholder`、`title`、`aria-label`。
+- 桌面组件窗口是独立 webview、**不加载 store**，所以语言随 `HostConfig.lang` 下去当初值、变化走 `lattice:language` 广播（和 `lattice:theme` 同一套）。加一处新的"平台写给桌面端看的字"，记得两样都要接。
+- 权限名走 `permissionLabel(p)`（`runtime/manifest.ts`），别直接读 `PERMISSION_LABELS` 上界面 —— 那张表是英文原文，也是中文表的 key。
+
 ### 改内置 assistant / 加一项 AI 能力
 
 一句话的形状：**key 只在 Rust 里，模型只认 OpenAI 兼容的 `/chat/completions`，手仍然是那八个动作。**
@@ -443,6 +464,8 @@ public/widgets/<id>/
 | --- | --- | --- |
 | **agent 端点：只差一次 CLI 往返** | 真机已经确认到的：端点只在开关打开时才 bind（关着时 `agent/` 目录下连 `endpoint.json` 都没有）、绑定的是回环地址加系统分配端口、退出时打 `agent endpoint on 127.0.0.1:<port> stopped` 并擦掉 `endpoint.json`、看板每 2 秒一次的 `agent.activity` 在调试面板里稳定往返。**没验的**：从 CLI 真发一条 `state` / `act` / `say`（那需要端点开着的时候正好在跑命令），以及"关掉之后端口释放"的实测 | 起一次 `tauri:dev`，设置里打开 → `npm run agent -- say "hello"` → `state` → `act theme.set` → 关掉再 `state`（应该报端点文件没了）。**起之前先确认没有残留的 `lattice.exe`** —— 孤儿进程会用内存里那份盖掉 `state.json` |
 | **`shell.open` 只过了单测** | `open_policy.rs` 的 5 条 `rustc --test` 全过、`cargo check` 干净、`tests/bookmarks.html` 44 条全过 —— 但那全是"规则对不对"和"组件答得对不对"。**没验的**是最后一步：`ShellExecuteW` 到底有没有把浏览器叫起来，以及撤掉 `shell:open` 之后点一行是不是只出提示、什么都不打开 | 起一次桌面应用 → 装 Bookmarks（属性面板里勾上 Open links）→ 点一行看默认浏览器是否起来（`shell.open` 成功只代表"交给系统了"，浏览器起不来它也不会知道）→ 撤掉 Open links 再点一次，卡片应显示 "It needs the Open links permission"，任务管理器里不该多出浏览器进程。**跑之前先确认没有残留的 `lattice.exe`**，孤儿进程会用内存里那份盖掉 `state.json` |
+| **Rust 直接生成的那几句还是英文** | 界面文案都走 `t()`，但有几条给人看的字是在 Rust 里拼出来、跨 IPC 才到界面的：`llm.rs` 的设置读写错误、`llm_policy::describe_status` 的 401/403/404/429（"去 Assistant settings 换一把 key"这种）。中文环境里它们仍然显示英文 | 两条路：在 Rust 里只回**错误码**、由前端翻（干净，但要改 llm 那五个命令的返回形状）；或者把这几个 key 也收进中文表、在 Rust 里 `t()`（要先把表导进 Rust，等于第二份真源）。没做之前别在 `i18n/*` 里加"看起来该翻"的半条 —— 表里有的句子前端才取得到 |
+| **"跟随系统"只在一台英文系统上验过** | 这台机器的 WebView2 报 `en-US`，所以三档里"跟随系统"落回英文是对的，但"系统是中文时点跟随系统"和"应用开着的时候改系统语言"只走了代码（`watchSystemLanguage`），没在中文系统上真点过 | 换一台中文 Windows（或临时改显示语言）看两件事：新装第一次启动应该是中文；应用开着时切系统语言，界面应当当场跟着换。`resolveLang` 的纯逻辑已被 `tests/i18n.html` 钉住，要补的是真机那一段 |
 | **安装包没有代码签名** | 第一次运行被 SmartScreen 拦成"未知发布者"，点"仍要运行"才装得上。用户流失基本都发生在这一步 | 买 OV/EV 证书（EV 能立刻建立信誉，OV 要攒），或走 winget / Microsoft Store 分发绕开 |
 | **平台更新只走 GitHub Releases** | `plugins.updater.endpoints` 写死一条 GitHub 地址。国内网络环境下 `github.com` 和 `objects.githubusercontent.com` 都可能连不上，更新会失败 | 加第二个 endpoint（自建静态站 / 对象存储），更新器按顺序试。注意**两个地址要放同一份 `latest.json`**，否则两边版本会飘 |
 | **底板透不出后面的窗口** | 磨砂层是"壁纸"，不是"压在组件后面的浏览器窗口"——系统的模糊半径写死，做不成滑杆，二者只能选一个 | 要么接受，要么换 `SetWindowCompositionAttribute` 并放弃连续滑杆（见 ROADMAP 被推翻的决定 7） |

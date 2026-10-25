@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { useT } from "../runtime/i18n";
 import type { WidgetRecord } from "../runtime/registry";
 
 export interface ReportTarget {
@@ -40,6 +41,7 @@ interface ReportDialogProps {
 }
 
 export function ReportDialog({ target, saving, result, error, onClose, onSubmit }: ReportDialogProps) {
+  const t = useT();
   const [reason, setReason] = useState(REASONS[0]);
   const [note, setNote] = useState("");
   const [stars, setStars] = useState(0);
@@ -65,8 +67,8 @@ export function ReportDialog({ target, saving, result, error, onClose, onSubmit 
   }, [target, onClose]);
 
   const title = useMemo(
-    () => (target ? `Report ${target.record.manifest.name}` : ""),
-    [target],
+    () => (target ? t("Report {name}", { name: target.record.manifest.name }) : ""),
+    [target, t],
   );
 
   if (!target) return null;
@@ -82,7 +84,7 @@ export function ReportDialog({ target, saving, result, error, onClose, onSubmit 
       >
         <header className="lattice-modal-head">
           <span className="lattice-modal-title">{title}</span>
-          <button type="button" className="lattice-icon-btn" onClick={onClose} aria-label="Close">
+          <button type="button" className="lattice-icon-btn" onClick={onClose} aria-label={t("Close")}>
             ×
           </button>
         </header>
@@ -90,13 +92,12 @@ export function ReportDialog({ target, saving, result, error, onClose, onSubmit 
         {result ? (
           <div className="lattice-modal-body">
             <p className="lattice-modal-lead">
-              Saved. Lattice has no server, so nothing was uploaded — send this file to the author
-              (or attach it to an issue) to report the problem.
+              {t("Saved. Lattice has no server, so nothing was uploaded — send this file to the author (or attach it to an issue) to report the problem.")}
             </p>
             <code className="lattice-mono lattice-modal-path">{result.path}</code>
             <footer className="lattice-modal-foot">
               <button type="button" className="lattice-btn is-small is-primary" onClick={onClose}>
-                Done
+                {t("Done")}
               </button>
             </footer>
           </div>
@@ -107,36 +108,36 @@ export function ReportDialog({ target, saving, result, error, onClose, onSubmit 
             </p>
 
             <label className="lattice-textfield">
-              <span>What went wrong?</span>
+              <span>{t("What went wrong?")}</span>
               <select value={reason} onChange={(event) => setReason(event.target.value)}>
                 {REASONS.map((item) => (
                   <option key={item} value={item}>
-                    {item}
+                    {t(item)}
                   </option>
                 ))}
               </select>
             </label>
 
             <label className="lattice-textfield">
-              <span>Details (optional)</span>
+              <span>{t("Details (optional)")}</span>
               <textarea
                 value={note}
                 onChange={(event) => setNote(event.target.value.slice(0, 2000))}
                 rows={4}
-                placeholder="What did you expect, and what happened instead?"
+                placeholder={t("What did you expect, and what happened instead?")}
               />
             </label>
 
             <div className="lattice-report-stars">
-              <span>Your rating</span>
-              <div className="lattice-stars is-large" role="group" aria-label="Rating">
+              <span>{t("Your rating")}</span>
+              <div className="lattice-stars is-large" role="group" aria-label={t("Rating")}>
                 {[1, 2, 3, 4, 5].map((value) => (
                   <button
                     key={value}
                     type="button"
                     className={`lattice-star${value <= stars ? " is-on" : ""}`}
                     onClick={() => setStars(value === stars ? 0 : value)}
-                    aria-label={`${value} star${value === 1 ? "" : "s"}`}
+                    aria-label={t(value === 1 ? "{count} star" : "{count} stars", { count: value })}
                     aria-pressed={value <= stars}
                   >
                     ★
@@ -148,12 +149,12 @@ export function ReportDialog({ target, saving, result, error, onClose, onSubmit 
             {error && <p className="lattice-modal-error">{error}</p>}
 
             <p className="lattice-modal-hint">
-              The report is written to a file on this computer. Nothing is sent anywhere.
+              {t("The report is written to a file on this computer. Nothing is sent anywhere.")}
             </p>
 
             <footer className="lattice-modal-foot">
               <button type="button" className="lattice-btn is-small" onClick={onClose}>
-                Cancel
+                {t("Cancel")}
               </button>
               <button
                 type="button"
@@ -161,7 +162,7 @@ export function ReportDialog({ target, saving, result, error, onClose, onSubmit 
                 disabled={saving}
                 onClick={() => onSubmit({ reason, note: note.trim(), stars: stars > 0 ? stars : null })}
               >
-                {saving ? "Saving…" : "Save report"}
+                {saving ? t("Saving…") : t("Save report")}
               </button>
             </footer>
           </div>

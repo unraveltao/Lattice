@@ -9,6 +9,7 @@
  * 谁有说明、说明写了几节，在解析清单时就已经定了。
  */
 
+import { useT } from "../runtime/i18n";
 import type { ChangelogEntry, WidgetHelp } from "../runtime/help";
 
 interface HelpContentProps {
@@ -19,6 +20,7 @@ interface HelpContentProps {
 }
 
 export function HelpContent({ help, changelog = [], showHistory = true }: HelpContentProps) {
+  const t = useT();
   return (
     <div className="lattice-help">
       {help.sections.map((section) => (
@@ -35,7 +37,7 @@ export function HelpContent({ help, changelog = [], showHistory = true }: HelpCo
       {showHistory && changelog.length > 0 && (
         <details className="lattice-help-history">
           <summary>
-            What changed
+            {t("What changed")}
             <span className="lattice-lib-count">{changelog.length}</span>
           </summary>
           {changelog.map((entry) => (
@@ -76,18 +78,19 @@ export function HelpDialog({
   changelog: ChangelogEntry[];
   onClose: () => void;
 }) {
+  const t = useT();
   return (
     <div className="lattice-modal-backdrop" role="presentation" onPointerDown={onClose}>
       <div
         className="lattice-modal is-help"
         role="dialog"
-        aria-label={`How to use ${name}`}
+        aria-label={t("How to use {name}", { name })}
         aria-modal="true"
         onPointerDown={(event) => event.stopPropagation()}
       >
         <header className="lattice-modal-head">
-          <span className="lattice-modal-title">How to use {name}</span>
-          <button type="button" className="lattice-icon-btn" onClick={onClose} aria-label="Close">
+          <span className="lattice-modal-title">{t("How to use {name}", { name })}</span>
+          <button type="button" className="lattice-icon-btn" onClick={onClose} aria-label={t("Close")}>
             ×
           </button>
         </header>
@@ -97,7 +100,7 @@ export function HelpDialog({
             <HelpContent help={help} changelog={changelog} />
           ) : (
             <p className="lattice-modal-hint">
-              This widget does not ship a how-to yet. Its author can add one to the manifest.
+              {t("This widget does not ship a how-to yet. Its author can add one to the manifest.")}
             </p>
           )}
         </div>

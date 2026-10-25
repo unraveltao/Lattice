@@ -142,6 +142,7 @@ pub fn run() {
             runner::widget_close,
             runner::widget_reload,
             runner::widget_set_theme,
+            runner::widget_set_language,
             runner::widget_set_appearance,
             guides::guide_targets,
             guides::guide_show,

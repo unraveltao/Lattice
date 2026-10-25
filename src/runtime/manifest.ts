@@ -9,6 +9,7 @@
 import { normalizeAppearance, type Appearance } from "./appearance";
 import { normalizeConfig, type ConfigField } from "./config";
 import { normalizeChangelog, normalizeHelp, type ChangelogEntry, type WidgetHelp } from "./help";
+import { t } from "./i18n";
 
 /** 组件在桌面上的层级 */
 export type WidgetLayer = "desktop" | "top";
@@ -161,18 +162,18 @@ export class ManifestError extends Error {}
  */
 export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest {
   if (!raw || typeof raw !== "object") {
-    throw new ManifestError("manifest.json is not an object");
+    throw new ManifestError(t("manifest.json is not an object"));
   }
   const input = raw as Record<string, unknown>;
 
   const id = requireString(input.id, "id");
   if (!ID_RE.test(id)) {
-    throw new ManifestError(`id "${id}" is not a reverse-domain id, e.g. lattice.clock`);
+    throw new ManifestError(t('id "{id}" is not a reverse-domain id, e.g. lattice.clock', { id }));
   }
 
   const version = requireString(input.version, "version");
   if (!VERSION_RE.test(version)) {
-    throw new ManifestError(`version "${version}" is not a valid semver string`);
+    throw new ManifestError(t('version "{version}" is not a valid semver string', { version }));
   }
 
   const rawSize = (input.size ?? {}) as Partial<WidgetSize>;
@@ -199,7 +200,7 @@ export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest
     name: optionalString(input.name) || dirName,
     version,
     description: optionalString(input.description),
-    author: optionalString(input.author) || "Unknown author",
+    author: optionalString(input.author) || t("Unknown author"),
     entry: optionalString(input.entry) || "index.html",
     icon: normalizeIconPath(input.icon),
     size,
@@ -264,7 +265,7 @@ function normalizeNetwork(raw: unknown): WidgetNetwork {
 
 function requireString(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) {
-    throw new ManifestError(`missing required field "${field}"`);
+    throw new ManifestError(t('missing required field "{field}"', { field }));
   }
   return value.trim();
 }
@@ -290,6 +291,17 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "agent:activity": "Agent activity",
   "llm:chat": "Use my AI model",
 };
+
+/**
+ * 权限名给界面看的那一份（按当前界面语言）。
+ *
+ * 表和函数分开：`PERMISSION_LABELS` 是**英文原文**，也是中文表的 key ——
+ * 上面那句话已经在 `i18n/*` 里有一行对应。所以加一项权限还是"四处一起改"，
+ * 只是第四处从"改标签"变成"表里加一行中文"，函数本身不用动。
+ */
+export function permissionLabel(permission: Permission): string {
+  return t(PERMISSION_LABELS[permission] ?? permission);
+}
 
 /**
  * 已知权限，也是"能不能声明 / 能不能勾"的唯一判据。

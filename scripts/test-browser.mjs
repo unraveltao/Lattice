@@ -112,6 +112,15 @@ function runPage(name) {
         "--disable-extensions",
         "--disable-background-networking",
         `--user-data-dir=${profile}`,
+        /*
+         * 界面文案有了中英两套之后，断言必须钉在**一种**语言上。
+         *
+         * 有些页面断言的正是"用户看得见的那句话"（`describeAge` 的 `5 minutes ago`、
+         * 商店卡片上的状态词），而那些字现在走 `t()`，取的是 `navigator.languages`。
+         * 不钉的话，同一页在中文机器上红、在英文机器上绿 —— 最坏的一种不稳定：
+         * 本地全过、换台机器全红。
+         */
+        "--lang=en-US",
         `--virtual-time-budget=${budget}`,
         "--dump-dom",
         `${base}/tests/${name}.html`,

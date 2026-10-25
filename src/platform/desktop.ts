@@ -10,6 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { normalizeAppearance, type Appearance } from "../runtime/appearance";
 import { resolveConfig, type ConfigValues } from "../runtime/config";
+import { lang } from "../runtime/i18n";
 import type { Permission } from "../runtime/manifest";
 import type { WidgetRecord } from "../runtime/registry";
 import type { DesktopRect, Placement } from "./store";
@@ -41,6 +42,15 @@ export interface WidgetWindowSpec {
   pinned: boolean;
   /** 平台当前解析出的明暗，桌面窗口据此上色 */
   theme: "light" | "dark";
+  /**
+   * 平台当前生效的界面语言，桌面窗口拿它当提示语的初值。
+   *
+   * 为什么和 `theme` 一样走 spec 而不是让宿主页自己算：桌面窗口是另一个
+   * webview，**不加载 store**，读不到设置里那档偏好（"跟随系统"还是"英文"）。
+   * 自己用 `navigator.language` 猜一遍的话，用户把界面切成英文、桌面卡片上
+   * 还是中文 —— 而后来的切换由 `lattice:language` 广播补上（和主题同一套）。
+   */
+  lang: "zh" | "en";
   /** 底板外观：实例覆盖优先，其次清单出厂值 */
   appearance: Appearance;
   /**
@@ -115,6 +125,7 @@ export function buildSpecs(
       clickThrough: placement.clickThrough,
       pinned: placement.pinned ?? false,
       theme,
+      lang: lang(),
       appearance: normalizeAppearance(placement.appearance ?? record.manifest.appearance),
       config: resolveConfig(record.manifest.config, configs[placement.instanceId]),
     });

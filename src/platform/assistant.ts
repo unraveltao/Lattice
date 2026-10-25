@@ -23,6 +23,7 @@ import {
   type ChatMessage,
   type DeskSnapshot,
 } from "../runtime/assistant";
+import { t } from "../runtime/i18n";
 import type { WidgetRecord } from "../runtime/registry";
 import { agentSnapshot, runAgentAction, type AgentReply } from "./agent";
 
@@ -184,7 +185,10 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
     }
   }
 
-  onEvent({ type: "text", text: `（我先停在这里：一次对话最多 ${MAX_STEPS} 轮操作。）` });
+  onEvent({
+    type: "text",
+    text: t("I stopped here: a single turn can run at most {steps} tool steps.", { steps: MAX_STEPS }),
+  });
   return true;
 }
 

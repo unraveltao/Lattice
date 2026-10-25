@@ -39,9 +39,10 @@ import { buildSpecs, closeDesktop, minimizeMain, syncDesktop } from "./platform/
 import { Glyph, ICON, ThemeGlyph } from "./platform/icons";
 import { SettingsMenu } from "./platform/SettingsMenu";
 import { nextFreeSlot, useLattice, type ThemeMode } from "./platform/store";
-import { PERMISSION_LABELS } from "./runtime/manifest";
+import { permissionLabel } from "./runtime/manifest";
 import { isTauri, loadRegistry, type WidgetLoadError, type WidgetRecord } from "./runtime/registry";
 import { DEBUG_EVENT, ingest } from "./runtime/debug";
+import { lang, setLanguage, subscribe, t, useT, watchSystemLanguage } from "./runtime/i18n";
 import type { Permission, WidgetLayer } from "./runtime/manifest";
 
 /** 顶栏那颗按钮的循环顺序：浅色 → 深色 → 跟随系统 → 浅色 */
@@ -66,10 +67,17 @@ function nextTheme(current: ThemeMode): ThemeMode {
  *
  * 超时只是让界面能恢复，不代表 Rust 那边真的停了：所以超时之后不要
  * 立刻再发一次同步，先让人看见报错。
+ *
+ * `label` 传进来之前已经是当前语言的译文；整句在这里拼 —— 它要出现在
+ * 组件库的"加载失败"列表里，是用户能看到的字。t() 在**调用那一刻**读语言，
+ * 所以超时发生时的语言和拼出来的那句是一致的。
  */
 function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} did not answer within ${ms / 1000}s`)), ms);
+    const timer = setTimeout(
+      () => reject(new Error(t("{label} did not answer within {seconds}s", { label, seconds: ms / 1000 }))),
+      ms,
+    );
     work.then(
       (value) => {
         clearTimeout(timer);
@@ -122,6 +130,7 @@ interface CrashEvent {
 }
 
 export default function App() {
+  const t = useT();
   const [widgets, setWidgets] = useState<WidgetRecord[]>([]);
   const [errors, setErrors] = useState<WidgetLoadError[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,6 +153,7 @@ export default function App() {
   const uninstallWidget = useLattice((state) => state.uninstallWidget);
   const theme = useLattice((state) => state.theme);
   const setTheme = useLattice((state) => state.setTheme);
+  const language = useLattice((state) => state.language);
   const grants = useLattice((state) => state.grants);
   const desktopMode = useLattice((state) => state.desktopMode);
   const setDesktopMode = useLattice((state) => state.setDesktopMode);
@@ -361,9 +371,9 @@ export default function App() {
     try {
       await invoke("widget_reload", { instanceId: target });
     } catch (error) {
-      setNotice({ kind: "error", text: `Could not reload the widget: ${String(error)}` });
+      setNotice({ kind: "error", text: t("Could not reload the widget: {error}", { error: String(error) }) });
     }
-  }, [crash]);
+  }, [crash, t]);
 
   /*
    * 暂停状态在 Rust 那边（托盘菜单是主入口），这里补一次初始值。
@@ -451,6 +461,35 @@ export default function App() {
     return () => media.removeEventListener("change", apply);
   }, [theme]);
 
+  /*
+   * 语言的唯一开关在这里。
+   *
+   * 落盘的一直是"偏好"（`system` / `zh` / `en`），生效的那一个是 i18n 模块
+   * 算出来的 —— 和主题同一套分工：store 存偏好，模块把它变成结果，界面只
+   * 认结果。`watchSystemLanguage` 只在偏好是 `system` 时起作用。
+   */
+  useEffect(() => {
+    setLanguage(language);
+  }, [language]);
+
+  useEffect(() => watchSystemLanguage(), []);
+
+  /*
+   * 桌面上的组件窗口是独立 webview，不加载 store，读不到这档偏好 —— 所以和
+   * 主题一样广播一条。只影响平台自己写的字（窗饰提示、"组件坏了"那张卡片）：
+   * 组件自己的文案是作者写的，不跟着翻。
+   *
+   * 挂在订阅上而不是写进上面那个 effect：偏好是"跟随系统"时，系统语言变了
+   * 并不会改 React 状态，`watchSystemLanguage` 改的是 i18n 内部那一档。
+   */
+  useEffect(
+    () =>
+      subscribe(() => {
+        if (isTauri()) void invoke("widget_set_language", { lang: lang() }).catch(() => {});
+      }),
+    [],
+  );
+
   /**
    * 启动时把组件放回桌面。
    *
@@ -482,7 +521,7 @@ export default function App() {
           buildSpecs(state.placements, records, state.grants, state.desktopRects, state.configs),
         ),
         20000,
-        "Restoring desktop widgets",
+        t("Restoring desktop widgets"),
       ).catch((error) => {
         setErrors((prev) => [...prev, { dir: "(restore)", message: String(error) }]);
       });
@@ -580,7 +619,7 @@ export default function App() {
   const installFromCatalogue = useCallback(
     async (entry: CatalogueEntry, pkg: CataloguePackage, acceptNewKey: boolean) => {
       if (!isTauri()) {
-        setNotice({ kind: "error", text: "Installing from the catalogue needs the desktop app." });
+        setNotice({ kind: "error", text: t("Installing from the catalogue needs the desktop app.") });
         return;
       }
       const key = entry.publisher?.key;
@@ -589,7 +628,10 @@ export default function App() {
       if (isBlockedKey(key, blockedKeys)) {
         setNotice({
           kind: "error",
-          text: `${entry.name} is signed with a key you blocked (${keyFingerprint(key)}) — unblock it first.`,
+          text: t("{name} is signed with a key you blocked ({key}) — unblock it first.", {
+            name: entry.name,
+            key: keyFingerprint(key),
+          }),
         });
         return;
       }
@@ -598,7 +640,9 @@ export default function App() {
       if (!acceptNewKey && pinned && pinned !== key) {
         setNotice({
           kind: "error",
-          text: `${entry.name} is signed with a different key now — confirm it on the card first.`,
+          text: t("{name} is signed with a different key now — confirm it on the card first.", {
+            name: entry.name,
+          }),
         });
         return;
       }
@@ -622,8 +666,8 @@ export default function App() {
         setNotice({
           kind: "ok",
           text: result.previousVersion
-            ? `Updated ${entry.name} to ${result.version}`
-            : `Installed ${entry.name} ${result.version}`,
+            ? t("Updated {name} to {version}", { name: entry.name, version: result.version })
+            : t("Installed {name} {version}", { name: entry.name, version: result.version }),
         });
       } catch (error) {
         setNotice({ kind: "error", text: `${entry.name}: ${String(error)}` });
@@ -637,6 +681,7 @@ export default function App() {
       installWidget,
       records,
       refresh,
+      t,
       trustKey,
       trustedKeys,
     ],
@@ -649,13 +694,16 @@ export default function App() {
         await refresh();
         setNotice({
           kind: "ok",
-          text: `Rolled ${record.manifest.name} back to ${result.version ?? "the previous version"}`,
+          text: t("Rolled {name} back to {version}", {
+            name: record.manifest.name,
+            version: result.version ?? t("the previous version"),
+          }),
         });
       } catch (error) {
-        setNotice({ kind: "error", text: `Could not roll back: ${String(error)}` });
+        setNotice({ kind: "error", text: t("Could not roll back: {error}", { error: String(error) }) });
       }
     },
-    [refresh],
+    [refresh, t],
   );
 
   const submitReport = useCallback(
@@ -741,7 +789,9 @@ export default function App() {
           const id = await invoke<string>("install_widget", { source: path });
           if (officialIds.has(id)) {
             await invoke("uninstall_widget", { id });
-            failed.push(`"${id}" collides with a bundled widget id — rename it and try again`);
+            failed.push(
+              t('"{id}" collides with a bundled widget id — rename it and try again', { id }),
+            );
             continue;
           }
           installWidget(id);
@@ -761,11 +811,13 @@ export default function App() {
       } else if (installed.length > 0) {
         setNotice({
           kind: "ok",
-          text: `Installed ${installed.join(", ")} — click a card to place it on the canvas`,
+          text: t("Installed {names} — click a card to place it on the canvas", {
+            names: installed.join(", "),
+          }),
         });
       }
     },
-    [installWidget, refresh, widgets],
+    [installWidget, refresh, t, widgets],
   );
 
   // 拖放由 webview 接管（Tauri 默认 dragDropEnabled），这里只关心"放下了"
@@ -797,16 +849,16 @@ export default function App() {
       const dir = await invoke<string>("widgets_dir");
       await revealItemInDir(dir);
     } catch (error) {
-      setNotice({ kind: "error", text: `Could not open the widgets folder: ${String(error)}` });
+      setNotice({ kind: "error", text: t("Could not open the widgets folder: {error}", { error: String(error) }) });
     }
-  }, []);
+  }, [t]);
 
   const toggleDesktop = useCallback(async () => {
     if (!isTauri()) return;
     setDesktopBusy(true);
     try {
       if (desktopMode) {
-        await withTimeout(closeDesktop(), 10000, "Bringing widgets back");
+        await withTimeout(closeDesktop(), 10000, t("Bringing widgets back"));
         setDesktopMode(false);
       } else {
         const state = useLattice.getState();
@@ -815,7 +867,7 @@ export default function App() {
           buildSpecs(state.placements, records, state.grants, state.desktopRects, state.configs),
         ),
           20000,
-          "Sending widgets to the desktop",
+          t("Sending widgets to the desktop"),
         );
         setDesktopMode(true);
         // 让位这一步不阻塞按钮：最小化偶尔会慢一拍，不该把 busy 卡在这里
@@ -904,11 +956,14 @@ export default function App() {
         void installFromCatalogue(entry, pkg, acceptNewKey),
       onBlockKey: (key) => {
         blockKey(key);
-        setNotice({ kind: "ok", text: `Blocked publisher key ${keyFingerprint(key)}` });
+        setNotice({ kind: "ok", text: t("Blocked publisher key {key}", { key: keyFingerprint(key) }) });
       },
       onUnblockKey: (key) => {
         unblockKey(key);
-        setNotice({ kind: "ok", text: `Unblocked publisher key ${keyFingerprint(key)}` });
+        setNotice({
+          kind: "ok",
+          text: t("Unblocked publisher key {key}", { key: keyFingerprint(key) }),
+        });
       },
     }),
     [
@@ -922,6 +977,7 @@ export default function App() {
       installedVersions,
       permissionReviews,
       refreshCatalogue,
+      t,
       trustedKeys,
       unblockKey,
     ],
@@ -952,7 +1008,8 @@ export default function App() {
         <div className="lattice-topbar-actions">
           <span className="lattice-stat">
             <span className="lattice-stat-dot" aria-hidden />
-            <b>{placements.length}</b> on canvas · <b>{installedSet.size}</b> installed
+            <b>{placements.length}</b> {t("on canvas")} · <b>{installedSet.size}</b>{" "}
+            {t("installed")}
           </span>
 
           <button
@@ -962,19 +1019,19 @@ export default function App() {
             disabled={!isTauri() || desktopBusy}
             title={
               isTauri()
-                ? "Turn canvas widgets into real desktop windows; the main window will step aside"
-                : "Not available in browser preview — run npm run tauri:dev"
+                ? t("Turn canvas widgets into real desktop windows; the main window will step aside")
+                : t("Not available in browser preview — run npm run tauri:dev")
             }
           >
-            {desktopMode ? "Bring back" : "Send to desktop"}
+            {desktopMode ? t("Bring back") : t("Send to desktop")}
           </button>
 
           <button
             type="button"
             className={`lattice-icon-btn is-large${assistantOpen ? " is-active" : ""}`}
             onClick={toggleAssistant}
-            title="Assistant — 说一句就能改桌面（Ctrl+K，独立小窗）"
-            aria-label="Toggle assistant"
+            title={t("Assistant — tell it what to change on your desktop (Ctrl+K, separate window)")}
+            aria-label={t("Toggle assistant")}
           >
             <Glyph d={ICON.agent} />
           </button>
@@ -983,8 +1040,11 @@ export default function App() {
             type="button"
             className="lattice-icon-btn is-large"
             onClick={() => setTheme(nextTheme(theme))}
-            title={`Theme: ${THEME_LABEL[theme]} — click for ${THEME_LABEL[nextTheme(theme)]}`}
-            aria-label={`Theme: ${THEME_LABEL[theme]}`}
+            title={t("Theme: {current} — click for {next}", {
+              current: t(THEME_LABEL[theme]),
+              next: t(THEME_LABEL[nextTheme(theme)]),
+            })}
+            aria-label={t("Theme: {current}", { current: t(THEME_LABEL[theme]) })}
           >
             <ThemeGlyph mode={theme} />
           </button>
@@ -993,8 +1053,8 @@ export default function App() {
             type="button"
             className={`lattice-icon-btn is-large${debugOpen ? " is-active" : ""}`}
             onClick={() => setDebugOpen((value) => !value)}
-            title="Debug panel — bridge calls and widget console (Ctrl+Shift+D)"
-            aria-label="Toggle debug panel"
+            title={t("Debug panel — bridge calls and widget console (Ctrl+Shift+D)")}
+            aria-label={t("Toggle debug panel")}
           >
             <Glyph d={ICON.terminal} />
           </button>
@@ -1003,8 +1063,8 @@ export default function App() {
             type="button"
             className={`lattice-icon-btn is-large${loading ? " is-spinning" : ""}`}
             onClick={() => void refresh()}
-            title="Rescan the widgets folder"
-            aria-label="Refresh widgets"
+            title={t("Rescan the widgets folder")}
+            aria-label={t("Refresh widgets")}
           >
             <Glyph d={ICON.refresh} />
           </button>
@@ -1103,9 +1163,11 @@ export default function App() {
         {review ? (
           <div className="lattice-review" role="alert">
             <span className="lattice-review-text">
-              <b>{review.name}</b> {review.entry.version} asks for{" "}
-              {review.entry.added.map((item) => PERMISSION_LABELS[item]).join(", ")}. It stays
-              denied until you allow it.
+              <b>{review.name}</b>{" "}
+              {t("{version} asks for {permissions}. It stays denied until you allow it.", {
+                version: review.entry.version,
+                permissions: review.entry.added.map((item) => permissionLabel(item)).join(", "),
+              })}
             </span>
             <button
               type="button"
@@ -1115,14 +1177,14 @@ export default function App() {
                 resolvePermissionReview(review.widgetId);
               }}
             >
-              Allow
+              {t("Allow")}
             </button>
             <button
               type="button"
               className="lattice-undo-dismiss"
               onClick={() => resolvePermissionReview(review.widgetId)}
-              title="Keep it denied"
-              aria-label="Keep it denied"
+              title={t("Keep it denied")}
+              aria-label={t("Keep it denied")}
             >
               ×
             </button>
@@ -1132,17 +1194,18 @@ export default function App() {
         {crash ? (
           <div className="lattice-crash" role="alert">
             <span className="lattice-crash-text">
-              <b>{crashName}</b> keeps crashing — its window stopped reloading.
+              <b>{crashName}</b>{" "}
+              {t("keeps crashing — its window stopped reloading.")}
             </span>
             <button type="button" className="lattice-crash-action" onClick={() => void retryCrash()}>
-              Try again
+              {t("Try again")}
             </button>
             <button
               type="button"
               className="lattice-undo-dismiss"
               onClick={() => setCrash(null)}
-              title="Dismiss"
-              aria-label="Dismiss"
+              title={t("Dismiss")}
+              aria-label={t("Dismiss")}
             >
               ×
             </button>
@@ -1152,17 +1215,18 @@ export default function App() {
         {lastClosed ? (
           <div className="lattice-undo" role="status">
             <span className="lattice-undo-text">
-              Removed <b>{records.get(lastClosed.placement.widgetId)?.manifest.name ?? lastClosed.placement.widgetId}</b>
+              {t("Removed")}{" "}
+              <b>{records.get(lastClosed.placement.widgetId)?.manifest.name ?? lastClosed.placement.widgetId}</b>
             </span>
             <button type="button" className="lattice-undo-action" onClick={restoreLastClosed}>
-              Undo
+              {t("Undo")}
             </button>
             <button
               type="button"
               className="lattice-undo-dismiss"
               onClick={dismissLastClosed}
-              title="Dismiss"
-              aria-label="Dismiss"
+              title={t("Dismiss")}
+              aria-label={t("Dismiss")}
             >
               ×
             </button>

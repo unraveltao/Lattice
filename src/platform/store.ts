@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import type { Permission, WidgetLayer } from "../runtime/manifest";
+import type { LangPref } from "../runtime/i18n";
 import { normalizeKey } from "../runtime/catalogue";
 import type { Appearance } from "../runtime/appearance";
 import type { ConfigValues } from "../runtime/config";
@@ -212,6 +213,14 @@ interface LatticeState {
   /** 已授予的权限，按 widgetId 聚合 */
   grants: Record<string, Permission[]>;
   theme: ThemeMode;
+  /**
+   * 界面语言：中文 / English / 跟随系统。
+   *
+   * 存"偏好"而不是"结果"（见 `runtime/i18n.ts` 的 `LangPref`）：选了"跟随
+   * 系统"的人，换了 Windows 语言就该跟着换。真正生效的语言在 i18n 模块里，
+   * 这里只是它的落盘位置 —— 和 `theme` 同一条分工。
+   */
+  language: LangPref;
   snapToGrid: boolean;
   /** 本机档案，未登录为 null */
   profile: Profile | null;
@@ -314,6 +323,7 @@ interface LatticeState {
   bringToFront: (instanceId: string) => void;
   select: (instanceId: string | null) => void;
   setTheme: (theme: ThemeMode) => void;
+  setLanguage: (language: LangPref) => void;
   toggleSnap: () => void;
   signIn: (name: string, email: string) => void;
   signOut: () => void;
@@ -383,6 +393,7 @@ export const useLattice = create<LatticeState>()(
       installedIds: [],
       grants: {},
       theme: "system",
+      language: "system",
       snapToGrid: true,
       profile: null,
       selectedInstanceId: null,
@@ -473,6 +484,8 @@ export const useLattice = create<LatticeState>()(
       select: (instanceId) => set({ selectedInstanceId: instanceId }),
 
       setTheme: (theme) => set({ theme }),
+
+      setLanguage: (language) => set({ language }),
 
       toggleSnap: () => set((state) => ({ snapToGrid: !state.snapToGrid })),
 
@@ -650,6 +663,7 @@ export const useLattice = create<LatticeState>()(
         installedIds: state.installedIds,
         grants: state.grants,
         theme: state.theme,
+        language: state.language,
         snapToGrid: state.snapToGrid,
         profile: state.profile,
         desktopRects: state.desktopRects,

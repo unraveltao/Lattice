@@ -28,6 +28,7 @@ import {
   type LlmStatus,
 } from "./assistant";
 import { systemPrompt, type ChatMessage } from "../runtime/assistant";
+import { useT } from "../runtime/i18n";
 
 /** 一条要显示的东西。模型的消息和工具的执行结果分开排，读起来才像"过程" */
 type Entry =
@@ -56,6 +57,8 @@ export interface AssistantPanelProps {
 }
 
 export function AssistantPanel({ open, onClose, records, variant = "drawer" }: AssistantPanelProps) {
+  /** 语言一变就重渲染 —— 面板和小窗共用同一套文案 */
+  const t = useT();
   const [status, setStatus] = useState<LlmStatus | null>(null);
   const [view, setView] = useState<"chat" | "setup">("chat");
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -196,8 +199,12 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
       syncForm(next);
       setSetupNote(
         next.configured
-          ? `已保存。模型 ${next.model}，key ${next.keyHint}（${next.keySource === "env" ? "来自环境变量" : "存在本机"}）。`
-          : "地址和模型存下了，但还没有 key —— 粘贴一把再保存。",
+          ? t("Saved. Model {model}, key {hint} ({source}).", {
+              model: next.model,
+              hint: next.keyHint,
+              source: t(next.keySource === "env" ? "from the environment" : "stored on this machine"),
+            })
+          : t("Base URL and model saved, but there is no key yet — paste one and save again."),
       );
       if (next.configured) setView("chat");
     } catch (problem) {
@@ -205,7 +212,7 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
     } finally {
       setSaving(false);
     }
-  }, [baseUrl, key, model, syncForm, temperature]);
+  }, [baseUrl, key, model, syncForm, t, temperature]);
 
   const test = useCallback(async () => {
     setSaving(true);
@@ -215,7 +222,10 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
       const list = await listModels(baseUrl, key.trim() || undefined);
       setModels(list);
       setSetupNote(
-        `连上了，这把 key 能用 ${list.length} 个模型：${list.slice(0, 4).join("、")}${list.length > 4 ? "…" : ""}`,
+        t("Connected. This key can use {count} models: {list}", {
+          count: list.length,
+          list: `${list.slice(0, 4).join(", ")}${list.length > 4 ? "…" : ""}`,
+        }),
       );
       if (!model.trim() && list[0]) setModel(list[0]);
     } catch (problem) {
@@ -223,7 +233,7 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
     } finally {
       setSaving(false);
     }
-  }, [baseUrl, key, model]);
+  }, [baseUrl, key, model, t]);
 
   const forget = useCallback(async () => {
     setSaving(true);
@@ -231,28 +241,28 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
     try {
       const next = await saveLlmKey("");
       setStatus(next);
-      setSetupNote("key 已从本机删掉。");
+      setSetupNote(t("Key removed from this machine."));
     } catch (problem) {
       setError(String(problem instanceof Error ? problem.message : problem));
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [t]);
 
   const stop = useCallback(() => {
     stopFlag.current = true;
   }, []);
 
   const header = useMemo(() => {
-    if (!status) return "Assistant";
-    if (!status.configured) return "Assistant · 未配置";
-    return `Assistant · ${status.model}`;
-  }, [status]);
+    if (!status) return t("Assistant");
+    if (!status.configured) return t("Assistant · Not configured");
+    return t("Assistant · {model}", { model: status.model });
+  }, [status, t]);
 
   if (!open) return null;
 
   return (
-    <aside className={`lattice-assistant${variant === "window" ? " is-window" : ""}`} aria-label="Assistant">
+    <aside className={`lattice-assistant${variant === "window" ? " is-window" : ""}`} aria-label={t("Assistant")}>
       <header className="lattice-assistant-head">
         <span className="lattice-assistant-title">{header}</span>
         <span className="lattice-assistant-actions">
@@ -260,12 +270,12 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
             type="button"
             className={`lattice-icon-btn${view === "setup" ? " is-active" : ""}`}
             onClick={() => setView(view === "setup" ? "chat" : "setup")}
-            title={view === "setup" ? "回到对话" : "模型设置"}
-            aria-label="Assistant settings"
+            title={view === "setup" ? t("Back to chat") : t("Model settings")}
+            aria-label={t("Assistant settings")}
           >
             {view === "setup" ? "←" : "⚙"}
           </button>
-          <button type="button" className="lattice-icon-btn" onClick={onClose} aria-label="Close">
+          <button type="button" className="lattice-icon-btn" onClick={onClose} aria-label={t("Close")}>
             ×
           </button>
         </span>
@@ -274,7 +284,7 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
       {view === "setup" ? (
         <div className="lattice-assistant-body">
           <label className="lattice-textfield">
-            <span>接口地址</span>
+            <span>{t("API base URL")}</span>
             <input
               value={baseUrl}
               onChange={(event) => setBaseUrl(event.target.value)}
@@ -283,13 +293,15 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
             />
           </label>
           <p className="lattice-assistant-hint">
-            OpenAI 兼容的 <code className="lattice-mono">/chat/completions</code>。DeepSeek、OpenAI、
-            Kimi、Qwen 都填各自的 <code className="lattice-mono">/v1</code>；本地模型填{" "}
-            <code className="lattice-mono">http://127.0.0.1:11434/v1</code>（明文 http 只允许本机）。
+            {t("OpenAI-compatible")} <code className="lattice-mono">/chat/completions</code>
+            {t(". DeepSeek, OpenAI, Kimi and Qwen each use their own")} <code className="lattice-mono">/v1</code>
+            {t("; a local model on this machine uses")}{" "}
+            <code className="lattice-mono">http://127.0.0.1:11434/v1</code>{" "}
+            {t("(plain http is only allowed for localhost).")}
           </p>
 
           <label className="lattice-textfield">
-            <span>模型</span>
+            <span>{t("Model")}</span>
             <input
               value={model}
               onChange={(event) => setModel(event.target.value)}
@@ -305,19 +317,27 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
           </label>
 
           <label className="lattice-textfield">
-            <span>API key{status?.keyHint ? `（现在是 ${status.keyHint}）` : ""}</span>
+            <span>
+              {status?.keyHint
+                ? t("API key (currently {hint})", { hint: status.keyHint })
+                : "API key"}
+            </span>
             <input
               type="password"
               value={key}
               onChange={(event) => setKey(event.target.value)}
-              placeholder={status?.keyHint ? "留空 = 不改" : "sk-…"}
+              placeholder={status?.keyHint ? t("Leave empty to keep the current key") : "sk-…"}
               spellCheck={false}
               autoComplete="off"
             />
           </label>
 
           <label className="lattice-textfield">
-            <span>温度 {temperature.toFixed(2)}（越低越稳，改桌面建议 0.4–0.8）</span>
+            <span>
+              {t("Temperature {value} (lower is steadier; 0.4–0.8 works well for changing the desktop)", {
+                value: temperature.toFixed(2),
+              })}
+            </span>
             <input
               type="range"
               min={0}
@@ -338,7 +358,7 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
               onClick={() => void test()}
               disabled={saving}
             >
-              测试连接
+              {t("Test connection")}
             </button>
             <button
               type="button"
@@ -346,11 +366,11 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
               onClick={() => void persist()}
               disabled={saving}
             >
-              {saving ? "保存中…" : "保存"}
+              {saving ? t("Saving…") : t("Save")}
             </button>
             {status?.keyHint && (
               <button type="button" className="lattice-btn is-small" onClick={() => void forget()}>
-                删掉 key
+                {t("Forget key")}
               </button>
             )}
           </footer>
@@ -360,7 +380,9 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
           <div className="lattice-assistant-body" ref={bodyRef}>
             {entries.length === 0 && (
               <p className="lattice-assistant-hint">
-                说一句它就能改桌面：「把时钟挪到右上角」「换成深色」「桌宠太大了，调小一点」。每一步都能撤销。
+                {t(
+                  "Say something and it changes the desktop: “move the clock to the top right”, “switch to dark”, “the pet is too big, make it smaller”. Every step can be undone.",
+                )}
               </p>
             )}
             {entries.map((entry, index) => {
@@ -389,7 +411,7 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
                 </p>
               );
             })}
-            {busy && <p className="lattice-assistant-hint">…在想</p>}
+            {busy && <p className="lattice-assistant-hint">{t("Thinking…")}</p>}
           </div>
 
           <div className="lattice-assistant-composer">
@@ -404,13 +426,13 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
                 }
               }}
               rows={2}
-              placeholder="让桌面上发生点什么事（Enter 发送，Shift+Enter 换行）"
+              placeholder={t("Ask it to do something on the desktop (Enter to send, Shift+Enter for a new line)")}
               disabled={busy}
             />
             <div className="lattice-assistant-foot">
               {busy ? (
                 <button type="button" className="lattice-btn is-small" onClick={stop}>
-                  停下
+                  {t("Stop")}
                 </button>
               ) : (
                 <button
@@ -419,12 +441,12 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
                   onClick={() => void send()}
                   disabled={!draft.trim()}
                 >
-                  发送
+                  {t("Send")}
                 </button>
               )}
               <span className="lattice-assistant-meta">
                 {usage ? `${usage.prompt} → ${usage.completion} tokens` : ""}
-                {status?.keySource === "env" ? " · key 来自环境变量" : ""}
+                {status?.keySource === "env" ? ` · ${t("key from the environment")}` : ""}
               </span>
             </div>
           </div>

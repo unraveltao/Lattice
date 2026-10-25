@@ -57,6 +57,7 @@ import {
   type WidgetErrorReport,
 } from "./runtime/diagnostics";
 import type { Permission } from "./runtime/manifest";
+import { setLanguage, t } from "./runtime/i18n";
 
 interface HostConfig {
   instanceId: string;
@@ -64,6 +65,11 @@ interface HostConfig {
   entry: string;
   permissions: string[];
   theme: "light" | "dark";
+  /**
+   * 平台当前生效的界面语言。这个 webview **不加载 store**，所以偏好读不到 ——
+   * 建窗口时由 Rust 随配置带下来当初值，之后的切换走 `lattice:language` 广播。
+   */
+  lang?: "zh" | "en";
   pinned: boolean;
   minW: number;
   minH: number;
@@ -320,6 +326,9 @@ function parseHex(value: string): [number, number, number] {
 
 /** 由 boot() 接上：把最新的令牌推给 iframe */
 let pushTheme: (() => void) | null = null;
+
+/** 由 buildChrome() 接上：界面语言变了以后重贴窗饰的提示语 */
+let relabelChrome: (() => void) | null = null;
 
 function postTheme() {
   pushTheme?.();
@@ -747,14 +756,14 @@ function paintWidgetError() {
 
   const kind = document.createElement("span");
   kind.className = "lw-error-kind";
-  kind.textContent = ERROR_KIND_LABEL[primary.kind];
+  kind.textContent = t(ERROR_KIND_LABEL[primary.kind]);
 
   const close = document.createElement("button");
   close.type = "button";
   close.className = "lw-error-close";
   close.textContent = "×";
-  close.title = "Dismiss";
-  close.setAttribute("aria-label", "Dismiss error");
+  close.title = t("Dismiss");
+  close.setAttribute("aria-label", t("Dismiss error"));
   close.addEventListener("click", clearWidgetError);
 
   head.append(kind, close);
@@ -765,7 +774,7 @@ function paintWidgetError() {
     const more = document.createElement("span");
     more.className = "lw-error-more";
     more.textContent = `+${rest.length}`;
-    more.title = rest.map((item) => `${ERROR_KIND_LABEL[item.kind]}: ${item.message}`).join("\n");
+    more.title = rest.map((item) => `${t(ERROR_KIND_LABEL[item.kind])}: ${item.message}`).join("\n");
     head.insertBefore(more, close);
   }
 
@@ -786,7 +795,7 @@ function paintWidgetError() {
     const details = document.createElement("details");
     details.className = "lw-error-details";
     const summary = document.createElement("summary");
-    summary.textContent = "Stack trace";
+    summary.textContent = t("Stack trace");
     const pre = document.createElement("pre");
     pre.textContent = primary.stack;
     details.append(summary, pre);
@@ -798,7 +807,7 @@ function paintWidgetError() {
   const reload = document.createElement("button");
   reload.type = "button";
   reload.className = "lw-error-action";
-  reload.textContent = "Reload";
+  reload.textContent = t("Reload");
   reload.addEventListener("click", reloadWidget);
   actions.append(reload);
   errorSheet.append(actions);
@@ -808,11 +817,11 @@ function buildChrome(config: HostConfig) {
   const chrome = document.createElement("div");  chrome.className = "lw-chrome";
   chrome.innerHTML = `
     <div class="lw-pill">
-      <button type="button" class="lw-btn lw-grip" data-act="drag" title="Drag to move" aria-label="Drag to move">${ICON.grip}</button>
-      <button type="button" class="lw-btn" data-act="layer" aria-label="Toggle layer"></button>
-      <button type="button" class="lw-btn" data-act="pin" aria-label="Pin position"></button>
-      <button type="button" class="lw-btn" data-act="reload" title="Reload widget" aria-label="Reload widget">${ICON.reload}</button>
-      <button type="button" class="lw-btn" data-act="close" title="Close widget" aria-label="Close widget">${ICON.close}</button>
+      <button type="button" class="lw-btn lw-grip" data-act="drag" title="${t("Drag to move")}" aria-label="${t("Drag to move")}">${ICON.grip}</button>
+      <button type="button" class="lw-btn" data-act="layer" aria-label="${t("Toggle layer")}"></button>
+      <button type="button" class="lw-btn" data-act="pin" aria-label="${t("Pin position")}"></button>
+      <button type="button" class="lw-btn" data-act="reload" title="${t("Reload widget")}" aria-label="${t("Reload widget")}">${ICON.reload}</button>
+      <button type="button" class="lw-btn" data-act="close" title="${t("Close widget")}" aria-label="${t("Close widget")}">${ICON.close}</button>
     </div>
     ${["n", "s", "w", "e", "nw", "ne", "sw", "se"]
       .map((dir) => `<div class="lw-edge" data-dir="${dir}"></div>`)
@@ -834,15 +843,32 @@ function buildChrome(config: HostConfig) {
     document.body.classList.toggle("is-pinned", pinned);
     pinBtn.innerHTML = pinned ? ICON.pinned : ICON.pin;
     pinBtn.classList.toggle("is-on", pinned);
-    pinBtn.title = pinned ? "Position locked — click to unlock" : "Lock position and size";
-    pinBtn.setAttribute("aria-label", pinned ? "Unlock position" : "Lock position");
+    pinBtn.title = pinned ? t("Position locked — click to unlock") : t("Lock position and size");
+    pinBtn.setAttribute("aria-label", pinned ? t("Unlock position") : t("Lock position"));
 
     layerBtn.innerHTML = layer === "top" ? ICON.layerTop : ICON.layerDesktop;
     layerBtn.classList.toggle("is-on", layer === "top");
-    layerBtn.title = layer === "top" ? "On top — click to pin to desktop" : "On desktop — click to keep on top";
-    layerBtn.setAttribute("aria-label", layer === "top" ? "Send to desktop layer" : "Keep on top");
+    layerBtn.title = layer === "top" ? t("On top — click to pin to desktop") : t("On desktop — click to keep on top");
+    layerBtn.setAttribute("aria-label", layer === "top" ? t("Send to desktop layer") : t("Keep on top"));
   };
   paint();
+
+  /*
+   * 平台切了界面语言：胶囊上那几张牌子的提示语得跟着换。
+   *
+   * 只补 `paint()` 管不到的那几颗（拖动 / 重载 / 关闭是写死在 innerHTML 里的），
+   * 然后让 `paint()` 顺手把别针和层级两颗刷一遍 —— 它们的文案取决于状态，
+   * 在这里重算等于把那份判断抄第二遍。
+   */
+  relabelChrome = () => {
+    grip.title = t("Drag to move");
+    grip.setAttribute("aria-label", t("Drag to move"));
+    reloadBtn.title = t("Reload widget");
+    reloadBtn.setAttribute("aria-label", t("Reload widget"));
+    closeBtn.setAttribute("aria-label", t("Close widget"));
+    closeBtn.title = t("Close widget");
+    paint();
+  };
 
   // ---- 拖动 ----
   grip.addEventListener("pointerdown", (event) => {
@@ -1212,6 +1238,11 @@ async function boot() {
 
   const config = await invoke<HostConfig>("widget_host_config");
   applyTheme(config.theme);
+  /*
+   * 先把语言定下来，再画任何带字的东西。`config.lang` 缺省（老前端 / 老 Rust）
+   * 时不覆盖 —— 用 `navigator.language` 猜的那一档，总比固定成中文好。
+   */
+  if (config.lang === "zh" || config.lang === "en") setLanguage(config.lang);
 
   /*
    * 调试面板的供料端。
@@ -1443,6 +1474,20 @@ async function boot() {
     applyTheme(event.payload === "light" ? "light" : "dark");
     // 主题换了，"跟随主题"的底色和字色都得跟着重算
     applyAppearance(appearance);
+  });
+
+  /*
+   * 平台切了界面语言（和上面那条主题广播同一套）。
+   *
+   * 只涉及**平台自己写的字**：窗饰那几颗按钮的悬停提示、"组件坏了"那张卡片。
+   * 组件自己的文案不会被翻 —— 那是作者写的，跟着它的 HTML 走。
+   */
+  void listen<string>("lattice:language", (event) => {
+    setLanguage(event.payload === "zh" ? "zh" : "en");
+    relabelChrome?.();
+    // 错误卡片是按"签名 + 条数"记 key 的，改语言不会让它重建 —— 手动作废一次
+    if (errorSheet) errorSheet.dataset.key = "";
+    paintWidgetError();
   });
 
   /*

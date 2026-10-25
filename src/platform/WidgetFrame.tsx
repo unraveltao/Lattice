@@ -17,7 +17,7 @@ import {
   readThemeTokens,
   type BridgeResponseMessage,
 } from "../runtime/bridge";
-import { PERMISSION_LABELS, type Permission } from "../runtime/manifest";
+import { permissionLabel, type Permission } from "../runtime/manifest";
 import { normalizeAppearance } from "../runtime/appearance";
 import { resolveConfig } from "../runtime/config";
 import { createScheduler } from "../runtime/schedule";
@@ -30,6 +30,7 @@ import {
 } from "../runtime/diagnostics";
 import { isTauri, type WidgetRecord } from "../runtime/registry";
 import { computeAlign, type AlignGuideState } from "../runtime/align-guides";
+import { useT } from "../runtime/i18n";
 import { isWidgetLog, trace } from "../runtime/debug";
 import { WidgetIconMark } from "./icons";
 import { snap, useLattice, type Placement } from "./store";
@@ -59,6 +60,7 @@ interface WidgetFrameProps {
 }
 
 export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
+  const t = useT();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const selected = useLattice((state) => state.selectedInstanceId === placement.instanceId);
   const grants = useLattice((state) => state.grants[record.manifest.id]);
@@ -477,12 +479,12 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
         onPointerDown={onDragStart}
         onPointerMove={onDragMove}
         onPointerUp={onDragEnd}
-        title="Drag to move"
+        title={t("Drag to move")}
       >
         {record.iconUrl && <WidgetIconMark url={record.iconUrl} size={12} />}
         <span className="lattice-widget-title">{record.manifest.name}</span>
         <span className={`lattice-chip${placement.layer === "top" ? " is-accent" : ""}`}>
-          {placement.layer === "top" ? "On top" : "Desktop"}
+          {placement.layer === "top" ? t("On top") : t("Desktop")}
         </span>
       </div>
 
@@ -506,8 +508,10 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
         />
       ) : (
         <div className="lattice-pending">
-          <span className="lattice-pending-title">Entry URL is empty</span>
-          <p className="lattice-hint">The manifest entry could not be resolved — check manifest.json.</p>
+          <span className="lattice-pending-title">{t("Entry URL is empty")}</span>
+          <p className="lattice-hint">
+            {t("The manifest entry could not be resolved — check manifest.json.")}
+          </p>
           <code className="lattice-mono lattice-path">{record.dir}</code>
         </div>
       )}
@@ -520,15 +524,15 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
         <div
           className="lattice-widget-error"
           title={[
-            `${ERROR_KIND_LABEL[primaryError.kind]}: ${primaryError.message}`,
+            `${t(ERROR_KIND_LABEL[primaryError.kind])}: ${primaryError.message}`,
             primaryError.where,
-            ...otherErrors.map((item) => `${ERROR_KIND_LABEL[item.kind]}: ${item.message}`),
+            ...otherErrors.map((item) => `${t(ERROR_KIND_LABEL[item.kind])}: ${item.message}`),
           ]
             .filter(Boolean)
             .join("\n")}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <span className="lattice-widget-error-kind">{ERROR_KIND_LABEL[primaryError.kind]}</span>
+          <span className="lattice-widget-error-kind">{t(ERROR_KIND_LABEL[primaryError.kind])}</span>
           <span className="lattice-widget-error-message">{primaryError.message}</span>
           {otherErrors.length > 0 && (
             <span className="lattice-widget-error-more">+{otherErrors.length}</span>
@@ -536,10 +540,10 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
           <button
             type="button"
             className="lattice-widget-error-reload"
-            title="Reload widget"
+            title={t("Reload widget")}
             onClick={() => setReloadKey((value) => value + 1)}
           >
-            Reload
+            {t("Reload")}
           </button>
         </div>
       )}
@@ -547,8 +551,8 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
       {missing.length > 0 && missing[0] !== undefined && (
         <div className="lattice-perm-prompt">
           <span className="lattice-perm-prompt-text">
-            Needs {PERMISSION_LABELS[missing[0]]}
-            {missing.length > 1 ? ` +${missing.length - 1} more` : ""}
+            {t("Needs {permission}", { permission: permissionLabel(missing[0]) })}
+            {missing.length > 1 ? ` ${t("+{count} more", { count: missing.length - 1 })}` : ""}
           </span>
           <button
             type="button"
@@ -560,7 +564,7 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
               setMissing([]);
             }}
           >
-            {missing.length > 1 ? "Grant all" : "Grant"}
+            {missing.length > 1 ? t("Grant all") : t("Grant")}
           </button>
         </div>
       )}
@@ -571,7 +575,7 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
           onPointerDown={onResizeStart}
           onPointerMove={onResizeMove}
           onPointerUp={onResizeEnd}
-          title="Drag to resize"
+          title={t("Drag to resize")}
         />
       )}
     </div>

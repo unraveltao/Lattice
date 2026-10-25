@@ -23,22 +23,22 @@
 | v0.7 | 交付 | 🟡 进行中 | NSIS 安装包 + 自动更新（见 v0.7 一节） |
 | v0.8 | Agent 接入 | 🟡 进行中 | 默认关的回环端点：只绑 127.0.0.1、令牌、审计日志、8 个白名单动作、一块看板组件；还差一次 CLI 往返的真机验收 |
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
-| v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通 |
+| v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文） |
 
 **当前规模**（截至本次改动，2026-10-25）：
 
 | 指标 | 数值 | 备注 |
 | --- | --- | --- |
-| 前端 TS/TSX | 13 057 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 |
+| 前端 TS/TSX | 14 246 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 中英文案表 |
 | 样式 CSS | 3 746 行 | 纯手写，无 UI 库 |
-| Rust | 13 125 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗 |
+| Rust | 13 145 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗 |
 | 组件 SDK | 742 行 | 零依赖 ES module + 类型声明 |
-| 官方组件 + 示例 | 13 467 行 | 15 个官方包 + 1 个示例（复制进去的 SDK 副本不计） |
-| 构建脚本 | 2 376 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试 |
-| 浏览器断言 | 1540 条 | 39 个自检页，跑一遍的真实计数（0 failed） |
+| 官方组件 + 示例 | 14 156 行 | 15 个官方包 + 1 个示例（复制进去的 SDK 副本不计） |
+| 构建脚本 | 2 385 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试 |
+| 浏览器断言 | 1590 条 | 40 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 25 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条，都不依赖 dev server |
 | Rust 单测 | 178 条 | 157 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 21 条），21 条要 `cargo test`（本机跑不了），见 AGENTS §11 |
-| Tauri 命令 | 59 个 | |
+| Tauri 命令 | 60 个 | |
 | 权限 | 10 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 在 v0.10 补齐 |
 | 踩过的坑 | 72 条 | 见 v0.2 文末那张表 |
 
@@ -737,7 +737,13 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **小窗不能自己跑执行器**。`state.json` 不是状态，它是主窗口那份 store 的磁盘副本；小窗拿启动时的快照跑一遍 `AGENT_ACTIONS` 再写回去，等于把主窗口期间的所有改动（新摆的组件、换过的主题）整块盖掉。所以 `platform/assistant.ts` 抽出 `AssistantSurface`：抽屉 `localSurface(records)` 本地跑，小窗 `remoteSurface()` 把 `assistant_snapshot` / `assistant_act` 交给 `agent.rs`，走 agent 端点**同一条** `call_frontend` 通道，动作照旧先过 `agent_policy` 的白名单。工具循环一行没分叉。
   - **capability 里要显式开 `start-dragging`**，否则标题栏拖不动，而且失败是静默的（`startDragging()` 的 Promise 直接 reject）。
 - [x] **看板不再把 assistant 那几行当成看不懂的行**。`lattice.agent` 0.2.0 的 `describe()` 开始认 `op === "assistant.chat"`：从审计的 `detail` 里取出 `tools: placement.move` 这类字段，翻译成 "assistant · moved a widget"，没有工具的那几轮仍按 `say` 显示。改之前这些行被整条滤掉 —— 而"谁动了桌面"正是这块看板存在的理由，滤掉它等于把内置 assistant 做的事藏起来。`tests/agent-widget.html` +7 条钉着。
-- 验证：`llm_policy.rs` **21 条** `rustc --test`（归一化、回环、请求体、消息与工具校验、应答解析、401/404/429 的话）、`tests/assistant.html` **83 条**、`npm run typecheck` 干净、全量自检 **39 页 / 1540 条 / 0 failed**。真机走过两条：先是假端点（卡片从 (32,40) 挪到 (300,120)、错的 key 得到那句 401），再是**真厂商** —— 天枢 Dubhe 的 OpenAI 兼容根是 `…/v1/8686/v1`（`/v1/8686` 本身返回一张 HTML SPA，少写那截 `/v1` 会得到 404 而不是"地址不对"）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受。**没走的**："断网时那句话对不对"（要拔网线），以及 agent 端点的 CLI 往返（见 §8 已知缺口）。
+- [x] **平台界面中英双语，一句文案只写一处**。用户的原话是"添加个中英文翻译的功能，我要统一下语言"。选的是**英文原句当 key**（gettext 那套），不是 `settings.snap` 这种点分键：缺一条翻译时界面退化成那句英文，而不是露出一串键名 —— 这张表是边写边漏的，漏一条的代价必须只是"这句还是英文"。中文按域分七片（`runtime/i18n/*`，纯数据、不许 import），设置里三档（中文 / English / 跟随系统），落的盘是**偏好**不是结果 —— 存结果的话，用户哪天换了系统语言，界面不会跟着变。四条撞出来的：
+  - **模块顶层算出来的常量数组不能直接 `t()`**。`THEME_OPTIONS` 那种写在模块作用域里，`t()` 在 import 那一刻就求值了，切语言不会更新。英文留在常量里，渲染时 `t(option.label)`。
+  - **偏好变了、生效语言没变，也要通知订阅者**。系统是中文时，"中文"和"跟随系统"解析出来是同一个语言、界面上一个字都不变；只按"语言变了"通知的话，用户点那一下看不到任何反应。
+  - **桌面窗口读不到这档偏好**。`widgetHost.ts` 是独立 webview、**不加载 store** —— 让它自己用 `navigator.language` 猜一遍，就会出现"界面已切成英文、桌面卡片上的提示还是中文"。所以语言随 `HostConfig.lang` 下去当初值、变化走 `lattice:language` 广播，和 `lattice:theme` 同一个形状（这两条是仅有的两条**故意全局**的事件，见不变量 9）。
+  - **权限名要走 `permissionLabel()`**。`PERMISSION_LABELS` 是英文原文，同时也是中文表的 key —— 界面上直接读它，中文环境里权限列表就永远是英文。
+  - 边界：组件清单里的 `name` / `description` / `help` / `changelog`**不翻**（那是作者写的），平台只翻自己的字；`tests/i18n.html` 钉住"分片都在 / 占位符两边一致 / 同一句没有两种译法 / 偏好变了要通知"。**已知缺口**：Rust 侧直接生成的那几句给人看的话（`llm.rs` 的"key 只在 Rust 里"那几条、`llm_policy::describe_status` 的 401/404/429）还是英文 —— 它们跨过 IPC 才到界面，进中文表要先在 Rust 里认一遍 key，这一版没做，先记着而不是假装没这回事。
+- 验证：`llm_policy.rs` **21 条** `rustc --test`（归一化、回环、请求体、消息与工具校验、应答解析、401/404/429 的话）、`tests/assistant.html` **83 条**、`tests/i18n.html` **50 条**、`npm run typecheck` 干净、全量自检 **40 页 / 1590 条 / 0 failed**。真机走过两条：先是假端点（卡片从 (32,40) 挪到 (300,120)、错的 key 得到那句 401），再是**真厂商** —— 天枢 Dubhe 的 OpenAI 兼容根是 `…/v1/8686/v1`（`/v1/8686` 本身返回一张 HTML SPA，少写那截 `/v1` 会得到 404 而不是"地址不对"）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受。中英切换在真机上也点过一遍（设置里三档来回点：`<html lang>` 跟着变、菜单整份换语言、切回"跟随系统"后按 WebView2 报的 `en-US` 落回英文）。**没走的**："断网时那句话对不对"（要拔网线），以及 agent 端点的 CLI 往返（见 §8 已知缺口）。
 
 ## 长期要盯的风险
 
