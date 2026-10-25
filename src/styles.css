@@ -647,6 +647,13 @@ button {
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
+  /*
+   * 基类那层 `--lattice-highlight` 必须在这里关掉。
+   * 它是给"一张独立的卡片"用的：顶部一条 5.5% 白的内阴影，让卡片有厚度。
+   * 清单行不是卡片，它们紧挨着排（gap 2px），十六条线叠在一起就是"锯齿"——
+   * 而且线两端被 6px 圆角弯住，扫下来像每行被啃掉一块。
+   */
+  box-shadow: none;
 }
 
 .lattice-card.is-row:hover {
