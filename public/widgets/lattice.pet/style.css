@@ -1,0 +1,289 @@
+:root {
+  --fg: #ecebe6;
+  --muted: #97978f;
+  --accent: #5dcaa5;
+  --surface: #15151a;
+  --border: rgba(255, 255, 255, 0.12);
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+
+  /*
+   * 气泡的三件套。`--ink` 是轮廓色（跟着字色走，所以浅色主题下自然变深），
+   * `--said` 是"你说的话"那几颗小胶囊的底色（从强调色里调出来），
+   * `--shadow` 只给气泡用 —— 她的身体不许有影子，见下面。
+   */
+  --ink: var(--fg);
+  /* 前一行是 `color-mix` 不认识时的退路（老 WebView2）：后一行不合法会被丢掉 */
+  --said: rgba(255, 255, 255, 0.14);
+  --said: color-mix(in srgb, var(--accent) 26%, var(--surface));
+  --shadow: rgba(0, 0, 0, 0.34);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/*
+ * 窗口按图片的不透明像素裁出来，所以 body 不能有任何底色 ——
+ * 有一点颜色，区域边缘就会露出一圈。
+ */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: var(--font);
+  user-select: none;
+  cursor: default;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+}
+
+/*
+ * 画布。位置尺寸由 pet-rig.js 算（底部居中），画布本身铺满整个窗口 ——
+ * 窗口是区域裁出来的，画布大一点没坏处：区域外的像素根本不存在。
+ */
+#pet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+/*
+ * 拖动的时候不能还在"点一下"的指针状态，否则用户会以为没抓住。
+ * `body.is-dragging` 由 pet.js 在越过 4px 阈值之后加上。
+ */
+body.is-dragging,
+body.is-dragging #pet {
+  cursor: grabbing;
+}
+
+/* ---------- 气泡 ---------- */
+
+/*
+ * 一扇圆角厚边、带小尾巴、有投影的对话气泡，贴着她的头顶。
+ *
+ * 三件事和区域有关，改之前先看一眼 `pet.js::placeBubble`：
+ *
+ * 1. **区域要留出边距**：投影和尾巴都画在"气泡矩形"之外，而窗口只认上报
+ *    上去的那几个矩形 —— 不留边距，投影会在区域边界上被切出一条直线。
+ *    `pet.js` 里的 `PAD_X` / `PAD_TOP` / `TAIL_H` 就是这份边距。
+ * 2. **圆角是透明的，不是"缺口"**：窗口是 `.transparent(true)` 的区域窗口，
+ *    区域之内画成透明的像素就是看不见 —— 只有那四个角仍然能点到（区域是
+ *    矩形粒度），代价可以接受，换来圆角和投影。
+ * 3. **半透明也安全**：区域窗口的像素带 alpha，投影和用户文字的胶囊底色
+ *    都是半透明的，不会露出窗口底色。
+ *
+ * 尾巴是两层伪元素：外层跟她脸的轮廓一样是 `--ink`、内层是气泡底色，
+ * 内层比外层往里让 3px，于是尾巴两侧留下一条和边框等粗的线。两层都不旋转，
+ * 用 `clip-path` 的三角形。`bottom:-16px` 减掉 2px 边框 = 尾巴尖落在气泡外
+ * 14px，正好是 `pet.js` 里的 `TAIL_H`（区域那圈边距按它算）。
+ */
+#bubble {
+  position: absolute;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 6px 16px var(--shadow);
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  transform-origin: var(--tail, 50%) calc(100% + 12px);
+}
+
+#bubble.is-open {
+  display: flex;
+}
+
+/* 弹出来那一下：从尾巴尖那个点长出来，稍微过冲一点再落回去 */
+#bubble.pop {
+  animation: bubble-in 0.26s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+@keyframes bubble-in {
+  from {
+    transform: scale(0.55);
+    opacity: 0;
+  }
+}
+
+/* 尾巴：外层是轮廓，内层是底色，内层让开两侧各 3px 当成边框 */
+#bubble::before,
+#bubble::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--tail, 50%) - 11px);
+  bottom: -16px;
+  width: 22px;
+  height: 16px;
+  pointer-events: none;
+}
+
+#bubble::before {
+  background: var(--ink);
+  clip-path: polygon(0.6px 1.4px, 11px 16px, 21.4px 1.4px);
+}
+
+#bubble::after {
+  background: var(--surface);
+  clip-path: polygon(3.6px 0, 11px 11.6px, 18.4px 0);
+}
+
+#bubble > .bubble-close {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#bubble > .bubble-close:hover {
+  color: var(--fg);
+}
+
+/* 消息区：最多约五行，再多就自己滚，气泡不会长到屏幕外面去 */
+#log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  max-height: 104px;
+  overflow-y: auto;
+  padding-right: 14px;
+  scrollbar-width: thin;
+}
+
+#log:empty {
+  display: none;
+}
+
+#log .msg {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* 她的话：正文字号，前面一个小圆点 */
+#log .msg.is-pet {
+  color: var(--fg);
+}
+
+#log .msg.is-pet::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+/* 你的话：右边一颗没有边框的小胶囊，和她的正文分得开 */
+#log .msg.is-user {
+  align-self: flex-end;
+  max-width: 92%;
+  padding: 3px 9px;
+  border-radius: 11px;
+  background: var(--said);
+  color: var(--fg);
+}
+
+#log .msg.is-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/*
+ * 输入行：一条虚线的浅槽，聚焦时变实线并亮成强调色 —— 一眼看得出"现在
+ * 在说话"。发送键是实心胶囊（用字色当底色，所以浅色主题下自动变深）。
+ */
+#composer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 2px 2px 2px 9px;
+  border: 1.5px dashed var(--border);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+
+#composer:focus-within {
+  border-style: solid;
+  border-color: var(--accent);
+}
+
+#prompt {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+#prompt::placeholder {
+  color: var(--muted);
+}
+
+#composer button {
+  flex: none;
+  height: 24px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--fg);
+  color: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#composer button:hover {
+  background: var(--accent);
+  color: #0b0d10;
+}
+
+/* 逐字显示时那颗闪的竖条：她"正在说"，但不是卡住了 */
+#log .caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--accent);
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}

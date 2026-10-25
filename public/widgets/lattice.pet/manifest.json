@@ -1,0 +1,347 @@
+{
+  "id": "lattice.pet",
+  "name": { "zh": "大肥鱼", "en": "Big Fishy" },
+  "version": "0.9.1",
+  "description": {
+    "zh": "一只住在桌面上的蓝色大肥鱼（鲸鱼娘）：会打招呼、害羞、生气、摆烂、睡觉，能拖着走、也会自己散步。三套衣服可换，只有她的身体挡鼠标，其余位置点得到桌面",
+    "en": "A blue whale girl living on your desktop: she greets you, gets shy, sulks, lazes around and sleeps. Drag her anywhere, and she wanders on her own. Three outfits; only her body blocks the mouse — everywhere else clicks through to the desktop"
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": {
+    "w": 420,
+    "h": 340,
+    "minW": 340,
+    "minH": 280
+  },
+  "layer": "top",
+  "interactive": true,
+  "shape": "region",
+  "permissions": [
+    "llm:chat",
+    "desktop:control"
+  ],
+  "config": [
+    {
+      "key": "outfit",
+      "type": "select",
+      "label": { "zh": "穿什么", "en": "Outfit" },
+      "default": "maid",
+      "options": [
+        {
+          "value": "maid",
+          "label": { "zh": "女仆装", "en": "Maid" }
+        },
+        {
+          "value": "cape",
+          "label": { "zh": "冬装（斗篷）", "en": "Winter cape" }
+        },
+        {
+          "value": "crew",
+          "label": { "zh": "店员装", "en": "Shop clerk" }
+        }
+      ],
+      "help": {
+        "zh": "换一套衣服：三类各自的部件和贴图不同，换完轮廓会跟着重算，所以她不会变成一块方卡片。",
+        "en": "Change her clothes: each set has its own parts and textures, and her outline is rebuilt afterwards, so she never turns into a plain rectangle."
+      }
+    },
+    {
+      "key": "roam",
+      "type": "select",
+      "label": { "zh": "她自己走动吗", "en": "Does she wander?" },
+      "default": "calm",
+      "options": [
+        {
+          "value": "off",
+          "label": { "zh": "站着别动", "en": "Stay still" }
+        },
+        {
+          "value": "calm",
+          "label": { "zh": "偶尔走两步", "en": "A few steps now and then" }
+        },
+        {
+          "value": "free",
+          "label": { "zh": "到处溜达", "en": "Roam around" }
+        }
+      ],
+      "help": {
+        "zh": "改成「站着别动」她就不挪地方了（还是能拖）。走累了会在原地待一会儿，撞到屏幕边缘会自己转身。",
+        "en": "Set it to “Stay still” and she stays put (you can still drag her). When she gets tired she rests where she is, and she turns around at the screen edge."
+      }
+    },
+    {
+      "key": "scale",
+      "type": "number",
+      "label": { "zh": "大小", "en": "Size" },
+      "default": 0.55,
+      "min": 0.4,
+      "max": 1.2,
+      "step": 0.05,
+      "unit": "×",
+      "help": {
+        "zh": "1 差不多铺满整扇窗口（上面还要留出气泡），出厂 0.55 —— 桌面上她约莫一百三十像素高。**再往下要认代价**：她的五官只有十几像素，会糊成一团；要更小的一只，该改窗口尺寸（默认 420×340，最小 340×280），而不是一路压这个数。调大调小，气泡会自己变矮，不会压到她头上。",
+        "en": "1 fills almost the whole window (the bubble needs room above her); the factory value is 0.55 — roughly 130 px tall on your desktop. **Lower costs detail**: her features are a dozen pixels across and smear together. For a smaller fish, change the window size instead (it defaults to 420×340, down to 340×280) rather than pushing this number. The bubble gets shorter with her, so it never sits on her head."
+      }
+    }
+  ],
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "怎么用", "en": "How to use" },
+        "items": [
+          {
+            "zh": "点她一下：打开气泡（Esc 收起）；连点四下她会生气。",
+            "en": "Click her to open the bubble (Esc closes it); click four times in a row and she gets annoyed."
+          },
+          {
+            "zh": "按住她拖：整个窗口跟着走，松手就停在那儿（位置会记住）。",
+            "en": "Press and drag her: the whole window follows, and she stays where you let go (the spot is remembered)."
+          },
+          {
+            "zh": "双击：睡觉；再双击或者点一下叫醒。",
+            "en": "Double-click: she falls asleep; double-click again or click once to wake her up."
+          },
+          {
+            "zh": "右键：收起（只关窗口，不删你的摆放）。",
+            "en": "Right-click: put her away (closes the window, but keeps your layout)."
+          },
+          {
+            "zh": "属性面板里能换衣服（女仆装 / 冬装 / 店员装）、调大小（0.4–1.2 倍），也能让她站着别动。",
+            "en": "The inspector switches outfits (maid / winter cape / shop clerk), sets her size, and can make her stay put."
+          },
+          {
+            "zh": "聊天要先在设置里配好模型（Ctrl+K 打开 Assistant，填地址 / 模型 / API key），然后在属性面板里给她「Use my AI model」权限；两样缺一她都会说清楚缺哪个。",
+            "en": "Chatting needs a model set up first (Ctrl+K opens the Assistant — endpoint, model, API key), then grant her “Use my AI model” in the inspector. If either is missing she tells you which one."
+          },
+          {
+            "zh": "想让她替你摆桌面，再给她「替我调整桌面」权限：说一句「把时钟挪到右上角」，她会请平台动手，做完在气泡里列出动了什么。她只能加、挪、缩放、钉、置顶、换主题 —— 删组件那条路没给她。",
+            "en": "To let her rearrange your desktop, grant “Rearrange my desktop” too: say “move the clock to the top right” and she asks the platform to do it, then lists in the bubble what she touched. She can add, move, resize, pin, raise and switch themes — removing widgets is not on her path."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "为什么她只有脚下一圈影子", "en": "Why her only shadow is under her feet" },
+        "items": [
+          {
+            "zh": "窗口是按她的轮廓裁出来的：轮廓外的像素根本不存在，所以贴身的投影、半透明羽化都会被切掉。",
+            "en": "The window is cut to her outline: pixels outside it do not exist, so tight drop shadows and soft feathered edges get sliced off."
+          },
+          {
+            "zh": "脚底那圈影子是特意补出来的：它比身体宽，所以单独占一块窗口区域（region 的最后一块），径向渐变从 30% 黑淡到透明 —— 深浅壁纸都不突兀，也让人眼认得出\"她站在桌面上\"。",
+            "en": "The circle under her feet is drawn on purpose: it is wider than her body, so it gets a part of the region to itself (the last one), a radial gradient fading from 30% black to nothing — it looks right on light and dark wallpapers, and it makes her read as standing on the desktop."
+          },
+          {
+            "zh": "气泡同理：它的矩形连同一圈给投影和尾巴的边距单独并进区域，所以气泡也有影子。",
+            "en": "The bubble works the same way: its rectangle, plus the margin for its shadow and tail, becomes its own region part — so the bubble casts a shadow too."
+          },
+          {
+            "zh": "轮廓是构建期从每个部件的 alpha 算好的（art/build-masks.py），运行时读不了像素 —— 沙箱 iframe 是不透明源。",
+            "en": "The outline is computed at build time from each part's alpha channel (art/build-masks.py). It cannot be read at runtime — the sandboxed iframe is an opaque origin."
+          },
+          {
+            "zh": "走动是整体挪窗口，不是改画面，所以轮廓不用重算，她走起来不会抖。",
+            "en": "Walking moves the whole window instead of redrawing her, so the outline never needs recomputing and she does not jitter."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "形象与来源", "en": "Artwork and credits" },
+        "items": [
+          {
+            "zh": "形象与拆件来自 Coopanion（Pal-AI-Lab）的鲸鱼 figure，原设「溟月」（上善无形），DeepSeek 女仆装二创参考 ZipZipPipe。",
+            "en": "The character and its parts come from the whale figure in Coopanion (Pal-AI-Lab); the original design is 溟月 (上善无形), and the DeepSeek maid outfit follows ZipZipPipe's fan art."
+          },
+          {
+            "zh": "上游明确说明这些贴图不在其 AGPL 授权范围内，也没有另外给出使用许可 —— 只在本机使用，不随组件包对外分发。",
+            "en": "Upstream states these textures are not covered by its AGPL license and gives no separate permission — they are for local use only and are not distributed with the widget package."
+          },
+          {
+            "zh": "围裙上的标志归各自公司所有，仅用于标明配色。",
+            "en": "Logos on the apron belong to their respective companies and are there only to show the color scheme."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.9.1",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "默认小了一号：新摆一只的时候窗口是 420×340（之前 560×420），大小出厂 0.55（之前 0.75），桌面上她大约一百三十像素高。已经摆好的那几只尺寸不动 —— 想一起变小，把卡片缩一缩或把「大小」往下拨。",
+          "en": "A notch smaller by default: a new placement opens at 420×340 (was 560×420) with size 0.55 (was 0.75), so she stands about 130 px tall. Already-placed fish keep their size — shrink the card or the “Size” slider if you want them smaller too."
+        },
+        {
+          "zh": "「大小」的下限放到 0.4，想把窗口本身改小也有了余地（最小 340×280）。",
+          "en": "The “Size” floor is now 0.4, and there is room to shrink the window itself (down to 340×280)."
+        },
+        {
+          "zh": "轮廓四周多留了一像素：窗口是按轮廓裁的，之前她身上偶尔会露出一道发丝细的缝（拖动、松手那几帧最明显），现在没有了。",
+          "en": "Her outline keeps one extra pixel of slack: the window is clipped to it, and the odd hairline gap could show up on her body (mostly while dragging and letting go). That gap is gone."
+        }
+      ]
+    },
+    {
+      "version": "0.9.0",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "她现在能替你摆桌面了：跟她说「把时钟挪到右上角」「把系统监控放大一点」，她会请平台去做，做完在气泡里告诉你她动了什么。",
+          "en": "She can rearrange your desktop now: say “move the clock to the top right” and she asks the platform to do it, then tells you in the bubble what she touched."
+        },
+        {
+          "zh": "这需要属性面板里新的一项权限「替我调整桌面」。不给也能聊，只是她只能动嘴。",
+          "en": "That needs a new permission in the inspector, “Rearrange my desktop”. Without it she can still talk — she just can't move anything."
+        },
+        {
+          "zh": "她删不掉东西：请平台代劳的那条路上没有「移除组件」，要删还是你自己点 ✕。",
+          "en": "She cannot delete anything: the path she borrows has no “remove”, so deleting stays your click on ✕."
+        }
+      ]
+    },
+    {
+      "version": "0.8.0",
+      "date": "2026-10-26",
+      "changes": [
+        {
+          "zh": "名字、说明、配置项和她的话都会跟着界面语言走：设置里切成英文，整只鱼就是英文的。",
+          "en": "Her name, description, settings and everything she says follow the platform language — switch the UI to English and the whole fish comes along."
+        },
+        {
+          "zh": "中文界面下她照旧说中文。",
+          "en": "On a Chinese UI she keeps speaking Chinese."
+        }
+      ]
+    },
+    {
+      "version": "0.7.0",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "气泡换了样子：圆角、厚描边、带一条指着她脑袋的小尾巴和一层投影，弹出来时会从尾巴尖弹一下。",
+          "en": "The bubble has a new look: rounded corners, a thick outline, a little tail pointing at her head and a drop shadow; it pops out from the tip of the tail."
+        },
+        {
+          "zh": "你说的话成了右边一颗小胶囊，她的话前面有个小圆点；回答逐字显示，末尾那颗闪的竖条表示她还在说。",
+          "en": "What you say appears as a small pill on the right, her lines start with a dot, replies appear letter by letter, and a blinking bar at the end means she is still talking."
+        },
+        {
+          "zh": "输入行是气泡里的一条虚线浅槽，聚焦时亮成强调色；气泡高度随内容长，最多五行，再多就自己滚。",
+          "en": "The input is a dashed shallow slot inside the bubble that lights up on focus. The bubble grows with its content up to five lines, then scrolls."
+        },
+        {
+          "zh": "脚下多了一圈淡淡的影子（跟着她的大小走）—— 之前她像贴在壁纸上的贴纸，现在看得出是站在桌面上。",
+          "en": "A soft shadow circle appeared under her feet (it scales with her) — before, she looked like a sticker on the wallpaper; now she clearly stands on the desktop."
+        },
+        {
+          "zh": "清晰度补了一档：缩小时头发、睫毛不再丢半条（画布改成高质量平滑），边缘的锯齿也少了。",
+          "en": "One more step of sharpness: hair and eyelashes no longer lose half a line when shrunk (the canvas smooths at high quality now), and the edges are less jagged."
+        }
+      ]
+    },
+    {
+      "version": "0.6.0",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "能说话了：设置里填好模型和 API key 之后，点她打字就是真的问答（key 由平台保管，组件全程看不见）。",
+          "en": "She can talk: once the model and API key are set up, clicking her and typing is a real conversation (the platform holds the key; the widget never sees it)."
+        },
+        {
+          "zh": "她不再自己编答案 —— 没配模型时只说“我还不会说话”，并告诉你该去哪儿填。",
+          "en": "She no longer makes answers up — with no model configured she just says “I can't talk yet” and tells you where to set it up."
+        }
+      ]
+    },
+    {
+      "version": "0.5.0",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "换形象：改成 Coopanion 的分层 rig（25 个部件按网格变形），头发、裙摆、尾巴、鳍和呆毛会跟着动。",
+          "en": "New look: rebuilt on Coopanion's layered rig (25 parts warped on a mesh), so hair, skirt, tail, fins and the ahoge all move with her."
+        },
+        {
+          "zh": "新增「穿什么」：女仆装 / 冬装（斗篷）/ 店员装，换衣服会重算轮廓。",
+          "en": "New “Outfit” setting: maid / winter cape / shop clerk. Changing it rebuilds her outline."
+        },
+        {
+          "zh": "脸是画出来的：会眨眼、会半闭，害羞 / 生气 / 犯困各有各的眼神和嘴，拖起来时表情会变。",
+          "en": "Her face is drawn: she blinks and half-closes her eyes, and shy / annoyed / sleepy each have their own look and mouth. Her expression changes while you drag her."
+        },
+        {
+          "zh": "站姿下不再叠着一条坐姿的裙子。",
+          "en": "The seated skirt is no longer layered under her standing pose."
+        },
+        {
+          "zh": "新增「大小」：0.4–1.2 倍，出厂 0.75（默认就是小一号的她）；窗口自带的边框和投影也去掉了（她周围不再有一圈黑框）。",
+          "en": "New “Size” setting: 0.4–1.2×, factory 0.75 (she starts a size smaller). The window's own border and shadow are gone too, so there is no dark frame around her."
+        }
+      ]
+    },
+    {
+      "version": "0.4.0",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "能拖着走了：按住她身上任何一点拖动，松手就停在那儿，位置重启还记得。",
+          "en": "She can be dragged: press anywhere on her and the whole window follows; let go and she stays there, and the spot survives a restart."
+        },
+        {
+          "zh": "会自己散步：走两步、累了站一会儿、撞到屏幕边缘自己转身。",
+          "en": "She wanders on her own: a few steps, a rest when she gets tired, and she turns around at the screen edge."
+        },
+        {
+          "zh": "新增「她自己走动吗」：站着别动 / 偶尔走两步 / 到处溜达。",
+          "en": "New “Does she wander?” setting: stay still / a few steps now and then / roam around."
+        }
+      ]
+    },
+    {
+      "version": "0.3.0",
+      "date": "2026-10-24",
+      "changes": [
+        {
+          "zh": "换成鲸鱼娘同人图，六种状态：打招呼 / 害羞 / 生气 / 不高兴 / 摆烂 / 睡觉。",
+          "en": "Switched to the whale-girl fan art with six states: greeting, shy, annoyed, upset, lazing and sleeping."
+        },
+        {
+          "zh": "轮廓改为按图片 alpha 自动生成，只有她的身体挡鼠标。",
+          "en": "The outline is now generated from the image alpha, so only her body blocks the mouse."
+        },
+        {
+          "zh": "点她打开气泡聊天，回答会逐字显示。",
+          "en": "Clicking her opens the chat bubble, and replies appear letter by letter."
+        }
+      ]
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-10-24",
+      "changes": [
+        {
+          "zh": "能说话：点一下打字，回答在气泡里逐字显示。",
+          "en": "She can talk: click her and type, and the reply appears letter by letter in the bubble."
+        },
+        {
+          "zh": "接平台的 AI assistant，key 不进组件。",
+          "en": "Hooked up to the platform's AI assistant; the key never enters the widget."
+        }
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-10-24",
+      "changes": [
+        {
+          "zh": "第一版：一只用几何形状拼出来的猫。",
+          "en": "First version: a cat built out of geometric shapes."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

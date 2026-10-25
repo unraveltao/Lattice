@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>大肥鱼</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      窗口是按她的轮廓裁出来的：`pet-rig.js` 量的形状，`art/rig-data.js` 里带着
+      构建期算好的静止轮廓。所以：画在哪、多大，决定她在哪、多大；气泡打开时
+      它的矩形（连同投影和尾巴要的那点边距）也会并进区域。
+
+      这里写死的文案是**中文那一份**，也就是首帧：`pet.js::applyLanguage` 在
+      `lang.get` 回来之后（英文界面）把它们换成英文 —— 先画再问，不变量 18。
+    -->
+    <div id="stage">
+      <canvas id="pet"></canvas>
+      <!--
+        位置和尺寸全部由 pet.js::placeBubble 写：区域是矩形粒度，气泡 + 投影 +
+        尾巴要的那圈边距一起上报，所以这里不写死任何坐标。
+      -->
+      <div id="bubble" role="dialog" aria-label="大肥鱼">
+        <button id="close-bubble" class="bubble-close" type="button" title="收起（Esc）" aria-label="收起">×</button>
+        <div id="log" role="log" aria-live="polite"></div>
+        <form id="composer">
+          <input id="prompt" type="text" placeholder="说点什么…" autocomplete="off" spellcheck="false" />
+          <button type="submit" title="发送（Enter）">发送</button>
+        </form>
+      </div>
+    </div>
+    <!--
+      rig 数据（model.json + 轮廓）和渲染代码都用 classic script 带进来：
+      沙箱 iframe 的源是 opaque，`fetch` 自己的 JSON 也会被当成跨域。
+    -->
+    <script src="art/rig-data.js"></script>
+    <script src="pet-rig.js"></script>
+    <script src="pet.js"></script>
+  </body>
+</html>
