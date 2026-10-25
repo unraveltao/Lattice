@@ -41,7 +41,7 @@
 | 官方组件 + 示例 | 26 036 行 | 19 个官方包 + 1 个示例（含每个包里的 SDK 副本） |
 | 构建脚本 | 5 485 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、winget 清单生成器 + 单测、样式与文档的守门人 |
 | 浏览器断言 | 2 707 条 | 55 个自检页，跑一遍的真实计数（0 failed） |
-| Node 断言 | 72 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + winget 清单生成器 11 条 + 浏览器预览那条通道 28 条，都不依赖 dev server。**CI 只跑前五条（44 条）**，`test:llm-proxy` 还没进 workflow |
+| Node 断言 | 72 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + winget 清单生成器 11 条 + 浏览器预览那条通道 28 条，都不依赖 dev server；CI 六条全跑（72 条） |
 | Rust 单测 | 422 条 | 371 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 50 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `power_policy` 6 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 95 个 | |
 | 权限 | 12 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐 |
