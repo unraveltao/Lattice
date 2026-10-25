@@ -49,9 +49,11 @@
         handsPrompt,
         handsTools,
         mcpNameOk,
+        mcpToolSpecs,
         needsApproval,
         overBudget,
         readyGroups,
+        splitCommandLine,
       } from "../src/runtime/hands.ts";
       import { allTools, systemPrompt, TOOL_SPECS, toolsFor } from "../src/runtime/assistant.ts";
 
@@ -95,8 +97,8 @@
 
       eq(
         readyGroups(ALL_ON),
-        ["files", "shell", "web", "screen", "input"],
-        "这一版真接好的是文件、命令、网页、屏幕与键鼠（P6 MCP 还没写）",
+        ["files", "shell", "web", "screen", "input", "mcp"],
+        "六组全接好了（P6 MCP 也翻了）",
       );
       for (const group of HAND_GROUPS) {
         const spec = Object.values(HAND_SPECS).find((item) => item.group === group);
@@ -113,9 +115,14 @@
         "屏幕与键鼠接了：那五只 schema 全都递出去",
       );
       eq(
-        Object.keys(handsTools({ ...HANDS_OFF, mcp: true })).length,
-        0,
-        "MCP 还没接：拨开也不递 schema（递了就是一组永远失败的调用）",
+        Object.keys(handsTools({ ...HANDS_OFF, mcp: true }, "platform", {
+          "mcp.s1a2b3c4.list_issues": {
+            description: "x",
+            parameters: { type: "object", properties: {} },
+          },
+        })),
+        ["mcp.s1a2b3c4.list_issues"],
+        "MCP 接了：拨开之后把服务器声明的工具递出去",
       );
       const webTool = handsTools({ ...HANDS_OFF, web: true })["web.fetch"];
       ok(Boolean(webTool), "只开网页时正好有 web.fetch");
@@ -144,9 +151,73 @@
           "mcp.github.list": { description: "x", parameters: { type: "object", properties: {} } },
           "not-a-server": { description: "y", parameters: { type: "object", properties: {} } },
         })),
-        [],
-        "MCP 那条路还要等 P6：拨开也不递（递了就是一组永远失败的调用）",
+        ["mcp.github.list"],
+        "MCP 那张表只收 mcp.<server>.<tool> 形状的名字，别的原样丢掉",
       );
+      eq(
+        Object.keys(handsTools({ ...HANDS_OFF, mcp: false }, "platform", {
+          "mcp.github.list": { description: "x", parameters: { type: "object", properties: {} } },
+        })).length,
+        0,
+        "mcp 开关关着时，服务器声明的工具一个都不递",
+      );
+
+      // ---- 外部服务：发现结果 → 工具表 ----
+
+      const found = mcpToolSpecs([
+        {
+          id: "s1a2b3c4",
+          label: "filesystem",
+          ok: true,
+          error: "",
+          tools: [
+            {
+              name: "mcp.s1a2b3c4.read_file",
+              description: "Read a file",
+              parameters: {
+                type: "object",
+                properties: { path: { type: "string" } },
+                required: ["path"],
+              },
+            },
+            // 名字不合法的（服务器乱声明 / 我们压过之后仍然超长）一律不进表
+            { name: "bad-name", description: "x", parameters: {} },
+          ],
+        },
+        {
+          id: "s5e6f7a8",
+          label: "broken",
+          ok: false,
+          error: "could not start npx",
+          tools: [
+            { name: "mcp.s5e6f7a8.anything", description: "x", parameters: {} },
+          ],
+        },
+      ]);
+      eq(
+        Object.keys(found),
+        ["mcp.s1a2b3c4.read_file"],
+        "只收发现成功、名字合法的工具；坏服务器与坏名字都丢掉",
+      );
+      eq(found["mcp.s1a2b3c4.read_file"].parameters.required, ["path"], "required 原样带过去");
+      eq(
+        mcpToolSpecs([
+          { id: "s1", label: "x", ok: true, error: "", tools: [{ name: "mcp.s1.f", description: "", parameters: {} }] },
+        ])["mcp.s1.f"].description,
+        "mcp.s1.f",
+        "服务器没给描述时用名字顶上（空描述会被模型当成没用的工具）",
+      );
+
+      // ---- 命令行的切词（设置面板里那一行输入）----
+
+      eq(splitCommandLine("npx -y pkg"), ["npx", "-y", "pkg"], "按空白切");
+      eq(
+        splitCommandLine('npx "C:\\Program Files\\x" --flag'),
+        ["npx", "C:\\Program Files\\x", "--flag"],
+        "双引号保住空格",
+      );
+      eq(splitCommandLine("  spaced   out  "), ["spaced", "out"], "多余空白丢掉");
+      eq(splitCommandLine(""), [], "空串切出空数组");
 
       // ---- 桌面表与手表的合流 ----
 
@@ -220,10 +291,9 @@
         handsPrompt(ALL_ON).join("\n").includes("input.click"),
         "键鼠接上了：全开时提示词里有 input.click",
       );
-      eq(
-        handsPrompt({ ...HANDS_OFF, mcp: true }),
-        [],
-        "还没接的 MCP 一句都不进提示词（和工具表同源）",
+      ok(
+        handsPrompt({ ...HANDS_OFF, mcp: true }).join("\n").includes("外部服务"),
+        "MCP 接了：提示词里有一段外部服务，并写明每次调用都要点头",
       );
 
       // ---- 系统提示：手与工具表同源 ----

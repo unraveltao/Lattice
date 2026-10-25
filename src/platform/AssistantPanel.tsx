@@ -34,15 +34,19 @@ import {
   type ProfileView,
   type ProfilesView,
 } from "./assistant";
-import { readHands, saveHands } from "./hands";
-import { allTools, systemPrompt, type ChatMessage } from "../runtime/assistant";
+import { discoverMcpTools, readHands, readMcpServers, saveHands, saveMcpServers } from "./hands";
+import { allTools, systemPrompt, type ChatMessage, type ToolSpec } from "../runtime/assistant";
 import {
   HAND_GROUPS,
   HAND_LABELS,
   HAND_READY,
   HANDS_OFF,
+  mcpToolSpecs,
+  splitCommandLine,
   type HandGroup,
   type HandsSettings,
+  type McpServer,
+  type McpServerTools,
 } from "../runtime/hands";
 import {
   AUTH_SHAPES,
@@ -118,6 +122,20 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
 
   /** 用户拨开的那几只手。读一次、拨一次存一次（和模型档同一份 JSON） */
   const [hands, setHands] = useState<HandsSettings>(HANDS_OFF);
+  /**
+   * 外部服务（MCP）：服务器列表 + 上一次发现的结果。
+   * 两者都是**每次开面板重新读**（发现走内存缓存，重读不贵）
+   */
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [mcpFound, setMcpFound] = useState<McpServerTools[]>([]);
+  const [mcpNote, setMcpNote] = useState<string | null>(null);
+  const [mcpBusy, setMcpBusy] = useState(false);
+  /** 新服务器那一行：stdio 填"命令 + 参数"，http 填 URL，用同一个输入框 */
+  const [mcpDraft, setMcpDraft] = useState<{
+    label: string;
+    transport: McpServer["transport"];
+    target: string;
+  }>({ label: "", transport: "stdio", target: "" });
   /**
    * 正在等用户点头的那一下。**不做成 toast**：它阻塞这一轮，
    * 用户不管它，模型就一直等着 —— 所以确认条必须贴在输入框上面，
@@ -232,6 +250,15 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
       .catch(() => {
         // 保持全关
       });
+    // 服务器列表也是同一类东西：读不到就当"一个都没配"。
+    // **发现不在开机时做** —— 那要起进程，面板一打开就卡几秒不值得
+    void readMcpServers()
+      .then((list) => {
+        if (!cancelled) setMcpServers(list);
+      })
+      .catch(() => {
+        // 浏览器预览里没有这条命令
+      });
     return () => {
       cancelled = true;
     };
@@ -273,7 +300,17 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
     stopFlag.current = false;
     // 「本轮都允许」的寿命只有一轮
     alwaysThisTurn.current.clear();
-    const table = allTools("platform", hands);
+    /* 外部服务的工具表是**动态的**：先问一次（走 Rust 的内存缓存），再合进表里。
+     * 发现失败不该挡掉这一轮 —— 大不了这次没有外部工具，比整轮报错好 */
+    let extra: Record<string, ToolSpec> = {};
+    if (hands.mcp) {
+      try {
+        extra = mcpToolSpecs(await discoverMcpTools(false));
+      } catch {
+        extra = {};
+      }
+    }
+    const table = allTools("platform", hands, extra);
     try {
       // 第一条永远是 system：桌面现状每次现拍，模型不该记着"上次的桌面"。
       // 快照可能是 IPC 往返（独立小窗那条路），所以先 await 再拼
@@ -499,6 +536,80 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
     [hands],
   );
 
+  /**
+   * 问一遍服务器要工具表。`refresh = true` 时才重问已经发现过的
+   * （用户刚改完命令/URL，缓存里的那张表已经不代表这个服务器了）
+   */
+  const refreshMcp = useCallback(async (refresh: boolean) => {
+    setMcpBusy(true);
+    setMcpNote(null);
+    try {
+      const found = await discoverMcpTools(refresh);
+      setMcpFound(found);
+      const total = found.reduce((sum, server) => sum + (server.ok ? server.tools.length : 0), 0);
+      setMcpNote(t("Found {count} tools.", { count: total }));
+    } catch (problem) {
+      setMcpNote(String(problem instanceof Error ? problem.message : problem));
+    } finally {
+      setMcpBusy(false);
+    }
+  }, [t]);
+
+  /** 存整份列表。**存完清掉发现结果**：旧的那张表已经不代表这些服务器了 */
+  const persistMcp = useCallback(
+    async (next: McpServer[]) => {
+      setMcpBusy(true);
+      setMcpNote(null);
+      try {
+        const saved = await saveMcpServers(next);
+        setMcpServers(saved);
+        setMcpFound([]);
+        setMcpNote(t("Saved. Refresh to see its tools."));
+      } catch (problem) {
+        setMcpNote(String(problem instanceof Error ? problem.message : problem));
+      } finally {
+        setMcpBusy(false);
+      }
+    },
+    [t],
+  );
+
+  const addMcpServer = useCallback(() => {
+    const target = mcpDraft.target.trim();
+    if (!target) return;
+    const next: McpServer =
+      mcpDraft.transport === "http"
+        ? {
+            id: "",
+            label: mcpDraft.label.trim(),
+            transport: "http",
+            command: "",
+            args: [],
+            url: target,
+          }
+        : (() => {
+            const parts = splitCommandLine(target);
+            return {
+              id: "",
+              label: mcpDraft.label.trim(),
+              transport: "stdio" as const,
+              command: parts[0] ?? "",
+              args: parts.slice(1),
+              url: "",
+            };
+          })();
+    if (next.transport === "stdio" && !next.command) return;
+    void persistMcp([...mcpServers, next]);
+    setMcpDraft((draft) => ({ ...draft, label: "", target: "" }));
+  }, [mcpDraft, mcpServers, persistMcp]);
+
+  const removeMcpServer = useCallback(
+    (id: string) => {
+      void persistMcp(mcpServers.filter((server) => server.id !== id));
+    },
+    [mcpServers, persistMcp],
+  );
+
   const header = useMemo(() => {
     if (!active) return t("Assistant · Not configured");
     if (!active.configured) return t("Assistant · Not configured");
@@ -718,6 +829,108 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
             <p className="lattice-assistant-hint">
               {t("Relative paths and commands start here. Reading is not limited to this folder — only writing asks, and the prompt shows the full path.")}
             </p>
+          </section>
+
+          {/* 外部服务：服务器是用户自己配的，工具由服务器声明（0004 §6） */}
+          <section className="lattice-mcp">
+            <header className="lattice-hands-head">
+              <span>{t("External services")}</span>
+              <button
+                type="button"
+                className="lattice-btn is-small"
+                onClick={() => void refreshMcp(true)}
+                disabled={mcpBusy || !hands.mcp}
+              >
+                {mcpBusy ? t("Asking…") : t("Refresh tools")}
+              </button>
+            </header>
+            <p className="lattice-assistant-hint">
+              {t("An MCP server brings its own tools. Every call still asks you first, and a server runs with your own permissions — there is no sandbox.")}
+            </p>
+            {mcpServers.length > 0 && (
+              <ul className="lattice-mcp-list">
+                {mcpServers.map((server) => {
+                  const found = mcpFound.find((item) => item.id === server.id);
+                  return (
+                    <li key={server.id} className="lattice-mcp-row">
+                      <span className="lattice-mcp-name">
+                        {server.label}
+                        <span className="lattice-mcp-target">
+                          {server.transport === "http"
+                            ? server.url
+                            : [server.command, ...server.args].join(" ")}
+                        </span>
+                        {found && (
+                          <span className={`lattice-mcp-state${found.ok ? "" : " is-bad"}`}>
+                            {found.ok ? t("{count} tools", { count: found.tools.length }) : found.error}
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        className="lattice-btn is-small"
+                        onClick={() => removeMcpServer(server.id)}
+                        disabled={mcpBusy}
+                      >
+                        {t("Remove")}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <label className="lattice-textfield">
+              <span>{t("Name (optional)")}</span>
+              <input
+                value={mcpDraft.label}
+                onChange={(event) =>
+                  setMcpDraft((draft) => ({ ...draft, label: event.target.value }))
+                }
+                placeholder="filesystem"
+                spellCheck={false}
+              />
+            </label>
+            <label className="lattice-textfield">
+              <span>
+                {mcpDraft.transport === "http" ? t("Server URL") : t("Command and arguments")}
+              </span>
+              <input
+                value={mcpDraft.target}
+                onChange={(event) =>
+                  setMcpDraft((draft) => ({ ...draft, target: event.target.value }))
+                }
+                placeholder={
+                  mcpDraft.transport === "http"
+                    ? "https://example.com/mcp"
+                    : "npx -y @modelcontextprotocol/server-filesystem D:\\"
+                }
+                spellCheck={false}
+              />
+            </label>
+            <div className="lattice-mcp-actions">
+              <button
+                type="button"
+                className="lattice-btn is-small"
+                onClick={() =>
+                  setMcpDraft((draft) => ({
+                    ...draft,
+                    transport: draft.transport === "http" ? "stdio" : "http",
+                  }))
+                }
+                disabled={mcpBusy}
+              >
+                {mcpDraft.transport === "http" ? t("Use a command instead") : t("Use a URL instead")}
+              </button>
+              <button
+                type="button"
+                className="lattice-btn is-small is-primary"
+                onClick={addMcpServer}
+                disabled={mcpBusy || !mcpDraft.target.trim()}
+              >
+                {t("Add server")}
+              </button>
+            </div>
+            {mcpNote && <p className="lattice-assistant-hint">{mcpNote}</p>}
           </section>
 
           {error && <p className="lattice-modal-error">{error}</p>}

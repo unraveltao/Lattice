@@ -34,6 +34,8 @@ pub mod instance;
 pub mod input_policy;
 pub mod llm;
 pub mod llm_policy;
+pub mod mcp;
+pub mod mcp_policy;
 pub mod media;
 pub mod metrics;
 pub mod metrics_policy;
@@ -186,6 +188,9 @@ pub fn run() {
             llm::assistant_hands,
             llm::assistant_hands_save,
             hands::assistant_tool,
+    mcp::mcp_servers,
+    mcp::mcp_servers_save,
+    mcp::mcp_tools,
             hands::hands_cancel,
             agent::agent_status,
             agent::agent_activity,

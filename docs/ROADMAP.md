@@ -26,22 +26,22 @@
 | v0.8 | Agent 接入 | 🟡 进行中 | 默认关的回环端点：只绑 127.0.0.1、令牌、审计日志、8 个白名单动作（读日志用 `npm run agent -- state`）；还差一次 CLI 往返的真机验收 |
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
-| v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P5**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）），P6 MCP 只有设计；0003 的会话与观察还没做 |
+| v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的会话与观察还没做 |
 
 **当前规模**（截至本次改动，2026-10-25）：
 
 | 指标 | 数值 | 备注 |
 | --- | --- | --- |
-| 前端 TS/TSX | 15 915 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
-| 样式 CSS | 4 191 行 | 纯手写，无 UI 库 |
-| Rust | 16 971 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠） |
+| 前端 TS/TSX | 16 287 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
+| 样式 CSS | 4 245 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css`） |
+| Rust | 18 175 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
 | 组件 SDK | 713 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
 | 官方组件 + 示例 | 13 338 行 | 14 个官方包 + 1 个示例（示例里那份 SDK 副本也算在内；未跟踪的桌宠不计） |
 | 构建脚本 | 2 629 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
-| 浏览器断言 | 1 973 条 | 46 个自检页，跑一遍的真实计数（0 failed） |
+| 浏览器断言 | 1 981 条 | 46 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 33 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条，都不依赖 dev server |
-| Rust 单测 | 326 条 | 292 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `fs_policy` 14 + `hands_policy` 12 + `shell_policy` 9），34 条要 `cargo test`（含 `hands.rs` 那 7 条，本机跑不了），见 AGENTS §11 |
-| Tauri 命令 | 71 个 | |
+| Rust 单测 | 351 条 | 309 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`mcp_policy` 17 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `fs_policy` 14 + `hands_policy` 12 + `shell_policy` 9），42 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
+| Tauri 命令 | 74 个 | |
 | 权限 | 11 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐 |
 | 踩过的坑 | 75 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
@@ -351,10 +351,10 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **工具参数按 `index` 累加**，拼完整才解析；用户按停止时**不再执行任何工具** —— 半截参数要么解析失败，要么更糟：解析成功但少一个字段，模型会拿错的值去改桌面。
   - 代价照旧：分片节奏只有真机算数（`cargo test` 在本机跑不了），所以纯逻辑先在 `llm_policy.rs` 钉住 23 条（半包 / 多字节 / `[DONE]` / 坏帧 / 多档位累加），传输层靠真机验一次。
 - [ ] **agent 加纪律，手不扩**（[`design/0003-agent-discipline.md`](./design/0003-agent-discipline.md)）—— 会话落 `assistant-sessions/`（关掉应用还能接着聊）、审批默认 `ask` 只拦不可逆动作、每轮 token / 墙钟上限、提示词补一段"装了哪些组件、它们怎么用"。**装组件、卸组件、授权、写存储仍然不进工具表**：那等于让一段提示词替用户点"信任这把新钥匙"（不变量 15 / 8）。**这一版只落了一半**：审批档与三道预算被下面 0004 的 P1 吸收并扩成"按能力组开关 + 写/跑必问"；**会话与观察两段还没做**，文档留在 `draft`。
-- [x] **给 assistant 一双手，落 P1–P5**（[`design/0004-agent-hands.md`](./design/0004-agent-hands.md)）—— 用户要的是"和其他 agent 一样：读文件、跑代码、上网、调外部服务、动屏幕"。这一版交付前五期（纪律 / 文件 / 命令 / 网页 / 屏幕与键鼠），P6 MCP 的设计留档、不接线：
+- [x] **给 assistant 一双手，落 P1–P6**（[`design/0004-agent-hands.md`](./design/0004-agent-hands.md)）—— 用户要的是"和其他 agent 一样：读文件、跑代码、上网、调外部服务、动屏幕"。六期全落地（纪律 / 文件 / 命令 / 网页 / 屏幕与键鼠 / MCP）—— 最后那期"调各种外部服务"就是 P6，`mcp.json` 里配一条服务，它的工具就出现在工具表里：
   - **两条执行器通道，永不合并**：桌面动作仍是 `AGENT_ACTIONS` + `runAgentAction`（8 个别名），新的手走 `runtime/hands.ts` → Rust `assistant_tool`；`handGroup(name)` 非空就是后者。`toolsFor("widget")` 里一条新手都没有 —— 组件那侧的手不扩。
   - **能力组默认全关**，`assistant.json` 升 v3（`{version: 3, activeId, hands, workspace, profiles[]}`），v1 就地升级成一条档、**手落成全关**。开一组 = 把那一组的 schema 递给模型，同时 Rust 独立再判一次（前端开关不是安全边界）。
-  - **第四道闸 `HAND_READY`**（动手时才发现的）：`mcp` 的工具是服务器运行时声明的、`hands.rs` 也没有发现服务器的代码 —— 只按用户开关裁的话，拨一下就把一个必定失败的工具递给模型，它会绕着一句 "not implemented" 打转。所以没接的组**一律不递**，设置里那一行也拨不动，挂"后续版本"标记；每落一期把那一组改成 `true`（`web` 在 P4、`screen` / `input` 在 P5 翻的）。
+  - **第四道闸 `HAND_READY`**（动手时才发现的）：`mcp` 的工具是服务器运行时声明的、`hands.rs` 也没有发现服务器的代码 —— 只按用户开关裁的话，拨一下就把一个必定失败的工具递给模型，它会绕着一句 "not implemented" 打转。所以没接的组**一律不递**，设置里那一行也拨不动，挂"后续版本"标记；每落一期把那一组改成 `true`（`web` 在 P4、`screen` / `input` 在 P5、`mcp` 在 P6 翻的）—— **现在六组全是 `true`**，这道闸留着继续用（下一个组要接时才需要它）。
   - **审批在 `assistant_tool` 之前 await**，读自动、`file.write` / `shell.run` / `input.*` / `mcp.*` 必问，未知名字默认问；`Deny` 回 `{ok:false, code:"denied"}` 让模型改主意，不是把整轮弄崩；`Always this turn` 按工具名记、`send()` 里清掉。
   - **取消两条通道**（`llm_chat_cancel` / `hands_cancel`），`shell.run` 25ms 轮询、超时与取消都真的 `kill()`；代价写明：只杀得掉直接子进程，`node` / `cargo` 这类孙进程可能留下。
   - 额度与形状：`file.read` 200 行 / 40k 字（**大文件截断而不是拒绝**：`take(4 MB)` + `truncated:true`）、`file.search` 100 条 / 5000 文件 / 跳过 `.git` `node_modules` `target` `dist`、`file.write` 临时文件 + 换名、`shell.run` 默认 60s 上限 300s、输出各 16k 字按行切、UTF-8 前置（不加 Windows PowerShell 5.1 就是问号）。
@@ -365,8 +365,13 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **截图自己拼 PNG**（不引图像库）：`BitBlt(GetDC(NULL))` 拿整块虚拟桌面，`flate2` 压扫描线，分块与 CRC 在 `screen_policy.rs` 里（纯字节运算，21 条单测钉着）。返回里 `vision: false` 是**诚实的** —— 这一版没有任何一条模型档收得到图片（0004 §3），照着返回说"我看不见图"比编一段画面好。
   - **键鼠归一化按虚拟桌面算**：`SendInput` 的绝对坐标是 0..65535，分母必须是 `SM_CXVIRTUALSCREEN` 而不是主屏宽度 —— 双屏时按主屏算，副屏上的点会全落到主屏右侧那一小块。中文与 emoji 走 `KEYEVENTF_UNICODE`（UTF-16 单元，emoji 是两个），组合键按"修饰键先按、后松"发，方向键与编辑键带 `KEYEVENTF_EXTENDEDKEY`（不带的话 NumLock 开着时 `Home` 会被当成小键盘的 7）。
   - **键鼠的审计只记形状**：点击记坐标、打字记**字数**（敲进输入框的可能是密码）、组合键记那一串键名。
-  - 验证：`tests/hands.html` **89 条**（P1 建、P5 补）、`tests/assistant.html` 122 条、`input_policy.rs` 23 + `screen_policy.rs` 21 + `web_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9 条 `rustc --test`、全量自检 **46 页 / 1 973 条 / 0 failed**。`hands.rs` 那 7 条只有 `cargo test` 跑得了（本机跑不了）。**真机还没走**：读一个中文路径的文件、`echo 你好`、`Deny` 之后磁盘没变化、Stop 之后子进程真的没了、取一个真页面并跟一次 302、列一次窗口、在一张空白画布上点一下再 `Ctrl+S` —— 记在 `AGENTS.md` §8。
-- 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P5 都落了。接下来按 0004 的期次走：**P6 MCP**（stdio + 动态工具发现，翻 `.mcp`）；0003 剩下的会话与观察等手稳定了再做。
+  - **P6 MCP：第六只手的"工具"不是平台写死的，是用户自己配的外部服务**。`mcp.json` 里一条 `{id, label, transport, command, args, url}`，工具名拼成 `mcp.<server>.<tool>`；`id` 由 Rust 生成并**复用**（改了等于工具换名字，模型记着的老名字全部失效），工具段压成 `[a-z0-9_-]`、撞名加 `_2`。这一组和前面五组的区别写在明处：以前是"平台给你几只固定的手"，这里是"你自己把它接到什么上"。
+  - **两种传输都手写，不引 MCP SDK**：stdio 是 `cmd /C` 起子进程 + 换行分隔的 JSON-RPC（`CreateProcess` 的引号规则在 `mcp_policy::quote_arg` 里，`CREATE_NO_WINDOW` 免得每次调用闪黑框）；HTTP 是 streamable POST（`Accept` 同时要 `application/json` 与 `text/event-stream`，回的 `Mcp-Session-Id` 要 echo 回去，SSE 的 `data:` 帧按 `id` 认）。握手顺序 `initialize` → `notifications/initialized` → `tools/list`，写反了服务器不报错、只是不理你。
+  - **发现是点出来的，不是启动时**：MCP 服务器会起进程、会卡住、会等 `npx` 现下包，所以 `mcp_tools` 只在用户点 Refresh（或第一次发消息）时跑，结果进一个进程内缓存（一次运行一份，重启重来）。一个服务 `tools/list` 失败只让那一行显示原因，不拖累别的服务与这一轮对话。
+  - **一次调用一条连接，不复用**：省掉"连接池 + 谁负责重启 + 半死连接怎么判"三个问题；代价写明 —— stdio 的 `npx` 服务每次调用都要重付一次启动（几秒），慢但不会错。额度：握手 30s、调用 120s、返回文本 40k 字、描述 300 字、`tools/list` 缓存一份。
+  - **MCP 一律问，而且没有沙箱**：`mcp.*` 全部走审批（`needsApproval` 认前缀），因为服务器是用户自己配的可执行文件、跑起来之后平台关不住它 —— 没有文件、网络、命令那三道收窄，`AGENTS.md` §7 第 15 条把这条写作承诺而不是缺口。审计只记工具名本身（哪台服务、哪个工具），不记参数、不记返回。
+  - 验证：`tests/hands.html` **97 条**（P1 建、P5 补、P6 补）、`tests/assistant.html` 122 条、`input_policy.rs` 23 + `screen_policy.rs` 21 + `web_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9 条 `rustc --test`、`mcp_policy.rs` 17 条 `rustc --test`、全量自检 **46 页 / 1 981 条 / 0 failed**。`hands.rs` 那 7 条与 `mcp.rs` 那 8 条只有 `cargo test` 跑得了（本机跑不了）。**真机还没走**：读一个中文路径的文件、`echo 你好`、`Deny` 之后磁盘没变化、Stop 之后子进程真的没了、取一个真页面并跟一次 302、列一次窗口、在一张空白画布上点一下再 `Ctrl+S`；P6 再走一条：`npx -y @modelcontextprotocol/server-filesystem D:\` 存进 `mcp.json`、点 Refresh 看到工具、真调一个（列一次目录）、`Deny` 之后什么都没发生 —— 记在 `AGENTS.md` §8。
+- 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P6 全落了 —— **六只手到这里齐全**。接下来是 0003 剩下的会话与观察（等手稳定了再做），以及 P6 留下的几条实用缺口：HTTP 服务的 OAuth / 自定义头、websocket 传输、连接复用（现在一次调用一条连接，`npx` 那类服务首调慢几秒）。
 
 ## 长期要盯的风险
 

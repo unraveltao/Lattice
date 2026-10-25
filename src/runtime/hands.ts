@@ -50,8 +50,8 @@ export function enabledGroups(hands: HandsSettings): HandGroup[] {
  * 这一版**真的接了几组**（0004 §4 的分期：P1 纪律 → P2 文件 → P3 命令 → P4 网页 →
  * P5 屏幕与输入 → P6 MCP）。
  *
- * 开关拨得动不等于接好了：`mcp` 的 schema 不在 `HAND_SPECS` 里（它的工具由
- * 服务器在运行时声明），而 `hands.rs` 那边也还没有发现服务器的代码。
+ * 开关拨得动不等于接好了：`mcp` 的 schema 不在 `HAND_SPECS` 里 —— 它的工具由
+ * 服务器在运行时声明，发现结果经 `mcpToolSpecs` 从 `extra` 进来（`mcp.rs`）。
  * **没接的组一律不递 schema** —— 递过去模型就会反复调一个必定失败的工具，
  * 然后开始编"我做到了"（0004 §7 的第一条）。
  */
@@ -61,7 +61,7 @@ export const HAND_READY: Record<HandGroup, boolean> = {
   web: true,
   screen: true,
   input: true,
-  mcp: false,
+  mcp: true,
 };
 
 /** 开着**且**这一版接好了的组。给模型的东西一律按这个算 */
@@ -226,6 +226,84 @@ export function mcpNameOk(name: string): boolean {
   return ok(parts[0], 32) && ok(parts[1], 48);
 }
 
+/** 一条 MCP 服务器。和 Rust 的 `McpServer` 一字不差（`mcp_servers` / `mcp_servers_save`） */
+export interface McpServer {
+  id: string;
+  label: string;
+  transport: "stdio" | "http";
+  command: string;
+  args: string[];
+  url: string;
+}
+
+/** 服务器声明的一个工具（`mcp_tools` 的发现结果，`name` 已经压成 `mcp.<server>.<tool>`） */
+export interface McpTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface McpServerTools {
+  id: string;
+  label: string;
+  ok: boolean;
+  error: string;
+  tools: McpTool[];
+}
+
+/**
+ * 发现结果 → 给模型的那张表。**名字不合法的一律丢掉**（`mcpNameOk`）：
+ * Rust 那边压过一遍，这里是第二道 —— 少一道，一个坏名字会让整轮请求 400
+ */
+export function mcpToolSpecs(servers: McpServerTools[]): Record<string, ToolSpec> {
+  const out: Record<string, ToolSpec> = {};
+  for (const server of servers) {
+    if (!server.ok) continue;
+    for (const tool of server.tools) {
+      if (!mcpNameOk(tool.name)) continue;
+      const schema = tool.parameters as {
+        properties?: Record<string, unknown>;
+        required?: unknown;
+      };
+      out[tool.name] = {
+        description: tool.description || tool.name,
+        parameters: {
+          type: "object",
+          properties: schema.properties ?? {},
+          ...(Array.isArray(schema.required) ? { required: schema.required as string[] } : {}),
+        },
+      };
+    }
+  }
+  return out;
+}
+
+/**
+ * 设置面板里"命令与参数"那一行的切词。双引号保住空格
+ * （`"C:\Program Files\x"`），别的空白就是分隔；空串丢掉
+ */
+export function splitCommandLine(input: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let quoted = false;
+  for (const ch of input) {
+    if (ch === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (!quoted && /\s/.test(ch)) {
+      if (current) {
+        parts.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += ch;
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
 /**
  * 要不要用户点头。**认不出来的名字返回 `true`**：以后加的新手忘了登记，
  * 最坏是多点一次确认，而不是静默地全自动跑（Rust 那份同样这么定）
@@ -251,7 +329,7 @@ export function needsApproval(name: string): boolean {
  *   - `hands`：用户拨的开关。关着的组**连 schema 都不给** —— 只给工具不执行，
  *     模型会反复调一个永远失败的工具，然后开始编"我做到了"
  *   - `caller`：`widget` 一只都不给（组件没有 shell 这件事是硬规矩）
- *   - `extra`：MCP 服务器声明的工具（P6 才有，这里留口子）
+ *   - `extra`：MCP 服务器声明的工具（`mcp.rs` 发现、`mcpToolSpecs` 压成表）
  *
  * 另外还过一道 `HAND_READY`：开关拨在"还没接的那一组"上时同样不给（见那里的注释）
  */

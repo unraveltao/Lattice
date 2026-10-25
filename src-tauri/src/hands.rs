@@ -193,6 +193,7 @@ fn shape_of(name: &str, args: &str, reply: &str) -> String {
             let chord: String = chord.chars().take(24).collect();
             chord
         }
+        other if other.starts_with(crate::mcp_policy::PREFIX) => other.to_string(),
         _ => String::new(),
     };
     let ok = serde_json::from_str::<Value>(reply)
@@ -244,6 +245,7 @@ fn run(app: &AppHandle, name: &str, raw_args: &str, cancel: Arc<AtomicBool>) -> 
         "input.click" => input_click(&args),
         "input.type" => input_type(&args),
         "input.key" => input_key(&args),
+        other if other.starts_with(crate::mcp_policy::PREFIX) => crate::mcp::run_tool(app, other, &args),
         other => fail(
             "unknown_tool",
             format!("\"{other}\" is not implemented yet in this build"),

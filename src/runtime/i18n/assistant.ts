@@ -177,4 +177,21 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "I stopped here: this turn has been running for {minutes} minutes.":
     "我停在这里了：这一轮已经跑了 {minutes} 分钟。",
   "I stopped here: this turn has used {tokens} tokens.": "我停在这里了：这一轮已经用了 {tokens} token。",
+
+  // —— 外部服务（MCP）——
+  "External services": "外部服务",
+  "Refresh tools": "重新发现工具",
+  "Asking…": "正在问…",
+  "An MCP server brings its own tools. Every call still asks you first, and a server runs with your own permissions — there is no sandbox.":
+    "MCP 服务器自带工具。每次调用仍然先问你；服务器用的是你自己的权限，没有沙箱。",
+  "{count} tools": "{count} 个工具",
+  "Remove": "移除",
+  "Name (optional)": "名字（可不填）",
+  "Server URL": "服务器地址",
+  "Command and arguments": "命令与参数",
+  "Use a command instead": "换成命令启动",
+  "Use a URL instead": "换成网址连接",
+  "Add server": "添加服务器",
+  "Found {count} tools.": "找到 {count} 个工具。",
+  "Saved. Refresh to see its tools.": "已保存。点重新发现看看它有哪些工具。",
 };

@@ -1,11 +1,10 @@
 ---
 status: accepted
 date: 2026-10-25
-code: src/runtime/assistant.ts, src/runtime/hands.ts, src/platform/assistant.ts, src/platform/hands.ts, src/platform/AssistantPanel.tsx, src-tauri/src/hands.rs, src-tauri/src/hands_policy.rs, src-tauri/src/fs_policy.rs, src-tauri/src/shell_policy.rs, src-tauri/src/web_policy.rs, src-tauri/src/screen_policy.rs, src-tauri/src/input_policy.rs, src-tauri/src/mcp.rs
+code: src/runtime/assistant.ts, src/runtime/hands.ts, src/platform/assistant.ts, src/platform/hands.ts, src/platform/AssistantPanel.tsx, src-tauri/src/hands.rs, src-tauri/src/hands_policy.rs, src-tauri/src/fs_policy.rs, src-tauri/src/shell_policy.rs, src-tauri/src/web_policy.rs, src-tauri/src/screen_policy.rs, src-tauri/src/input_policy.rs, src-tauri/src/mcp.rs, src-tauri/src/mcp_policy.rs
 ---
 
-> **落地状态**：P1（纪律）／P2（文件）／P3（命令）／P4（网页）／P5（屏幕与键鼠）已落，见 §9。
-> P6（MCP）尚未开工 —— 设计保留，动手前先读 §9 里记下的偏差。
+> **落地状态**：P1（纪律）／P2（文件）／P3（命令）／P4（网页）／P5（屏幕与键鼠）／P6（外部服务）全部落地，见 §9。
 
 # 0004 —— 给 assistant 一双手：文件、命令、网页、屏幕、外部服务
 
@@ -155,7 +154,7 @@ assistant_hands_save({ hands, workspace }) -> 同上
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/hands.html`（新） | 89 | 工具名 → 审批档/能力组、关掉一组时工具表少哪些、分期没接的组不给 schema、`describeToolCall` 的新标签、工具结果 20k 字截断、`Deny` 的形状 |
+| `tests/hands.html`（新） | 97 | 工具名 → 审批档/能力组、关掉一组时工具表少哪些、分期没接的组不给 schema、`describeToolCall` 的新标签、工具结果 20k 字截断、`Deny` 的形状、MCP 发现结果合表（`mcpToolSpecs`）与命令行切词 |
 | `tests/assistant.html` | 122 | 预算三种触顶、`MAX_STEPS` 改成 24 后那句提示、`toolsFor("widget")` 里一条新工具都没有 |
 | `src-tauri/src/fs_policy.rs` | 14 | `..` 与盘符、行/字数额度、跳过表、大文件拒绝、截断标记 |
 | `src-tauri/src/shell_policy.rs` | 9 | 超时夹紧、输出截断、空命令、`\0` 拒绝 |
@@ -163,6 +162,8 @@ assistant_hands_save({ hands, workspace }) -> 同上
 | `src-tauri/src/screen_policy.rs` | 21 | 窗口判据（不可见 / cloak / 无标题 / 零尺寸）、标题按字符压平与截断、截图落点、PNG 四块与 CRC、每行滤波字节、stored zlib 的分块 |
 | `src-tauri/src/input_policy.rs` | 23 | 键名 → 虚拟键码（含 F1–F24 与 OEM 标点）、组合键解析（无键 / 两键 / `Ctrl++`）、文字 → UTF-16 单元（中文 / emoji / `\r\n` 只算一次）、虚拟桌面归一化与越界 |
 | `src-tauri/src/hands_policy.rs` | 12 | 名字→组、未知名字、`mcp.` 形状、参数必填 |
+| `src-tauri/src/mcp_policy.rs` | 17 | 三段名字的形状与各段字母表、服务 id 撞名去重（`_2`）、工具段压平、`cmd /C` 命令行的引号、换行分隔 JSON 的切帧、三种请求体 |
+| `src-tauri/src/mcp.rs` | 8 | 传输与握手（只有 `cargo test` 跑得了，本机跑不了） |
 
 **手工验**（每期一次）：真机读一个真实文件 → 改它（看确认条 → `Deny` 一次 → `Allow` 一次）→
 跑一条会睡 5 秒的命令并按停止（进程要真的没了）→ 抓一个页面 → 列出窗口 → 在 pytest 里点一下
@@ -175,22 +176,23 @@ assistant_hands_save({ hands, workspace }) -> 同上
 - 不在组件里开任何一只手（见 §2）。
 - 不做后台/定时自主执行 —— 人在环和无人环是两套安全模型。
 
-## 9. 落地记录（P1–P5）
+## 9. 落地记录（P1–P6）
 
 已经接上的：`file.list` / `file.read` / `file.search` / `file.write`、`shell.run`、`web.fetch`、
-`screen.windows` / `screen.capture`、`input.click` / `input.type` / `input.key`。
+`screen.windows` / `screen.capture`、`input.click` / `input.type` / `input.key`，以及 P6 的动态一族
+`mcp.<server>.<tool>`（工具表里出现什么由用户在 `mcp.json` 里配的服务决定）。
 前端两道闸在 `runtime/hands.ts`（`handsTools` 裁 schema、`needsApproval` 定审批档），
 Rust 侧 `hands.rs::run` 再独立判一次组开关，纯逻辑在 `hands_policy.rs` / `fs_policy.rs` /
-`shell_policy.rs` / `web_policy.rs` / `screen_policy.rs` / `input_policy.rs`。
+`shell_policy.rs` / `web_policy.rs` / `screen_policy.rs` / `input_policy.rs` / `mcp_policy.rs`。
 
-**设计里没写、动手时才撞出来的十二条**（P6 照着这个走，别重新发明）：
+**设计里没写、动手时才撞出来的十二条**（P1–P5 期间；P6 就是照着这张表走的）：
 
 1. **第四道闸：`HAND_READY`**。`HAND_SPECS` 里 P5 / P6 的 schema 已经写好了（写的时候不用再动表），
    但 `hands.rs` 那边还没有执行分支。只按用户的开关裁 schema 的话，拨一下"屏幕"就会把
    `screen.windows` 递给模型，而每次调用都回 `"not implemented yet in this build"` —— 正是 §7 第一条
    那个失败模式。所以 `HAND_READY` 里没接的组**一律不递**（`handsTools` 与 `handsPrompt` 同源），
    设置面板上那几行也拨不动，并挂一个"后续版本"的标记。**每落一期就把那一组改成 `true`**
-   （`web` 在 P4、`screen` / `input` 在 P5 翻的；现在只剩 `mcp`）。
+   （`web` 在 P4、`screen` / `input` 在 P5、`mcp` 在 P6 翻的 —— 六组现在全是 `true`，这道闸留着给下一个组用）。
 2. **读大文件是截断，不是拒绝**。§7 写的是"`metadata().len()` 拒绝超大文件"，
    实际做法是 `take(MAX_READ_BYTES)` 读前 4 MB + `truncated: true` + 行/字数双上限 ——
    拒绝一个 2 MB 的日志会让模型永远读不到它，而"读前 200 行、想看更多就加大 offset"是它能自己处理的。
@@ -235,9 +237,41 @@ Rust 侧 `hands.rs::run` 再独立判一次组开关，纯逻辑在 `hands_polic
    只在某些机器上出现，本地永远复现不了）。审计只记形状：点击记坐标、**打字记字数**（敲进去的
    可能是密码）、组合键记键名。
 
-验证落点：`tests/hands.html` 89 条、`tests/assistant.html` 122 条、
-`input_policy.rs` 23 + `screen_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 +
+### P6 落地 —— 外部服务（2026-10-25）
+
+`mcp.<server>.<tool>` 接上了。设计写的是"stdio + streamable HTTP、动态发现、逐次问"，落地时补记六条：
+
+13. **工具名是三段，`id` 必须由 Rust 生成并复用**。用户只填 `label` / `transport` / `command`+`args` 或 `url`；
+    `id` 是 Rust 从 label（没 label 就从命令）压出来的 `[a-z0-9]` ≤32 段，撞名加 `_2`。**id 进了工具名**，
+    所以第二次保存必须把已有的 id 带回去 —— 界面只读写其余字段。换一次 id 等于模型记着的老工具名全部失效，
+    而它不会报错，只会绕着"工具不存在"重试（§7 第一条那个失败模式的变体）。
+14. **两种传输都手写，不引 MCP SDK**。stdio 是 `cmd /C` 起子进程（`CreateProcess` 的引号规则在
+    `mcp_policy::quote_arg`，`CREATE_NO_WINDOW` 免得每次调用闪一个黑框）+ 按 `\n` 切的 JSON-RPC 帧；
+    HTTP 是 streamable POST —— `Accept` 同时要 `application/json` 与 `text/event-stream`，服务器给的
+    `Mcp-Session-Id` 要原样 echo 回去，SSE 的 `data:` 帧按 `id` 认领。为这两百行引一个 SDK，等于把
+    "服务器怎么起、帧怎么切"从 17 条 `rustc --test` 换成一份读不完的依赖。
+15. **握手顺序不能反**：`initialize`（`PROTOCOL_VERSION = "2024-11-05"`）→ `notifications/initialized` →
+    `tools/list`。漏掉中间那条通知，服务器**不报错**，只是对后面的 `tools/list` 保持沉默 ——
+    症状是"30 秒超时"，而不是"握手错了"。
+16. **一次调用一条连接，不做连接池**。省掉"谁负责重连 / 超时的连接算不算死 / 子进程什么时候杀"三个问题；
+    代价写明：`npx` 那类服务每次调用都要重付一次启动（几秒），慢但不会错。`StdioSession` 的 `Drop` 先关 stdin、
+    等 300ms 再 `kill()`，给服务端一个自己退出的机会。
+17. **发现是用户点出来的，不是启动时**。`mcp_tools(refresh)` 只在那一下被调，结果进进程内缓存（一次运行一份，
+    重启重来）。MCP 服务器会起进程、会卡住、会等 `npx` 现下包 —— 放在启动路径上，等于一个配错的服务能把整个
+    assistant 拖死。现在一个服务失败只让那一行显示原因，其余照常；`mcp.json` 坏了当"没有服务"，不让它拦住启动。
+18. **MCP 是新的信任方：每调必问，而且没有沙箱**。服务器是用户自己配的可执行文件，它跑起来之后读文件、连网络、
+    起子进程，平台一样都管不住（`file.write` / `shell.run` 至少还有额度与形状，这里连形状都没有 —— 参数是
+    服务器自己定义的）。所以 `needsApproval` 对 `mcp.*` 一律返 `ask`、审计只记工具名本身、返回文本 40k 字截断、
+    描述 300 字（它要进提示词和确认条）。这条是**承诺不是缺口**，见 `AGENTS.md` §7 第 15 条。
+
+**P6 留下的缺口**（这一版不补，写在明处）：HTTP 服务的 OAuth / 自定义头（现在只有 URL、无鉴权）、
+websocket 传输、连接复用（见第 16 条）、`cmd /C` 被杀之后孙进程 `node` 可能留下（与 `shell.run` 同一条代价）。
+
+验证落点：`tests/hands.html` 97 条、`tests/assistant.html` 122 条、
+`mcp_policy.rs` 17 + `input_policy.rs` 23 + `screen_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 +
 `shell_policy.rs` 9 + `web_policy.rs` 21（都能 `rustc --test` 单跑）、
-`hands.rs` 7 条只有 `cargo test` 跑得了。**真机那条还没走**（读一个中文路径的文件、跑 `echo 你好`、
+`hands.rs` 7 条与 `mcp.rs` 8 条只有 `cargo test` 跑得了。**真机那条还没走**（读一个中文路径的文件、跑 `echo 你好`、
 点 Deny 看磁盘上没变化、Stop 之后子进程真的没了、抓一个真页面看正文有没有被截断、跟一次 302、
-列一次窗口、在一张空白画布上点一下再按 `Ctrl+S`）—— 记在 `AGENTS.md` §8。
+列一次窗口、在一张空白画布上点一下再按 `Ctrl+S`；P6 再走一条：把
+`npx -y @modelcontextprotocol/server-filesystem D:\` 存进 `mcp.json`、点 Refresh 看到工具、真调一个）——
+记在 `AGENTS.md` §8。

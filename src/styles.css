@@ -3767,6 +3767,68 @@ button.lattice-chip[aria-pressed="true"] {
   color: var(--lattice-text-muted);
 }
 
+/* 外部服务（MCP）：服务器一行一台，下面是"加一台"的输入。
+ * 服务器自己声明的工具是**动态**的，所以这里只画配置与发现结果，
+ * 不给每个工具画开关 —— 开关在能力组那一行（`hands.mcp`） */
+.lattice-mcp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--lattice-surface-2);
+  border: 1px solid var(--lattice-border);
+  border-radius: 12px;
+}
+
+.lattice-mcp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lattice-mcp-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lattice-mcp-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--lattice-text);
+}
+
+.lattice-mcp-target {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.lattice-mcp-state {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* 发现失败要说清楚是哪一台服务器说的什么错 —— 静默的空表等于"它没工具" */
+.lattice-mcp-state.is-bad {
+  color: var(--lattice-danger);
+}
+
+.lattice-mcp-actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* --------------------------------------------------------------------------
  * assistant 的桌面小窗（assistant.html）
  *

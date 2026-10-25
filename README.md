@@ -80,7 +80,7 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 
 ## Where it stands
 
-v0.10 is the current version. The last three releases: v0.8 let an agent drive the desktop (an opt-in loopback endpoint, 8 allowlisted actions, every call in an audit log); v0.9 added sound you can see and links that get out; v0.10 brought the built-in assistant — **a model you bring, hands that stay ours**: `Ctrl+K` opens a small window, paste an OpenAI-compatible base URL and a key once, and the key lives in `assistant.json` under Rust's control while the frontend only ever sees `sk-1…cdef`. The only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had — and, late in the version, six groups of hands it can switch on one at a time in settings: read files, run commands, fetch pages, look at windows, click and type, with MCP still unwired. All six are off by default, reads go through without a prompt, writes and commands and clicks ask first, and the audit line records the shape of a call but never its contents; a widget that asks for `llm:chat` gets text back, never tools — and late in the version it learned to *borrow* those hands: `desktop:control` lets a pet run one assistant turn, on a narrowed tool table with removal cut out.
+v0.10 is the current version. The last three releases: v0.8 let an agent drive the desktop (an opt-in loopback endpoint, 8 allowlisted actions, every call in an audit log); v0.9 added sound you can see and links that get out; v0.10 brought the built-in assistant — **a model you bring, hands that stay ours**: `Ctrl+K` opens a small window, paste an OpenAI-compatible base URL and a key once, and the key lives in `assistant.json` under Rust's control while the frontend only ever sees `sk-1…cdef`. The only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had — and, late in the version, six groups of hands it can switch on one at a time in settings: read files, run commands, fetch pages, look at windows, click and type, and call tools declared by the MCP servers you add. All six are off by default, reads go through without a prompt, writes and commands and clicks ask first, and the audit line records the shape of a call but never its contents; a widget that asks for `llm:chat` gets text back, never tools — and late in the version it learned to *borrow* those hands: `desktop:control` lets a pet run one assistant turn, on a narrowed tool table with removal cut out.
 
 How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 
@@ -103,12 +103,12 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | --- | --- |
 | Official widgets | 15 |
 | Permissions | 11 |
-| Tauri commands | 71 |
-| Browser assertions | 1 973 over 46 pages |
-| Rust tests | 326 |
+| Tauri commands | 74 |
+| Browser assertions | 1 981 over 46 pages |
+| Rust tests | 351 |
 | Documented pitfalls | 75 |
 
-Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 292 `rustc --test` pure-logic cases plus 34 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
+Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 309 `rustc --test` pure-logic cases plus 42 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
 ## Two hosts, one bridge
 
@@ -296,7 +296,7 @@ npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
 npm run test:tokens      # the three scales' rules themselves (half-pixels, exemptions, font shorthand)
 npm run check:tokens     # the repo actually obeys them: sizes, radii, 2 px spacing grid
-npm run test:browser     # 1 973 assertions over 46 pages, real Chrome, real dev server
+npm run test:browser     # 1 981 assertions over 46 pages, real Chrome, real dev server
 ```
 
 The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.

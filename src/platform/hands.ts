@@ -10,7 +10,7 @@
  *     的同一条理由）
  */
 
-import type { HandsSettings } from "../runtime/hands";
+import type { HandsSettings, McpServer, McpServerTools } from "../runtime/hands";
 import { callCommand } from "./devLlm";
 
 /** 和 `platform/agent.ts` 的 `AgentReply` 同形，但多了几只新手才会有的 code */
@@ -58,4 +58,26 @@ export async function cancelHand(requestId: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/* ------------------------------------------------------------------ MCP */
+
+export async function readMcpServers(): Promise<McpServer[]> {
+  return await callCommand<McpServer[]>("mcp_servers");
+}
+
+/** 存整份列表。Rust 会洗一遍（id / 去空白 / 传输只认两种），返回洗过的 */
+export async function saveMcpServers(servers: McpServer[]): Promise<McpServer[]> {
+  return await callCommand<McpServer[]>("mcp_servers_save", { servers });
+}
+
+/**
+ * 问服务要工具表。
+ *
+ * 第一次（`refresh = false`）走 Rust 的内存缓存 —— 一个 `npx` 服务器可能要几秒
+ * 才回话，每轮对话都重问一遍等于每轮都卡一下。界面上那个 Refresh 传 `true`。
+ */
+export async function discoverMcpTools(refresh = false): Promise<McpServerTools[]> {
+  const result = await callCommand<{ servers: McpServerTools[] }>("mcp_tools", { refresh });
+  return result.servers;
 }
