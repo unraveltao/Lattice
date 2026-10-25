@@ -28,6 +28,7 @@
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
 | v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的**会话与观察已落地**（`assistant-sessions/<id>.json` 一条会话一个文件，50 份 / 200 条 / 1 MB 三道额度，面板顶部一条能挑回 / 新开 / 删的会话条，提示词里补了组件说明首句与商店那一段），**审批档也落了**（`approvalMode` 三档 `ask` / `auto` / `readonly`，`readonly` 连 schema 都不给、Rust 再拒一次，`auto` 仍然问删除），**B 数据平面也落了**（组件清单加 `agent.tools`：工具名 `widget.<id>.<tool>`、多份实例合成一条、新权限 `agent:tools` 独立授权、答话的是画布那一份实例、回话超 4000 字符拒绝不截断；留了三处缺口，见下面那条） |
 | v0.12 | 技能包、工作区与全权模式 | 📝 设计稿 | `workspace` 从"相对路径的默认值"变成"免问区"（只对 `file.write`）；技能是说明书不是权限 —— `skills/<id>/SKILL.md` 进提示词、四条命令、`assistant.json` v4；见 [design/0005](./design/0005-skills-and-workspace.md)；**全权**是一次会话级定时授权（六组临时全开、不落盘、红条倒计时、审计 fail-closed），不是第四档审批，见 [design/0006](./design/0006-full-access.md) |
+| v0.13 | assistant 上桌面 | 📝 设计稿 | 两种窗口模式（浮窗 / 桌面，同一窗口不重建）：桌面模式走 `interactive` 那条路（不挂 WorkerW —— 挂了就拿不到键盘焦点，聊天框等于废了）；底板复用组件那套 appearance（tint / alpha / blur，出厂值一像素不改）；可锁、可拖边缩放（320×420 起，夹进工作区）；状态在 `assistant-window.json` v2，见 [design/0007](./design/0007-assistant-on-desktop.md) |
 
 **当前规模**（截至本次改动，2026-10-25）：
 
@@ -384,6 +385,15 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 - [ ] **技能包** —— `skills/<id>/SKILL.md`（front matter 三个字段 `name` / `description` / `tools` + 正文），启用的正文进系统提示（≤4 份 / 每份 ≤4 000 字 / 合计 ≤8 000 字，超了**在启用时拒**，不截断）；`assistant.json` v4 加 `skills.enabled`；四条命令 `assistant_skills` / `assistant_skills_save` / `assistant_skill_import` / `assistant_skill_remove`。**不新增执行通道**：技能里让做的事仍然走那六只手、仍然要审批、仍然进审计。
 - [ ] **全权模式（Full access）** —— 一次会话级的定时授权，不是第四档审批：开启期间**六组手临时全开、审批一律不问**（`placement.remove` 也不问），结束即回到用户存的那一份（开关与档位一个都不改）；内存态**不落盘**（重启即关），可选 15 / 30 / 60 / 120 分钟（默认 30，没有"永久"），面板与小窗顶部一条红条 + 倒计时 + `End now`，切回 `readonly` 立即结束。三条命令 `assistant_full_access` / `assistant_full_access_state` / `assistant_full_access_end`；期间审计行尾加 ` · full`，且**审计写不进去就不执行**（fail-closed）。四条硬线：装 / 卸 / 授权 / 钉钥匙不在工具表里、改平台自身配置（`assistant.json` / `mcp.json` / `state.json` / `skills/**`）永远要问、组件借手那一轮（`caller === "widget"`）拿不到全权、agent 的 HTTP 端点不受影响。**预算不变**：全权是权限，不是预算。
 - 明确不做：剪贴板读写、浏览器自动化 / 任意 HTTP 方法、多根 workspace —— 三条各自的反对理由写在 0005 §3；**持久化的"全权"档**也不做（写进 `assistant.json` 的长期高权限会被忘掉，0006 §2 否掉了 A 方案）。都不是"以后随便加"。
+
+## v0.13 —— assistant 上桌面（设计稿，未开工）
+
+用户的原话是"这个 agent 的面板要支持放在桌面，背景还跟其他组件一样可以调节，还可以固定放大缩小之类的"。推理在 [`design/0007-assistant-on-desktop.md`](./design/0007-assistant-on-desktop.md)。
+
+- [ ] **两种窗口模式，同一个窗口** —— 浮窗（默认，现状）/ 桌面。桌面模式用 `desktop::apply_to(Desktop, interactive: true)`：**不能挂 WorkerW**（那是桌面的子窗口，拿不到键盘焦点，聊天框就废了），走的是"`HWND_BOTTOM` 普通窗口 + 底层守卫"。切模式**不重建窗口**（两条都是事后可改的属性），所以对话一行都不丢。
+- [ ] **底板跟组件同一套 appearance** —— `{tint, alpha, blur}`，三层 `canvas`（`widget_wallpaper`，`pad = MAX_BLUR × 2`）→ `veil` → 内容；出厂 `auto / 1 / 0` 不覆盖任何令牌（不变量 6）；控件在标题栏那颗"底板"按钮里。
+- [ ] **锁与缩放** —— `locked` 一处判据（标题栏与手柄一起失效）；右 / 下 / 右下三个手柄，最小 `320 × 420`，每次应用都夹进当前屏工作区；位置尺寸外观锁全存 `assistant-window.json` v2（v1 的 `{x, y}` 就地升级），松手时存一次。
+- 明确不做：9 个方向的缩放手柄、"画面缩放"（会让字体一起变大，和"把面板拉宽"是两件事）、把 assistant 做成 placement（那会把"聊到一半"挂在一次布局同步上）。
 
 ## 长期要盯的风险
 
