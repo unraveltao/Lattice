@@ -5,7 +5,7 @@ supersedes: 0006
 code: src-tauri/src/hands.rs, src-tauri/src/hands_policy.rs, src-tauri/src/llm.rs, src/runtime/hands.ts, src/runtime/assistant.ts, src/platform/AssistantPanel.tsx, src/platform/assistant.ts
 ---
 
-# 0008 —— 两个模式：内部 / 全部（推翻 0006 的"定时授权"）
+# 0009 —— 两个模式：内部 / 全部（推翻 0006 的"定时授权"）
 
 > 用户的原话：**"开全权（我希望有个开关可以打开）……它有两个模式，一个只是管理内部的，一个是管理全部的，像我一样。"**
 > 0006 定的是"一次 30 分钟的定时授权，到点自动关，没有开关"。它防住了"忘在 `auto` 上"，

@@ -4,8 +4,8 @@ date: 2026-10-25
 code: src/runtime/hands.ts, src/runtime/assistant.ts, src/platform/assistant.ts, src/platform/hands.ts, src/platform/AssistantPanel.tsx, src-tauri/src/hands.rs, src-tauri/src/hands_policy.rs, src-tauri/src/agent.rs, src-tauri/src/lib.rs
 ---
 
-> **被 [0008](./0008-assistant-modes.md) 推翻**：用户要的是"一个开关"（两种模式：内部 / 全部），
-> 不是定时授权。这一份保留推理与失败模式，结论以 0008 为准。
+> **被 [0009](./0009-assistant-modes.md) 推翻**：用户要的是"一个开关"（两种模式：内部 / 全部），
+> 不是定时授权。这一份保留推理与失败模式，结论以 0009 为准。
 
 # 0006 —— 全权模式（Full access）：把车钥匙交出去，但留一条刹车线
 
