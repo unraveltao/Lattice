@@ -79,6 +79,18 @@ tint 三档（auto / dark / light）+ 浓度 + 模糊，和属性面板的语义
   最小 `320 × 420`（再小输入框放不下），上限不设、但**每次应用都夹进当前屏工作区**。
 - 尺寸与位置一起存在 `assistant-window.json` v2，拖动/缩放**松手时存一次**（不是每一帧写盘）。
 
+**拖标题栏走原生拖动区，不走 JS。** 标题栏带 `data-tauri-drag-region`（锁上时**不渲染**这个属性），
+由 Tauri 自己在 `mousedown` 上起拖；位置也不再由页面在松手时补一次 IPC —— Rust 监听 `Moved` / `Resized`，
+400ms 内没有新事件才写盘（`schedule_save`）。三条理由：
+
+1. 拖动是"按下就跟着走"的手感，走 JS 要先进一次 IPC（`startDragging`），任何一次往返抖动都会被用户当成"拖不动"；
+2. "按住拖、拖完立刻退出"这种序列，在页面里存就有一拍存不上；窗口自己监听坐标变化则一定落在最后一拍；
+3. 锁只有一个判据：属性渲不渲染。页面里不写 `if (locked) return` —— 两处判据迟早有一处漏。
+
+两个容易踩的细节：`data-tauri-drag-region` 只认**事件目标那一层**有没有这个属性，所以标题栏里的字必须
+`pointer-events: none`（否则按在标题上就拖不动，而标题恰好是标题栏面积最大的一块）；锁上时手柄与拖动区
+一起消失，光标也不该变成可拖。
+
 **落盘（v2）**
 
 ```json
@@ -104,7 +116,7 @@ assistant_window_locked(locked)           → AssistantWindowState
 assistant_window_save_rect(rect)          → AssistantWindowState（`{x, y, width, height}`，松手时存；夹紧在 Rust 侧再判一次）
 ```
 
-`assistant_window_save_pos` 保留原名（页面已经在用它），但它现在存的是**位置与尺寸**。`assistant_window_toggle` / `_hide` 保持原样。**Rust 是唯一真源**：前端每次改完都拿返回值覆盖本地状态，
+`assistant_window_save_pos` 保留原名，但**页面已经不调它了**：拖动与缩放由窗口自己监听 `Moved` / `Resized` 记（见上），它只留作"显式保存一次"的逃生门，存的也是**位置与尺寸**。`assistant_window_toggle` / `_hide` 保持原样。**Rust 是唯一真源**：前端每次改完都拿返回值覆盖本地状态，
 不在两处各攒一份（和 `assistant_hands*` 同一条）。前端纯逻辑放 `runtime/assistant-window.ts`：
 `DEFAULT_ASSISTANT_WINDOW`、`MIN_W` / `MIN_H`、`clampRect(rect, work)`、`migrateAssistantWindow(raw)`
 （v1 → v2、坏值逐项退回）—— 纯函数，`tests/assistant-window.html` 钉着。
@@ -123,6 +135,8 @@ assistant 仍然是"平台的一部分，不是组件"（`assistant_window.rs` �
 | 锁上了还能拖 | 只拦了标题栏，没拦手柄 | 锁是**一处判据**：`locked` 为真时 `startDragging` 与手柄都不挂处理器 |
 | 多屏 / 换 DPI 之后窗口飞到屏幕外 | 存的是逻辑像素，换屏后工作区变了 | 每次应用前 `clampRect(工作区)`；读不到屏幕就退回默认角落 |
 | 底板开到最大模糊，边缘露一圈没糊到的 | 截图 pad 不够 | `pad = MAX_BLUR × 2`（和宿主页同一个值，别各写一个） |
+| 按在标题上拖不动（按在字上没反应） | `data-tauri-drag-region` 只认事件目标那一层，字把事件接走了 | 标题栏里的 `span` 一律 `pointer-events: none`（`assistant-window.css`） |
+| 拖完重启，位置还是旧的 | 只在松手时存一次，而那一刻可能还没落盘 | 由 Rust 监听 `Moved` / `Resized` 合并 400ms 后写盘，页面不参与 |
 | `assistant-window.json` 坏了 | 断电 / 手改 | 当"没有记录"：落右下角、默认尺寸、出厂外观；**绝不拦住窗口** |
 | 切模式把对话弄丢 | 有人顺手改成"重建窗口" | 本设计不重建；真要重建时必须先落会话（`assistant_session_save`）再建 —— 写在这儿，防止以后"优化"掉 |
 
@@ -132,7 +146,7 @@ assistant 仍然是"平台的一部分，不是组件"（`assistant_window.rs` �
 | --- | --- | --- |
 | `tests/assistant-window.html` | ~16 | v1→v2 迁移、坏值逐项退回、`clampRect` 夹进工作区与最小尺寸、`normalizeAppearance` 的出厂值不动令牌 |
 | `src-tauri/src/assistant_window_policy.rs` | ~10 | `rustc --test`：模式字面量只有两个、rect 夹紧、v1 迁移、尺寸上下限 |
-| 手工 | — | 桌面模式下 Win+D / 被应用盖住之后还在；点它敲字能进输入框；锁上拖不动；拉右下角到 900×700 松手，重启还是这个尺寸；切回浮窗对话一行没少 |
+| 手工 | — | **拖动已验证**：真机上连拖四次，位移与光标一一对应（100×60 × 4），落盘的 rect 跟着变；v1 的 `{x, y}` 真文件也升成了 v2。仍待验（要等命令接线）：桌面模式下 Win+D / 被应用盖住之后还在、点它敲字能进输入框、锁上拖不动、拉右下角到 900×700 松手重启还是这个尺寸、切回浮窗对话一行没少 |
 
 **不做的**：9 个方向的缩放手柄只做三个；不提供"反向缩放"（画面缩放）—— 那会让字体一起变大，
 和"把面板拉宽"是两件不同的事，混在一起用户分不清。这两条写在这里，不是"以后再随便加"。

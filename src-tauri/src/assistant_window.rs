@@ -292,6 +292,31 @@ fn apply_rect(app: &AppHandle, state: &WindowState) -> Result<(), String> {
     Ok(())
 }
 
+/// 拖完 / 缩完之后才写盘。
+///
+/// Windows 在拖动时会连发几十个 `Moved`（还有 `Resized`），每条都写一遍文件
+/// 既费磁盘也没意义。这里只记"又来了一条"，400ms 内没有新事件才真写 ——
+/// 用户松手时那一次刚好落在最后一个窗口里。收窗口（`hide`）与显式保存
+/// （`assistant_window_save_pos`）各自还有保存点，所以不会漏。
+///
+/// 为什么放在 Rust 而不是页面里：位置是**窗口自己的事**。页面只在松手时补一次
+/// IPC 的话，"按住拖、拖完立刻退出"这种序列就有一拍没存上；而这里连
+/// 程序自己挪窗口（`apply_rect`）也一起兜住了。
+fn schedule_save(app: AppHandle) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::SeqCst) + 1;
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        if SEQ.load(Ordering::SeqCst) != seq {
+            return; // 后面还有新的移动，让它去存
+        }
+        if let Some(window) = app.get_webview_window(LABEL) {
+            let _ = save_current_rect(&app, &window);
+        }
+    });
+}
+
 /// 关窗口只藏起来：对话还在内存里，下次 `Ctrl+K` 接着聊
 fn guard_close(window: &tauri::WebviewWindow) {
     let clone = window.clone();
@@ -339,6 +364,12 @@ fn create(app: &AppHandle) -> Result<(), String> {
     }
 
     guard_close(&window);
+    // 拖动与缩放的位置 / 尺寸由窗口自己记（页面不需要在松手时补一次 IPC）
+    let moved_app = app.clone();
+    window.on_window_event(move |event| match event {
+        WindowEvent::Moved(_) | WindowEvent::Resized(_) => schedule_save(moved_app.clone()),
+        _ => {}
+    });
     window
         .show()
         .map_err(|error| format!("could not show the assistant window: {error}"))?;

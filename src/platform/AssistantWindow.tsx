@@ -246,16 +246,14 @@ export function AssistantWindow() {
     }
   }, [appearance, wallpaperAvg, themeTick]);
 
-  /* 拖标题栏。`startDragging` 会一直占着直到松手，所以位置在那之后存一次 */
-  const startDrag = useCallback(() => {
-    if (state.locked) return;
-    void getCurrentWindow()
-      .startDragging()
-      .then(() => invoke("assistant_window_save_pos"))
-      .catch(() => {
-        /* 拖不动不影响用，窗口还能 Ctrl+K 唤回来 */
-      });
-  }, [state.locked]);
+  /* 拖动标题栏**不走 JS**：标题栏带 `data-tauri-drag-region`，由 Tauri 自己在
+   * mousedown 上起拖。三条理由：
+   *   1. 走 JS 那条路要先过一次 IPC（`startDragging`），而拖动是"按下就跟着走"
+   *      的手感 —— 任何一次往返抖动都会被用户当成"拖不动"
+   *   2. 位置不再由页面存：Rust 监听 `Moved` / `Resized`，合并到最后一拍再写盘
+   *      （`schedule_save`），页面不需要在松手时补一次 IPC
+   *   3. 锁上时属性不渲染，拖不动这件事只有**一个**判据（这里不写 `if locked`）
+   */
 
   const patch = useCallback((next: Partial<AssistantWindowState>) => {
     setState((before) => ({ ...before, ...next }));
@@ -354,7 +352,10 @@ export function AssistantWindow() {
 
       <header
         className="lattice-assistant-bar"
-        onPointerDown={startDrag}
+        /* 锁上时**不渲染**这个属性 = 拖不动；解锁时它是整条标题栏的拖动手柄。
+         * Tauri 只认"事件目标那一层"有没有这个属性，所以标题栏里的字要
+         * `pointer-events: none`（见 assistant-window.css），否则点在字上不生效 */
+        data-tauri-drag-region={state.locked ? undefined : "true"}
         title={state.locked ? t("Unlock to move") : t("Drag to move")}
       >
         <span className="lattice-assistant-bar-dot" aria-hidden="true" />

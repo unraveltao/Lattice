@@ -1,4 +1,4 @@
-﻿/*
+/*
  * assistant 窗口的壳（`0007`）。
  *
  * 只放**这个窗口独有**的东西：底板三层、标题栏那排按钮、底板小面板、三个缩放手柄。
@@ -32,6 +32,13 @@
 .lattice-assistant-window > .lattice-assistant {
   position: relative;
   z-index: 2;
+}
+
+/* 标题栏里的字**不接指针**：`data-tauri-drag-region` 只认"事件目标那一层"有没有
+ * 这个属性（Tauri 的初始化脚本判的是 e.target）。字接指针的话，用户按在标题上
+ * 就拖不动 —— 而标题恰好是标题栏面积最大的一块。按钮例外，它们要能点。 */
+.lattice-assistant-bar > span {
+  pointer-events: none;
 }
 
 /* 标题栏右侧那个模式提示：桌面 / 浮窗一眼能看出来 */
