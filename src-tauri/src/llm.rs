@@ -544,6 +544,12 @@ fn sanitize_import(mut profile: Profile) -> Option<Profile> {
     profile.auth = llm_policy::normalize_auth(&profile.auth).to_string();
     profile.model = profile.model.trim().to_string();
     profile.api_key = profile.api_key.trim().to_string();
+    // 手写的档常常只给一个本机地址（`{"baseUrl":"http://127.0.0.1:11434/v1"}`），
+    // 没有 `auth` 也没有 key。缺省落下来的 `bearer` 会挂一个空 Bearer 换来 401 ——
+    // 和 `migrate_legacy` 同一句判断：没有 key 的本机地址就是"不收 key 的本机模型"
+    if profile.api_key.is_empty() && llm_policy::loopback_base(&profile.base_url) {
+        profile.auth = "none".to_string();
+    }
     profile.temperature = profile.temperature.map(|value| value.clamp(0.0, 2.0));
     profile.models.truncate(40);
     let label = profile.label.trim().to_string();
@@ -591,7 +597,13 @@ fn merge_profiles(config: &mut AssistantConfig, incoming: Vec<serde_json::Value>
             Some(index) => {
                 let existing = &mut config.profiles[index];
                 existing.label = candidate.label;
-                existing.auth = candidate.auth;
+                // 上面"没 key 的本机地址 = `none`"说的是**新档缺省怎么填**，
+                // 不是"把已经存着 key 的那一档改成不收 key"：导入的文件里本来
+                // 就不该带别人的 key，而本机那一档可能真的存着一个（有的本地
+                // 服务要）。key 没跟着来的那次，鉴权形状保持原样
+                if !candidate.api_key.is_empty() || existing.api_key.trim().is_empty() {
+                    existing.auth = candidate.auth;
+                }
                 existing.model = candidate.model;
                 if candidate.temperature.is_some() {
                     existing.temperature = candidate.temperature;
@@ -1577,6 +1589,27 @@ mod tests {
             r#"[{"baseUrl":"https://api.deepseek.com/v1","model":"deepseek-chat","apiKey":"  "}]"#,
         );
         assert_eq!(config.profiles[0].api_key, "sk-old");
+    }
+
+    #[test]
+    fn a_keyless_import_keeps_a_stored_key_and_its_auth_shape() {
+        // 本机那一档存着 key（有的本地服务要），导进来的文件按惯例不带 key：
+        // 这一次只合并其余字段，别把这档改成"不收 key"
+        let mut config = parse_config(
+            r#"{"version":4,"activeId":"p-1","profiles":[
+                {"id":"p-1","label":"Local model","baseUrl":"http://127.0.0.1:11434/v1",
+                 "auth":"api-key-header","model":"llama3","apiKey":"sk-local"}]}"#,
+        );
+        normalize(&mut config);
+        assert_eq!(config.profiles[0].auth, "api-key-header");
+
+        import_into(
+            &mut config,
+            r#"[{"baseUrl":"http://127.0.0.1:11434/v1","model":"qwen3"}]"#,
+        );
+        assert_eq!(config.profiles[0].auth, "api-key-header");
+        assert_eq!(config.profiles[0].api_key, "sk-local");
+        assert_eq!(config.profiles[0].model, "qwen3");
     }
 
     #[test]

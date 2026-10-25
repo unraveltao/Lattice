@@ -112,6 +112,12 @@ pub fn is_loopback(host: &str) -> bool {
         || bare == "::1"
 }
 
+/// 这个 base URL 指的就是本机。调用方拿它判"要不要挂鉴权头"：
+/// 本机模型（Ollama / LM Studio）常常一个 key 都不收。
+pub fn loopback_base(base: &str) -> bool {
+    is_loopback(&host_of(base))
+}
+
 pub fn chat_url(base: &str) -> String {
     format!("{base}/chat/completions")
 }
@@ -1284,6 +1290,18 @@ mod tests {
         assert_eq!(profile_label("http://127.0.0.1:11434/v1"), "Local model");
         assert_eq!(profile_label("http://[::1]:8080/v1"), "Local model");
         assert_eq!(profile_label(""), "");
+    }
+
+    #[test]
+    fn loopback_bases_are_recognized() {
+        // 认得出本机，才敢把"没带 key"读成"本机模型不用 key"
+        assert!(loopback_base("http://127.0.0.1:11434/v1"));
+        assert!(loopback_base("http://localhost:1234/v1"));
+        assert!(loopback_base("http://[::1]:8080/v1"));
+        assert!(loopback_base("http://user:pass@127.0.0.1:11434/v1"));
+        assert!(!loopback_base("https://api.deepseek.com/v1"));
+        assert!(!loopback_base("https://10.0.0.1:11434/v1"));
+        assert!(!loopback_base(""));
     }
 
     #[test]

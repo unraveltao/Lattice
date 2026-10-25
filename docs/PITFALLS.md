@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **81 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **82 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -132,6 +132,7 @@
 | --- | --- | --- |
 | `cargo build` 报 `export ordinal too large: 92606`           | `crate-type` 里有 `cdylib`，windows-gnu 要导出巨大符号表                                              | 只留 `rlib`                                                         |
 | `cargo test` 编译通过但一运行就 `0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND` | 这台机器的安全策略不让往 `src-tauri/target/debug/deps/` 写新的 `.exe`（构建输出被拦，二进制是残的），跟代码无关：`cargo build` / 真机运行都正常 | 纯函数逻辑用 `#[path = "..."] mod x;` 写个壳子，`rustc --test 壳子.rs` 单独编一遍 —— 断言还是模块里那一份，不复制；换 msvc 工具链或放开目录权限后 `cargo test` 就能正常跑 |
+| 安装包打出来了、release 草稿也建好了，才在 Actions 里看到 `ci` 的 `rust` job 红了一条 —— 而本机跑过的每一项都是绿的 | `cargo test` 在这台机器上跑不了（见上一条），而 `release.yml` **不跑** `cargo test`：只有 `ci.yml` 跑。于是"这一批新写了一条 `#[test]`"在本机从来没被真的执行过，`cargo check --all-targets` 也只证明它**编得过**。`llm.rs` / `hands.rs` / `mcp.rs` 这些带 `tauri` 的模块没有壳子，谁也不替它跑 | 动过 `src-tauri/src` 里没有壳子的 `#[cfg(test)]`：先在 `main` 上推一次，等 `ci` 的 `rust` job 绿了**再**打 tag。`release` 那条只证明"能编能打包"，它替代不了 `ci` —— 反过来也一样，`ci` 里的 shell 单测替代不了真机 |
 | `diagnostics.rs` 编译报一堆语法错，位置全在 JS 字符串里 | 上报脚本里有 `split("#")`，而裸字符串写成了 `r#"..."#` —— `"#` 就是结束符，字面量在 `split(` 处被截断 | 用 `r##"..."##`；顺手加一条单测：源码里不许出现 `//`（压成一行时它会把后面全注释掉） |
 | 改完 `src-tauri` 里的文件，`tauri dev` 重建出来的进程直接 panic：`HRESULT(0x800700AA) The requested resource is in use` | 文件监听触发重建，但旧的 `lattice.exe` 还活着，两个实例抢同一个 WebView2 用户数据目录 | 改 Rust 之前先停掉 app（或至少确认 `tasklist` 里没有残留进程）；前端改动走 HMR，不用停 |
 | 给 WebView2 加上 `--remote-debugging-port` 之后，应用起来了、窗口标题也在，但**一个 `msedgewebview2` 子进程都没有**，端口不监听，窗口里什么都没有 | `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 里那条参数让 WebView2 的创建直接失败了（本机环境如此，去掉这个变量立刻正常）。表面症状极像"应用卡住" —— 日志里只有两条 watcher，什么都没有 | 别用 CDP 端口验界面：改成"临时把要验的状态默认成打开 / 关闭，截一张窗口图，然后改回来"。窗口截图用 `GetWindowRect` + `ImageGrab(bbox=..., all_screens=True)`，比 CDP 少一整条依赖 |

@@ -118,7 +118,7 @@ llm_chat_cancel({ requestId })
 - **命令多了一个**：`llm_chat_stream` / `llm_chat_cancel` 之外，`llm_chat` 和 `llm_chat_stream` 都多收一个可选的 `profileId`。原来两条路各读一次 active 档，抽出 `prepare()` 之后顺手统一了 —— 少一处"流式按 A 档、整包按 B 档"的可能。
 - **增量只在气泡里滚，不参与拼装**。设计里写的是"命令结束时返回拼好的完整消息"，实现在此之上又定了一条：前端**不**拿增量拼最终消息，最后用返回值整条覆盖。这样"拼增量拼错了"最多让字闪一下，不会留下一句错话。工具参数仍然不进事件。
 - **`SseBuffer` 按 `\n` 切，不按 `\n\n` 切**。第 5 节表格里写的是"切到 `\n\n` 才解码"；实现是"按字节切行 → 攒 `data:` 字段 → 空行收尾成一条事件"。两者等价，但后者顺带把"一条事件多行 `data:`"这件事做对了，而多字节字符永远不会被切开（`\n` 不在任何多字节序列内部）。
-- 断言数：`llm_policy.rs` 新增 **23** 条（不是 24），`tests/llm-models.html` 26 条、`tests/assistant.html` 118 条。**写这份文档时**全仓 Rust 单测 219 条 —— 现在是 **413** 条（`llm_policy.rs` 自己长到 48 条），别拿这里当基准，`grep -c '#\[test\]'` 一下就对得上。
+- 断言数：`llm_policy.rs` 新增 **23** 条（不是 24），`tests/llm-models.html` 26 条、`tests/assistant.html` 118 条。**写这份文档时**全仓 Rust 单测 219 条 —— 现在是 **415** 条（`llm_policy.rs` 自己长到 49 条），别拿这里当基准，`grep -c '#\[test\]'` 一下就对得上。
 
 ## 8. 后续：档列表搬了家（2026-10-25）
 
@@ -142,10 +142,11 @@ llm_chat_cancel({ requestId })
 3. **hands / workspace / approval 一概不导**。那是"它能不能动我的东西"的授权，跟着一份配置文件进来就等于绕过用户按过的开关。
 4. **active 不动**（本机还没有 active 时才接管）。导入不该悄悄换掉你正在用的模型。
 5. **坏档逐条跳过并计数**。一份文件里有一条地址不合法，不该连累另外三条；但也不能静默成功 —— 三个数（新增/更新/跳过）都报给用户。
+6. **没带 key 的本机地址落成 `auth: none`**（2026-10-26 补）。手写的档常常只给一个 `http://127.0.0.1:11434/v1`，没有 `auth` 也没有 key —— 缺省值落下来的 `bearer` 会挂一个空 Bearer 换来 401，判断和 `migrate_legacy` 是同一句：`apiKey` 空 + `loopback_base` 为真 → `none`。反过来**不能**顺手改已有那一档的鉴权形状：导入的文件里按惯例不带别人的 key，而本机那一档可能真的存着一个（有的本地服务要），所以"这次没带 key"只合并其余字段，`auth` 保持原样。
 
 **解析与合并都在 Rust**，前端只负责"选文件 + 读成文本"（`importConfig`）。理由：合并规则必须和读盘时的 `normalize` 是同一份，否则"导入成功"的东西下一次读盘就被丢掉，用户会看到"说导入了，怎么少了两档"。`normalize` 在 Rust 这边。
 
 能认三种形状：`[ {...} ]`、`{ "profiles": [ … ] }`（整份 `assistant.json`）、`{ "baseUrl": …, "model": … }`（v1 的平铺形状）。手写的档没有 `id` 也能进 —— 补一个空 id，真正确认"这是新的"之后才由 `fresh_id` 发号；同时给 `base_url` / `api_key` 加了 serde `alias`，照文档写成 snake_case 的文件也认。
 
-命令是 `assistant_config_import`，8 条单测钉上面五条语义（`a_bad_entry_is_skipped_not_fatal` 那条同时钉住了"明文 http 只给回环"）。
+命令是 `assistant_config_import`，9 条单测钉上面六条语义（`a_bad_entry_is_skipped_not_fatal` 那条同时钉住了"明文 http 只给回环"，`a_keyless_import_keeps_a_stored_key_and_its_auth_shape` 钉第 6 条的反面）。
 
