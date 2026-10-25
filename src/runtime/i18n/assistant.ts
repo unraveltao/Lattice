@@ -41,6 +41,12 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "No key": "缺 key",
   "Read the file again": "重新读取",
   "Read the file again.": "已经从文件里重读了一遍。",
+  "Import configuration": "导入配置",
+  "Pick a JSON file and merge its model profiles into this machine":
+    "选一个 JSON 文件，把里面的模型档并进这台电脑",
+  "Imported {added}, updated {updated}.": "导入 {added} 档，更新 {updated} 档。",
+  "Imported {added}, updated {updated}, skipped {skipped}.":
+    "导入 {added} 档，更新 {updated} 档，跳过 {skipped} 档（格式不对的没动）。",
   Name: "名字",
   "Leave empty to use the host name": "留空就用主机名",
   "API base URL": "接口地址",
@@ -59,6 +65,15 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Temperature {value} (lower is steadier; 0.4–0.8 works well for changing the desktop)":
     "温度 {value}（越低越稳，改桌面建议 0.4–0.8）",
   "Test connection": "测试连接",
+  "Send one real request to this endpoint — it costs a few tokens.":
+    "真的往这个地址发一次请求 —— 会花掉一点点 token。",
+  "Not tested": "还没测",
+  "Not tested yet": "还没测过",
+  "Testing…": "正在测…",
+  "Connection failed": "连不上",
+  "Connected · {count} models": "连上了 · {count} 个模型",
+  "Connected · no models listed": "连上了 · 没列出模型",
+  "This endpoint listed no models.": "这个地址没有列出任何模型。",
   "Forget key": "删掉 key",
   "Delete profile": "删掉这一档",
   "Delete it and its key?": "连 key 一起删？",
@@ -66,7 +81,6 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Saved. This profile is ready to use.": "已保存，这一档可以用了。",
   "Saved. A local model needs no key.": "已保存。本机模型不需要 key。",
   "Saved, but there is no key yet — paste one and save again.": "存下了，但还没有 key —— 粘一把再保存。",
-  "Connected. {count} models are available — pick one below.": "连上了，有 {count} 个模型可用 —— 在下面挑一个。",
   "Connected, but this endpoint listed no models. Type the model name by hand.":
     "连上了，但这个地址没列出模型 —— 手写模型名。",
   "Key removed from this machine.": "key 已从本机删掉。",

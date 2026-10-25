@@ -20,10 +20,23 @@
  * 把"编辑"和"切过去"合成一个点击，会让"我只是想改个模型名"变成"我把全局
  * 切走了" —— 切走之后下一条消息就发到另一个端点上，而且没有任何提示。
  *
- * # 状态点是"能不能用"，不是"连没连上"
+ * # 行上的状态点是"能不能用"，不是"连没连上"
  *
  * 绿点 = 这一档 key 齐了、模型名也有，发得出去。它**不代表**网络通 ——
  * 那要一次真的请求，代价是钱和时间，所以只在用户点"测试连接"时才做。
+ *
+ * # 那盏灯测的是"刚刚这一次"
+ *
+ * 灯在「测试连接」右边（`lattice-model-probe`）：绿 = 这次通了，红 = 这次没通，
+ * 灰 = 还没测过。三条规矩：
+ *
+ * 1. **它不落盘，也不合并进行上的状态点**。一次真实请求的结果有保质期，而
+ *    过期时间取决于对面那个端点 —— 我们不知道它什么时候变。所以它是"这一次
+ *    的观察"，不是"这一档的属性"。合并进去，行上那个点就会在重启后骗人。
+ * 2. **改了就作废**（`fingerprint`）：地址、鉴权形状、这次粘的 key 一变，
+ *    上一次的绿灯就不再描述现在这张表单了，退回灰的比留着错的强。
+ * 3. **灯只报状态，原因还是那段红字**：红点旁边挤不下 401 的原文，悬停能看
+ *    全（`title`），但"为什么失败"仍旧由下面那行 `lattice-modal-error` 承担。
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -46,6 +59,28 @@ import { useT } from "../runtime/i18n";
 /** 和 Rust 的 `DEFAULT_TEMPERATURE` 对齐：模型没存过温度时表单显示这个 */
 const DEFAULT_TEMPERATURE = 0.6;
 
+/** 还没保存的那一档在 `probes` 里的键。真实 id 都以 `p-` 开头，撞不上 */
+const DRAFT_KEY = "*";
+
+/**
+ * 一次「测试连接」的结果。**只在这次会话里有效**，不落盘 —— 见文件头
+ * "那盏灯测的是刚刚这一次"。
+ */
+interface Probe {
+  state: "idle" | "busy" | "ok" | "bad";
+  /** 灯旁边那句话（短，挤得下） */
+  label: string;
+  /** 悬停才看到的全文：失败时是后端那句原文 */
+  detail: string;
+  /** 测的是哪一组值。表单改了就作废，别拿旧绿灯照新表单 */
+  fingerprint: string;
+}
+
+/** 只认这三样：模型名换一个不影响"这个端点通不通" */
+function probeFingerprint(baseUrl: string, auth: string, key: string): string {
+  return [baseUrl, auth, key].join("\u0000");
+}
+
 /** 鉴权形状的三档。和 Rust 的 `normalize_auth` 一一对应 */
 function authLabel(auth: AuthShape): string {
   if (auth === "none") return "No key (local model)";
@@ -60,9 +95,14 @@ export interface ModelProfilesProps {
   onChange?: (view: ProfilesView) => void;
   /** 刚存好一档且它能用。面板据此切回对话；设置里没人听 */
   onReady?: () => void;
+  /**
+   * 外部改了磁盘上的配置（导入之后），把这个数加一，这里就重读一遍。
+   * 用"计一个数"而不是传回调：这一块的状态全在自己身上，外面只需要喊一声。
+   */
+  reloadToken?: number;
 }
 
-export function ModelProfiles({ variant = "settings", onChange, onReady }: ModelProfilesProps) {
+export function ModelProfiles({ variant = "settings", onChange, onReady, reloadToken = 0 }: ModelProfilesProps) {
   const t = useT();
 
   const [view, setView] = useState<ProfilesView | null>(null);
@@ -79,10 +119,14 @@ export function ModelProfiles({ variant = "settings", onChange, onReady }: Model
 
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  /** 「测试连接」在飞。和 `saving` 分开：测的时候 Save 那颗按钮不该写着"保存中…" */
+  const [testing, setTesting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** 配置文件路径。浏览器预览里拿不到（也没有这个文件），拿不到就不显示那一行 */
   const [file, setFile] = useState<string | null>(null);
+  /** 每档最后一次「测试连接」的结果。键是档 id，没保存的那张表用 `DRAFT_KEY` */
+  const [probes, setProbes] = useState<Record<string, Probe>>({});
 
   const apply = useCallback(
     (next: ProfilesView) => {
@@ -96,6 +140,16 @@ export function ModelProfiles({ variant = "settings", onChange, onReady }: Model
   const draftId = draft?.id ?? null;
   const editingProfile = profiles.find((item) => item.id === draftId) ?? null;
   const info = useMemo(() => knownModel(model), [model]);
+
+  /*
+   * 灯现在该说什么。`fingerprint` 对不上就是"还没测过"：这张表单已经被改过了，
+   * 上一次那个绿灯描述的已经不是它。
+   */
+  const probeKey = draftId ?? DRAFT_KEY;
+  const remembered = probes[probeKey];
+  const probe =
+    remembered && remembered.fingerprint === probeFingerprint(baseUrl, auth, key) ? remembered : null;
+  const probeState = probe?.state ?? "idle";
 
   /** 把一档灌进表单 */
   const fill = useCallback((profile: ProfileView) => {
@@ -169,6 +223,26 @@ export function ModelProfiles({ variant = "settings", onChange, onReady }: Model
     }
   }, [apply, draft?.id, t]);
 
+  /**
+   * 外面刚导入过一份配置（`reloadToken` 变了）：把清单重读一遍，但**不吭声** ——
+   * 那句"已经从文件里重读了一遍"是「重新读取」按钮的回报，导入的回报由发起
+   * 导入的那一处去说。表单不动：用户可能正在里面打字。
+   */
+  useEffect(() => {
+    if (!reloadToken) return;
+    let cancelled = false;
+    void readLlmProfiles()
+      .then((next) => {
+        if (!cancelled) apply(next);
+      })
+      .catch((problem) => {
+        if (!cancelled) setError(String(problem instanceof Error ? problem.message : problem));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apply, reloadToken]);
+
   const persist = useCallback(async () => {
     setSaving(true);
     setNote(null);
@@ -188,6 +262,18 @@ export function ModelProfiles({ variant = "settings", onChange, onReady }: Model
       setKey("");
       const stored = next.profiles.find((item) => item.id === saved.id);
       if (stored) fill(stored);
+      /*
+       * 灯跟着这一档走：刚才测的是同一组值，存完不该变回灰的。key 那一格空了
+       * （存进文件了），所以指纹按空 key 重算 —— 那正是"用存着的那把"这个状态。
+       */
+      setProbes((prev) => {
+        const done = prev[draftId ?? DRAFT_KEY];
+        if (!done || done.state === "idle" || done.state === "busy") return prev;
+        const moved = { ...prev };
+        delete moved[DRAFT_KEY];
+        moved[saved.id] = { ...done, fingerprint: probeFingerprint(baseUrl, auth, "") };
+        return moved;
+      });
       setNote(
         stored?.configured
           ? t("Saved. This profile is ready to use.")
@@ -204,30 +290,47 @@ export function ModelProfiles({ variant = "settings", onChange, onReady }: Model
   }, [apply, auth, baseUrl, draftId, fill, key, label, model, onReady, t, temperature]);
 
   const test = useCallback(async () => {
-    setSaving(true);
+    // 这一档在 `probes` 里的格子：没保存的那张表用 `DRAFT_KEY`
+    const slot = probeKey;
+    const typed = key.trim();
+    const fingerprint = probeFingerprint(baseUrl, auth, key);
+    setTesting(true);
     setNote(null);
     setError(null);
+    setProbes((prev) => ({ ...prev, [slot]: { state: "busy", label: "", detail: "", fingerprint } }));
     try {
       // 编辑已有的档时把 id 一起带上：没重新输入 key，就用存着的那一把（Rust 里读）
       const list = await listModels({
         profileId: draftId ?? undefined,
         baseUrl,
         auth,
-        key: key.trim() || undefined,
+        key: typed || undefined,
       });
       setModels(list);
-      setNote(
-        list.length
-          ? t("Connected. {count} models are available — pick one below.", { count: list.length })
-          : t("Connected, but this endpoint listed no models. Type the model name by hand."),
-      );
+      setProbes((prev) => ({
+        ...prev,
+        [slot]: {
+          state: "ok",
+          label: list.length
+            ? t("Connected · {count} models", { count: list.length })
+            : t("Connected · no models listed"),
+          detail: list.length ? list.slice(0, 8).join("\n") : t("This endpoint listed no models."),
+          fingerprint,
+        },
+      }));
+      // 有的中转站 `/models` 什么都不给，那时只能手填 —— 这句指导性的话留着
+      if (!list.length) {
+        setNote(t("Connected, but this endpoint listed no models. Type the model name by hand."));
+      }
       if (!model.trim() && list[0]) setModel(list[0]);
     } catch (problem) {
-      setError(String(problem instanceof Error ? problem.message : problem));
+      const message = String(problem instanceof Error ? problem.message : problem);
+      setProbes((prev) => ({ ...prev, [slot]: { state: "bad", label: t("Connection failed"), detail: message, fingerprint } }));
+      setError(message);
     } finally {
-      setSaving(false);
+      setTesting(false);
     }
-  }, [auth, baseUrl, draftId, key, model, t]);
+  }, [auth, baseUrl, draftId, key, model, probeKey, t]);
 
   const forgetKey = useCallback(async () => {
     if (!draftId) return;
@@ -396,26 +499,64 @@ export function ModelProfiles({ variant = "settings", onChange, onReady }: Model
         </p>
       )}
 
+      {/*
+        两颗不同的心思，分开站：
+          左边  Save / Forget key / Cancel —— 只碰这张表单
+          右边  Test connection + 灯     —— 碰网络，会花钱、会花时间
+        以前它排在 Save 左边，读起来像"保存流程的第一步"。挪到对面之后，
+        点下去的结果就落在它自己右边那盏灯上，不用再去下面那行小字里找。
+      */}
       <div className="lattice-model-editor-foot">
-        <button type="button" className="lattice-btn is-small" onClick={() => void test()} disabled={saving}>
-          {t("Test connection")}
-        </button>
-        <button
-          type="button"
-          className="lattice-btn is-small is-primary"
-          onClick={() => void persist()}
-          disabled={saving}
-        >
-          {saving ? t("Saving…") : t("Save")}
-        </button>
-        {auth !== "none" && editingProfile?.keyHint && (
-          <button type="button" className="lattice-btn is-small" onClick={() => void forgetKey()} disabled={saving}>
-            {t("Forget key")}
+        <div className="lattice-model-foot-actions">
+          <button
+            type="button"
+            className="lattice-btn is-small is-primary"
+            onClick={() => void persist()}
+            disabled={saving || testing}
+          >
+            {saving ? t("Saving…") : t("Save")}
           </button>
-        )}
-        <button type="button" className="lattice-btn is-small" onClick={() => setDraft(null)}>
-          {t("Cancel")}
-        </button>
+          {auth !== "none" && editingProfile?.keyHint && (
+            <button
+              type="button"
+              className="lattice-btn is-small"
+              onClick={() => void forgetKey()}
+              disabled={saving || testing}
+            >
+              {t("Forget key")}
+            </button>
+          )}
+          <button type="button" className="lattice-btn is-small" onClick={() => setDraft(null)}>
+            {t("Cancel")}
+          </button>
+        </div>
+
+        <div className={`lattice-model-probe is-${probeState}`}>
+          <button
+            type="button"
+            className="lattice-btn is-small"
+            onClick={() => void test()}
+            disabled={saving || testing}
+            title={t("Send one real request to this endpoint — it costs a few tokens.")}
+          >
+            {t("Test connection")}
+          </button>
+          <span className="lattice-lamp" aria-hidden="true" />
+          <span
+            className="lattice-model-probe-label"
+            role="status"
+            aria-live="polite"
+            title={probe?.detail || t("Not tested yet")}
+          >
+            {probeState === "busy"
+              ? t("Testing…")
+              : probeState === "ok"
+                ? probe?.label
+                : probeState === "bad"
+                  ? t("Connection failed")
+                  : t("Not tested")}
+          </span>
+        </div>
       </div>
 
       {error && <p className="lattice-modal-error">{error}</p>}

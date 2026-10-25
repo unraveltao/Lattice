@@ -22,7 +22,7 @@
  *      调试有 Ctrl+Shift+D，但这一行是它的可见入口。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { readAgentStatus, setAgentEnabled, type AgentStatus } from "./agent";
@@ -41,7 +41,7 @@ import { parseUsage, type UsageData } from "../runtime/usage";
 import { appVersion, checkForUpdate, installUpdate, type UpdateState } from "./updater";
 import { useT, type LangPref } from "../runtime/i18n";
 import { Avatar } from "./Avatar";
-import { openConfigFile } from "./assistant";
+import { importConfig, openConfigFile } from "./assistant";
 import { ModelProfiles } from "./ModelProfiles";
 import { ProfilePanel } from "./ProfilePanel";
 import { openRepo, REPO, REPO_URL } from "./repo";
@@ -135,6 +135,11 @@ export function SettingsMenu({
   const [draftUrl, setDraftUrl] = useState("");
   /** 「打开配置文件」失败时的原话。成功不说话 —— 编辑器自己会跳出来 */
   const [configNote, setConfigNote] = useState<string | null>(null);
+  /** 上面那句话是"成了"还是"没成"。导入成功要报账，红字报账读起来像出错 */
+  const [configOk, setConfigOk] = useState(false);
+  /** 导入之后让 Models 那一块重读一遍：它自己持有清单，外面只能喊一声 */
+  const [modelsToken, setModelsToken] = useState(0);
+  const importRef = useRef<HTMLInputElement>(null);
 
   /** 使用记录只在打开面板时读一次；清空后原地更新，不重新请求 */
   const [usage, setUsage] = useState<UsageData>(EMPTY_USAGE);
@@ -395,9 +400,8 @@ export function SettingsMenu({
   /**
    * 「打开配置文件」：交给系统默认程序打开 `assistant.json`。
    *
-   * 它**不是导入**：导入要先定义合并语义（同 id 覆盖还是新增？key 怎么算？
-   * 导一半失败怎么办？），那是一个功能。这里只让人打开真正的那个文件去改，
-   * 改完在 Models 页里点「重新读取」—— 后端每次都是现读磁盘，没有缓存。
+   * 它**不是导入**（导入是右边的「导入配置」）。这里只让人打开真正的那个文件
+   * 去改，改完在 Models 页里点「重新读取」—— 后端每次都是现读磁盘，没有缓存。
    */
   const openConfig = useCallback(async () => {
     setConfigNote(null);
@@ -407,6 +411,41 @@ export function SettingsMenu({
       setConfigNote(String(problem instanceof Error ? problem.message : problem));
     }
   }, []);
+
+  /**
+   * 「导入配置」：选一个 .json，把它的**文本**交给 Rust 去合并。
+   *
+   * 前端不解析：合并规则要和读盘时的 `normalize` 同一份（见 `importConfig`）。
+   * `target.value = ""` 是为了同一个文件连选两次也能再触发一次 change ——
+   * 否则第二次点"导入"什么都不会发生，看起来像坏了。
+   */
+  const importFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const picked = event.target.files?.[0];
+      event.target.value = "";
+      if (!picked) return;
+      setConfigNote(null);
+      setConfigOk(false);
+      try {
+        const report = await importConfig(await picked.text());
+        setConfigOk(true);
+        setConfigNote(
+          report.skipped
+            ? t("Imported {added}, updated {updated}, skipped {skipped}.", {
+                added: report.added,
+                updated: report.updated,
+                skipped: report.skipped,
+              })
+            : t("Imported {added}, updated {updated}.", { added: report.added, updated: report.updated }),
+        );
+        // 清单在这一块手里，只能喊一声让它重读
+        setModelsToken((token) => token + 1);
+      } catch (problem) {
+        setConfigNote(String(problem instanceof Error ? problem.message : problem));
+      }
+    },
+    [t],
+  );
 
   return (
     <div className="lattice-settings">
@@ -476,12 +515,30 @@ export function SettingsMenu({
                 <header className="lattice-settings-head">
                   <h2>{t(sectionLabel)}</h2>
                   <div className="lattice-settings-head-actions">
-                    {/* 只在 Models 页出现：这个按钮打开的就是这一页管的那份文件。
+                    {/* 只在 Models 页出现：这两颗按钮管的就是这一页那份文件。
                         浏览器预览里没有磁盘文件这回事，藏掉比显示一个假路径诚实 */}
                     {section === "models" && isTauri() && (
-                      <button type="button" className="lattice-btn is-small" onClick={() => void openConfig()}>
-                        {t("Open configuration file")}
-                      </button>
+                      <>
+                        <input
+                          ref={importRef}
+                          type="file"
+                          accept=".json,application/json"
+                          className="lattice-sr-only"
+                          aria-label={t("Import configuration")}
+                          onChange={(event) => void importFile(event)}
+                        />
+                        <button
+                          type="button"
+                          className="lattice-btn is-small"
+                          onClick={() => importRef.current?.click()}
+                          title={t("Pick a JSON file and merge its model profiles into this machine")}
+                        >
+                          {t("Import configuration")}
+                        </button>
+                        <button type="button" className="lattice-btn is-small" onClick={() => void openConfig()}>
+                          {t("Open configuration file")}
+                        </button>
+                      </>
                     )}
                     <button
                       type="button"
@@ -498,8 +555,10 @@ export function SettingsMenu({
                 <div className="lattice-settings-content">
                   {section === "models" && (
                     <>
-                      {configNote && <p className="lattice-modal-error">{configNote}</p>}
-                      <ModelProfiles variant="settings" />
+                      {configNote && (
+                        <p className={configOk ? "lattice-settings-hint" : "lattice-modal-error"}>{configNote}</p>
+                      )}
+                      <ModelProfiles variant="settings" reloadToken={modelsToken} />
                     </>
                   )}
 

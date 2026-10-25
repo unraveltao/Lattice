@@ -62,12 +62,14 @@ struct Profile {
     id: String,
     #[serde(default)]
     label: String,
-    #[serde(default)]
+    /// `alias` 是给手写的配置留的：导入的文件常常照文档写成 snake_case，
+    /// 认不出来就会变成"这一档没有地址"然后被悄悄丢掉
+    #[serde(default, alias = "base_url")]
     base_url: String,
     /// `bearer` / `api-key-header` / `none`。存字符串而不是枚举：多一个值不用迁移
     #[serde(default)]
     auth: String,
-    #[serde(default)]
+    #[serde(default, alias = "api_key")]
     api_key: String,
     #[serde(default)]
     model: String,
@@ -453,9 +455,8 @@ pub fn assistant_config_path(app: AppHandle) -> Result<String, String> {
 
 /// 把配置文件交给系统默认程序（记事本 / VS Code / 用户自己设的那个）。
 ///
-/// **这不是"导入"**。导入要先回答一串问题：同 id 覆盖还是新增？别人的 key
-/// 要不要搬过来？导入一半失败怎么办？那是一个功能，不是一行代码。这里只做
-/// 一件事 —— 让用户能打开**真正的那个文件**去改。改完回来点"重新读取"：
+/// **这不是"导入"**（导入是 `assistant_config_import`）。这里只做一件事 ——
+/// 让用户能打开**真正的那个文件**去改。改完回来点"重新读取"：
 /// `llm_profiles` 每次都是现读磁盘，没有任何缓存。
 ///
 /// 文件不存在时先落一份当前 schema 的空配置：点下去却弹"找不到文件"，
@@ -473,6 +474,186 @@ pub fn assistant_config_open(app: AppHandle) -> Result<String, String> {
         .open_path(path.display().to_string(), None::<&str>)
         .map_err(|error| format!("could not open the settings file: {error}"))?;
     Ok(path.display().to_string())
+}
+
+/// 导入的账。三个数都要报给用户：只报"成功"的话，一份格式不对的文件
+/// 会看起来像"什么都没发生"。
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportCount {
+    pub added: usize,
+    pub updated: usize,
+    pub skipped: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportReport {
+    #[serde(flatten)]
+    pub count: ImportCount,
+    pub view: ProfilesView,
+}
+
+/// 一份文件能长成三种样子，都认：
+///
+///   - `[ {...}, {...} ]`            一叠档（从别的机器上抠下来的那一段）
+///   - `{ "profiles": [ … ] }`       整份 `assistant.json`
+///   - `{ "baseUrl": …, "model": … }` v1 的平铺形状，只有一条
+///
+/// 认不出来就明说"这里没有档"，不要静默成功 —— 用户点了一次导入，
+/// 界面什么也不说，他只会再点一次。
+fn import_candidates(text: &str) -> Result<Vec<serde_json::Value>, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|error| format!("that is not JSON: {error}"))?;
+    let items = match value {
+        serde_json::Value::Array(items) => items,
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::Array(items)) = map.get("profiles") {
+                items.clone()
+            } else if map.contains_key("baseUrl") || map.contains_key("base_url") {
+                vec![serde_json::Value::Object(map)]
+            } else {
+                return Err("that file has no model profiles in it".to_string());
+            }
+        }
+        _ => return Err("that file has no model profiles in it".to_string()),
+    };
+    // 手写的档常常没有 id。这里补一个空的（不是编一个 id）：id 由
+    // `merge_profiles` 在真正确认"这一档是新的"之后才发，不然两份文件里
+    // 同样的手写 id 会互相覆盖
+    Ok(items
+        .into_iter()
+        .map(|item| match item {
+            serde_json::Value::Object(mut map) => {
+                let has_id = map.get("id").and_then(|value| value.as_str()).is_some();
+                if !has_id {
+                    map.insert("id".to_string(), serde_json::Value::String(String::new()));
+                }
+                serde_json::Value::Object(map)
+            }
+            other => other,
+        })
+        .collect())
+}
+
+/// 一条外来档先过一遍和读文件同一套校验：地址不合法、鉴权拼错、温度离谱
+/// 的，都在这里落成合法值或直接不要。**不信任导入的内容** —— 它可能来自
+/// 一份别人发来的文件。
+fn sanitize_import(mut profile: Profile) -> Option<Profile> {
+    profile.base_url = llm_policy::normalize_base(&profile.base_url).ok()?;
+    profile.auth = llm_policy::normalize_auth(&profile.auth).to_string();
+    profile.model = profile.model.trim().to_string();
+    profile.api_key = profile.api_key.trim().to_string();
+    profile.temperature = profile.temperature.map(|value| value.clamp(0.0, 2.0));
+    profile.models.truncate(40);
+    let label = profile.label.trim().to_string();
+    profile.label = if label.is_empty() {
+        llm_policy::profile_label(&profile.base_url)
+    } else {
+        label
+    };
+    Some(profile)
+}
+
+/// 合并语义（导入这件事唯一需要先回答的问题，答案写在这里）：
+///
+/// 1. **同 id 覆盖，其次同地址覆盖**。地址才是"同一个端点"的身份 ——
+///    换台机器导过来 id 是另一套，按 id 认会得到两份一模一样的档。
+/// 2. **空 key 不覆盖已有 key**。导进来的文件里通常没有 key（别人的 key
+///    不该跟着文件走），而"导入一下把本机 key 抹了"是不可接受的。
+/// 3. **hands / workspace / approval 一概不导**。那是一台机器上"它能不能
+///    动我的东西"的授权，跟着一份配置文件进来就等于绕过用户按过的开关。
+/// 4. **active 不动**（除非本机还没有 active）。导入不该悄悄换掉你正在用的模型。
+fn merge_profiles(config: &mut AssistantConfig, incoming: Vec<serde_json::Value>) -> ImportCount {
+    let mut count = ImportCount::default();
+    for entry in incoming {
+        let Ok(raw) = serde_json::from_value::<Profile>(entry) else {
+            count.skipped += 1;
+            continue;
+        };
+        let Some(candidate) = sanitize_import(raw) else {
+            count.skipped += 1;
+            continue;
+        };
+
+        let by_id = if llm_policy::profile_id_ok(&candidate.id) {
+            config
+                .profiles
+                .iter()
+                .position(|profile| profile.id == candidate.id)
+        } else {
+            None
+        };
+        let target =
+            by_id.or_else(|| config.profiles.iter().position(|profile| profile.base_url == candidate.base_url));
+
+        match target {
+            Some(index) => {
+                let existing = &mut config.profiles[index];
+                existing.label = candidate.label;
+                existing.auth = candidate.auth;
+                existing.model = candidate.model;
+                if candidate.temperature.is_some() {
+                    existing.temperature = candidate.temperature;
+                }
+                if !candidate.models.is_empty() {
+                    existing.models = candidate.models;
+                }
+                if !candidate.api_key.is_empty() {
+                    existing.api_key = candidate.api_key;
+                }
+                count.updated += 1;
+            }
+            None => {
+                let mut profile = candidate;
+                if !llm_policy::profile_id_ok(&profile.id)
+                    || config.profiles.iter().any(|other| other.id == profile.id)
+                {
+                    profile.id = fresh_id(config);
+                }
+                if config.active_id.is_empty() {
+                    config.active_id = profile.id.clone();
+                }
+                config.profiles.push(profile);
+                count.added += 1;
+            }
+        }
+    }
+    count
+}
+
+/// 一键导入：前端把选中的文件**读成文本**递过来，解析与合并全在 Rust。
+///
+/// 为什么不在前端解析：合并规则要和 `normalize` 用同一套（否则导进来的东西
+/// 下一次读盘就被丢掉，用户看到"导入成功"却发现少了两档），而 `normalize`
+/// 在这儿。前端只负责"选文件 + 读文本"。
+#[tauri::command]
+pub fn assistant_config_import(app: AppHandle, text: String) -> Result<ImportReport, String> {
+    /// 一份配置是几百字节的事。这个上限是"别拿一个视频文件来试"的意思，
+    /// 不是为了防谁 —— 真正的防线是下面逐条校验
+    const MAX_IMPORT_BYTES: usize = 512 * 1024;
+    if text.len() > MAX_IMPORT_BYTES {
+        return Err("that file is too large to be a settings file".to_string());
+    }
+    let incoming = import_candidates(&text)?;
+    if incoming.is_empty() {
+        return Err("that file has no model profiles in it".to_string());
+    }
+
+    let mut config = read_config(&app);
+    let count = merge_profiles(&mut config, incoming);
+    if count.added == 0 && count.updated == 0 {
+        return Err(format!(
+            "nothing in that file could be imported — {} entries were not valid profiles",
+            count.skipped
+        ));
+    }
+    normalize(&mut config);
+    write_config(&app, &config)?;
+    Ok(ImportReport {
+        count,
+        view: views(&config, &env_overrides()),
+    })
 }
 
 fn read_config(app: &AppHandle) -> AssistantConfig {
@@ -1342,5 +1523,124 @@ mod tests {
             ..profile
         };
         assert!(!profile_view(&remote, "none").configured);
+    }
+
+    // —— 导入（`assistant_config_import`）的四条合并语义 ——
+
+    fn import_into(config: &mut AssistantConfig, text: &str) -> ImportCount {
+        let candidates = import_candidates(text).expect("this text should parse");
+        merge_profiles(config, candidates)
+    }
+
+    fn one_stored_profile() -> AssistantConfig {
+        let mut config = parse_config(
+            r#"{"version":3,"activeId":"p-1","profiles":[
+                {"id":"p-1","label":"DeepSeek","baseUrl":"https://api.deepseek.com/v1",
+                 "model":"deepseek-chat","apiKey":"sk-old"}]}"#,
+        );
+        normalize(&mut config);
+        config
+    }
+
+    #[test]
+    fn importing_the_same_id_overwrites_in_place() {
+        let mut config = one_stored_profile();
+        let count = import_into(
+            &mut config,
+            r#"[{"id":"p-1","baseUrl":"https://api.deepseek.com/v1","model":"deepseek-reasoner"}]"#,
+        );
+        assert_eq!((count.added, count.updated, count.skipped), (0, 1, 0));
+        assert_eq!(config.profiles.len(), 1);
+        assert_eq!(config.profiles[0].model, "deepseek-reasoner");
+        // 名字没给就退回主机名 —— 和读文件同一套
+        assert_eq!(config.profiles[0].label, "api.deepseek.com");
+    }
+
+    #[test]
+    fn importing_the_same_endpoint_reuses_the_stored_id() {
+        // 换台机器导过来 id 是另一套：按地址认人，否则会多出一份一模一样的档
+        let mut config = one_stored_profile();
+        let count = import_into(
+            &mut config,
+            r#"[{"id":"p-9f9f9f","baseUrl":"https://api.deepseek.com/v1/","model":"deepseek-chat"}]"#,
+        );
+        assert_eq!((count.added, count.updated), (0, 1));
+        assert_eq!(config.profiles.len(), 1);
+        assert_eq!(config.profiles[0].id, "p-1");
+    }
+
+    #[test]
+    fn an_empty_key_never_wipes_the_stored_one() {
+        let mut config = one_stored_profile();
+        import_into(
+            &mut config,
+            r#"[{"baseUrl":"https://api.deepseek.com/v1","model":"deepseek-chat","apiKey":"  "}]"#,
+        );
+        assert_eq!(config.profiles[0].api_key, "sk-old");
+    }
+
+    #[test]
+    fn a_hand_written_profile_without_an_id_gets_one() {
+        let mut config = AssistantConfig::default();
+        let count = import_into(
+            &mut config,
+            r#"{"profiles":[{"baseUrl":"http://127.0.0.1:11434/v1","model":"llama3"}]}"#,
+        );
+        assert_eq!((count.added, count.skipped), (1, 0));
+        let profile = &config.profiles[0];
+        assert!(llm_policy::profile_id_ok(&profile.id));
+        // 没有 key 的老形状 = 本机模型，挂空 Bearer 只会换来 401
+        assert_eq!(profile.auth, "none");
+        assert_eq!(profile.label, "Local model");
+        // 本机原来没有 active，导入的那一档就顶上
+        assert_eq!(config.active_id, profile.id);
+    }
+
+    #[test]
+    fn a_v1_flat_file_imports_as_one_profile() {
+        let mut config = AssistantConfig::default();
+        let count = import_into(
+            &mut config,
+            r#"{"base_url":"https://api.example.com/v1","model":"x","api_key":"sk-new"}"#,
+        );
+        assert_eq!((count.added, count.updated), (1, 0));
+        assert_eq!(config.profiles[0].base_url, "https://api.example.com/v1");
+        assert_eq!(config.profiles[0].api_key, "sk-new");
+    }
+
+    #[test]
+    fn hands_are_never_imported() {
+        // 授权跟着一份配置文件走进来 = 绕过用户按过的开关
+        let mut config = one_stored_profile();
+        assert!(!config.hands.shell);
+        import_into(
+            &mut config,
+            r#"{"activeId":"p-1","hands":{"shell":true,"files":true},
+                "profiles":[{"id":"p-1","baseUrl":"https://api.deepseek.com/v1","model":"m"}]}"#,
+        );
+        assert!(!config.hands.shell);
+        assert!(!config.hands.files);
+    }
+
+    #[test]
+    fn a_bad_entry_is_skipped_not_fatal() {
+        let mut config = one_stored_profile();
+        let count = import_into(
+            &mut config,
+            r#"[
+                {"id":"p-2","baseUrl":"http://api.example.com/v1","model":"x"},
+                {"id":"p-3","baseUrl":"https://api.example.com/v1","model":"x"},
+                {"baseUrl":"https://api.example.com/v1","model":"x","temperature":"hot"}]"#,
+        );
+        // 明文 http 的远程地址、温度写成字符串 —— 两条跳过，一条进来
+        assert_eq!((count.added, count.updated, count.skipped), (1, 0, 2));
+        assert_eq!(config.profiles.len(), 2);
+    }
+
+    #[test]
+    fn a_file_without_profiles_is_an_error() {
+        assert!(import_candidates("{}").is_err());
+        assert!(import_candidates("[1,2,3]").is_ok());
+        assert!(import_candidates("{not json").is_err());
     }
 }

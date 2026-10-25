@@ -164,6 +164,25 @@ export async function openConfigFile(): Promise<string> {
   return await callCommand<string>("assistant_config_open");
 }
 
+/** 导入的账：新增几档、更新几档、跳过几档（跳过的那些是坏档，不连累其它） */
+export interface ImportReport {
+  added: number;
+  updated: number;
+  skipped: number;
+  view: ProfilesView;
+}
+
+/**
+ * 一键导入：把一份配置文件**读成文本**递过去，解析和合并都在 Rust。
+ *
+ * 前端不碰合并规则 —— 那套规则（同 id / 同地址覆盖、空 key 不覆盖、授权不导）
+ * 必须和读盘时的 `normalize` 是同一份，否则"导入成功"的东西下一次读盘就没了。
+ * 这里只负责"用户选了个文件，把它的字给后端"。
+ */
+export async function importConfig(text: string): Promise<ImportReport> {
+  return await callCommand<ImportReport>("assistant_config_import", { text });
+}
+
 export type TurnEvent =
   | { type: "text"; text: string }
   | { type: "delta"; text: string }
