@@ -53,3 +53,6 @@ dist-packs/
 # 临时预览页与截图（.shot-*.png 之外的整页截图）
 .preview/
 preview-tmp.html
+
+# Playwright MCP 的产物（页面快照 / console 日志），属于本机调试残留
+.playwright-mcp/

@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>anki test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <iframe id="w" src="/widgets/lattice.anki/index.html" title="anki"></iframe>
+    <script type="module">
+      /*
+       * 背单词：排程算得对不对、队列挑得对不对、词表认得对不对、界面接没接上。
+       *
+       * 间隔重复的错法都很安静：间隔错一位，用户只会觉得"怎么老是这几张"；
+       * 重贴词表把进度冲了，用户只会觉得"我明明背过"。这两类都没有报错，
+       * 所以先把纯函数逐条钉住，最后再验界面真的连着它们。
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(JSON.stringify(actual) === JSON.stringify(expected), `${text}（得到 ${JSON.stringify(actual)}）`);
+
+      const flush = () => {
+        document.getElementById("out").innerHTML = lines
+          .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+          .join("\n");
+        window.__done = true;
+      };
+
+      const frame = document.getElementById("w");
+      await new Promise((resolve) => {
+        if (frame.contentWindow?.__latticeAnki) resolve();
+        else frame.addEventListener("load", () => setTimeout(resolve, 60), { once: true });
+      });
+
+      const api = frame.contentWindow.__latticeAnki;
+      log(Boolean(api), "组件把排程和词表解析挂出来了");
+      if (!api) {
+        log(false, "拿不到 window.__latticeAnki，后面的断言没法跑");
+        flush();
+        throw new Error("no api");
+      }
+
+      const { schedule, pickDue, parseDeck, mergeDeck, formatDeck, normalizeDeck, formatInterval, newCard, DAY, MINUTE } =
+        api;
+
+      const NOW = 1_700_000_000_000;
+      const card = (over) =>
+        Object.assign(newCard("word", "", "", "meaning", ""), {
+          state: "new",
+          ivl: 0,
+          ease: 2.5,
+          reps: 0,
+          lapses: 0,
+          due: 0,
+        }, over);
+
+      // ---- 1. 排程：新卡 ----
+
+      const fresh = card();
+      const good = schedule(fresh, "good", NOW);
+      eq(
+        [good.state, good.ivl, good.ease, good.due - NOW, good.reps],
+        ["review", 1, 2.5, DAY, 1],
+        "新卡按「记得」：1 天后、难度不变、记一次",
+      );
+      const easy = schedule(fresh, "easy", NOW);
+      eq([easy.state, easy.ivl, easy.ease, easy.due - NOW], ["review", 4, 2.65, 4 * DAY], "新卡按「容易」：4 天后、难度上调 0.15");
+      const again = schedule(fresh, "again", NOW);
+      eq(
+        [again.state, again.ivl, again.due - NOW, again.lapses, again.ease],
+        ["learning", 0, MINUTE, 1, 2.3],
+        "新卡按「重来」：1 分钟后、还算在学习、难度下调 0.2",
+      );
+      const hard = schedule(fresh, "hard", NOW);
+      eq([hard.state, hard.ivl, hard.due - NOW, hard.ease], ["learning", 0, 6 * MINUTE, 2.35], "新卡按「困难」：6 分钟后再来");
+      eq([fresh.ivl, fresh.reps, fresh.state, fresh.ease], [0, 0, "new", 2.5], "排程不改入参 —— 旧卡一个字段都没被动过");
+
+      // ---- 2. 排程：复习中的卡 ----
+
+      const review = (over) => card(Object.assign({ state: "review", ivl: 10, ease: 2.5, reps: 3, due: NOW - DAY }, over));
+      eq(schedule(review(), "good", NOW).ivl, 25, "复习中按「记得」：间隔 × 难度（10 × 2.5）");
+      eq(schedule(review(), "hard", NOW).ivl, 12, "复习中按「困难」：只涨 20%，但至少 +1 天");
+      eq(schedule(review(), "easy", NOW).ivl, 34, "复习中按「容易」：间隔 × 难度 × 1.3（10 × 2.65 × 1.3 取整）");
+      const lapse = schedule(review(), "again", NOW);
+      eq(
+        [lapse.ivl, lapse.lapses, lapse.ease, lapse.due - NOW, lapse.state],
+        [1, 1, 2.3, 10 * MINUTE, "review"],
+        "复习中按「重来」：间隔缩回 1 天、记一次遗忘，但今天还会再撞一次",
+      );
+
+      // ---- 3. 边界：难度与间隔都夹得住 ----
+
+      eq(schedule(review({ ease: 1.35 }), "again", NOW).ease, 1.3, "难度压到 1.3 就停住，不会变成负的");
+      eq(schedule(review({ ease: 2.95 }), "easy", NOW).ease, 3.0, "难度抬到 3.0 就封顶");
+      eq(schedule(review({ ivl: 3000 }), "easy", NOW).ivl, 3650, "间隔封顶 3650 天，不会溢出成一个奇怪的日期");
+      eq(schedule(card({ state: "learning" }), "good", NOW).ivl, 1, "学习中的卡按「记得」：上岸，1 天后再来");
+      eq(schedule(card({ state: "learning" }), "easy", NOW).ivl, 4, "学习中的卡按「容易」：直接给 4 天");
+
+      // ---- 4. 队列：到期的旧卡先、新卡按额度进 ----
+
+      const pool = [
+        card({ id: "a", word: "a", state: "review", ivl: 5, due: NOW - 1000 }),
+        card({ id: "b", word: "b", state: "review", ivl: 5, due: NOW - 5000 }),
+        card({ id: "c", word: "c", state: "review", ivl: 5, due: NOW + 1000 }),
+        card({ id: "n1", word: "n1" }),
+        card({ id: "n2", word: "n2" }),
+        card({ id: "n3", word: "n3" }),
+      ];
+      eq(
+        pickDue(pool, NOW, 2, "").map((entry) => entry.id),
+        ["b", "a", "n1", "n2"],
+        "到期的旧卡按到期时间排在前面，新卡垫后且不超过当天额度（未到期的那张不出现）",
+      );
+      eq(pickDue(pool, NOW, 0, "").map((entry) => entry.id), ["b", "a"], "额度 0 就是只复习、不加新词");
+      eq(pickDue(pool, NOW, 99, "").filter((entry) => entry.state === "new").length, 3, "额度够时新卡全放进来");
+
+      const tagged = [
+        card({ id: "v1", word: "v1", state: "review", ivl: 3, tag: "v.", due: NOW - 1 }),
+        card({ id: "n1", word: "n2", state: "review", ivl: 3, tag: "n.", due: NOW - 1 }),
+        card({ id: "x1", word: "x1", tag: "v." }),
+      ];
+      eq(pickDue(tagged, NOW, 5, "v.").map((entry) => entry.id), ["v1", "x1"], "按标签筛只取那一组（旧卡和新卡都跟着筛）");
+      eq(pickDue(tagged, NOW, 5, "不存在").length, 0, "筛到一个没有的标签就是空队列，不是整份词表");
+
+      // ---- 5. 词表解析 ----
+
+      const two = parseDeck("apple | 苹果");
+      eq(
+        [two.cards.length, two.cards[0].word, two.cards[0].meaning, two.cards[0].ipa, two.cards[0].tag],
+        [1, "apple", "苹果", "", ""],
+        "两列是最短写法：单词 | 释义",
+      );
+
+      const posLine = parseDeck("apple | n. | 苹果").cards[0];
+      eq([posLine.tag, posLine.meaning, posLine.ipa], ["n.", "苹果", ""], "三列且第二列不像音标：当词性");
+      const ipaLine = parseDeck("apple | /ˈæpl/ | 苹果").cards[0];
+      eq([ipaLine.ipa, ipaLine.meaning, ipaLine.tag], ["/ˈæpl/", "苹果", ""], "三列且第二列是 /…/：当音标");
+
+      const full = parseDeck("apple | /ˈæpl/ | n. | 苹果 | An apple a day. | 谚语").cards[0];
+      eq(
+        [full.ipa, full.tag, full.meaning, full.example],
+        ["/ˈæpl/", "n.", "苹果", "An apple a day. | 谚语"],
+        "四列以上：音标 / 词性 / 释义齐全，第五列之后的竖线都算例句",
+      );
+
+      eq(parseDeck("apple\t苹果").cards[0].meaning, "苹果", "Tab 也算分隔符");
+      eq(parseDeck("# 表头\napple | 苹果\n\n   \npear | 梨  ").cards.map((entry) => entry.word), ["apple", "pear"], "注释行和空行跳过，行尾空格被去掉");
+      const broken = parseDeck("apple |\n| 苹果\nonlyword\nbanana | 香蕉");
+      eq([broken.cards.length, broken.skipped], [1, 3], "缺词 / 缺释义 / 只有单词的行逐行丢掉并记账");
+      const dup = parseDeck("apple | 苹果\nApple | 苹果（重复）");
+      eq([dup.cards.length, dup.duplicates, dup.cards[0].meaning], [1, 1, "苹果"], "同一个单词只留第一份，大小写不敏感");
+
+      // ---- 6. 重贴词表要吃住进度 ----
+
+      const oldDeck = normalizeDeck({
+        cards: [
+          {
+            word: "apple",
+            meaning: "旧释义",
+            state: "review",
+            ivl: 12,
+            ease: 2.3,
+            reps: 4,
+            lapses: 1,
+            due: NOW + 5 * DAY,
+          },
+        ],
+      }).cards;
+      const merged = mergeDeck(oldDeck, parseDeck("apple | 新释义\npear | 梨").cards);
+      eq([merged.length, merged[0].meaning], [2, "新释义"], "重贴词表：释义更新、新词加进来");
+      eq(
+        [merged[0].ivl, merged[0].ease, merged[0].reps, merged[0].state, merged[0].due],
+        [12, 2.3, 4, "review", NOW + 5 * DAY],
+        "老卡的间隔 / 难度 / 复习次数 / 到期时间一个都没丢",
+      );
+      eq(mergeDeck(oldDeck, parseDeck("pear | 梨").cards).map((entry) => entry.id), ["pear"], "从词表里删掉一行，那张卡也就没了");
+      eq(parseDeck(formatDeck(merged)).cards.map((entry) => entry.word), ["apple", "pear"], "编辑器里的文本往返一次还是同一份词表");
+
+      // ---- 7. 坏数据降级 ----
+
+      const salvaged = normalizeDeck({
+        cards: [null, { word: "no-meaning" }, { word: "ok", meaning: "m", ivl: "x", ease: 99, due: "x" }],
+      });
+      eq(salvaged.cards.length, 1, "缺释义的卡片被丢掉，好的那张留下");
+      eq(
+        [salvaged.cards[0].ivl, salvaged.cards[0].ease, salvaged.cards[0].due],
+        [0, 3, 0],
+        "ivl / ease / due 的坏值降级成出厂值（due 0 表示现在就该背，而不是永远不出现）",
+      );
+
+      // ---- 8. 间隔的写法 ----
+
+      eq(
+        [formatInterval(5 * MINUTE, "zh"), formatInterval(3 * 60 * MINUTE, "zh"), formatInterval(4 * DAY, "zh")],
+        ["5 分钟", "3 小时", "4 天"],
+        "分钟 / 小时 / 天三档",
+      );
+      eq(
+        [formatInterval(45 * DAY, "zh"), formatInterval(800 * DAY, "zh"), formatInterval(0, "zh")],
+        ["2 个月", "2 年", "1 分钟"],
+        "月和年两档；0 也写 1 分钟，不写 0",
+      );
+      eq(formatInterval(4 * DAY, "en"), "4 d", "英文用 d / h / min 这些短单位");
+
+      // ---- 9. 界面接线 ----
+
+      /*
+       * 上面全是纯函数，下面测"卡片真的连着它们"。这一段直接操作组件自己的
+       * DOM（同源，拿得到 contentDocument），没有宿主也跑得动。
+       */
+      const win = frame.contentWindow;
+      const doc = frame.contentDocument;
+      const $ = (selector) => doc.querySelector(selector);
+      const setLang = (next) => {
+        win.postMessage({ __lattice: 1, type: "language", payload: { lang: next } }, "*");
+        return new Promise((resolve) => setTimeout(resolve, 30));
+      };
+
+      api.seed("abandon | /əˈbændən/ | v. | 放弃；抛弃 | He abandoned his car in the snow.");
+      eq($("#word").textContent, "abandon", "种子之后卡面上就是那个单词");
+      eq($("#ipa").textContent, "/əˈbændən/", "音标跟着显示出来");
+      eq([$("#meaning").hidden, $("#grades").hidden, $("#reveal").hidden], [true, true, false], "释义和档位都藏着，只露出「显示答案」");
+
+      $("#card").click();
+      eq([$("#meaning").hidden, $("#meaning").textContent], [false, "放弃；抛弃"], "点卡片就翻面，释义出现");
+      eq([$("#grades").hidden, $("#reveal").hidden], [false, true], "翻面之后四个档位出现，「显示答案」收起来");
+      eq(
+        api.snapshot().gradeHints,
+        ["1 分钟", "6 分钟", "1 天", "4 天"],
+        "四个档位下面各写着下次什么时候再来",
+      );
+
+      $('.anki-grade[data-grade="good"]').click();
+      eq(api.snapshot().phase, "done", "只有一张卡，按完就进入「做完了」");
+      eq([api.snapshot().newDone, api.snapshot().reviewed], [1, 1], "新卡算进今天的额度，也算一次复习");
+      eq([$("#done").hidden, $("#grades").hidden], [false, true], "做完的状态露出来，档位收起来");
+
+      // 重贴同一份词表：那张卡已经是复习中、明天才到期，不该又冒出来
+      api.seed("abandon | /əˈbændən/ | v. | 放弃；抛弃 | He abandoned his car in the snow.");
+      eq([api.snapshot().newDone, api.snapshot().phase], [1, "done"], "重贴同一份词表不会把背过的卡当成新卡，也不会把额度还回去");
+
+      // 两个标签才画筛选条
+      api.seed("apple | v. | 苹果\npear | n. | 梨");
+      eq(
+        [$("#tags").hidden, [...doc.querySelectorAll(".anki-chip")].map((chip) => chip.textContent)],
+        [false, ["全部", "v.", "n."]],
+        "两个以上标签才出现筛选条，第一个是「全部」",
+      );
+      eq(api.snapshot().word, "apple", "不筛的时候按词表顺序来");
+      doc.querySelector('.anki-chip[data-tag="n."]').click();
+      eq(api.snapshot().word, "pear", "点标签之后队列只剩那一组");
+      doc.querySelector('.anki-chip[data-tag=""]').click();
+      eq(api.snapshot().word, "apple", "点「全部」就回到整份词表");
+
+      await setLang("en");
+      eq(api.snapshot().gradeLabels, ["Again", "Hard", "Good", "Easy"], "收到 language 推送后档位切成英文");
+      eq(api.snapshot().revealLabel, "Show answer", "「显示答案」也跟着切");
+
+      flush();
+    </script>
+  </body>
+</html>

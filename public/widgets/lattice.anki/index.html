@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>背单词</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      首帧就是可读的：空词表的提示和标题都是 HTML 里写死的中文，`lang.get`
+      回来再把它们翻成英文（不变量 18）。别在这里放"加载中"。
+    -->
+    <main class="anki">
+      <header class="anki-head">
+        <h1 class="anki-title" id="title">背单词</h1>
+        <span class="anki-meta" id="meta"></span>
+        <button class="anki-icon" id="edit" type="button" title="词表" aria-label="词表">✎</button>
+      </header>
+
+      <div class="anki-tags" id="tags" hidden></div>
+
+      <section class="anki-card" id="card" aria-live="polite">
+        <div class="anki-empty" id="empty">
+          <p class="anki-empty-title" id="empty-title">还没有词表</p>
+          <p class="anki-empty-text" id="empty-text">
+            一行一张卡：<code>单词 | 释义</code>
+          </p>
+        </div>
+
+        <div class="anki-face" id="face" hidden>
+          <p class="anki-tag" id="tag" hidden></p>
+          <p class="anki-word" id="word"></p>
+          <p class="anki-ipa" id="ipa" hidden></p>
+          <p class="anki-meaning" id="meaning" hidden></p>
+          <p class="anki-example" id="example" hidden></p>
+        </div>
+
+        <div class="anki-done" id="done" hidden>
+          <p class="anki-done-title" id="done-title">今天这一批做完了</p>
+          <p class="anki-done-text" id="done-text"></p>
+        </div>
+      </section>
+
+      <div class="anki-actions">
+        <button class="anki-btn is-primary" id="paste" type="button">粘贴词表</button>
+        <button class="anki-btn is-primary" id="reveal" type="button" hidden>显示答案</button>
+
+        <div class="anki-grades" id="grades" hidden>
+          <button class="anki-grade" data-grade="again" type="button">
+            <span class="anki-grade-label">重来</span>
+            <span class="anki-grade-when"></span>
+          </button>
+          <button class="anki-grade" data-grade="hard" type="button">
+            <span class="anki-grade-label">困难</span>
+            <span class="anki-grade-when"></span>
+          </button>
+          <button class="anki-grade is-good" data-grade="good" type="button">
+            <span class="anki-grade-label">记得</span>
+            <span class="anki-grade-when"></span>
+          </button>
+          <button class="anki-grade" data-grade="easy" type="button">
+            <span class="anki-grade-label">容易</span>
+            <span class="anki-grade-when"></span>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!--
+      词表编辑器。盖住整张卡而不是弹一个小窗：卡片只有 300×280，弹窗里再弹窗
+      会小到打不了字。贴一份词表本来就是"整屏一件事"。
+    -->
+    <div class="anki-editor" id="editor" hidden>
+      <textarea
+        class="anki-textarea"
+        id="textarea"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="apple | /ˈæpl/ | n. | 苹果 | An apple a day."
+      ></textarea>
+      <div class="anki-editor-bar">
+        <button class="anki-btn is-quiet" id="sample" type="button">示例</button>
+        <span class="anki-hint" id="hint"></span>
+        <button class="anki-btn is-quiet" id="cancel" type="button">取消</button>
+        <button class="anki-btn is-primary" id="save" type="button">保存</button>
+      </div>
+    </div>
+
+    <script src="widget.js"></script>
+  </body>
+</html>

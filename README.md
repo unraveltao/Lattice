@@ -29,7 +29,7 @@ at 2× and placed on a plain wallpaper. Nothing from a real desktop is in the fr
 
 Those windows have no frame, stay out of the taskbar, and do not steal focus from whatever you are typing into. They can be pinned above everything else, or tucked under ordinary windows against the wallpaper. Position is remembered per monitor, so a mix of display scalings will not fling a card off the edge; data lives on disk and everything is back where it was after a restart.
 
-The difference from other desktop toys: **widgets are not built in, they are installed.** The 14 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
+The difference from other desktop toys: **widgets are not built in, they are installed.** The 15 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
 
 **It speaks Chinese and English, all the way down.** The shell switches language in settings, and so do the things you would not expect it to reach: each official widget's name, its options and its how-to text in the inspector come out of the manifest in the language you picked, and the words drawn *inside* the cards (weekdays, "2 left", Start/Pause) follow through one `language` push to every open window. No restart, no reload.
 
@@ -43,6 +43,7 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 | Nothing slipping through | Todo · Note · Bookmarks | A list on the desktop; a scratch note that saves itself; the links you keep coming back to |
 | To know what the machine is doing | System | CPU and memory with a one-minute trace, per-core load, commit charge, disk, network, uptime |
 | To work for a stretch | Focus · Stopwatch | A pomodoro that is still right after you close the lid and come back; a stopwatch |
+| To not lose the words you looked up | Word Drill | One card per line pasted in, four grades, and the next review scheduled in days |
 | A quick sum | Calculator · Convert | Arithmetic you can copy out; two-way conversion for length / mass / temperature / data / time / speed |
 | The desktop to move with the music | Music | What is playing, skip and pause, a level that follows the sound |
 | One look before you go out | Weather | Current conditions for one city, refreshed on a timer, still readable when the network is gone |
@@ -65,7 +66,7 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 
 The important part is that a widget *becomes a window* while never touching Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are eleven permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
 
-**The platform ships empty.** The 14 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
+**The platform ships empty.** The 15 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
 
 So is the absence of a server. The catalogue is a static `registry.json`, the packages are signed files, the hosting is GitHub Pages, and updates are a release asset. When a design starts to need a backend, the design is wrong — that constraint is argued out in [docs/ROADMAP.md](./docs/ROADMAP.md), not assumed.
 
@@ -100,10 +101,10 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 
 | Metric | Value |
 | --- | --- |
-| Official widgets | 14 |
+| Official widgets | 15 |
 | Permissions | 11 |
 | Tauri commands | 61 |
-| Browser assertions | 1 709 over 40 pages |
+| Browser assertions | 1 762 over 41 pages |
 | Rust tests | 178 |
 | Documented pitfalls | 75 |
 
@@ -323,7 +324,7 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 | CSS | 3 444 lines |
 | Rust | 11 108 lines |
 | SDK | 742 lines |
-| Widgets + example | 13 151 lines |
+| Widgets + example | 14 933 lines |
 | Scripts | 2 352 lines |
 
 **Read next**

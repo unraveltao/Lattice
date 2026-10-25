@@ -1,0 +1,465 @@
+/*
+ * 背单词
+ *
+ * 四条约束决定了这里的写法：
+ *   1. 卡面是"扫一眼"的场景。层级靠**字号**拉开（单词 20 / 释义 13.5 /
+ *      例句 11），不靠颜色 —— 底板变浅时平台会把颜色整体翻一遍，字号不会。
+ *   2. 顶上那条 22px 是给窗饰让位的。桌面窗口的按钮浮在右上角 6px 处、
+ *      大约 120×28，不腾出这块地方，它就会压在计数和词表按钮上。
+ *   3. 原生按钮一律 `appearance: none` 自绘：沙箱文档的 color-scheme 被
+ *      强制成 normal，原生控件会按浅色主题画在深色卡片上，几乎看不见。
+ *   4. 强调色上的字色取 `var(--surface)` 而不是写死黑白 —— 深色主题下是
+ *      深字压浅绿，浅色主题下自动变成浅字压深绿，一个变量管两套。
+ */
+
+:root {
+  --fg: #ecebe6;
+  --muted: #97978f;
+  --surface: #1d1d21;
+  --accent: #5dcaa5;
+  --border: rgba(255, 255, 255, 0.12);
+  --radius: 10px;
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/*
+ * `hidden` 必须赢过下面那些 `display: flex`。
+ *
+ * 属性选择器和类选择器优先级一样，作者样式又永远排在浏览器的 UA 样式表
+ * 后面 —— 所以 `.anki-face { display: flex }` 会把 `hidden` 的
+ * `display: none` 压掉，元素照样占位置。这里一行 !important 换掉的是
+ * "每个块都得自己再写一遍 .is-hidden"的重复劳动。
+ */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+  /* 刻意不写 font-smoothing：Windows 上它会关掉 ClearType，中文小字变灰 */
+}
+
+body {
+  position: relative;
+}
+
+.anki {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 10px 12px 12px;
+  gap: 8px;
+}
+
+/* ---------- 标题栏（同时给窗饰让位） ---------- */
+
+.anki-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  /* 120 减去卡片自己的左右内边距，剩下的正好让给窗饰 */
+  padding-right: 108px;
+}
+
+.anki-title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.anki-meta {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * 「未保存」要在视觉上和普通计数分得开。平台的主题字典里没有危险色这一项
+ * （§4.3 只给 8 个键），所以这里照 lattice.todo 的先例写死一个告警红：
+ * 它是异常状态，不是常规配色，宁可在这里硬编码一次。
+ */
+.anki-meta.is-warn {
+  color: #f09595;
+}
+
+.anki-icon {
+  appearance: none;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.anki-icon:hover {
+  color: var(--fg);
+  background: var(--border);
+}
+
+/* ---------- 标签筛选 ---------- */
+
+.anki-tags {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.anki-tags::-webkit-scrollbar {
+  display: none;
+}
+
+.anki-chip {
+  appearance: none;
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.anki-chip.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- 卡面 ---------- */
+
+.anki-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 2px;
+  overflow: hidden;
+  text-align: center;
+  cursor: pointer;
+}
+
+.anki-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/*
+ * 卡面的行一律不参与压缩。
+ *
+ * 默认的 `flex-shrink: 1` 在空间不够时会把**每一行**都压扁一点，表现是
+ * 例句被压成 2px 高的一条线（量出来的 scrollHeight 是 30、clientHeight 是 2）。
+ * 宁可让溢出的部分被 `.anki-face` 的 overflow 裁掉，也不要每一行都变成半行。
+ */
+.anki-face > * {
+  flex: none;
+}
+
+.anki-tag {
+  margin: 0;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.anki-word {
+  margin: 0;
+  /*
+   * 1.3 而不是 1.15：小行盒会把 `abandon` 的下缘裁掉 1–2px（量出来
+   * scrollHeight 比 clientHeight 多）。字号大，这一下看得见。
+   */
+  line-height: 1.3;
+  font-size: 20px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.anki-ipa {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.anki-meaning {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.anki-example {
+  /*
+   * 例句最多两行、超出用省略号。卡面一共 300×280，例句占三行就会把
+   * 释义挤出去 —— 而释义是这张卡真正要考的东西。
+   */
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1.35;
+}
+
+/*
+ * 小卡片（240×200 这种）上要收着点排。
+ *
+ * 量出来的事实：200 高的窗口里卡面只剩 ~70px，而「标签 + 单词 + 音标 + 释义」
+ * 四行要 93px —— 于是释义被裁在卡面底下，正好压在档位按钮上。释义才是这张卡
+ * 要考的东西，所以先牺牲例句（关掉）和标签（关掉），再把三档字号各降一点。
+ * 属性面板里关例句是偏好，这里是空间不够，两件事分开。
+ */
+@media (max-height: 230px) {
+  .anki-example,
+  .anki-tag {
+    display: none;
+  }
+
+  .anki-word {
+    font-size: 18px;
+  }
+
+  .anki-ipa {
+    font-size: 11px;
+  }
+
+  .anki-meaning {
+    font-size: 12.5px;
+  }
+}
+
+/* ---------- 空 / 做完了 ---------- */
+
+.anki-empty,
+.anki-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.anki-empty-title,
+.anki-done-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.anki-empty-text,
+.anki-done-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.anki-empty-text code {
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 10.5px;
+}
+
+/* ---------- 底部动作区 ---------- */
+
+.anki-actions {
+  flex: none;
+  display: flex;
+  min-height: 0;
+}
+
+.anki-btn {
+  appearance: none;
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.anki-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.anki-btn.is-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.anki-btn.is-primary:hover {
+  color: var(--surface);
+  filter: brightness(1.06);
+}
+
+.anki-grades {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.anki-grade {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.anki-grade:hover {
+  border-color: var(--fg);
+}
+
+/*
+ * 「记得」是中间那一档，也是绝大多数时候该按的那一下 —— 给它一条强调色边框，
+ * 省掉"每次读四个词"的那一步。另外三档保持中性，避免把"困难"也画成推荐项。
+ */
+.anki-grade.is-good {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.anki-grade-label {
+  font-size: 11.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.anki-grade-when {
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.anki-grade.is-good .anki-grade-when {
+  color: var(--accent);
+  opacity: 0.8;
+}
+
+/* ---------- 词表编辑器 ---------- */
+
+.anki-editor {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+}
+
+.anki-textarea {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 6px 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+}
+
+.anki-textarea:focus {
+  border-color: var(--accent);
+}
+
+.anki-textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+.anki-editor-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.anki-editor-bar .anki-btn {
+  flex: none;
+  padding: 4px 9px;
+  font-size: 11px;
+}
+
+.anki-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: right;
+}

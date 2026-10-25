@@ -1,0 +1,204 @@
+{
+  "id": "lattice.anki",
+  "name": { "zh": "背单词", "en": "Word Drill" },
+  "version": "0.1.0",
+  "description": {
+    "zh": "间隔重复背单词：单词 / 音标 / 词性 / 释义 / 例句，四档打分，按天排下次复习",
+    "en": "Spaced repetition for vocabulary: word, IPA, part of speech, meaning and example, four grades, next review scheduled in days"
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 300, "h": 280, "minW": 240, "minH": 200 },
+  "layer": "top",
+  "permissions": ["storage"],
+  "config": [
+    {
+      "key": "direction",
+      "type": "select",
+      "label": { "zh": "先看哪一面", "en": "Front side" },
+      "help": {
+        "zh": "「单词 → 释义」看词猜义；「释义 → 单词」看义想词；「交替」按这张卡的复习次数换边（第 1、3、5 次看单词）。",
+        "en": "Word → meaning guesses the meaning; Meaning → word recalls the word; Alternate flips per review count (1st, 3rd, 5th show the word)."
+      },
+      "default": "w2m",
+      "options": [
+        { "value": "w2m", "label": { "zh": "单词 → 释义", "en": "Word → meaning" } },
+        { "value": "m2w", "label": { "zh": "释义 → 单词", "en": "Meaning → word" } },
+        { "value": "mix", "label": { "zh": "交替", "en": "Alternate" } }
+      ]
+    },
+    {
+      "key": "newPerDay",
+      "type": "number",
+      "label": { "zh": "每天最多几张新卡", "en": "New cards per day" },
+      "help": {
+        "zh": "一天里最多放几张没见过的卡进队列。旧卡永远不受这个数限制；填 0 就是只复习、不加新词。",
+        "en": "How many unseen cards may enter the queue in one day. Due reviews are never limited by this; 0 means review only, no new words."
+      },
+      "default": 10,
+      "min": 0,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "showIpa",
+      "type": "toggle",
+      "label": { "zh": "显示音标", "en": "Show IPA" },
+      "help": {
+        "zh": "词表里填了音标才显示。关掉之后卡上只留单词、词性和释义，字能放大一点。",
+        "en": "Shown only when the deck has one. Turning it off leaves word, part of speech and meaning, so the text can be larger."
+      },
+      "default": true
+    },
+    {
+      "key": "showExample",
+      "type": "toggle",
+      "label": { "zh": "显示例句", "en": "Show example" },
+      "help": {
+        "zh": "只在翻面之后出。例句长的时候会被省略号截断，鼠标停上去看全句。",
+        "en": "Only on the back of the card. Long examples are cut with an ellipsis; hover to read the whole sentence."
+      },
+      "default": true
+    }
+  ],
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "先塞一份词表", "en": "Load a deck first" },
+        "items": [
+          {
+            "zh": "卡片上一开始是空的，点「粘贴词表」把词贴进去，一行一张卡。",
+            "en": "The card starts empty. Press Paste a deck and paste one card per line."
+          },
+          {
+            "zh": "最短写法是「单词 | 释义」；三列时第二列像音标（/…/ 包着）就当音标，否则当词性。",
+            "en": "The shortest form is word | meaning. With three columns the middle one counts as IPA when it looks like /…/, otherwise as the part of speech."
+          },
+          {
+            "zh": "完整写法是「单词 | 音标 | 词性 | 释义 | 例句」，第五列之后都算例句。",
+            "en": "The full form is word | IPA | part of speech | meaning | example; everything after the fifth column is part of the example."
+          },
+          {
+            "zh": "分隔符用竖线或 Tab 都认，前后空格会被去掉；以 # 开头的行当注释跳过。",
+            "en": "Pipes and tabs both separate fields, spaces are trimmed, and lines starting with # are skipped."
+          },
+          {
+            "zh": "同一个单词出现两次只留第一份 —— 重复贴不会把排程冲掉，进度按单词认。",
+            "en": "A repeated word keeps its first entry — re-pasting never resets progress, which is tracked per word."
+          },
+          {
+            "zh": "拿不准格式就先点「塞一份示例」，照着改比对着说明写快。",
+            "en": "Unsure about the format? Press Fill an example and edit that instead of writing from the docs."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "一次复习", "en": "One review" },
+        "items": [
+          {
+            "zh": "点卡片任意位置（或按空格）翻面，再按四个档位之一。",
+            "en": "Click anywhere on the card (or press Space) to flip it, then pick one of the four grades."
+          },
+          {
+            "zh": "键盘 1 / 2 / 3 / 4 对应 重来 / 困难 / 记得 / 容易。",
+            "en": "Keys 1 / 2 / 3 / 4 map to Again / Hard / Good / Easy."
+          },
+          {
+            "zh": "每个按钮下面写着「下次什么时候再来」—— 按下去之前就知道后果。",
+            "en": "Each button shows when the card comes back, so you see the consequence before pressing it."
+          },
+          {
+            "zh": "顶上的计数是「今天还剩几张 / 今天一共做了几张」，不是词表总数。",
+            "en": "The counter is cards left today over cards done today, not the size of the deck."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "间隔是按什么算的", "en": "How the interval is chosen" },
+        "items": [
+          {
+            "zh": "没见过的新卡：记得 → 1 天后，容易 → 4 天后，困难 → 6 分钟后再来，重来 → 1 分钟后。",
+            "en": "A new card: Good → 1 day, Easy → 4 days, Hard → 6 minutes, Again → 1 minute."
+          },
+          {
+            "zh": "已经在复习的卡：记得就是「现在的间隔 × 这张卡的难度系数」，困难只涨一点，容易再乘 1.3。",
+            "en": "A card under review: Good multiplies the interval by the card's ease, Hard grows it slightly, Easy multiplies again by 1.3."
+          },
+          {
+            "zh": "难度系数从 2.5 起，压到 1.3 就不会再降、抬到 3.0 到顶 —— 一张老是忘的卡不会被压成永远重来。",
+            "en": "Ease starts at 2.5, never drops below 1.3 and never rises above 3.0, so a hard card never collapses into a permanent loop."
+          },
+          {
+            "zh": "复习中按「重来」算一次遗忘：间隔缩回 1 天、难度下调，但今天还会再出现一次。",
+            "en": "Again on a review counts as a lapse: the interval shrinks to 1 day and ease drops, but the card shows up once more today."
+          },
+          {
+            "zh": "间隔最长 3650 天。到了上限就停在那儿，不会溢出成一个奇怪的日期。",
+            "en": "Intervals cap at 3650 days rather than overflowing into a strange date."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "按标签分开背", "en": "Studying by tag" },
+        "items": [
+          {
+            "zh": "词表第三列是词性或标签（v. / n. / 四级 / 考研…），卡上有两个以上不同标签时顶上会出现筛选条。",
+            "en": "The third column is the part of speech or a tag (v. / n. / CET-4 / GRE…). Filter chips appear once there are at least two distinct tags."
+          },
+          {
+            "zh": "筛选只改变「这一轮看哪些卡」，不动排程 —— 没选中的卡照常到期，只是不显示。",
+            "en": "Filtering only changes which cards this round shows; scheduling is untouched, unselected cards still come due."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "词表存在哪", "en": "Where the deck lives" },
+        "items": [
+          {
+            "zh": "按组件存，不按这一份实例：桌上摆几个背单词，看到的是同一份词表和同一份进度。",
+            "en": "Stored per widget, not per copy: several Word Drill cards show one deck and one set of progress."
+          },
+          {
+            "zh": "想背第二门外语就换个 id 再装一份 —— 那才是两份独立的数据。",
+            "en": "For a second language, install a copy under a different id; that is what makes the data separate."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "存不下去的时候", "en": "If it cannot save" },
+        "items": [
+          {
+            "zh": "写盘失败时标题栏那一格会写「未保存」，鼠标停上去能看到原因，通常是缺存储权限。",
+            "en": "When a write fails the header reads Not saved; hover it for the reason, usually a missing storage permission."
+          },
+          {
+            "zh": "这时卡片照常复习，进度只留在内存里，等能写了再存一次。",
+            "en": "Review keeps working in memory and the next successful write saves it."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "第一个版本：粘贴词表（单词 / 音标 / 词性 / 释义 / 例句），四档打分，按天排下次复习。",
+          "en": "First release: paste a deck (word / IPA / part of speech / meaning / example), grade with four buttons, schedule the next review by day."
+        },
+        {
+          "zh": "卡面上直接写「下次什么时候再来」，按下去之前就看得到后果。",
+          "en": "Each grade shows when the card returns, so the consequence is visible before you press it."
+        },
+        {
+          "zh": "重新粘贴词表只加新词，已经在背的卡保留原来的间隔和进度。",
+          "en": "Re-pasting a deck only adds new words; cards already in rotation keep their interval and progress."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}
