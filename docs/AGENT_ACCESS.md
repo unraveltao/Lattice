@@ -382,6 +382,16 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 **key 仍然不进前端。** 读写都发生在 Node 里，前端只看得见 `keyHint` 掩码；`llm_set_key`
 会把用户**刚粘进来的**明文发过去（和桌面面板里打字是同一件事），发完就不回传。
 
+**前端只认一个门：`platform/llm.ts`。** 它把那三个文件（`devLlm.ts` 的两种传输、
+`assistant.ts` 的模型档与对话、`hands.ts` 的手）重新导出一遍，自己一行逻辑都没有、也不
+另起名字。要用 assistant 就 `import { readLlmProfiles, runAssistantTurn } from "./llm"`，
+不必知道底下分成几个文件、更不必知道现在跑在窗口里还是浏览器里 —— `callCommand` 自己认。
+浏览器里同一个模块也能直接用（dev server 直译 `.ts`）：控制台里
+`const llm = await import("/src/platform/llm.ts")`，`llm.readLlmProfiles()` 回来的和面板
+是同一份数据（还是掩码）。两条边界：**三个源文件不许反过来 import 这个门**（会成环，而
+环在这里不报错，只在某个加载顺序下变成 `undefined`）；**面板不在门里**（`AssistantPanel`
+是 React 组件，从这儿再导出会把 JSX 和样式拖进"只想发一个命令"的调用方）。
+
 三道闸，每一道都对着"这个口子会不会被人借走"：
 
 1. **只认本机**（`req.socket.remoteAddress` 是回环）。就算有人把 dev server 开成 `--host`，
@@ -421,4 +431,5 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 | `assistant_window.rs` + 小窗那条转发 | **2026-10-25 实机验过**：`assistant_window_toggle` 回 `true`，CDP 查到 `assistant.html` 的 DOM（标题栏、面板、`Assistant · deepseek-v4.1-flash`、跟随主题），窗口里说一句 → 工具真的挪了桌宠（`lattice.pet#demo01` → 60,80）并回话；藏起来再叫回来还是同一个 webview、同一轮对话；拖完 `assistant-window.json` 落成 `{x:1300.0,y:444.0}` |
 | `llm.rs` + 工具循环 + 组件那条路 | **2026-10-25 实机验过**：先起一个假的 OpenAI 兼容服务（`.scratch/fake-llm.mjs`），真点开、真打字 —— 卡片从 (32,40) 挪到 (300,120)，气泡里出现"✓ 移动 lattice.pet#demo01"和回复；两个 pet iframe 的 `llm.chat` 都回到 `{ok:true,text:"…"}`；把 key 换成错的之后 `listModels` 报"the provider rejected the API key (HTTP 401)"。**之后换成了真厂商**（天枢 Dubhe 网关，OpenAI 兼容根是 `…/v1/8686/v1`）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受 |
 | `assistant_ask` + 组件那条路（借手） | **2026-10-25 实机验过**：先在属性面板给 `lattice.pet` 勾上「替我调整桌面」（`grants` 变成 `["llm:chat","desktop:control"]`，卡片当场按新权限重载），再从主窗口 `invoke("assistant_ask", { widgetId: "lattice.pet", messages: JSON.stringify([{ role: "user", content: "把 lattice.pet#49898d37 这只挪到 700, 240，然后置顶" }]), persona: "你是一只桌宠…" })` —— 真网关回"挪到 700, 240 了，也置顶了…"，`actions` 两条都 `ok`，那只从 `(24,460)` 到 `(700,240)`；审计是 `widget.ask · lattice.pet · 71 chars`，加每一步的 `assistant.chat`（`tools: placement.move, placement.front`）。**删除真被挡住**：问"把 lattice.pet#demo01 删掉"，回的是"我删不了自己呀，手里没有删除工具。你在画布上点一下那个 ✕ 就行。"，`actions: []`，`placements` 一个字没动。**组件自己那条路也走通了**：画布里的桌宠点开气泡打"把 lattice.pet#9c90cc09 挪到 900, 100" → 气泡里出现回话加一行"· 移动 lattice.pet#9c90cc09"，盘上那只真的到了 `900,100`。中途踩的坑（`messages` 在线上是 JSON 文本）见 ROADMAP 那条 |
+| `platform/llm.ts`（前端唯一的门）与 dev server 那条 `/api/llm` | **2026-10-25 验过**（`npx vite --port 1431`）：页面里 `await import("/src/platform/llm.ts")` 拿到 19 个值导出，`readLlmProfiles()` 回 `keyHint: "sk-d…1-hA"`（明文没出来）、`readHands()` 六组开关齐全、`listModels()` 列 4 个模型、`callCommand("llm_chat_stream")` 对真网关回 `"ok"`（`usage 38 → 24`）。三道闸（回环地址 / 回环 `Origin` / POST 必须 `application/json`）由 `npm run test:llm-proxy` 的 23 条钉着 |
 | agent 端点的 CLI 往返 | **没验过** —— 要起 `tauri:dev` 并在端点开着的时候正好敲命令。起之前先确认没有残留的 `lattice.exe`（孤儿进程会用内存里那份盖掉 `state.json`） |
