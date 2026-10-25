@@ -75,8 +75,13 @@ tint 三档（auto / dark / light）+ 浓度 + 模糊，和属性面板的语义
 
 - `locked`：拖标题栏与拖边都失效（光标也不该变成可拖）。锁的是**位置与尺寸**，不锁内容。
   和组件的 `locked` 同一句话。
-- 缩放：8 个方向里先做**右 / 下 / 右下**三个手柄（组件那边是同一套 `track()` 交互）。
+- 缩放：8 个方向里先做**右 / 下 / 右下**三个手柄，按下去调系统的
+  `startResizeDragging('East' | 'South' | 'SouthEast')`。
   最小 `320 × 420`（再小输入框放不下），上限不设、但**每次应用都夹进当前屏工作区**。
+  为什么不自己逐帧 `setSize`（第一版就是这么写的，真机上「拖了等于没拖」）：手柄贴在右 / 下边缘，
+  光标往想要的方向挪 1px 就已经在**客户区之外**，而 `pointermove` 只在客户区内派发 —— 第一帧还没到，缩放就断了。
+  交给系统之后光标形状、多屏、吸附都不用我们管，也不产生 IPC 往返；尺寸的权威照旧在 Rust
+  （`Resized` → `schedule_save`），页面只在 `resize` 停 200ms 后补截一张壁纸（canvas 铺的是 `innerWidth + pad × 2`）。
 - 尺寸与位置一起存在 `assistant-window.json` v2，拖动/缩放**松手时存一次**（不是每一帧写盘）。
 
 **拖标题栏走原生拖动区，不走 JS。** 标题栏带 `data-tauri-drag-region`（锁上时**不渲染**这个属性），
@@ -131,6 +136,7 @@ assistant 仍然是"平台的一部分，不是组件"（`assistant_window.rs` �
 | 桌面模式下点了它却打不了字 | 走了挂 WorkerW 那条路（本设计的头号已知坑） | 只用 `interactive: true`；真机上第一件事就是点输入框敲两个字 |
 | 桌面模式下它跑到别的应用上面去了 | 底层守卫没装上 / 装在了错的线程 | `install_guard` 只能在窗口自己的线程上调；切模式时先装守卫再落层级（顺序见 `apply_to` 注释） |
 | 切到浮窗之后它还沉在底下 | 只翻了守卫开关，没让它升上来 | 切回浮窗：`set_sink(false)` + `show` + `set_focus`，用户下一次点击就正常 |
+| 拖手柄完全没反应（尺寸不变） | 页面自己逐帧 `setSize`，而 `pointermove` 在客户区外就没了 —— 第一帧就没到 | 交给系统：`startResizeDragging(direction)` + 权限 `core:window:allow-start-resize-dragging` |
 | 缩放之后输入框被挤没 / 溢出 | 内容没有最小高度，或者窗口尺寸没夹紧 | 面板是 flex 列，输入框 `min-height`；`clampRect` 在前后端各判一次 |
 | 锁上了还能拖 | 只拦了标题栏，没拦手柄 | 锁是**一处判据**：`locked` 为真时 `startDragging` 与手柄都不挂处理器 |
 | 多屏 / 换 DPI 之后窗口飞到屏幕外 | 存的是逻辑像素，换屏后工作区变了 | 每次应用前 `clampRect(工作区)`；读不到屏幕就退回默认角落 |

@@ -21,7 +21,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -40,11 +39,7 @@ import {
   type Appearance,
 } from "../runtime/appearance";
 import {
-  MIN_ASSISTANT_H,
-  MIN_ASSISTANT_W,
-  clampAssistantRect,
   migrateAssistantWindow,
-  type AssistantRect,
   type AssistantWindowMode,
   type AssistantWindowState,
   type AssistantWorkArea,
@@ -202,6 +197,23 @@ export function AssistantWindow() {
     void capture();
   }, [capture]);
 
+  /* 窗口尺寸变了（拖手柄 / 拖边 / 换了缩放）要重截一张：canvas 铺的是
+   * `innerWidth + pad × 2`，图不重截就会在边上露出一块旧的。
+   * 松手之前系统会连发几十次 `resize`，所以攒 200ms 只截最后一拍 */
+  useEffect(() => {
+    if (isPlainAppearance(appearance)) return;
+    let timer = 0;
+    const onResize = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void capture(), 200);
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [appearance, capture]);
+
   /* 三层：canvas（壁纸）→ veil（底色）→ 内容。令牌一起重算 */
   useEffect(() => {
     const root = document.documentElement;
@@ -295,48 +307,26 @@ export function AssistantWindow() {
     [state.mode],
   );
 
-  /* 拖边缩放。三个手柄（右 / 下 / 右下）：够用，也不至于把手柄画得到处都是 */
+  /* 拖边缩放**交给系统**（`startResizeDragging`），不在页面里逐帧 `setSize`。
+   * 上一版就是逐帧 `setSize`，真机上的表现是"拖了等于没拖"，原因很清楚：
+   * 手柄贴在右 / 下边缘，光标往想要的方向挪 1px 就已经在客户区之外，而
+   * `pointermove` 只在客户区内派发 —— 第一帧还没到，缩放就断了。
+   * 换成系统那条路的好处一次拿全：OS 自己在缩放（光标形状、多屏、吸附都不用
+   * 我们管）、不产生 IPC 往返、尺寸的权威仍然在 Rust（它监听 `Resized`，
+   * 合并到最后一拍再写盘，见 `assistant_window.rs::schedule_save`）。
+   * 三个手柄（右 / 下 / 右下）：够用，也不至于把手柄画得到处都是 */
   const startResize = useCallback(
-    (axis: "x" | "y" | "xy") => (event: React.PointerEvent) => {
+    (direction: "East" | "South" | "SouthEast") => (event: React.PointerEvent) => {
       event.preventDefault();
       event.stopPropagation();
       if (state.locked) return;
-      const startX = event.screenX;
-      const startY = event.screenY;
-      const startW = window.innerWidth;
-      const startH = window.innerHeight;
-      let last: AssistantRect | null = null;
-
-      const move = (next: PointerEvent) => {
-        const width = Math.max(MIN_ASSISTANT_W, axis === "y" ? startW : startW + (next.screenX - startX));
-        const height = Math.max(MIN_ASSISTANT_H, axis === "x" ? startH : startH + (next.screenY - startY));
-        void getCurrentWindow()
-          .setSize(new LogicalSize(Math.round(width), Math.round(height)))
-          .catch(() => {});
-        last = { x: 0, y: 0, width: Math.round(width), height: Math.round(height) };
-      };
-
-      const finish = () => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", finish);
-        /* 松手才存盘：拖动过程中系统会连发几十个事件，那儿存盘等于每次拖都写几十遍 */
-        void invoke("assistant_window_save_pos").catch(() => {});
-        if (last) {
-          const work = screenWorkArea();
-          const clamped = clampAssistantRect(
-            { x: 0, y: 0, width: last.width, height: last.height },
-            work,
-          );
-          patch({ rect: { ...state.rect, width: clamped.width, height: clamped.height } });
-        }
-        // 尺寸变了，壁纸要重新截一张（否则右下角会露出一块旧的）
-        void capture();
-      };
-
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", finish);
+      void getCurrentWindow()
+        .startResizeDragging(direction)
+        .catch(() => {
+          /* 没这份权限 / 平台不支持：手柄退化成装饰，别把界面卡住 */
+        });
     },
-    [capture, patch, state.locked, state.rect],
+    [state.locked],
   );
 
   const modeLabel = useMemo(
@@ -463,9 +453,9 @@ export function AssistantWindow() {
       {/* 自绘手柄：锁上时一个都不挂处理器（锁是**一处判据**，不是两处） */}
       {!state.locked && (
         <>
-          <div className="lattice-assistant-grip" data-axis="x" onPointerDown={startResize("x")} />
-          <div className="lattice-assistant-grip" data-axis="y" onPointerDown={startResize("y")} />
-          <div className="lattice-assistant-grip" data-axis="xy" onPointerDown={startResize("xy")} />
+          <div className="lattice-assistant-grip" data-axis="x" onPointerDown={startResize("East")} />
+          <div className="lattice-assistant-grip" data-axis="y" onPointerDown={startResize("South")} />
+          <div className="lattice-assistant-grip" data-axis="xy" onPointerDown={startResize("SouthEast")} />
         </>
       )}
     </div>
