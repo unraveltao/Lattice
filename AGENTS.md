@@ -4,6 +4,8 @@
 
 > 约定：这份文件只写**稳定事实**和**判断依据**。具体的坑与解法在 [docs/PITFALLS.md](./docs/PITFALLS.md)，组件协议在 [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md)，取舍论证在 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)，代码签名的取舍在 [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md)，agent 接入的协议与威胁模型在 [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md)。它们与本文冲突时，以代码为准，并顺手修文档。
 >
+> **文档归改代码的这一方（模型）管，不归用户管。** 用户不读、也不写 `docs/`，不会替你判断一段推理该进 `design/` 还是 `ROADMAP` 的一行 —— 按 [docs/README.md](./docs/README.md) 的判据自己定，写完自己提交；别把“这要不要写文档 / 写成什么样”拿去问用户。
+>
 > **要写新文档先看 [docs/README.md](./docs/README.md)**：哪份该读、哪份该改、新内容该放哪（按你要做的事找 + 三问定归属 + "一份事实只有一个家"）。还没做的事在动手前的推理放 [docs/design/](./docs/design/README.md)，写完的结论要沉回 ROADMAP 一行。
 >
 > **这一页 600 多行，按这个顺序读**：第 4 节（十九条不变量，改任何代码之前）→ 第 8 节（已知缺口，别把缺口当 bug 修一半）→ 第 7 节（你要改的东西对应的配方）→ 第 11 节（怎么验证）。词不认识查 [GLOSSARY.md](./GLOSSARY.md)，剩下的按需查。
