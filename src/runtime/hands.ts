@@ -159,6 +159,76 @@ export function isSelfConfigPath(path: string): boolean {
 }
 
 /**
+ * 这个路径是不是落在工作目录里 —— `ask` 档下 `file.write` 的**免问区**判据（0005 §4）。
+ *
+ * 语义只有一条：**"这棵树里随便动"**。所以它只放宽 `file.write` 一处，别处
+ * （`shell.run` / `screen.capture` / 组件工具）照旧按档问 —— 一条命令就能写出
+ * 这棵树，把 `shell.run` 也算进来是自欺（0005 §3）。
+ *
+ * 五条规矩，每一条都有个真会踩到的形状：
+ * - `\` 与 `/` 同视（模型两种都写）；尾分隔符与 `.` 段丢掉；
+ * - `..` **先折叠再比**：`D:\写作\..\Windows\x` 折成 `D:\Windows\x`，不是"以
+ *   `D:\写作` 开头"。不折叠的话一个 `..` 就能把免问区变成整个盘；
+ * - 盘符与目录名**不分大小写**（Windows 是这么认的，写成 `d:` 也是同一个目录）；
+ * - 相对路径算**在里面**：`hands.rs::resolve_path` 会把它 join 到工作目录上，
+ *   也就是说它写到的正是那棵树；
+ * - `workspace` 为空、或指向盘根 / 不是同一棵树，一律 `false`。
+ *
+ * **它是"要不要多问一句"的输入，不是围栏**：真正的边界在 Rust 侧（`skills` 那类
+ * 平台文件永远问，见 `isSelfConfigPath`），而且 `shell.run` 从来不受它管。
+ */
+export function insideWorkspace(path: string, workspace: string): boolean {
+  const root = foldPath(workspace);
+  // 盘根（`D:` / `D:\`）不算"一棵树"：它等于整个盘，那和"全开"没区别
+  if (!root || !root.parts.length) return false;
+  const target = foldPath(path);
+  if (!target) return false;
+  // 相对路径 → `resolve_path` 会 join 到工作目录里（`"."` 这种空相对路径不算）
+  if (target.tag === "") return target.parts.length > 0;
+  if (target.tag !== root.tag) return false;
+  if (target.parts.length < root.parts.length) return false;
+  return root.parts.every((part, index) => part.toLowerCase() === target.parts[index].toLowerCase());
+}
+
+/**
+ * 把一条路径折成"哪一档 + 几段"。`..` 折叠、空段与 `.` 丢掉、盘符归一成小写。
+ *
+ * 返回 `null` 表示**折不明白**（`..` 越过了根）：这种路径一律不算在里面 ——
+ * 宁可多问一句，也不能把"我算不清"当成"允许"。
+ */
+function foldPath(path: string): { tag: string; parts: string[] } | null {
+  let text = path.trim().replace(/\\/g, "/");
+  if (!text) return null;
+  let tag = "";
+  if (text.startsWith("//")) {
+    tag = "unc";
+    text = text.slice(2);
+  } else if (text.startsWith("/")) {
+    tag = "root";
+    text = text.slice(1);
+  }
+  const parts: string[] = [];
+  for (const raw of text.split("/")) {
+    const part = raw === "." ? "" : raw;
+    if (!part) continue;
+    if (part === "..") {
+      if (!parts.length) return null;
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  if (!tag && parts.length) {
+    const drive = /^([a-zA-Z]):$/.exec(parts[0]);
+    if (drive) {
+      tag = `drive:${drive[1].toLowerCase()}`;
+      parts.shift();
+    }
+  }
+  return { tag, parts };
+}
+
+/**
  * 这一版**真的接了几组**（0004 §4 的分期：P1 纪律 → P2 文件 → P3 命令 → P4 网页 →
  * P5 屏幕与输入 → P6 MCP）。
  *

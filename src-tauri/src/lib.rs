@@ -55,6 +55,8 @@ pub mod screen_policy;
 pub mod signature;
 pub mod signature_policy;
 pub mod shell_policy;
+pub mod skills;
+pub mod skills_policy;
 pub mod state;
 pub mod store;
 pub mod tray;
@@ -193,6 +195,10 @@ pub fn run() {
             llm::assistant_hands_save,
             llm::assistant_mode,
             llm::assistant_mode_set,
+            skills::assistant_skills,
+            skills::assistant_skills_save,
+            skills::assistant_skill_import,
+            skills::assistant_skill_remove,
             assistant_session::assistant_sessions,
             assistant_session::assistant_session_load,
             assistant_session::assistant_session_save,

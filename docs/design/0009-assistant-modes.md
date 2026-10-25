@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-25
 supersedes: 0006
 code: src-tauri/src/hands.rs, src-tauri/src/hands_policy.rs, src-tauri/src/llm.rs, src/runtime/hands.ts, src/runtime/assistant.ts, src/platform/AssistantPanel.tsx, src/platform/assistant.ts

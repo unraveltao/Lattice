@@ -11,6 +11,7 @@
  */
 
 import type { HandsSettings, McpServer, McpServerTools } from "../runtime/hands";
+import type { SkillView } from "../runtime/skills";
 import { callCommand } from "./devLlm";
 import type { AssistantMode } from "../runtime/hands";
 
@@ -105,4 +106,45 @@ export async function saveMcpServers(servers: McpServer[]): Promise<McpServer[]>
 export async function discoverMcpTools(refresh = false): Promise<McpServerTools[]> {
   const result = await callCommand<{ servers: McpServerTools[] }>("mcp_tools", { refresh });
   return result.servers;
+}
+
+/* --------------------------------------------------------------- 技能包 */
+
+/**
+ * 技能目录的现状（0005）。
+ *
+ * `folder` 是 `skills/` 的绝对路径 —— 面板要把它显示出来，否则用户不知道
+ * "导入"该从哪儿拿文件、删掉的目录去了哪儿。**技能正文也在这份载荷里**
+ * （`SkillView.body`）：渲染进程没有文件系统，Rust 不递，这一轮的提示词就
+ * 只能"知道有这么个技能"却读不到它写的步骤。
+ */
+export interface SkillsView {
+  folder: string;
+  skills: SkillView[];
+}
+
+export async function readSkills(): Promise<SkillsView> {
+  return await callCommand<SkillsView>("assistant_skills");
+}
+
+/**
+ * 存启用清单。**上限在这一步判**（4 份 / 每份 4 000 字 / 合计 8 000 字）：
+ * Rust 回一条错误说明超了多少，界面照实说，不自己截断。
+ */
+export async function saveSkills(enabled: string[]): Promise<SkillsView> {
+  return await callCommand<SkillsView>("assistant_skills_save", { enabled });
+}
+
+/**
+ * 导入一份技能：一个目录（里面有 `SKILL.md`）或一个 `.md` 文件。
+ *
+ * 撞名不覆盖（第二份叫 `<id>-2`）：覆盖等于静默换掉用户正在用的流程（0005 §5）。
+ */
+export async function importSkill(path: string): Promise<SkillsView> {
+  return await callCommand<SkillsView>("assistant_skill_import", { path });
+}
+
+/** 删掉一个技能目录，并从启用清单里剔除 */
+export async function removeSkill(id: string): Promise<SkillsView> {
+  return await callCommand<SkillsView>("assistant_skill_remove", { id });
 }

@@ -37,12 +37,16 @@ import {
 } from "./assistant";
 import {
   discoverMcpTools,
+  importSkill,
   readHands,
   readMcpServers,
   readMode,
+  readSkills,
+  removeSkill,
   saveHands,
   saveMcpServers,
   saveMode,
+  saveSkills,
 } from "./hands";
 import {
   allTools,
@@ -72,6 +76,16 @@ import {
   type McpServerTools,
 } from "../runtime/hands";
 import { historyChars, knownModel } from "../runtime/llm-models";
+import {
+  SKILL_BODY_MAX,
+  SKILL_MAX,
+  SKILL_TOTAL_MAX,
+  charCount,
+  checkBudget,
+  missingGroups,
+  promptsOf,
+  type SkillView,
+} from "../runtime/skills";
 import { useT } from "../runtime/i18n";
 import {
   widgetToolSources,
@@ -194,6 +208,20 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     target: string;
   }>({ label: "", transport: "stdio", target: "" });
   /**
+   * 技能包（0005）：目录里的清单 + 启用哪几份。
+   *
+   * **每次开面板重新读**：用户可能在资源管理器里删过一个目录，面板不该还画着它。
+   * 正文跟着清单一起过来（渲染进程没有文件系统），提示词那一段直接用。
+   */
+  const [skills, setSkills] = useState<SkillView[]>([]);
+  const [skillsFolder, setSkillsFolder] = useState("");
+  const [skillsNote, setSkillsNote] = useState<string | null>(null);
+  const [skillsBusy, setSkillsBusy] = useState(false);
+  /** 导入框：一个目录（里面有 SKILL.md）或一个 `.md` 的绝对路径 */
+  const [skillPath, setSkillPath] = useState("");
+  /** 要删的那一个：**两步确认**，删目录之后撤销不了 */
+  const [skillRemoving, setSkillRemoving] = useState<string | null>(null);
+  /**
    * 正在等用户点头的那一下。**不做成 toast**：它阻塞这一轮，
    * 用户不管它，模型就一直等着 —— 所以确认条必须贴在输入框上面，
    * 不能是一个会自己消失的提示
@@ -304,6 +332,14 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
   }, []);
 
   const active = profiles?.profiles.find((item) => item.id === profiles.activeId) ?? null;
+  /**
+   * 这一轮真的开着的那几组。技能那一行靠它标"缺 Files" ——
+   * **模式也参与**：全部模式下六组临时全开，那一行就不该再挂着"缺"
+   */
+  const groupsOn = useMemo<HandGroup[]>(() => {
+    const effective = effectiveHands(hands, mode);
+    return HAND_GROUPS.filter((group) => effective[group]);
+  }, [hands, mode]);
   /** 最后一条还在长 = 字正在出来，这时候不该再显示「Thinking…」 */
   const lastEntry = entries[entries.length - 1];
   const streaming = lastEntry?.kind === "assistant" && lastEntry.live === true;
@@ -354,6 +390,16 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     void readMcpServers()
       .then((list) => {
         if (!cancelled) setMcpServers(list);
+      })
+      .catch(() => {
+        // 浏览器预览里没有这条命令
+      });
+    // 技能包（0005）：列表 + 启用清单一起回来。读不到 = 一份都没有（默认状态）
+    void readSkills()
+      .then((view) => {
+        if (cancelled) return;
+        setSkills(view.skills);
+        setSkillsFolder(view.folder);
       })
       .catch(() => {
         // 浏览器预览里没有这条命令
@@ -529,7 +575,14 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       if (conversation[0]?.role === "system") conversation.shift();
       conversation.unshift({
         role: "system",
-        content: systemPrompt(snapshot, { hands: handsOn, tools: table, catalogue }),
+        content: systemPrompt(snapshot, {
+          hands: handsOn,
+          tools: table,
+          catalogue,
+          // 技能包（0005）：启用了、且没读坏的那几份正文进提示词。
+          // **只是文字** —— 技能不新增工具，做的事仍然要过一次审批
+          skills: promptsOf(skills),
+        }),
       });
       conversation.push({ role: "user", content: text });
 
@@ -594,7 +647,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       // 每一轮都存：用户下一句很可能就在关掉面板之后（0003 §5 第一行）
       void persistSession(conversation);
     }
-  }, [active?.model, approve, busy, draft, hands, persistSession, widgetSources]);
+  }, [active?.model, approve, busy, catalogue, draft, hands, mode, persistSession, skills, widgetSources]);
 
 
   const stop = useCallback(() => {
@@ -710,6 +763,97 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     },
     [hands],
   );
+
+  /**
+   * 勾 / 取消一份技能。
+   *
+   * **上限在勾的这一刻判**（0005 §3）：4 份 / 每份 4 000 字 / 合计 8 000 字。
+   * 超了就当场说清超了多少，开关回到原样 —— "看起来勾上了、其实没生效"是最糟的
+   * 一种失败，用户会以为它已经在照这份做了。
+   */
+  const toggleSkill = useCallback(
+    async (id: string, on: boolean) => {
+      const next = skills.map((skill) => (skill.id === id ? { ...skill, enabled: on } : skill));
+      const wanted = promptsOf(next);
+      const budget = checkBudget(wanted);
+      if (!budget.ok) {
+        const tooLong = next.find(
+          (skill) => skill.enabled && charCount(skill.body) > SKILL_BODY_MAX,
+        );
+        setSkillsNote(
+          budget.reason === "count"
+            ? t("At most {limit} skills can be on at once — turn one off first.", {
+                limit: SKILL_MAX,
+              })
+            : budget.reason === "body"
+              ? t("A skill's text is capped at {limit} characters — “{name}” has {total}.", {
+                  limit: SKILL_BODY_MAX,
+                  name: tooLong?.name ?? "",
+                  total: budget.total,
+                })
+              : t("The skills you turn on share {limit} characters — these would be {total}.", {
+                  limit: SKILL_TOTAL_MAX,
+                  total: budget.total,
+                }),
+        );
+        return;
+      }
+      const before = skills;
+      setSkills(next);
+      setSkillsBusy(true);
+      setSkillsNote(null);
+      try {
+        const view = await saveSkills(wanted.map((skill) => skill.id));
+        setSkills(view.skills);
+      } catch (problem) {
+        // 存不进去就退回原样：别把界面画成一个假的"已勾上"
+        setSkills(before);
+        setSkillsNote(String(problem instanceof Error ? problem.message : problem));
+      } finally {
+        setSkillsBusy(false);
+      }
+    },
+    [skills, t],
+  );
+
+  /**
+   * 导入一份技能：一个目录（里面有 `SKILL.md`）或一个 `.md` 文件。
+   *
+   * **导进来不等于启用**（0005 §4）：勾上才算"这一轮照它做"。是一句"有了"，
+   * 不是一句"开始用"。
+   */
+  const addSkill = useCallback(async () => {
+    const path = skillPath.trim();
+    if (!path) return;
+    setSkillsBusy(true);
+    setSkillsNote(null);
+    try {
+      const view = await importSkill(path);
+      setSkills(view.skills);
+      setSkillsFolder(view.folder);
+      setSkillPath("");
+      setSkillsNote(t("Added. Turn it on when you want it used."));
+    } catch (problem) {
+      setSkillsNote(String(problem instanceof Error ? problem.message : problem));
+    } finally {
+      setSkillsBusy(false);
+    }
+  }, [skillPath, t]);
+
+  /** 删一个技能目录（附带把它从启用清单里剔掉）。**目录删了就回不来** */
+  const dropSkill = useCallback(async (id: string) => {
+    setSkillRemoving(null);
+    setSkillsBusy(true);
+    setSkillsNote(null);
+    try {
+      const view = await removeSkill(id);
+      setSkills(view.skills);
+    } catch (problem) {
+      setSkillsNote(String(problem instanceof Error ? problem.message : problem));
+    } finally {
+      setSkillsBusy(false);
+    }
+  }, []);
 
   /**
    * 问一遍服务器要工具表。`refresh = true` 时才重问已经发现过的
@@ -946,7 +1090,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
               />
             </label>
             <p className="lattice-assistant-hint">
-              {t("Relative paths and commands start here. Reading is not limited to this folder — only writing asks, and the prompt shows the full path.")}
+              {t("Relative paths and commands start here. In the Ask mode, writing inside this folder does not ask again — writing outside it still does, and reading was never limited to it (change it and what asks changes).")}
             </p>
           </section>
 
@@ -1050,6 +1194,115 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
               </button>
             </div>
             {mcpNote && <p className="lattice-assistant-hint">{mcpNote}</p>}
+          </section>
+
+          {/* 技能包（0005）：一份"怎么做"的说明书，不是权限。
+              导入不等于启用，勾上才是"这一轮照它做" */}
+          <section className="lattice-skills">
+            <header className="lattice-hands-head">
+              <span>{t("Skills")}</span>
+              <span className="lattice-skills-count">
+                {t("{on} of {max} on", {
+                  on: skills.filter((skill) => skill.enabled && !skill.damaged).length,
+                  max: SKILL_MAX,
+                })}
+              </span>
+            </header>
+            <p className="lattice-assistant-hint">
+              {t(
+                "A skill is a written procedure: when to use it, then the steps. Turning one on only adds those words to the prompt — it never adds a tool, and every step it asks for still asks you first.",
+              )}
+            </p>
+            {skills.length === 0 && (
+              <p className="lattice-assistant-hint">
+                {t(
+                  "No skills yet. Import one: a folder with a SKILL.md in it, or a single .md file.",
+                )}
+              </p>
+            )}
+            {skills.map((skill) => {
+              const missing = missingGroups(skill, groupsOn);
+              return (
+                <div key={skill.id} className={`lattice-skill-row${skill.damaged ? " is-bad" : ""}`}>
+                  <label className="lattice-skill-main">
+                    <input
+                      type="checkbox"
+                      checked={skill.enabled}
+                      disabled={skillsBusy || skill.damaged}
+                      onChange={(event) => void toggleSkill(skill.id, event.target.checked)}
+                    />
+                    <span className="lattice-hand-copy">
+                      <span className="lattice-hand-name">
+                        {skill.name}
+                        {skill.damaged && (
+                          <span className="lattice-hand-soon">{t("Cannot read it")}</span>
+                        )}
+                      </span>
+                      <span className="lattice-hand-hint">
+                        {skill.description ||
+                          t("Its front matter has no description — write one so this line says what it is for.")}
+                      </span>
+                      <span className="lattice-skill-meta">
+                        {t("{chars} characters", { chars: charCount(skill.body) })}
+                        {missing.length > 0 &&
+                          ` · ${t("needs {groups}", {
+                            groups: missing.map((group) => t(HAND_LABELS[group].label)).join(", "),
+                          })}`}
+                      </span>
+                    </span>
+                  </label>
+                  {skillRemoving === skill.id ? (
+                    <span className="lattice-skill-confirm">
+                      <span>{t("Delete its folder?")}</span>
+                      <button
+                        type="button"
+                        className="lattice-btn is-small is-danger"
+                        onClick={() => void dropSkill(skill.id)}
+                      >
+                        {t("Delete")}
+                      </button>
+                      <button
+                        type="button"
+                        className="lattice-btn is-small"
+                        onClick={() => setSkillRemoving(null)}
+                      >
+                        {t("Cancel")}
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="lattice-btn is-small"
+                      onClick={() => setSkillRemoving(skill.id)}
+                      disabled={skillsBusy}
+                    >
+                      {t("Remove")}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <label className="lattice-textfield">
+              <span>{t("Skill folder or .md file")}</span>
+              <input
+                value={skillPath}
+                onChange={(event) => setSkillPath(event.target.value)}
+                placeholder="D:\\写作\\skills\\weekly"
+                spellCheck={false}
+              />
+            </label>
+            <div className="lattice-mcp-actions">
+              <button
+                type="button"
+                className="lattice-btn is-small is-primary"
+                onClick={() => void addSkill()}
+                disabled={skillsBusy || !skillPath.trim()}
+              >
+                {t("Import")}
+              </button>
+            </div>
+            {skillsNote && <p className="lattice-assistant-hint">{skillsNote}</p>}
+            {skillsFolder && <p className="lattice-skills-folder">{skillsFolder}</p>}
           </section>
 
           {error && <p className="lattice-modal-error">{error}</p>}

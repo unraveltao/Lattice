@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>skills test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 技能包与工作区免问区（0005）的纯逻辑。
+       *
+       * 这一页钉的是三件"看不见就会静默错"的事：
+       *
+       *   1. **免问区只放宽 `file.write` 一处**。把它顺手扩到 `shell.run`，等于
+       *      "一条命令就能写出这棵树"被我当成围栏 —— 那是自欺，也不是用户点的那个头。
+       *   2. **`..` 必须先折叠再比**。`D:\写作\..\Windows\x` 折成 `D:\Windows\x`；
+       *      不折叠的话一个 `..` 就把免问区变成了整个盘。
+       *   3. **上限在启用时判、超了拒绝不截断**。截断过的步骤等于半份说明书，
+       *      模型会照半份做，而那比"这件事没做成"更难查。
+       */
+      import { approvalFor, systemPrompt } from "../src/runtime/assistant.ts";
+      import { insideWorkspace } from "../src/runtime/hands.ts";
+      import {
+        SKILL_BODY_MAX,
+        SKILL_MAX,
+        SKILL_TOTAL_MAX,
+        charCount,
+        checkBudget,
+        missingGroups,
+        normalizeTools,
+        promptsOf,
+        skillsPrompt,
+      } from "../src/runtime/skills.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text} — ${JSON.stringify(actual)}`,
+        );
+      const ok = (value, text) => log(!!value, text);
+
+      const WORKSPACE = "D:\\写作";
+
+      // ---- insideWorkspace：落在这棵树里 ----
+
+      ok(insideWorkspace("D:\\写作\\周报.md", WORKSPACE), "同一个目录里的文件");
+      ok(insideWorkspace("d:\\写作\\周报.md", WORKSPACE), "盘符不分大小写");
+      ok(insideWorkspace("D:\\写作\\2026\\03\\周报.md", WORKSPACE), "子目录里也算");
+      ok(insideWorkspace("D:/写作/周报.md", WORKSPACE), "`/` 与 `\\` 同视");
+      ok(insideWorkspace("D:\\写作\\", WORKSPACE), "尾分隔符不影响");
+      ok(insideWorkspace("D:\\写作\\.\\草稿\\a.md", WORKSPACE), "`.` 段丢掉");
+      ok(insideWorkspace("周报.md", WORKSPACE), "相对路径算在里面（Rust 会 join 到工作目录）");
+      ok(insideWorkspace("2026\\03\\周报.md", WORKSPACE), "带子目录的相对路径也算");
+
+      // ---- insideWorkspace：不在这棵树里 ----
+
+      ok(!insideWorkspace("D:\\写作\\..\\Windows\\x.dll", WORKSPACE), "`..` 折叠之后在外面");
+      ok(!insideWorkspace("D:\\写作稿\\a.md", WORKSPACE), "同前缀但不是同一棵树");
+      ok(!insideWorkspace("C:\\写作\\a.md", WORKSPACE), "换了盘");
+      ok(!insideWorkspace("D:\\写作.md", WORKSPACE), "名字一样但它是文件不是这个目录");
+      ok(!insideWorkspace("D:\\写作", ""), "空 workspace 一律 false");
+      ok(!insideWorkspace("D:\\a.md", "D:\\"), "盘根不算一棵树（那等于整个盘）");
+      ok(!insideWorkspace("", WORKSPACE), "空路径 false");
+      ok(!insideWorkspace("../../etc/passwd", WORKSPACE), "相对路径折出根就 false");
+
+      // ---- 免问区只放宽 file.write ----
+
+      const ctx = { workspace: WORKSPACE };
+      eq(
+        approvalFor("file.write", "ask", { ...ctx, path: "D:\\写作\\周报.md" }),
+        "allow",
+        "ask 档：写进工作目录不问",
+      );
+      eq(
+        approvalFor("file.write", "ask", { ...ctx, path: "D:\\GitDev\\lattice\\a.ts" }),
+        "ask",
+        "ask 档：写到外面照旧问",
+      );
+      eq(
+        approvalFor("shell.run", "ask", { ...ctx, path: "D:\\写作\\周报.md" }),
+        "ask",
+        "shell.run 不享受免问区（一条命令能写出整棵树）",
+      );
+      eq(
+        approvalFor("file.read", "ask", { path: "D:\\写作\\周报.md" }),
+        "allow",
+        "读一直是放行的（免问区不是新的读权限）",
+      );
+      eq(
+        approvalFor("file.write", "auto", { ...ctx, path: "D:\\写作\\周报.md" }),
+        "allow",
+        "auto 档本来就问不写，免问区不改变它",
+      );
+      eq(
+        approvalFor("file.write", "readonly", { ...ctx, path: "D:\\写作\\周报.md" }),
+        "deny",
+        "只读档仍然拒（免问区不是绕开只读档的路）",
+      );
+      eq(
+        approvalFor("file.write", "ask", { everything: true, path: "D:\\写作\\周报.md" }),
+        "allow",
+        "全部模式本来就全放行",
+      );
+      // 硬线：写平台自身配置永远问，**不管**它在不在工作目录里
+      eq(
+        approvalFor("file.write", "ask", {
+          workspace: "C:\\Users\\x\\AppData\\Roaming\\com.iron-tom.lattice",
+          path: "C:\\Users\\x\\AppData\\Roaming\\com.iron-tom.lattice\\assistant.json",
+        }),
+        "ask",
+        "工作目录就是配置目录时，写 assistant.json 仍然要问",
+      );
+      eq(
+        approvalFor("file.write", "auto", { path: "C:\\app\\state.json" }),
+        "ask",
+        "auto 档也拦自身配置（能改自己权限文件的助手等于没有权限系统）",
+      );
+
+      // ---- front matter 的 tools 归一化 ----
+
+      eq(normalizeTools("files, shell"), ["files", "shell"], "字符串按逗号切");
+      eq(normalizeTools(["Files", "web", "web"]), ["files", "web"], "去重 + 小写");
+      eq(normalizeTools(["files", "telepathy"]), ["files"], "认不出来的组丢掉，不拦整份技能");
+      eq(normalizeTools(null), [], "没有这个字段就是空数组");
+
+      const skill = (id, body, extra = {}) => ({
+        id,
+        name: id,
+        description: "",
+        tools: [],
+        body,
+        bytes: body.length,
+        enabled: true,
+        damaged: false,
+        ...extra,
+      });
+
+      eq(
+        missingGroups(skill("a", "", { tools: ["files", "shell"] }), ["files"]),
+        ["shell"],
+        "开了 Files 关着 shell → 缺 shell",
+      );
+      eq(missingGroups(skill("a", "", { tools: ["files"] }), ["files", "shell"]), [], "都开着就不缺");
+
+      // ---- promptsOf：只挑启用了、且没读坏的 ----
+
+      const view = [
+        skill("a", "步骤 A"),
+        skill("b", "步骤 B", { enabled: false }),
+        skill("c", "步骤 C", { damaged: true }),
+      ];
+      eq(promptsOf(view).map((one) => one.id), ["a"], "坏的那份不进提示词（半份步骤比没有更糟）");
+      ok(!("bytes" in promptsOf(view)[0]), "进提示词的那一份不带面板字段");
+
+      // ---- 上限：4 份 / 每份 4 000 字 / 合计 8 000 字 ----
+
+      eq(SKILL_MAX, 4, "最多 4 份");
+      eq(SKILL_BODY_MAX, 4000, "每份 4 000 字");
+      eq(SKILL_TOTAL_MAX, 8000, "合计 8 000 字");
+      eq(charCount("周报😀"), 3, "按码点数，不按字节");
+
+      eq(checkBudget([skill("a", "字".repeat(3000))]).ok, true, "3 000 个汉字算得进去（9 KB 但只有 3 000 字）");
+      eq(
+        checkBudget(Array.from({ length: 5 }, (_, index) => skill(`s${index}`, "a"))).reason,
+        "count",
+        "第 5 份 → 条数超了",
+      );
+      eq(checkBudget([skill("a", "字".repeat(SKILL_BODY_MAX + 1))]).reason, "body", "单份超 4 000 字");
+      const heavy = Array.from({ length: 3 }, (_, index) => skill(`h${index}`, "字".repeat(3000)));
+      const total = checkBudget(heavy);
+      eq(total.reason, "total", "三份 3 000 字 → 合计 9 000 超了");
+      eq(total.total, 9000, "超的时候把总字数带出来，界面才能说清超了多少");
+      eq(total.limit, SKILL_TOTAL_MAX, "也说清上限");
+      ok(!total.ok, "超了就是超了，不截断");
+
+      // ---- 提示词那一段 ----
+
+      eq(skillsPrompt([]), [], "一份都没有 → 一个字都不加");
+      const section = skillsPrompt([
+        { id: "weekly", name: "周报", description: "把改动整理成周报", body: "什么时候用：每周五。" },
+      ]).join("\n");
+      ok(section.includes("先照它们写的步骤做"), "先照技能做，再照它自己的习惯");
+      ok(section.includes("不给你任何新工具"), "明说技能不多给工具（否则它会去调没有的工具）");
+      ok(section.includes("### 周报（weekly）"), "每份一节，标题带 id");
+      ok(section.includes("把改动整理成周报"), "描述跟在标题后面");
+      ok(section.includes("什么时候用：每周五。"), "正文原样进来");
+      ok(/\n\n###/.test(skillsPrompt([{ id: "a", name: "A", description: "", body: "b" }]).join("\n")), "节与节之间空一行");
+
+      // ---- 拼进系统提示之后 ----
+
+      const prompt = systemPrompt("当前桌面：空", {
+        skills: [{ id: "weekly", name: "周报", description: "", body: "步骤一" }],
+      });
+      ok(prompt.includes("### 周报（weekly）"), "systemPrompt 里带上技能那一段");
+      ok(prompt.includes("步骤一"), "正文进了提示词");
+      ok(prompt.indexOf("### 周报") < prompt.indexOf("当前桌面"), "技能在桌面快照之前（先交代做法，再看现状）");
+      eq(systemPrompt("当前桌面：空", { skills: [] }).includes("###"), false, "空表 → 一句都不加");
+
+      // ---- 输出 ----
+
+      const pass = lines.filter((line) => line.startsWith("PASS")).length;
+      const fail = lines.length - pass;
+      document.getElementById("out").innerHTML =
+        lines.map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`).join("\n") +
+        `\n\n${pass} passed, ${fail} failed`;
+      document.title = fail === 0 ? `skills ${pass}/${lines.length}` : `skills FAIL ${fail}`;
+    </script>
+  </body>
+</html>

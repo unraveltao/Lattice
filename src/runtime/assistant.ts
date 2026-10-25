@@ -22,6 +22,7 @@ import {
   describeHand,
   handsPrompt,
   handsTools,
+  insideWorkspace,
   isHandName,
   isSelfConfigPath,
   needsApproval,
@@ -29,6 +30,7 @@ import {
   type ApprovalMode,
   type HandsSettings,
 } from "./hands";
+import { skillsPrompt, type SkillPrompt } from "./skills";
 // 只借一个常量：工具名前缀（`widget.`）是"这条工具是组件自己的"的唯一判据，
 // 提示词、审批、执行三处读的都是它，别各写一遍字面量
 import { WIDGET_TOOL_PREFIX } from "./widget-tools";
@@ -244,6 +246,8 @@ export interface ApprovalContext {
   everything?: boolean;
   /** 这一次调用要碰的路径（`file.write` / `screen.capture`）。缺省 = 不知道 */
   path?: string;
+  /** 工作目录（免问区）。缺省 = 空，也就是"没有免问区"（0005 §4） */
+  workspace?: string;
 }
 
 export function approvalFor(
@@ -252,12 +256,18 @@ export function approvalFor(
   ctx: ApprovalContext = {},
 ): "allow" | "ask" | "deny" {
   if (mode === "readonly") return needsApproval(name) ? "deny" : "allow";
-  if (ctx.everything) {
-    // 自身配置那条例外只对"会改东西"的调用有意义：读 `assistant.json` 不构成提权
-    if (ctx.path && needsApproval(name) && isSelfConfigPath(ctx.path)) return "ask";
+  // 平台自身的配置（`assistant.json` / `mcp.json` / `state.json` / `skills/**`）：
+  // **任何档、任何模式都问**（0009 的四条硬线）。放在 `everything` 之前是有意的 —
+  // 一份能被模型改写的 `assistant.json` 会把模式、开关、免问区一起变成"它说自己有就有"，
+  // 而那不是更大的权限，是没有权限系统。读它不构成提权，所以只拦"会改东西"的调用
+  if (ctx.path && needsApproval(name) && isSelfConfigPath(ctx.path)) return "ask";
+  if (ctx.everything) return "allow";
+  if (mode === "auto") return DANGEROUS_ACTIONS.has(name) ? "ask" : "allow";
+  // 免问区（0005 §4）：**只放宽 `file.write` 一处**。`shell.run` 一条命令就能写出
+  // 这棵树，把它一起算进来是自欺；工作目录之外的写照旧问
+  if (name === "file.write" && ctx.path && insideWorkspace(ctx.path, ctx.workspace ?? "")) {
     return "allow";
   }
-  if (mode === "auto") return DANGEROUS_ACTIONS.has(name) ? "ask" : "allow";
   return needsApproval(name) || DANGEROUS_ACTIONS.has(name) ? "ask" : "allow";
 }
 
@@ -450,6 +460,14 @@ export interface PromptOptions {
    * 不存在（或者已经被撤下）的组件。已装的那些不走这里 —— 它们在快照里。
    */
   catalogue?: CatalogueHint[] | null;
+  /**
+   * 用户启用的技能包（0005）。缺省 / 空表 = 一个字都不提。
+   *
+   * 放**最后一段之前、手之后**：技能是"怎么做"，手是"能碰什么" —— 先让它知道
+   * 手上有什么，再交代做法。反过来的话，一段"跑一下这个脚本"会紧挨着"你没有
+   * 跑命令的工具"，模型读到的顺序就成了"这件事做不了"。
+   */
+  skills?: readonly SkillPrompt[] | null;
 }
 
 /**
@@ -521,6 +539,9 @@ export function systemPrompt(snapshot: string, options: PromptOptions = {}): str
   // 手：只提已经打开的那几组。**同一份开关**决定工具表和这段话，
   // 两边不一致的症状是"它能调，但提示里说它做不到"（0004 §5）
   if (options.hands) lines.push(...handsPrompt(options.hands));
+  // 技能包（0005）：用户交代过的做法。**只是文字** —— 它不改变上面任何一条
+  // 规则，也不新增工具；技能正文里要做的事仍然要过一次审批
+  if (options.skills && options.skills.length > 0) lines.push(...skillsPrompt(options.skills));
   // 商店（0003 §4 的第二小段）：只给 id 与名字，并且**明说它装不了** ——
   // 不说这一句，模型会回答"已经帮你装好了"，而实际什么都没发生
   const catalogue = options.catalogue ?? [];

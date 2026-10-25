@@ -494,8 +494,14 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
         // 审批（0003 §3）：`allow` 直接跑，`ask` 先问，`deny` 连执行器都不碰。
         // **必须在执行之前** await —— 放在之后等于"先删了再问"（0003 §5）。
         // 桌面动作和手走同一个裁决：`placement.remove` 是唯一会问的桌面动作，
-        // 它在 `auto` 档也仍然问（`DANGEROUS_ACTIONS`）
-        const gate = approvalFor(call.name, active.approvalMode, { everything });
+        // 它在 `auto` 档也仍然问（`DANGEROUS_ACTIONS`）。
+        // `path` / `workspace` 是免问区的两个入参（0005 §4）：只有 `file.write`
+        // 落在工作目录里才因此免掉那一次确认，别的工具一概不受影响
+        const gate = approvalFor(call.name, active.approvalMode, {
+          everything,
+          path: typeof parsed.value.path === "string" ? parsed.value.path : undefined,
+          workspace: active.workspace,
+        });
         if (gate === "deny") {
           result = {
             ok: false,

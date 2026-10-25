@@ -176,9 +176,32 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Tools declared by MCP servers you add. Every call asks.":
     "你自己加的 MCP 服务器声明的工具；每次调用都问。",
   "Workspace folder": "工作目录",
-  "Relative paths and commands start here. Reading is not limited to this folder — only writing asks, and the prompt shows the full path.":
-    "相对路径和命令从这里起算。读**不**限于这个目录 —— 只有写才问，而且确认条上写的是完整路径。",
+  "Relative paths and commands start here. In the Ask mode, writing inside this folder does not ask again — writing outside it still does, and reading was never limited to it (change it and what asks changes).":
+    "相对路径和命令从这里起算。「每次确认」档下，写进这个目录**不再问**，写到外面照旧问；读本来就不限于它（改这里会改变什么要问）。",
   "Coming in a later update": "后续版本",
+
+  // —— 技能包（0005）——
+  Skills: "技能",
+  "{on} of {max} on": "已启用 {on} / {max}",
+  "A skill is a written procedure: when to use it, then the steps. Turning one on only adds those words to the prompt — it never adds a tool, and every step it asks for still asks you first.":
+    "技能是一份写下来的做法：什么时候用，然后是一步步怎么做。勾上它只是把这段字放进提示词 —— 不会多给任何工具，里面要做的事仍然先问你。",
+  "No skills yet. Import one: a folder with a SKILL.md in it, or a single .md file.":
+    "还没有技能。导入一个：一个里面有 SKILL.md 的目录，或者一个 .md 文件。",
+  "Cannot read it": "读不成",
+  "Its front matter has no description — write one so this line says what it is for.":
+    "它的 front matter 里没有 description —— 补一句，这一行才能说明它是干什么的。",
+  "{chars} characters": "{chars} 字",
+  "needs {groups}": "需要 {groups}",
+  "Delete its folder?": "删掉它的目录？",
+  "Skill folder or .md file": "技能目录或 .md 文件",
+  Import: "导入",
+  "Added. Turn it on when you want it used.": "已导入。想让它生效再勾上。",
+  "At most {limit} skills can be on at once — turn one off first.":
+    "最多同时开 {limit} 份技能 —— 先关掉一份。",
+  "A skill's text is capped at {limit} characters — “{name}” has {total}.":
+    "一份技能的正文最多 {limit} 字 ——「{name}」有 {total} 字。",
+  "The skills you turn on share {limit} characters — these would be {total}.":
+    "开着的技能共用 {limit} 字额度 —— 这样会是 {total} 字。",
 
   // —— 审批确认条 ——
   "Approve this action": "批准这个动作",

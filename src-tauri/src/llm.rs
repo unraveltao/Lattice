@@ -40,6 +40,7 @@ use crate::hands_policy;
 use crate::llm_policy;
 use crate::network;
 use crate::network_policy::parse_url;
+use crate::skills_policy;
 
 /// 两次请求之间至少隔这么久。组件的 `llm.chat` 也是走这条路 —— 没有这一层，
 /// 一个写坏的组件可以在循环里把用户的额度刷干净
@@ -108,6 +109,19 @@ struct AssistantConfig {
     /// 用户一条手都没开，升级不该替他把六组手全打开（`normalize` 兜住坏值）
     #[serde(default)]
     mode: String,
+    /// 启用的技能包（0005）。**默认空** —— 升级与导入都不替用户启用任何一份：
+    /// 技能正文会常驻每一轮的提示词，替用户勾上等于替他改了"它怎么做事"
+    #[serde(default)]
+    skills: SkillsFile,
+}
+
+/// 启用了哪几份技能（0005）。只存 id：正文在 `skills/<id>/SKILL.md` 里，
+/// 抄进这份文件就等于有了两份会各自过时的说明书
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillsFile {
+    #[serde(default)]
+    enabled: Vec<String>,
 }
 
 /// 磁盘上的六个开关。和 `hands_policy::Hands` 分开：那份不引 serde
@@ -274,6 +288,23 @@ pub fn assistant_mode_set(app: AppHandle, mode: String) -> Result<ModeView, Stri
     Ok(mode_view(&app))
 }
 
+/// 启用清单（`skills.rs` 扫目录时要知道哪几份是勾上的）。
+///
+/// 单独一个函数而不是让 `skills.rs` 自己读文件：`assistant.json` 的读写只有
+/// 这一个模块能做，两处各读一遍就会有两份会各自过时的理解
+pub(crate) fn skills_enabled(app: &AppHandle) -> Vec<String> {
+    read_config(app).skills.enabled
+}
+
+/// 写启用清单。**只动 `skills.enabled` 这一个字段**，别的原样留着 ——
+/// 和 `assistant_hands_save` 同一条规矩（一个设置不该顺手改另一个）
+pub(crate) fn set_skills_enabled(app: &AppHandle, enabled: &[String]) -> Result<(), String> {
+    let mut config = read_config(app);
+    config.skills.enabled = enabled.to_vec();
+    normalize(&mut config);
+    write_config(app, &config)
+}
+
 /// v1 的形状：四个平铺字段。**只用来读**，写出去永远是当前版本（v4）
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -399,7 +430,7 @@ fn prepare(app: &AppHandle, profile_id: Option<&str>) -> Result<Profile, String>
     Ok(profile)
 }
 
-fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_config_dir()
@@ -562,6 +593,10 @@ fn normalize(config: &mut AssistantConfig) {
     // 工作目录只是"相对路径往哪儿落"。多余的空格会让 `PathBuf::join` 拼出一个
     // 带尾随空格、找不到的目录
     config.workspace = config.workspace.trim().to_string();
+
+    // 启用清单：只留形状合法的 id、去重。**不改条数** —— 超过 4 条由
+    // `assistant_skills_save` 明确拒掉（用户要看见一句"太多了"，而不是被静默洗掉）
+    config.skills.enabled = skills_policy::normalize_enabled(&config.skills.enabled);
 }
 
 /// 环境变量覆盖（CI 与临时试验）。**只作用于 active 那一档** —— 否则"我设了

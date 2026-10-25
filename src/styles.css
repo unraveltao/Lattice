@@ -3860,6 +3860,81 @@ button.lattice-chip[aria-pressed="true"] {
   gap: 8px;
 }
 
+/* 技能包（0005）：一份说明书一行，勾上才算"这一轮照它做"。
+ * 和 MCP 同一副外壳（同一段设置里两块，长得不一样会读成两种东西） */
+.lattice-skills {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--lattice-surface-2);
+  border: 1px solid var(--lattice-border);
+  border-radius: 12px;
+}
+
+/* 计数是"用了几份额度"，不是标题的一部分 —— 靠右、灰一点 */
+.lattice-skills-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-skill-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lattice-skill-main {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.lattice-skill-main input[type="checkbox"] {
+  margin: 2px 0 0;
+  accent-color: var(--lattice-accent);
+}
+
+/* 读不成的那一份：勾不动，但要留在列表里 —— 用户得看得见它、也删得掉它 */
+.lattice-skill-row.is-bad .lattice-hand-copy {
+  opacity: 0.6;
+}
+
+.lattice-skill-row.is-bad .lattice-hand-name {
+  color: var(--lattice-text-muted);
+}
+
+/* "1 200 字 · 需要 Files"：两样都是"能不能用"的信息，排在名字下面一行 */
+.lattice-skill-meta {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* 删目录的两步确认：就在这一行里，不弹模态框 */
+.lattice-skill-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--lattice-text-muted);
+  white-space: nowrap;
+}
+
+/* 技能目录的绝对路径：小一号、断得开，用来"去资源管理器看看" */
+.lattice-skills-folder {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted);
+  overflow-wrap: anywhere;
+}
+
 /* --------------------------------------------------------------------------
  * assistant 的桌面小窗（assistant.html）
  *
