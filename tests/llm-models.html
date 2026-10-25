@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>llm-models test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 模型能力表与预设。
+       *
+       * 这张表算错不会报错，只会让推理模型收到一个它不收的参数（400），
+       * 或者让历史预算大过上下文（provider 截断或直接拒）。所以边界要钉死：
+       * 最长前缀、大小写、未知模型走宽松默认、60k 字的硬上限。
+       */
+      import {
+        AUTH_SHAPES,
+        MAX_HISTORY_CHARS,
+        PRESETS,
+        UNKNOWN_MODEL,
+        historyChars,
+        isLoopbackBase,
+        knownModel,
+        normalizeAuth,
+        presetFor,
+      } from "/src/runtime/llm-models.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(JSON.stringify(actual) === JSON.stringify(expected), `${text}（得到 ${JSON.stringify(actual)}）`);
+
+      // ---- 1. 能力表：未知模型走宽松默认 ----
+      eq(knownModel("some-new-model"), UNKNOWN_MODEL, "未知模型宽松：能调工具、能收温度、32k");
+      eq(knownModel(""), UNKNOWN_MODEL, "空模型名也走默认");
+      eq(knownModel("deepseek-chat"), UNKNOWN_MODEL, "deepseek-chat 没有特殊条目");
+
+      // ---- 2. 能力表：推理模型 ----
+      eq(knownModel("deepseek-reasoner").tools, false, "reasoner 不支持工具");
+      eq(knownModel("deepseek-reasoner").temperature, false, "reasoner 不收温度");
+      eq(knownModel("DeepSeek-Reasoner").temperature, false, "模型名大小写不敏感");
+
+      // 最长前缀：`deepseek-reasoner-2026` 该命中 reasoner，而不是宽松默认
+      eq(knownModel("deepseek-reasoner-2026").tools, false, "最长前缀胜出");
+      eq(knownModel("o1-mini").temperature, false, "o1 系列不收温度");
+      eq(knownModel("o3").temperature, false, "o3 不收温度");
+      eq(knownModel("o1-mini").tools, true, "o1 仍然可以调工具");
+      eq(knownModel("gpt-4o-mini").context, 128_000, "gpt-4o 系列窗口 128k");
+
+      // ---- 3. 历史预算：1 token ≈ 1 字符，硬上限 60k ----
+      eq(historyChars(knownModel("gpt-4o")), MAX_HISTORY_CHARS, "128k 上下文也被 60k 字上限截住");
+      eq(historyChars(UNKNOWN_MODEL), 32_000, "32k 上下文 → 32k 字");
+      eq(historyChars({ ...UNKNOWN_MODEL, context: 0 }), MAX_HISTORY_CHARS, "上下文未知时不砍历史");
+
+      // ---- 4. 鉴权形状：别名归一化 ----
+      eq(AUTH_SHAPES.length, 3, "只有三种鉴权形状");
+      eq(normalizeAuth("api_key_header"), "api-key-header", "下划线别名认");
+      eq(normalizeAuth("NONE"), "none", "大小写不敏感");
+      eq(normalizeAuth(""), "bearer", "空串默认 bearer");
+      eq(normalizeAuth("whatever"), "bearer", "不认识的值退回 bearer");
+
+      // ---- 5. 预设：只填表，不进数据模型 ----
+      eq(presetFor("https://api.deepseek.com/v1/").id, "deepseek", "尾斜杠不影响认预设");
+      eq(presetFor("http://127.0.0.1:11434/v1").id, "ollama", "本机 Ollama 认得出");
+      eq(presetFor("http://127.0.0.1:11434/v1").auth, "none", "Ollama 不要 key");
+      eq(presetFor("https://my-proxy.example.com/v1"), undefined, "中转站没有预设");
+      log(
+        PRESETS.every((preset) => preset.baseUrl.startsWith("https://") || isLoopbackBase(preset.baseUrl)),
+        "每个预设都是 https，或者本机回环 —— 明文 http 不许出本机",
+      );
+      log(
+        PRESETS.every((preset) => preset.auth !== "none" || isLoopbackBase(preset.baseUrl)),
+        "不要 key 的预设只能是本机地址（别把 key 该有的地方配成 none）",
+      );
+      eq(isLoopbackBase("localhost:8080/v1"), true, "不带协议的 localhost 也认");
+
+      document.getElementById("out").textContent = lines.join("\n");
+    </script>
+  </body>
+</html>

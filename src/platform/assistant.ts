@@ -27,39 +27,96 @@ import {
   type ToolSpec,
 } from "../runtime/assistant";
 import { t } from "../runtime/i18n";
+import type { AuthShape } from "../runtime/llm-models";
 import type { WidgetRecord } from "../runtime/registry";
 import { agentSnapshot, runAgentAction, type AgentReply } from "./agent";
 
-/** 和 Rust 的 `LlmStatus` 对齐。**没有 apiKey 字段**，只有掩码 */
-export interface LlmStatus {
-  configured: boolean;
+/** 和 Rust 的 `ProfileView` 对齐。**没有 apiKey 字段**，只有掩码 */
+export interface ProfileView {
+  id: string;
+  label: string;
   baseUrl: string;
+  auth: AuthShape;
   model: string;
   temperature: number;
+  /** 上次「测试连接」列出来的模型，只用来做下拉提示 */
+  models: string[];
   keyHint: string;
+  /** base + model 齐了，且（auth 不是 none 时）key 也齐了 */
+  configured: boolean;
   keySource: "file" | "env" | "none";
-  endpoint: string;
 }
 
-export async function readLlmStatus(): Promise<LlmStatus> {
-  return await invoke<LlmStatus>("llm_status");
+export interface ProfilesView {
+  activeId: string;
+  profiles: ProfileView[];
 }
 
-export async function saveLlmSettings(baseUrl: string, model: string, temperature: number): Promise<LlmStatus> {
-  return await invoke<LlmStatus>("llm_save", { baseUrl, model, temperature });
+export async function readLlmProfiles(): Promise<ProfilesView> {
+  return await invoke<ProfilesView>("llm_profiles");
 }
 
-/** 空串等于"删掉这把 key" */
-export async function saveLlmKey(key: string): Promise<LlmStatus> {
-  return await invoke<LlmStatus>("llm_set_key", { key });
+export interface SavedProfile {
+  /** 这次存的是哪一条 —— 新建时前端还不知道 id，别靠 diff 猜 */
+  id: string;
+  view: ProfilesView;
 }
 
-/** 拉模型列表（也就是"测试连接"）。可以传还没保存的地址和 key */
-export async function listModels(baseUrl?: string, key?: string): Promise<string[]> {
-  return await invoke<string[]>("llm_models", {
-    baseUrl: baseUrl ?? null,
-    key: key ?? null,
+/**
+ * 存一档。`id` 为空表示新建 —— 新建的档如果还没有 active，就自动变成 active。
+ * **key 不走这里**：改个模型名不该要求用户重新粘一次 key（见 `saveLlmKey`）。
+ */
+export async function saveLlmProfile(input: {
+  id?: string;
+  label: string;
+  baseUrl: string;
+  auth: AuthShape;
+  model: string;
+  temperature: number;
+}): Promise<SavedProfile> {
+  return await invoke<SavedProfile>("llm_profile_save", {
+    id: input.id ?? null,
+    label: input.label,
+    baseUrl: input.baseUrl,
+    auth: input.auth,
+    model: input.model,
+    temperature: input.temperature,
   });
+}
+
+/** 删一档。它带着 key 一起走 —— 界面上要两步确认 */
+export async function removeLlmProfile(id: string): Promise<ProfilesView> {
+  return await invoke<ProfilesView>("llm_profile_remove", { id });
+}
+
+/** 空串等于"删掉这一档的 key" */
+export async function saveLlmKey(id: string, key: string): Promise<ProfilesView> {
+  return await invoke<ProfilesView>("llm_set_key", { id, key });
+}
+
+/**
+ * 拉模型列表（也就是"测试连接"）。
+ *
+ * 可以传还没保存的地址 / 鉴权 / key（试好了再存），也可以只传 `profileId`
+ * 复用已存的那一档。返回空数组是合法的：有些中转站的 `/models` 什么都不给。
+ */
+export async function listModels(options: {
+  profileId?: string;
+  baseUrl?: string;
+  auth?: AuthShape;
+  key?: string;
+} = {}): Promise<string[]> {
+  return await invoke<string[]>("llm_models", {
+    profileId: options.profileId ?? null,
+    baseUrl: options.baseUrl ?? null,
+    auth: options.auth ?? null,
+    key: options.key ?? null,
+  });
+}
+
+/** 主动切换 active 档：点一下另一条就等于把它设成 active */
+export async function activateLlmProfile(id: string): Promise<ProfilesView> {
+  return await invoke<ProfilesView>("llm_profile_activate", { id });
 }
 
 export type TurnEvent =
@@ -134,6 +191,11 @@ export interface TurnOptions {
    * 或者"它能调，但提示里说它做不到"。
    */
   tools?: Record<string, ToolSpec>;
+  /**
+   * 历史预算（字符）。由 `historyChars(knownModel(model))` 算出来 —— 上下文
+   * 小的模型带不动 60k 字的历史，超了不是慢，是 400。不传 = 只按条数裁。
+   */
+  maxChars?: number;
 }
 
 /**
@@ -142,13 +204,13 @@ export interface TurnOptions {
  * 返回 `false` 表示是被 `shouldStop` 叫停的，界面可以据此不写"完成"。
  */
 export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
-  const { messages, surface, onEvent, shouldStop, tools } = options;
+  const { messages, surface, onEvent, shouldStop, tools, maxChars } = options;
   const defs = toolDefs(tools);
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
     if (shouldStop?.()) return false;
 
-    const wire = toWire(trimHistory(messages));
+    const wire = toWire(trimHistory(messages, undefined, maxChars));
     const reply = await invoke<AssistantReply>("llm_chat", {
       messages: JSON.stringify(wire),
       tools: JSON.stringify(defs),

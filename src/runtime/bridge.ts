@@ -691,7 +691,13 @@ defineMethod("network.fetch", "network", async (params, ctx) => {
  */
 defineMethod("llm.status", null, async () => {
   if (!bridgeInTauri()) return { configured: false, model: "" };
-  return await invoke<{ configured: boolean; model: string }>("llm_status");
+  // 组件只关心"现在用哪一档、它配好了没有" —— 档列表是平台自己的界面，
+  // 这里只挑 active 那条出来（和 Rust 的 `llm_profiles` 同一份事实）
+  const view = await invoke<{ activeId: string; profiles: Array<{ id: string; configured: boolean; model: string }> }>(
+    "llm_profiles",
+  );
+  const active = view.profiles.find((profile) => profile.id === view.activeId);
+  return { configured: active?.configured ?? false, model: active?.model ?? "" };
 });
 
 /**

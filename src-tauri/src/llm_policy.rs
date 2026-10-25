@@ -687,6 +687,61 @@ fn body_snippet(body: &str) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 档 / 鉴权
+// ---------------------------------------------------------------------------
+
+/// 鉴权形状归一化。和 TS 的 `normalizeAuth` 同一套别名 —— 两边不一致的症状是
+/// "界面说这一档不要 key，发请求时又挂了个空 Bearer"，provider 回 401。
+pub fn normalize_auth(raw: &str) -> &'static str {
+    let value = raw.trim().to_ascii_lowercase().replace('_', "-");
+    match value.as_str() {
+        "none" | "no-key" => "none",
+        "api-key-header" | "apikey" | "api-key" => "api-key-header",
+        _ => "bearer",
+    }
+}
+
+/// 这一档要挂的头。`none` 什么都不挂 —— 本机模型（Ollama / LM Studio）常常不要 key，
+/// 而"空字符串的 Bearer"不是一个合法的鉴权，只会换来 401。
+pub fn auth_header(auth: &str, key: &str) -> Option<(&'static str, String)> {
+    let key = key.trim();
+    match normalize_auth(auth) {
+        "none" => None,
+        "api-key-header" => Some(("api-key", key.to_string())),
+        _ => Some(("authorization", format!("Bearer {key}"))),
+    }
+}
+
+/// 一档的默认名字：主机名（去掉 `www.`）。本机地址叫 "Local model" —— 用户
+/// 在列表里认得出那是自己机器上的模型，而不是又一个云端账号。
+pub fn profile_label(base: &str) -> String {
+    let host = host_of(base);
+    if host.is_empty() {
+        return String::new();
+    }
+    if is_loopback(&host) {
+        return "Local model".to_string();
+    }
+    host.trim_start_matches("www.").to_string()
+}
+
+/// 新建一档的 id。时间戳（毫秒）+ 序号：够唯一，也不带任何用户信息。
+pub fn profile_id(seed: u64, serial: u32) -> String {
+    format!("p-{seed:x}-{serial:x}")
+}
+
+/// id 规则：`p-` 开头，后面只许小写十六进制 / 数字 / 短横线。
+/// 命令收前端来的 id 时要过这一道（它会拼进 JSON 的键和日志）。
+pub fn profile_id_ok(id: &str) -> bool {
+    let Some(rest) = id.strip_prefix("p-") else {
+        return false;
+    };
+    !rest.is_empty()
+        && rest.len() <= 40
+        && rest.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c) || c == '-')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -929,5 +984,48 @@ mod tests {
         assert!(describe_failure("connecting to the host failed (Win32 error 12029)").contains("could not reach"));
         assert!(describe_failure("sending the request failed (Win32 error 12175)").contains("TLS"));
         assert!(describe_failure("something odd").contains("something odd"));
+    }
+
+    #[test]
+    fn auth_shapes_are_three() {
+        assert_eq!(normalize_auth("bearer"), "bearer");
+        assert_eq!(normalize_auth("api_key_header"), "api-key-header");
+        assert_eq!(normalize_auth("NONE"), "none");
+        assert_eq!(normalize_auth(""), "bearer");
+        assert_eq!(normalize_auth("whatever"), "bearer");
+    }
+
+    #[test]
+    fn no_key_means_no_authorization_header() {
+        assert!(auth_header("none", "sk-123").is_none());
+
+        let (name, value) = auth_header("bearer", " sk-123 ").unwrap();
+        assert_eq!(name, "authorization");
+        assert_eq!(value, "Bearer sk-123");
+
+        let (name, value) = auth_header("api-key-header", "abc").unwrap();
+        assert_eq!(name, "api-key");
+        assert_eq!(value, "abc");
+    }
+
+    #[test]
+    fn labels_come_from_the_host() {
+        assert_eq!(profile_label("https://api.deepseek.com/v1"), "api.deepseek.com");
+        assert_eq!(profile_label("https://www.example.com/v1"), "example.com");
+        assert_eq!(profile_label("http://127.0.0.1:11434/v1"), "Local model");
+        assert_eq!(profile_label("http://[::1]:8080/v1"), "Local model");
+        assert_eq!(profile_label(""), "");
+    }
+
+    #[test]
+    fn profile_ids_are_bounded_and_safe() {
+        assert!(profile_id_ok("p-1a2b-3"));
+        assert!(profile_id_ok("p-0"));
+        assert!(!profile_id_ok("1a2b"));
+        assert!(!profile_id_ok("p-"));
+        assert!(!profile_id_ok("p-AB"));
+        assert!(!profile_id_ok("p-../etc"));
+        assert!(!profile_id_ok(&format!("p-{}", "a".repeat(41))));
+        assert_eq!(profile_id(0x1f, 2), "p-1f-2");
     }
 }

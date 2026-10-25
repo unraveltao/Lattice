@@ -95,12 +95,12 @@
 | --- | --- |
 | 官方组件 | 15 个 |
 | 权限 | 11 项 |
-| Tauri 命令 | 63 条 |
-| 浏览器断言 | 44 个页面、1850 条 |
-| Rust 单测 | 186 条 |
+| Tauri 命令 | 65 条 |
+| 浏览器断言 | 45 个页面、1880 条 |
+| Rust 单测 | 196 条 |
 | 记下来的坑 | 75 个 |
 
-每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；186 条 Rust 单测分成 165 条 `rustc --test` 的纯逻辑和 21 条要完整 `cargo test` 的；75 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
+每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；196 条 Rust 单测分成 169 条 `rustc --test` 的纯逻辑和 27 条要完整 `cargo test` 的；75 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
 
 ## 两个宿主，一套桥
 
@@ -288,7 +288,7 @@ npm run test:sdk         # 每份内嵌 SDK 副本都和 packages/sdk 一致
 npm run test:agent       # agent 客户端的请求形状与退出码
 npm run test:tokens      # 三张表（字号 / 圆角 / 间距）的规则本身：半像素、豁免、font 简写
 npm run check:tokens     # 仓库真的遵守了它们：字号、圆角、2px 间距网格
-npm run test:browser     # 44 个页面、1850 条断言，真 Chrome、真 dev server
+npm run test:browser     # 45 个页面、1880 条断言，真 Chrome、真 dev server
 ```
 
 浏览器那套是里面最有意思的。每个 `tests/*.html` 都是一张真的断言页 —— 纯逻辑（semver、config、目录、参考线、关闭守卫、屏幕夹紧）、布局预算、组件行为 —— 由 dev server 伺服，Chrome 驱动。它存在的原因是"我这儿是好的"这句话反复地说错：书签第六行实测 36px，而它的注释写着 30px，就这么被 `overflow: hidden` 静默切掉，直到有人去量。

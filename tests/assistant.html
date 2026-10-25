@@ -141,6 +141,19 @@
         "留下的是**最近的**那些，不是最旧的",
       );
 
+      // 字数预算：条数没超、但一条能顶几十条的时候，照样要砍
+      const bulky = [
+        { role: "system", content: "sys" },
+        { role: "user", content: "x".repeat(400) },
+        { role: "assistant", content: "y".repeat(400) },
+        { role: "user", content: "最后一句" },
+      ];
+      const byChars = trimHistory(bulky, undefined, 200);
+      ok(byChars.length < bulky.length, "字数超预算时裁掉旧消息");
+      eq(byChars.at(-1).content, "最后一句", "最后一条永远留下（那是这一轮的问题）");
+      ok(byChars[1].content.includes("省略"), "字数裁剪也留一句说明");
+      eq(trimHistory(bulky, undefined, 10_000), bulky, "预算够时不许动历史");
+
       // ---- 5. 参数解析 ----
 
       eq(parseArguments('{"a":1}'), { ok: true, value: { a: 1 } }, "正常对象");

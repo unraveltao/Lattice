@@ -347,18 +347,55 @@ export function systemPrompt(snapshot: string, options: PromptOptions = {}): str
  *
  * 保留**第一条 system** 和最后 `limit` 条；被砍掉的那一段用一句说明补上，
  * 免得模型以为对话刚开始。补的那句本身也占一条的位置 —— 所以 `limit` 至少 4。
+ *
+ * `maxChars` 是**上下文预算**（由 `runtime/llm-models.ts` 按模型算出来）：
+ * 条数没超、但字数超了照样要砍 —— 一次贴进来的长日志能顶几十条短消息。
+ * 从最旧的那头丢，system 和最后一条永远留着。
  */
-export function trimHistory(messages: ChatMessage[], limit = MAX_HISTORY): ChatMessage[] {
-  if (messages.length <= limit) return messages.slice();
-  const head = messages[0]?.role === "system" ? [messages[0]] : [];
-  const rest = messages.slice(head.length);
-  const keep = Math.max(1, limit - head.length - 1);
-  const dropped = rest.length - keep;
+export function trimHistory(
+  messages: ChatMessage[],
+  limit = MAX_HISTORY,
+  maxChars = Number.POSITIVE_INFINITY,
+): ChatMessage[] {
+  let kept: ChatMessage[];
+  if (messages.length <= limit) {
+    kept = messages.slice();
+  } else {
+    const head = messages[0]?.role === "system" ? [messages[0]] : [];
+    const rest = messages.slice(head.length);
+    const keep = Math.max(1, limit - head.length - 1);
+    const dropped = rest.length - keep;
+    kept = [
+      ...head,
+      { role: "system", content: `（更早的 ${dropped} 条对话已经省略。）` },
+      ...rest.slice(dropped),
+    ];
+  }
+
+  if (!Number.isFinite(maxChars) || maxChars <= 0) return kept;
+  if (charCount(kept) <= maxChars) return kept;
+
+  const head = kept[0]?.role === "system" ? [kept[0]] : [];
+  const rest = kept.slice(head.length);
+  let dropped = 0;
+  while (rest.length - dropped > 1 && charCount([...head, ...rest.slice(dropped)]) > maxChars) {
+    dropped += 1;
+  }
+  if (dropped === 0) return kept;
   return [
     ...head,
     { role: "system", content: `（更早的 ${dropped} 条对话已经省略。）` },
     ...rest.slice(dropped),
   ];
+}
+
+/** 一条消息占多少字符（工具的 JSON 参数也算，它同样是 token） */
+function charCount(messages: ChatMessage[]): number {
+  return messages.reduce((total, message) => {
+    const body = typeof message.content === "string" ? message.content.length : 0;
+    const tools = message.toolCalls ? JSON.stringify(message.toolCalls).length : 0;
+    return total + body + tools;
+  }, 0);
 }
 
 /**
