@@ -83,6 +83,20 @@ npm run tauri:build    # 出安装包
 
 仓库里那把 `scripts/dev-publisher.key` 是**公开的**，只签官方自带的组件 —— 它证明的是「这个包和这份目录是一起发的」，不是「这个人可信」。公开发布不要用它。
 
+### 发到公共目录（`unraveltao/lattice-registry`）
+
+**有 Lattice 源码**：一条命令做完打包、签名、写 sidecar、重建 `registry.json`，再把那三个文件提 PR。
+
+```bash
+npm run publish:widget -- public/widgets/lattice.note --key ../lattice-registry/.keys/publisher.key
+```
+
+**没有 Lattice 源码**（只 clone 了目录仓库）：五步在目录仓库的 `CONTRIBUTING.md` 里 —— 在 Lattice 里 `npm run pack:widget` 打好包，或者直接拿别人给你的 `.lattice`，然后 `node scripts/sign.mjs <包> --key publisher.key --name "你的名字"` 产出同名 sidecar，丢进 `packages/`、跑 `node scripts/build.mjs`、提 PR。
+
+合并之后的事由那条 Actions（`publish.yml`）负责：重算 `registry.json` → **核对提交上来的那份和重算结果一字不差**（不一致就红：有人改了包却没更新目录）→ 把 `registry.json` / `packages/` / `icons/` 装成站点部署到 Pages。**CI 不签名**，私钥永远留在作者机器上；这条边界是故意的，一次让步（把钥匙放进 Secrets）就等于"这把钥匙只有作者有"这个前提没了。
+
+审的是什么：签名验得过、`publisher.key` 和这个 id 以前用的是同一把、要的权限和功能匹配（一个时钟要 `network` 会被拒）、文件名和清单里的 id / 版本对得上、同一个 id 换个发布者重提直接拒（归属跟钥匙走，不跟名字走）。**目录只收包，不收代码** —— 一旦从源码构建，就得为构建环境、依赖、可复现性负责，那是另一个项目。
+
 ## 五、发一个平台版本
 
 ```

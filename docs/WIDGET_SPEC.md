@@ -1218,6 +1218,8 @@ npm run publish:widget -- public/widgets/lattice.note --key ../lattice-registry/
 
 它只回答一件事：registry 仓库里改了哪几个文件、下一条 `git` 命令是什么。两道闸值得知道：**同一个版本号但内容变了会被拒**（版本号没变，装过旧包的人收不到更新，等于把新代码埋了），确实要覆盖加 `--force`；同样的内容重发是幂等的，不会产生一个"什么都没变"的提交。`npm run store:index` 是另一件事 —— 它生成跟着应用一起发的**内置演示目录**，用的是仓库里那把公开钥匙，别和真私钥混用。
 
+**没有 Lattice 源码、只想往公共目录提一个包**也是同一条路，只是打包那步在目录仓库里做：`node scripts/sign.mjs <包文件> --key publisher.key --name "你的名字"` 产出同名 sidecar（ed25519，和 `sign:widget` 同一套），把 `.lattice` + `.json` 一起提 PR，五步写在目录仓库的 `CONTRIBUTING.md` 里。合并之后 Actions 重算 `registry.json`、核对**提交上来的那份和重算结果一字不差**（不一致就红 —— 有人改了包却没更新目录），再把目录与包装到 Pages。**CI 不签名**，私钥只在你机器上；一把钥匙就是一个身份，丢了就没法给已有组件发新版，只能换 id 重来。目录**只收包，不收代码**。
+
 签名是 **ed25519，签的是整个包文件的字节**（不是清单、不是文件树）。输出的 `publicKey` 和 `sha256` 要写进目录条目。一份真实的目录长这样（`npm run store:index` 生成的那份）：
 
 ```json
