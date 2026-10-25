@@ -15,6 +15,11 @@
  * 三段都能折叠（见 `LibSection`）：默认只摊开"已安装"，另外两段收着，
  * 标题行上写着数量、也能一次装完。装过十几个包之后，面板一打开看到的
  * 应该是自己摆好的东西，而不是一屏"还没装"。
+ *
+ * 每一行照图层面板的办法排：**静止时只有身份和一颗 `⋯`**（没装的再加一颗
+ * 安装），说明 / 版本 / 权限 / 评分 / 怎么用都在展开区，举报与卸载沉在
+ * 展开区最底下、隔一条线。理由不是"好看"，是一列十五行时，动作挨着名字
+ * 就等于误触 —— 而"读它"和"卸载它"长成一排时手指分不出来。
  */
 
 import { useMemo, useState } from "react";
@@ -173,54 +178,21 @@ export function LibraryPanel({
           {review ? <span className="lattice-chip is-warn">{t("Review")}</span> : null}
 
           {/*
-            动作按在行尾，装好的那几颗平时淡出、指到才亮 —— 一列 15 行，
-            15 个"卸载 / 举报"同时亮着比 15 个名字还吵。`⋯` 是唯一常亮的一颗，
-            因为它也是"没有鼠标时怎么看到详情"的唯一入口。
+            行尾只放两样：这一行的**主行动**（还没装的那种行才有的 Install）
+            和**详情**开关（`⋯`）。别的都不在这儿。
+
+            上一版把 ? / 举报 / 卸载 / ⋯ 四颗挤在行尾，再指过去才亮 —— 一列
+            十五行就是七十五个按钮悬在名字边上等着被误点，而且"读它"和"卸载它"
+            长成一排，手指分不出来。现在按用途分三处：
+
+              · 行尾   主行动 + 详情（"我要它"）
+              · 展开区 说明 / 版本 / 权限 / 怎么用 / 评分（"先看看"）
+              · 最底下 举报、卸载，隔一条线（"会真的改动东西"）
+
+            `⋯` 是唯一常亮的一颗，因为它也是"没有鼠标时怎么看到详情"的唯一入口。
           */}
           <div className="lattice-card-actions">
-            {/*
-              "怎么用"放在这一行的最左边：右边的 Install / Uninstall / Report
-              是"对这份包动手"，`?` 是"先看看它是怎么用的"，两类不同。
-              没写说明的组件不画这颗按钮 —— 点开一个空框比没有按钮更差。
-            */}
-            {hasHelp(record.manifest.help) && (
-              <button
-                type="button"
-                className="lattice-icon-btn is-tiny lattice-card-help is-quiet"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setHelpTarget(record);
-                }}
-                title={t("How to use this widget")}
-                aria-label={t("How to use {name}", { name: text(record.manifest.name) })}
-              >
-                <Glyph d={ICON.info} size={12} />
-              </button>
-            )}
-            {isInstalled ? (
-              <>
-                <button
-                  type="button"
-                  className="lattice-link-btn is-quiet"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onReport(record);
-                  }}
-                >
-                  {t("Report")}
-                </button>
-                <button
-                  type="button"
-                  className="lattice-link-btn is-quiet"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onUninstall(record);
-                  }}
-                >
-                  {t("Uninstall")}
-                </button>
-              </>
-            ) : (
+            {!isInstalled && (
               <button
                 type="button"
                 className="lattice-btn is-small is-primary"
@@ -279,6 +251,27 @@ export function LibraryPanel({
         )}
 
         {/*
+          怎么用：展开区里的一条文字链接，不再是行尾那颗 `?` 小图标。
+          它属于"先看看"，跟下面的评分、举报本来就不是一类；写成一行字也比
+          一个只有悬停才有提示的图标好认 —— 图标得先猜它是什么。
+          没写说明的组件不画这一条（点开一个空框比没有入口更差）。
+        */}
+        {hasHelp(record.manifest.help) && (
+          <button
+            type="button"
+            className="lattice-link-btn lattice-card-help"
+            onClick={(event) => {
+              event.stopPropagation();
+              setHelpTarget(record);
+            }}
+            title={t("How to use this widget")}
+            aria-label={t("How to use {name}", { name: text(record.manifest.name) })}
+          >
+            {t("How to use")}
+          </button>
+        )}
+
+        {/*
           评分只对已安装的组件显示：没装过的人没有资格评价它 ——
           更重要的是，卡片上再挂一排星星会让"安装"这个动作更难看见。
           它和"回到上一版"都只在展开区里（`is-expanded` 才显示）：
@@ -311,6 +304,38 @@ export function LibraryPanel({
                 {t("Back to {version}", { version: backup.version })}
               </button>
             ) : null}
+          </div>
+        )}
+
+        {/*
+          展开区的最底下：举报与卸载，单独一条线隔开。
+
+          这两条是"会真的改动东西"的：卸载会删掉这个包，举报会写一份文件。
+          所以它们不和上面的信息混在一排里 —— 位置最低、离"展开/收起"最远，
+          和属性面板里那颗 `Remove`（沉在面板底部）是同一条规矩。
+        */}
+        {isInstalled && (
+          <div className="lattice-card-danger">
+            <button
+              type="button"
+              className="lattice-link-btn"
+              onClick={(event) => {
+                event.stopPropagation();
+                onReport(record);
+              }}
+            >
+              {t("Report")}
+            </button>
+            <button
+              type="button"
+              className="lattice-link-btn"
+              onClick={(event) => {
+                event.stopPropagation();
+                onUninstall(record);
+              }}
+            >
+              {t("Uninstall")}
+            </button>
           </div>
         )}
       </div>

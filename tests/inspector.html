@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>inspector test</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0d0d10;
+        color: #e9e8e3;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 14px 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      pre {
+        margin: 0;
+      }
+      /* 属性面板是一列 320px 的侧栏，这里给它一块固定的舞台 */
+      #stage {
+        position: fixed;
+        right: 16px;
+        top: 16px;
+        bottom: 16px;
+        width: 340px;
+        display: flex;
+      }
+      #stage > aside {
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <div id="stage"></div>
+    <script type="module" src="/tests/inspector.tsx"></script>
+  </body>
+</html>

@@ -612,11 +612,22 @@ async function main() {
     "静止时不画说明 / 版本 / 评分（节点还在，展开不用重建）",
   );
 
-  const quietButtons = [...todoRow!.querySelectorAll<HTMLElement>(".lattice-card-actions .is-quiet")];
+  /*
+   * 行尾只留 `⋯`：`?` / 举报 / 卸载都按用途下到了展开区，最底下是危险区。
+   *
+   * 钉住的是"主行动和危险动作不挨着"。上一版五颗挤在行尾（还靠 hover 才亮），
+   * 一列十五行就是七十五个按钮悬在名字边上等着误点 —— 而"读它"和"卸载它"
+   * 长成一排时，手指分不出来。
+   */
+  const stripButtons = [...todoRow!.querySelectorAll<HTMLElement>(".lattice-card-actions button")];
   log(
-    quietButtons.length === 3 &&
-      quietButtons.every((node) => getComputedStyle(node).pointerEvents === "none"),
-    "行尾的 ? / 举报 / 卸载平时点不到（指到或键盘聚焦才亮）",
+    stripButtons.length === 1 && stripButtons[0].classList.contains("lattice-card-more"),
+    "已安装的行尾只剩一颗 ⋯（举报 / 卸载都不在行尾）",
+  );
+  log(
+    todoRow!.querySelector(".lattice-card-actions .lattice-card-danger") === null &&
+      todoRow!.querySelector(".lattice-card-danger") !== null,
+    "危险动作在展开区里，不挂在行尾那排上",
   );
 
   todoRow!.querySelector<HTMLButtonElement>(".lattice-card-more")!.click();
@@ -626,6 +637,15 @@ async function main() {
     getComputedStyle(expandedMeta!).display !== "none" &&
       (expandedMeta?.textContent ?? "").includes("Bundled"),
     "点开之后版本、作者和来源一起出现",
+  );
+
+  const dangerZone = todoRow!.querySelector<HTMLElement>(".lattice-card-danger");
+  log(
+    dangerZone !== null &&
+      todoRow!.lastElementChild === dangerZone &&
+      getComputedStyle(dangerZone).display === "flex" &&
+      parseFloat(getComputedStyle(dangerZone).borderTopWidth) > 0,
+    "举报与卸载沉在展开区的最后一行，和上面的信息隔一条线",
   );
 
   // 一次只开一行：开第二行，第一行自己收回去

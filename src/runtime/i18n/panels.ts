@@ -25,6 +25,14 @@ export const PANELS_ZH: Record<string, string> = {
   // —— 属性面板：怎么用 ——
   "How to use": "怎么用",
 
+  // —— 属性面板：三段折叠的标题 ——
+  "Layer & size": "层级与尺寸",
+  "Permissions & options": "权限与选项",
+
+  // —— 属性面板：底部的移除区 ——
+  "Takes this copy off the canvas and the desktop. The widget itself stays in your library.":
+    "把这一份从画布和桌面上拿走。组件本身还在组件库里，再拖出来就又是一份。",
+
   // —— 属性面板：层级 / 穿透（Desktop / On top 两档的译名在 common） ——
   Layer: "层级",
   "Sits above desktop icons and below normal windows, so switching apps never covers it.":

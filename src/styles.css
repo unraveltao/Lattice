@@ -29,6 +29,30 @@
   --lattice-accent: #0f6e56;
   --lattice-accent-soft: rgba(15, 110, 86, 0.1);
   --lattice-accent-contrast: #ffffff;
+  /*
+   * 强调色的**三个角色**。样式表里要点色的地方只许用这三个名字 —— 品牌标记
+   * （品牌方块 / 头像 / 空态装饰 / 组件图标底色）和状态色（ok、stale、调试
+   * 标签、对齐参考线）例外，它们借的是强调色，但问的不是下面这三个问题：
+   *
+   *   primary    要你点的那一下：主按钮、开关打开、撤销条
+   *   selection  这一份和别的不一样：画布上选中的组件、按下的小药丸、用户气泡
+   *   focus      键盘或输入正在这儿：focus-visible、输入框的光圈
+   *
+   * 为什么要分：下一次想说"主行动换成中性色、只在选中的时候留绿"，
+   * 得去 45 处里猜每一条属于哪一类；分成三个名字之后，那句话就是改三行。
+   *
+   * 今天三者都等于 `--lattice-accent`（柔版等于 `--lattice-accent-soft`），
+   * 所以这一版**不该有任何一个像素变化** —— 换配色是另一件事，不是顺手的事。
+   * 只写在浅色这一块也够：var() 就地求值，深色主题覆盖了 `--lattice-accent`，
+   * 这几个别名跟着一起变成深色那套。
+   */
+  --lattice-primary: var(--lattice-accent);
+  --lattice-primary-soft: var(--lattice-accent-soft);
+  --lattice-primary-ink: var(--lattice-accent-contrast);
+  --lattice-selection: var(--lattice-accent);
+  --lattice-selection-soft: var(--lattice-accent-soft);
+  --lattice-focus: var(--lattice-accent);
+  --lattice-focus-soft: var(--lattice-accent-soft);
   --lattice-danger: #a32d2d;
   --lattice-danger-soft: rgba(163, 45, 45, 0.08);
   --lattice-shadow-1: 0 1px 2px rgba(24, 22, 16, 0.06), 0 1px 1px rgba(24, 22, 16, 0.04);
@@ -93,7 +117,7 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--lattice-accent);
+  outline: 2px solid var(--lattice-focus);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -183,6 +207,20 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/*
+ * 主行动与工具之间的一根竖线。
+ *
+ * 顶栏右边原本并排四件东西，"把画布送到桌面"和三颗工具长一个样 —— 用户得
+ * 逐个读过去才分得出哪个会改变桌面。一条 1px 的线比再加一句说明便宜。
+ */
+.lattice-topbar-split {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--lattice-border);
 }
 
 .lattice-main {
@@ -471,8 +509,8 @@ button {
 }
 
 .lattice-card.is-available:hover {
-  border-color: var(--lattice-accent);
-  background: var(--lattice-accent-soft);
+  border-color: var(--lattice-selection);
+  background: var(--lattice-selection-soft);
 }
 
 .lattice-card-actions {
@@ -556,7 +594,7 @@ button {
 }
 
 .lattice-card.is-row.is-available:hover {
-  background: var(--lattice-accent-soft);
+  background: var(--lattice-selection-soft);
 }
 
 .lattice-card.is-row .lattice-card-top {
@@ -606,22 +644,8 @@ button {
 .lattice-card.is-row .lattice-card-actions {
   flex: none;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   margin: 0 0 0 auto;
-}
-
-/* 平时淡出、指到才亮。仍然占位，指针扫过时不会把名字挤得跳一下 */
-.lattice-card.is-row .lattice-card-actions .is-quiet {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-}
-
-.lattice-card.is-row:hover .lattice-card-actions .is-quiet,
-.lattice-card.is-row:focus-within .lattice-card-actions .is-quiet,
-.lattice-card.is-row.is-expanded .lattice-card-actions .is-quiet {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 /* `⋯` 那颗其实是"详情"：箭头指右 = 收着，转 90° = 展开，和上面分段标题同一个动作语言 */
@@ -633,11 +657,18 @@ button {
   transform: rotate(90deg);
 }
 
-/* 收起时这四块都不画 */
+/*
+ * 收起时这些都收进"详情"里 —— 一行只留身份和主行动。
+ *
+ * 说明是例外（见下一条）：没装的那几行静止时也要留一行说明，不然
+ * "装不装它"只能靠名字猜。其余四块（版本/权限/评分/危险动作）都等展开。
+ */
 .lattice-card.is-row:not(.is-expanded) .lattice-card-desc,
 .lattice-card.is-row:not(.is-expanded) .lattice-card-meta,
 .lattice-card.is-row:not(.is-expanded) .lattice-perm-list,
-.lattice-card.is-row:not(.is-expanded) .lattice-card-rating {
+.lattice-card.is-row:not(.is-expanded) .lattice-card-rating,
+.lattice-card.is-row:not(.is-expanded) .lattice-card-help,
+.lattice-card.is-row:not(.is-expanded) .lattice-card-danger {
   display: none;
 }
 
@@ -657,7 +688,9 @@ button {
 .lattice-card.is-row.is-expanded .lattice-card-desc,
 .lattice-card.is-row.is-expanded .lattice-card-meta,
 .lattice-card.is-row.is-expanded .lattice-perm-list,
-.lattice-card.is-row.is-expanded .lattice-card-rating {
+.lattice-card.is-row.is-expanded .lattice-card-rating,
+.lattice-card.is-row.is-expanded .lattice-card-help,
+.lattice-card.is-row.is-expanded .lattice-card-danger {
   padding-left: 30px;
 }
 
@@ -666,6 +699,28 @@ button {
   color: var(--lattice-text-muted);
   font-size: 11.5px;
   line-height: 1.5;
+}
+
+/* "怎么用"是一条文字链接：展开区里它属于"先看看"，不该长得像颗动作按钮 */
+.lattice-card.is-row .lattice-card-help {
+  align-self: flex-start;
+  font-size: 11px;
+}
+
+/*
+ * 展开区最底下那一条：举报与卸载。
+ *
+ * 一条横线把它和上面隔开，位置压到最后 —— 这两个动作会真的改动东西，而
+ * 上面几行只是说明。**别把它们挪回行尾**：一列十五行摆着十五个"卸载"，
+ * 和"一眼只看见一件事"正好相反，而且"读它"和"卸载它"会长成一排。
+ * 属性面板里那颗 `Remove` 沉在面板底部，是同一条规矩。
+ */
+.lattice-card.is-row .lattice-card-danger {
+  display: flex;
+  gap: 14px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--lattice-border);
 }
 
 /*
@@ -703,8 +758,8 @@ button {
 }
 
 .lattice-lib-search:focus-within {
-  border-color: var(--lattice-accent);
-  box-shadow: 0 0 0 3px var(--lattice-accent-soft);
+  border-color: var(--lattice-focus);
+  box-shadow: 0 0 0 3px var(--lattice-focus-soft);
 }
 
 .lattice-lib-search-icon {
@@ -815,7 +870,7 @@ button {
 }
 
 .lattice-lib-section-toggle:focus-visible {
-  outline: 2px solid var(--lattice-accent);
+  outline: 2px solid var(--lattice-focus);
   outline-offset: 1px;
 }
 
@@ -1148,10 +1203,10 @@ button {
 }
 
 .lattice-widget.is-selected {
-  border-color: var(--lattice-accent);
+  border-color: var(--lattice-selection);
   box-shadow:
-    0 0 0 2px var(--lattice-accent-soft),
-    0 0 0 1px var(--lattice-accent),
+    0 0 0 2px var(--lattice-selection-soft),
+    0 0 0 1px var(--lattice-selection),
     var(--lattice-shadow-2);
 }
 
@@ -1181,10 +1236,10 @@ button {
 }
 
 .lattice-widget.is-region.is-selected {
-  border-color: var(--lattice-accent);
+  border-color: var(--lattice-selection);
   box-shadow:
-    0 0 0 2px var(--lattice-accent-soft),
-    0 0 0 1px var(--lattice-accent);
+    0 0 0 2px var(--lattice-selection-soft),
+    0 0 0 1px var(--lattice-selection);
 }
 
 .lattice-widget.is-region .lattice-widget-bar {
@@ -1296,9 +1351,9 @@ button {
   background: linear-gradient(
     135deg,
     transparent 0 45%,
-    var(--lattice-accent) 45% 55%,
+    var(--lattice-selection) 45% 55%,
     transparent 55% 70%,
-    var(--lattice-accent) 70% 80%,
+    var(--lattice-selection) 70% 80%,
     transparent 80%
   );
 }
@@ -1482,9 +1537,9 @@ button {
 }
 
 .lattice-btn.is-active {
-  border-color: var(--lattice-accent);
-  background: var(--lattice-accent-soft);
-  color: var(--lattice-accent);
+  border-color: var(--lattice-selection);
+  background: var(--lattice-selection-soft);
+  color: var(--lattice-selection);
 }
 
 .lattice-btn.is-danger {
@@ -1505,14 +1560,14 @@ button {
 
 .lattice-btn.is-primary {
   border-color: transparent;
-  background: var(--lattice-accent);
-  color: var(--lattice-accent-contrast);
+  background: var(--lattice-primary);
+  color: var(--lattice-primary-ink);
   font-weight: 500;
 }
 
 .lattice-btn.is-primary:hover:not(:disabled) {
   border-color: transparent;
-  background: var(--lattice-accent);
+  background: var(--lattice-primary);
   filter: brightness(1.08);
 }
 
@@ -1597,6 +1652,43 @@ button {
   background: var(--lattice-surface-2);
 }
 
+/*
+ * 属性面板里的三段折叠：外壳已经由折叠标题给了，里面的 `.lattice-field`
+ * 不再各带一圈边框和底色 —— 320px 宽里套两层壳，看着吵，也把内容挤薄了。
+ * 段与段之间留一条细线，和组件库分段同一个口径。
+ */
+.lattice-panel-right .lattice-lib-section-body {
+  gap: 10px;
+}
+
+.lattice-panel-right .lattice-lib-section-body > .lattice-field {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.lattice-panel-right .lattice-lib-section-body > .lattice-field + .lattice-field {
+  padding-top: 10px;
+  border-top: 1px solid var(--lattice-border);
+}
+
+/*
+ * 危险动作沉在面板最底下 —— 离"收起来"最远的一格，上下隔一条线。
+ *
+ * 别把这颗 `Remove` 挪回标题行：上一版它就在那儿，和折叠按钮之间只有 8px，
+ * 想收面板的人点了它会删掉一个组件（`removePlacement` 留了 8 秒撤销，那是
+ * 兜底，不是设计）。同一条规矩在组件库里也有一份：举报与卸载沉在展开区底部。
+ */
+.lattice-danger-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 14px;
+  border-top: 1px solid var(--lattice-border);
+}
+
 .lattice-label {
   font-size: 11px;
   font-weight: 500;
@@ -1659,12 +1751,12 @@ button {
 }
 
 .lattice-switch input[type="checkbox"]:checked {
-  border-color: var(--lattice-accent);
-  background: var(--lattice-accent);
+  border-color: var(--lattice-primary);
+  background: var(--lattice-primary);
 }
 
 .lattice-switch input[type="checkbox"]:checked::after {
-  background: var(--lattice-accent-contrast);
+  background: var(--lattice-primary-ink);
   transform: translateX(12px);
 }
 
@@ -1752,8 +1844,8 @@ button {
 }
 
 .lattice-size-input:focus-within {
-  border-color: var(--lattice-accent);
-  box-shadow: 0 0 0 3px var(--lattice-accent-soft);
+  border-color: var(--lattice-focus);
+  box-shadow: 0 0 0 3px var(--lattice-focus-soft);
 }
 
 .lattice-size-input > span {
@@ -1819,8 +1911,8 @@ button {
 }
 
 .lattice-input:focus {
-  border-color: var(--lattice-accent);
-  box-shadow: 0 0 0 3px var(--lattice-accent-soft);
+  border-color: var(--lattice-focus);
+  box-shadow: 0 0 0 3px var(--lattice-focus-soft);
 }
 
 /*
@@ -1897,8 +1989,8 @@ button.lattice-chip:hover {
 
 button.lattice-chip[aria-pressed="true"] {
   border-color: transparent;
-  background: var(--lattice-accent-soft);
-  color: var(--lattice-accent);
+  background: var(--lattice-selection-soft);
+  color: var(--lattice-selection);
 }
 
 .lattice-slider-row {
@@ -1944,7 +2036,7 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-slider:hover::-webkit-slider-thumb,
 .lattice-slider:focus-visible::-webkit-slider-thumb {
-  background: var(--lattice-accent);
+  background: var(--lattice-focus);
 }
 
 .lattice-slider-num {
@@ -1964,7 +2056,7 @@ button.lattice-chip[aria-pressed="true"] {
 }
 
 .lattice-slider-num:focus {
-  border-color: var(--lattice-accent);
+  border-color: var(--lattice-focus);
 }
 
 /* 上下箭头会把这 24px 的小框撑坏，去掉；键盘上下键照样能用 */
@@ -2047,8 +2139,8 @@ button.lattice-chip[aria-pressed="true"] {
 }
 
 .lattice-settings-trigger.is-open {
-  border-color: var(--lattice-accent);
-  box-shadow: 0 0 0 3px var(--lattice-accent-soft);
+  border-color: var(--lattice-focus);
+  box-shadow: 0 0 0 3px var(--lattice-focus-soft);
 }
 
 .lattice-avatar {
@@ -2411,8 +2503,8 @@ button.lattice-chip[aria-pressed="true"] {
 }
 
 .lattice-textfield input:focus {
-  border-color: var(--lattice-accent);
-  box-shadow: 0 0 0 3px var(--lattice-accent-soft);
+  border-color: var(--lattice-focus);
+  box-shadow: 0 0 0 3px var(--lattice-focus-soft);
 }
 
 .lattice-account-hint {
@@ -2615,8 +2707,8 @@ button.lattice-chip[aria-pressed="true"] {
   padding: 4px 12px;
   border: 0;
   border-radius: 999px;
-  background: var(--lattice-accent);
-  color: var(--lattice-accent-contrast);
+  background: var(--lattice-primary);
+  color: var(--lattice-primary-ink);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -2881,9 +2973,9 @@ button.lattice-chip[aria-pressed="true"] {
 
 /* 顶栏那颗"开着的调试面板"：和 .lattice-btn.is-active 同一套强调色 */
 .lattice-icon-btn.is-large.is-active {
-  border-color: var(--lattice-accent);
-  background: var(--lattice-accent-soft);
-  color: var(--lattice-accent);
+  border-color: var(--lattice-selection);
+  background: var(--lattice-selection-soft);
+  color: var(--lattice-selection);
 }
 
 /* ---------- 组件目录（商店） ---------- */
@@ -3193,8 +3285,8 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-textfield select:focus,
 .lattice-textfield textarea:focus {
-  border-color: var(--lattice-accent);
-  box-shadow: 0 0 0 3px var(--lattice-accent-soft);
+  border-color: var(--lattice-focus);
+  box-shadow: 0 0 0 3px var(--lattice-focus-soft);
 }
 
 .lattice-textfield input:disabled {
@@ -3386,7 +3478,7 @@ button.lattice-chip[aria-pressed="true"] {
 .lattice-assistant-turn.is-user {
   align-self: flex-end;
   max-width: 88%;
-  background: var(--lattice-accent-soft);
+  background: var(--lattice-selection-soft);
   border-radius: 10px 10px 2px 10px;
 }
 
@@ -3462,7 +3554,7 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-assistant-composer textarea:focus {
   outline: none;
-  border-color: var(--lattice-accent);
+  border-color: var(--lattice-focus);
 }
 
 .lattice-assistant-foot {

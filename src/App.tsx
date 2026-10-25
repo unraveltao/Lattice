@@ -1086,6 +1086,13 @@ export default function App() {
             {desktopMode ? t("Bring back") : t("Send to desktop")}
           </button>
 
+          {/*
+            一条竖线：左边是"把画布送到桌面"（这个窗口唯一的正经事），右边是
+            三颗工具按钮（助手 / 主题 / 设置）。它们不是一类东西 —— 挤成一排
+            时用户得逐个读过去才知道哪个会改变桌面。
+          */}
+          <span className="lattice-topbar-split" aria-hidden />
+
           <button
             type="button"
             className={`lattice-icon-btn is-large${assistantOpen ? " is-active" : ""}`}
