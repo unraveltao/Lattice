@@ -92,7 +92,7 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | --- | --- |
 | Official widgets | 14 |
 | Permissions | 11 |
-| Tauri commands | 59 |
+| Tauri commands | 61 |
 | Browser assertions | 1 606 over 40 pages |
 | Rust tests | 178 |
 | Documented pitfalls | 72 |

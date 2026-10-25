@@ -31,6 +31,9 @@ jobs:
       - run: npm run test:sdk
       # agent CLI：起一个假端点，测请求形状和退出码。不需要应用在跑
       - run: npm run test:agent
+      # 文档体检：相对链接是否可达、README 的数字和代码对不对得上。
+      # 这两件事过期了不会报错，只能靠一条命令盯着
+      - run: npm run check:docs
 
   browser:
     runs-on: ubuntu-latest
