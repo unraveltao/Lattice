@@ -27,7 +27,7 @@
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
 | v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的**会话与观察已落地**（`assistant-sessions/<id>.json` 一条会话一个文件，50 份 / 200 条 / 1 MB 三道额度，面板顶部一条能挑回 / 新开 / 删的会话条，提示词里补了组件说明首句与商店那一段），**审批档也落了**（`approvalMode` 三档 `ask` / `auto` / `readonly`，`readonly` 连 schema 都不给、Rust 再拒一次，`auto` 仍然问删除），**B 数据平面也落了**（组件清单加 `agent.tools`：工具名 `widget.<id>.<tool>`、多份实例合成一条、新权限 `agent:tools` 独立授权、答话的是画布那一份实例、回话超 4000 字符拒绝不截断；留了三处缺口，见下面那条） |
-| v0.12 | 技能包、工作区与全权模式 | 📝 设计稿 | `workspace` 从"相对路径的默认值"变成"免问区"（只对 `file.write`）；技能是说明书不是权限 —— `skills/<id>/SKILL.md` 进提示词、四条命令、`assistant.json` v4；见 [design/0005](./design/0005-skills-and-workspace.md)；**全权**是一次会话级定时授权（六组临时全开、不落盘、红条倒计时、审计 fail-closed），不是第四档审批，见 [design/0006](./design/0006-full-access.md) |
+| v0.12 | 技能包、工作区与两个模式 | 📝 设计稿 | `workspace` 从"相对路径的默认值"变成"免问区"（只对 `file.write`）；技能是说明书不是权限 —— `skills/<id>/SKILL.md` 进提示词、四条命令、`assistant.json` v4；见 [design/0005](./design/0005-skills-and-workspace.md)；**两个模式**（内部 / 全部）是一个存盘的开关：内部只给桌面动作与组件工具、审批照档，全部再加六组手、审批不问、审计 fail-closed；不是第四档审批，见 [design/0008](./design/0008-assistant-modes.md)（0006 的定时授权已被它推翻） |
 | v0.13 | assistant 上桌面 | 📝 设计稿 | 两种窗口模式（浮窗 / 桌面，同一窗口不重建）：桌面模式走 `interactive` 那条路（不挂 WorkerW —— 挂了就拿不到键盘焦点，聊天框等于废了）；底板复用组件那套 appearance（tint / alpha / blur，出厂值一像素不改）；可锁、可拖边缩放（320×420 起，夹进工作区）；状态在 `assistant-window.json` v2，见 [design/0007](./design/0007-assistant-on-desktop.md) |
 
 **当前规模**（截至本次改动，2026-10-25）：
@@ -382,12 +382,12 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 
 用户的原话是"可以让项目的 agent 支持更高的权限吗，可以导入 skills 什么的处理文本之类的"。结论：**"更高权限"不落在第四档审批上，落在范围上**；技能是流程，不是权限。完整推理在 [`design/0005-skills-and-workspace.md`](./design/0005-skills-and-workspace.md)。
 
-紧接着用户又提了一次："我需要他有较高的权限和自由度，为它设计一个 Full access 功能，让用户选择是否自己开启"。这一条不能靠第四档审批回答（三档已经表达了问 / 不问 / 别改，`auto` 之上只剩"连删除也不问"），真正缺的是**一次有时限的、显式的授权**，推理在 [`design/0006-full-access.md`](./design/0006-full-access.md)。
+紧接着用户又提了一次："我需要他有较高的权限和自由度，为它设计一个 Full access 功能，让用户选择是否自己开启"。这一条不能靠第四档审批回答（三档已经表达了问 / 不问 / 别改，`auto` 之上只剩"连删除也不问"），真正缺的是**一次有时限的、显式的授权**，推理最初在 [`design/0006-full-access.md`](./design/0006-full-access.md)，**后来改成了两个模式的开关**，见 [`design/0008-assistant-modes.md`](./design/0008-assistant-modes.md)。
 
 - [ ] **`workspace` 从"相对路径的默认值"变成"免问区"** —— `ask` 档下 `file.write` 落在里面不问、外面照旧问；**只对 `file.write` 生效**（`shell.run` 一条命令就能写出这棵树，假装它是围栏是自欺）。判定是纯函数 `insideWorkspace`（`/` 与 `\` 归一、`..` 先折叠、盘符不分大小写、空 workspace 一律 false）。
 - [ ] **技能包** —— `skills/<id>/SKILL.md`（front matter 三个字段 `name` / `description` / `tools` + 正文），启用的正文进系统提示（≤4 份 / 每份 ≤4 000 字 / 合计 ≤8 000 字，超了**在启用时拒**，不截断）；`assistant.json` v4 加 `skills.enabled`；四条命令 `assistant_skills` / `assistant_skills_save` / `assistant_skill_import` / `assistant_skill_remove`。**不新增执行通道**：技能里让做的事仍然走那六只手、仍然要审批、仍然进审计。
-- [ ] **全权模式（Full access）** —— 一次会话级的定时授权，不是第四档审批：开启期间**六组手临时全开、审批一律不问**（`placement.remove` 也不问），结束即回到用户存的那一份（开关与档位一个都不改）；内存态**不落盘**（重启即关），可选 15 / 30 / 60 / 120 分钟（默认 30，没有"永久"），面板与小窗顶部一条红条 + 倒计时 + `End now`，切回 `readonly` 立即结束。三条命令 `assistant_full_access` / `assistant_full_access_state` / `assistant_full_access_end`；期间审计行尾加 ` · full`，且**审计写不进去就不执行**（fail-closed）。四条硬线：装 / 卸 / 授权 / 钉钥匙不在工具表里、改平台自身配置（`assistant.json` / `mcp.json` / `state.json` / `skills/**`）永远要问、组件借手那一轮（`caller === "widget"`）拿不到全权、agent 的 HTTP 端点不受影响。**预算不变**：全权是权限，不是预算。
-- 明确不做：剪贴板读写、浏览器自动化 / 任意 HTTP 方法、多根 workspace —— 三条各自的反对理由写在 0005 §3；**持久化的"全权"档**也不做（写进 `assistant.json` 的长期高权限会被忘掉，0006 §2 否掉了 A 方案）。都不是"以后随便加"。
+- [ ] **两个模式：内部 / 全部** —— 一个存盘的开关（`assistant.json` v4 的 `mode`），不是第四档审批、也不是 0006 那种定时授权（[0008](./design/0008-assistant-modes.md) 推翻了 [0006](./design/0006-full-access.md)）：**内部**（默认）= 8 个桌面动作 + 组件声明的工具，六只手一只都不给，审批照档；**全部** = 再加六组手、临时全开、审批不问（问就不叫全部了），切过去弹一次确认、之后靠**常驻模式条**而不是靠打断；四条硬线照旧（装卸授权不在表里、改平台自身配置永远问、组件借手拿不到、agent 端点不受影响），审计行尾 ` · everything` 且写不进去就不执行，`readonly` 仍然优先，**预算不变**。
+- 明确不做：剪贴板读写、浏览器自动化 / 任意 HTTP 方法、多根 workspace —— 三条各自的反对理由写在 0005 §3；**第四档审批**也不做（把"全权"写成 `approvalMode` 的第四个值，等于让"要不要问"这一个设置兼职表达"能碰什么"）；用户要的是**一个开关**，所以走的是 0008 的模式（存盘、常驻可见、切过去确认一次），代价"会被忘掉"由那条模式条和启动时的一次提示兜。都不是"以后随便加"。
 
 ## v0.13 —— assistant 上桌面（设计稿，未开工）
 
