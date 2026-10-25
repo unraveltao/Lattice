@@ -21,7 +21,7 @@
 | | vela-cleanroom | lattice |
 | --- | --- | --- |
 | 组件是什么 | 应用内的 React 组件，编译进 bundle（懒加载分 chunk） | 独立静态目录（HTML/CSS/JS），签名后可分发 |
-| 组件从哪来 | 只有内置的 34 种 | 内置 16 个 + 目录安装 + 拖文件夹安装 |
+| 组件从哪来 | 只有内置的 34 种 | 内置 19 个 + 目录安装 + 拖文件夹安装 |
 | 依赖 | zustand / zod / lucide-react / motion / SQLite | 组件零依赖；平台不引 UI 库 |
 | 持久化 | localStorage + SQLite | 纯文件（`state.json` / `widget-data/*.json`） |
 | 权限 | 没有（组件即应用代码） | 按组件授权，桥上一道道闸 |
@@ -90,7 +90,7 @@
 
 **"需要的新平台能力"一栏写的是 Lattice 现在没有的东西**——没有就是"零"，说明这个组件今天就能开工。
 
-标 ✅ 的是已经做完的（2026-10-24，`public/widgets/` 下的几个包，各带自检页）。它们和这份清单的关系值得记一笔：**做的时候都改过方案**，因为 vela 那边跑在浏览器里，很多"省事"的写法在沙箱 iframe + 桥的环境里不成立 ——
+标 ✅ 的是已经做完的（2026-10-24 起陆续做的，`public/widgets/` 下的那些包，各带自检页）。它们和这份清单的关系值得记一笔：**做的时候都改过方案**，因为 vela 那边跑在浏览器里，很多"省事"的写法在沙箱 iframe + 桥的环境里不成立 ——
 
 - 计算器不能用 `eval`（输入框是别人能粘东西的地方），改成自己写词法 + 调度场算法。
 - 单位换算的温度必须是仿射（`toBase` / `fromBase` 两个函数），塞进系数表会出现"0°C 换出来 32°F，换回去 0.000…1°C"。
@@ -103,7 +103,7 @@
 | `unitconverter`（706 行） | ✅ `lattice.convert` | 长度 / 重量 / 温度 / 数据量；换算表是纯数据 | 无 | ★ |
 | `stopwatch`（286 行） | ✅ `lattice.stopwatch` | 正计时 + 计次（lap）；和 Focus 反过来——它数的是"已经过去多久" | 无（**连心跳都不用**：存起点 + rAF 刷显示，见下） | ★ |
 | `bookmarks`（685 行） | ✅ `lattice.bookmarks` | 分组 + 图标 + 点击用系统浏览器打开 | **`shell:open`**（当初这里写的是 `open.url`；落地时 v0.9 把它做成了 `shell.open` 桥方法 + `shell:open` 权限，用 `tauri-plugin-opener`） | ★ |
-| `habit`（638 行） | `lattice.habit` | 每日打卡 + 连续天数（streak）+ 月历热图 | 无（`storage` 就够） | ★★ |
+| `habit`（638 行） | ✅ `lattice.habit` | 每日打卡 + 连续天数（streak）；**月历热图没搬** —— 卡片里只画本周七格，更早的日子点不到（补记的误点代价太大） | 无（`storage` 就够） | ★★ |
 | `calendar`（1783 行） | ✅ `lattice.calendar` | 月视图 + 事件编辑；**ICS 订阅还没做**（`lib/ics.ts` 544 行仍可用，要 `network` + 白名单） | `storage`（订阅要 `network`） | ★★ |
 | `todayoverview`（627 行） | `lattice.today` | 一屏聚合"今天"：待办未完成数 + 最近截止 + 今日课程 | 无，但要**跨组件读数据**（见下方"一个硬问题"） | ★★ |
 | `analytics` | 并进 `lattice.focus` | 专注时长趋势、热图、打断分解 | 无，但同样卡在跨组件数据 | ★★ |
