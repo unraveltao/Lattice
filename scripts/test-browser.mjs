@@ -155,6 +155,10 @@ console.log(`\n  ${base}   chrome: ${chrome}\n`);
 let total = 0;
 let failed = 0;
 const problems = [];
+/** 有自己的 FAIL 行的页。要进最后那份小结 —— 不然"哪一页红的"只出现在列表中间，
+ *  而 CI 只把**最后十几行**写成 annotation（见 ci.yml 的 "Run every self-check page"），
+ *  结论就是"看见红色、看不见红在哪"，只能整轮重跑。 */
+const failing = [];
 
 for (const name of pages) {
   const page = runPage(name);
@@ -177,6 +181,7 @@ for (const name of pages) {
 
   total += page.total;
   failed += page.failed;
+  if (page.failed > 0) failing.push(`${name}: ${page.failed} 条断言失败`);
   console.log(
     `  ${name.padEnd(20)} ${String(page.total).padStart(3)} 条   ${page.failed === 0 ? "全过" : `FAIL ${page.failed}`}`,
   );
@@ -189,7 +194,9 @@ for (const name of pages) {
 console.log(`\n  ${pages.length - problems.length} 页 / ${total} 条断言，FAIL ${failed}\n`);
 
 if (problems.length > 0 || failed > 0) {
-  for (const problem of problems) console.error(`  ! ${problem}`);
+  // 先报"哪一页红了几条"，再报"哪一页压根没跑起来"：前者是断言里的真问题，
+  // 后者多半是环境（dev server 没起）。两类都要在最后几行里出现。
+  for (const problem of [...failing, ...problems]) console.error(`  ! ${problem}`);
   console.error("");
   process.exit(1);
 }
