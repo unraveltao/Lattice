@@ -115,7 +115,7 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | Tauri commands | 87 |
 | Browser assertions | 2 377 over 51 pages |
 | Rust tests | 415 |
-| Documented pitfalls | 83 |
+| Documented pitfalls | 84 |
 
 Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 364 `rustc --test` pure-logic cases plus 51 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
