@@ -486,15 +486,16 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 手一按会得到"桌面应用里才有"。
 
 **这一层必须复制的东西**：`llm_policy.rs` / `llm.rs` 的那几条规则（base URL 归一化、三种
-鉴权、错误翻译、`assistant.json` 的形状）。改一边要改另一边 —— `npm run test:llm-proxy`
-（24 条）用 Rust 测试里的同一组样例钉住它，这是唯一的提醒。
+鉴权、失败码与那条抬头、`assistant.json` 的形状）。改一边要改另一边 —— `npm run test:llm-proxy`
+（28 条）用 Rust 测试里的同一组样例钉住它，这是唯一的提醒。
 
-**它现在落后一版**：Rust 那边是 `assistant.json` **v4**（v4 加了 `skills.enabled`），而
-`scripts/dev-llm-proxy.mjs` 的 `emptyConfig()` 还写着 `version: 3`，`skills` 整段没有。
-后果不是理论上的：那个 `parseConfig` 是"先造一份空的、再逐个字段搬"（`activeId` /
-`workspace` / `approvalMode` / `profiles` / `hands` 五个），**`skills` 不在搬运名单里** ——
-所以在浏览器预览里改任何一个设置再保存，磁盘上那份 `skills.enabled` 就没了。改这一层时
-先看这个差值。
+**形状这一半已经不用人跟了**：`parseConfig` 搬完认得的字段之后，把文件里**不认识的顶层键
+原样带回去**（[0015](./design/0015-preview-config-mirror.md)）。所以 `llm.rs` 新加一个字段，
+在浏览器预览里保存一次也不会把它洗掉 —— `skills` 丢过一版，丢的就是这种"白名单里没有"。
+仍然要人跟的两处：认得的字段**语义**变了（新的枚举取值、新的归一化规则），以及 `hands`
+那六组开关本身（第七组手要同时在两处加，而预览里本来也跑不了它）。
+失败那几句说同一种话：抬头 `@@llm:{code,status,detail}` + 英文原句
+（[0014](./design/0014-llm-failure-codes.md)），界面显示的那句由前端按语言拼。
 
 ### 4.9 六只手在真机上的样子 [已实现，2026-10-25 验过]
 

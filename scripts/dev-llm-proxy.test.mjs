@@ -28,6 +28,7 @@ import {
   createLlmMiddleware,
   describeFailure,
   describeStatus,
+  FAILURE_TAG,
   LlmError,
   maskKey,
   modelsUrl,
@@ -139,11 +140,36 @@ test("状态码说人话，别把 401 说成连不上", () => {
   assert.match(describeStatus(400, '{"error":"bad tools"}'), /rejected the request \(HTTP 400\) — \{"error":"bad tools"\}/);
   assert.match(describeStatus(500, ""), /the provider returned an error \(HTTP 500\)/);
   assert.match(describeStatus(302, ""), /unexpected HTTP status 302/);
-  // 响应体压成一行、并且有限长
+  // 响应体压成一行、并且有限长 —— 但那句话在抬头**之后**的第二段
+  // （抬头里有同一段 detail，所以整条字符串当然比 400 长，见下一条测试）
   const long = "x".repeat(400);
-  const message = describeStatus(500, long);
-  assert.ok(message.length < 400, "长响应体要被截断");
-  assert.ok(message.endsWith("…"), "截断了要有省略号");
+  const english = describeStatus(500, long).split("\n")[1];
+  assert.ok(english.length < 400, "长响应体要被截断");
+  assert.ok(english.endsWith("…"), "截断了要有省略号");
+});
+
+test("失败字符串带机器可读抬头，和 Rust 那边同一种形状", () => {
+  // 0014：句子按界面语言拼，所以 Rust 只给"哪一种失败 + 状态码 + 供应商原话"。
+  // 预览中间件是 Rust 的替身，说的必须是同一种话 —— 否则中文界面下桌面是中文、
+  // 浏览器预览是英文。
+  const text = describeStatus(401, '{"error":{"message":"invalid api key"}}');
+  assert.ok(text.startsWith(FAILURE_TAG), "第一行是抬头");
+  assert.equal(FAILURE_TAG, "@@llm:", "字面量和 llm_policy.rs / llm-errors.ts 一致");
+
+  const head = text.slice(0, text.indexOf("\n"));
+  const parsed = JSON.parse(head.slice(FAILURE_TAG.length));
+  assert.equal(parsed.code, "key-rejected");
+  assert.equal(parsed.status, 401);
+  assert.equal(parsed.detail, '{"error":{"message":"invalid api key"}}', "供应商原话原样进抬头");
+
+  // 网络那几条没有状态码
+  const unreachable = describeFailure(Object.assign(new Error("fetch failed"), { cause: { code: "ECONNREFUSED" } }));
+  const net = JSON.parse(unreachable.split("\n")[0].slice(FAILURE_TAG.length));
+  assert.equal(net.code, "unreachable");
+  assert.equal(net.status, null, "网络失败没有 HTTP 状态码");
+
+  // 由码换句子的两门语言在前端；这里只保证"码 + 英文原句"都在
+  assert.match(unreachable, /could not reach the provider/);
 });
 
 test("网络失败也分得清", () => {
@@ -595,6 +621,33 @@ test("存手与审批档不会洗掉模式和技能清单", async () => {
   assert.equal(onDisk.mode, "everything", "模式没有被洗成 internal");
   assert.deepEqual(onDisk.skills.enabled, ["weekly-report", "deep-work"], "技能清单还在");
   assert.equal(onDisk.approvalMode, "auto", "同一份写入里该变的还是要变");
+});
+
+test("不认识的字段照抄回去，下一个新字段不用改这里", async () => {
+  // 逐个字段搬是搬不完的：`llm.rs` 每加一个字段，这里不跟就静默洗掉它
+  // （`skills` 就这样丢过一版）。所以认得的归一化、不认得的原样带回去。
+  seed({
+    version: 4,
+    mode: "internal",
+    activeId: "",
+    hands: {},
+    workspace: "",
+    approvalMode: "ask",
+    skills: { enabled: [] },
+    profiles: [],
+    futureThing: { nested: [1, 2] },
+    anotherOne: "keep me",
+  });
+
+  const saved = await call("POST", "/api/llm/hands", {
+    hands: { files: true, workspace: "", approvalMode: "ask" },
+  });
+  assert.equal(saved.status, 200);
+
+  const onDisk = JSON.parse(readFileSync(configFile, "utf8"));
+  assert.deepEqual(onDisk.futureThing, { nested: [1, 2] }, "不认识的字段原样还在");
+  assert.equal(onDisk.anotherOne, "keep me");
+  assert.equal(onDisk.hands.files, true, "认得的那份照旧生效");
 });
 
 test("坏模式与坏技能 id 逐条落回，不放大权限", async () => {

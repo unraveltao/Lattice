@@ -263,25 +263,55 @@ function bodySnippet(body) {
 }
 
 /**
+ * 失败那条字符串的机器可读抬头。**和 `llm_policy.rs::FAILURE_TAG` 逐字一致**
+ * （0014）：真实应用里这句是 Rust 拼的，预览中间件是它的替身，所以说的必须是
+ * 同一种形状 —— 否则中文界面下"桌面上是中文、浏览器预览里是英文"。
+ */
+export const FAILURE_TAG = "@@llm:";
+
+function failureTag(code, status, detail) {
+  // 这里可以放心用 `JSON.stringify`：转义交给它，Rust 那边是手写的 `escape`
+  return `${FAILURE_TAG}${JSON.stringify({ code, status, detail })}\n`;
+}
+
+/** HTTP 状态码 → 失败码。**判据在 `llm_policy.rs::status_code`**，这里只是照抄一份 */
+export function statusCode(status) {
+  if (status === 401 || status === 403) return "key-rejected";
+  if (status === 404) return "not-found";
+  if (status === 413) return "too-large";
+  if (status === 429) return "rate-limited";
+  if (status >= 400 && status <= 499) return "rejected";
+  if (status >= 500 && status <= 599) return "server-error";
+  return "unexpected";
+}
+
+/**
  * HTTP 状态码 → 人话。
  *
  * 这一层的价值在于**别把 401 说成"连不上"**：用户看到"检查你的网络"会去重启
- * 路由器，而真正要做的是换一把 key。
+ * 路由器，而真正要做的是换一把 key。抬头之后那句英文是给日志与"认不出码"的
+ * 调用方看的，界面上显示的那句由 `runtime/llm-errors.ts` 按语言拼。
  */
 export function describeStatus(status, body) {
   const snippet = bodySnippet(body);
   const detail = snippet ? ` — ${snippet}` : "";
+  let english;
   if (status === 401 || status === 403) {
-    return `the provider rejected the API key (HTTP ${status})${detail}. Check the key in Assistant settings`;
+    english = `the provider rejected the API key (HTTP ${status})${detail}. Check the key in Assistant settings`;
+  } else if (status === 404) {
+    english = `the endpoint was not found (HTTP 404)${detail}. The base URL is usually https://api.<name>.com/v1`;
+  } else if (status === 413) {
+    english = `the request was too large (HTTP 413)${detail}`;
+  } else if (status === 429) {
+    english = `the provider is rate limiting or out of quota (HTTP 429)${detail}`;
+  } else if (status >= 400 && status <= 499) {
+    english = `the provider rejected the request (HTTP ${status})${detail}`;
+  } else if (status >= 500 && status <= 599) {
+    english = `the provider returned an error (HTTP ${status})${detail}`;
+  } else {
+    english = `unexpected HTTP status ${status}${detail}`;
   }
-  if (status === 404) {
-    return `the endpoint was not found (HTTP 404)${detail}. The base URL is usually https://api.<name>.com/v1`;
-  }
-  if (status === 413) return `the request was too large (HTTP 413)${detail}`;
-  if (status === 429) return `the provider is rate limiting or out of quota (HTTP 429)${detail}`;
-  if (status >= 400 && status <= 499) return `the provider rejected the request (HTTP ${status})${detail}`;
-  if (status >= 500 && status <= 599) return `the provider returned an error (HTTP ${status})${detail}`;
-  return `unexpected HTTP status ${status}${detail}`;
+  return `${failureTag(statusCode(status), status, snippet)}${english}`;
 }
 
 /**
@@ -294,7 +324,7 @@ export function describeFailure(error) {
   const haystack = `${message} ${code}`.toLowerCase();
 
   if (haystack.includes("timeout") || haystack.includes("timed out") || haystack.includes("etimedout")) {
-    return "the provider did not answer in time";
+    return `${failureTag("timeout", null, "")}the provider did not answer in time`;
   }
   if (
     haystack.includes("certificate") ||
@@ -302,7 +332,7 @@ export function describeFailure(error) {
     haystack.includes("tls") ||
     haystack.includes("ssl")
   ) {
-    return "the TLS handshake failed (a proxy or a certificate problem)";
+    return `${failureTag("tls", null, "")}the TLS handshake failed (a proxy or a certificate problem)`;
   }
   if (
     haystack.includes("econnrefused") ||
@@ -312,9 +342,9 @@ export function describeFailure(error) {
     haystack.includes("fetch failed") ||
     haystack.includes("network")
   ) {
-    return "could not reach the provider — check the base URL and your connection";
+    return `${failureTag("unreachable", null, "")}could not reach the provider — check the base URL and your connection`;
   }
-  return `the request could not be sent: ${message}`;
+  return `${failureTag("send-error", null, message)}the request could not be sent: ${message}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -633,6 +663,12 @@ export function parseConfig(text) {
     config.profiles = value.profiles;
     config.hands = value.hands;
     config.version = 4;
+  }
+  // **不认识的顶层字段照抄回去**。`llm.rs` 每加一个字段，这里不跟就会静默洗掉它
+  // （`skills` 就这样丢过一版）。逐个搬是搬不完的 —— 认得的归一化、不认得的原样
+  // 带回去，才不怕下一个字段。
+  for (const [key, raw] of Object.entries(value)) {
+    if (!(key in config)) config[key] = raw;
   }
   return normalizeConfig(config);
 }
