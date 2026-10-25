@@ -69,6 +69,14 @@ The important part is that a widget *becomes a window* while never touching Wind
 
 So is the absence of a server. The catalogue is a static `registry.json`, the packages are signed files, the hosting is GitHub Pages, and updates are a release asset. When a design starts to need a backend, the design is wrong — that constraint is argued out in [docs/ROADMAP.md](./docs/ROADMAP.md), not assumed.
 
+**What that costs.** Those three decisions are the ones that make Lattice look odd next to a desktop toy, and none of them is free:
+
+- *Shipping empty* means the first run is an empty desktop and a library you have to fill yourself. The alternative — six widgets pre-installed — reads better in a screenshot and kills the extension model on day one.
+- *No server* means the catalogue is a file someone re-publishes by hand, ratings never aggregate into a number, and reporting a bad widget is a file you send the author yourself. A backend would fix all three, and would also make the project need an operator.
+- *One bridge* means a widget cannot do the obvious thing: no `localStorage`, no `fetch`, no reading the page it sits in, no direct Win32. Every capability is a bridge method with a permission you grant once per widget. That is why the API is small — and why it has to be enough, since the official widgets use nothing else.
+
+The reasoning behind each, including what was tried and dropped, is in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) and [docs/ROADMAP.md](./docs/ROADMAP.md) — both in Chinese, because that is the language the people who change this code read.
+
 ## Where it stands
 
 v0.10 is the current version. The last three releases: v0.8 let an agent drive the desktop (an opt-in loopback endpoint, 8 allowlisted actions, every call in an audit log); v0.9 added sound you can see and links that get out; v0.10 brought the built-in assistant — **a model you bring, hands that stay ours**: `Ctrl+K` opens a small window, paste an OpenAI-compatible base URL and a key once, and the key lives in `assistant.json` under Rust's control while the frontend only ever sees `sk-1…cdef`. The only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had; a widget that asks for `llm:chat` gets text back, never tools — and late in the version it learned to *borrow* those hands: `desktop:control` lets a pet run one assistant turn, on a narrowed tool table with removal cut out.
