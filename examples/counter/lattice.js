@@ -81,6 +81,40 @@ function normalizeLanguage(payload, previous) {
 }
 
 /**
+ * 处理器抛出来的东西 → 一句能读的原因。
+ *
+ * 空字符串不算答案：`WIDGET_SPEC` §3.6 要求 `ok: false` 必须带一句人话（模型会把它
+ * 转述给用户，也会据此改参数重来），所以空消息退成"这条工具失败了"。
+ */
+function readableError(error) {
+  const message =
+    error && typeof error === "object" && typeof error.message === "string"
+      ? error.message.trim()
+      : String(error === undefined ? "" : error).trim();
+  return message || "the tool failed";
+}
+
+/**
+ * 一次 `agent-call` 只该有一条回话。
+ *
+ * 同一份 SDK 可以在一个文档里建好几个实例（断言页就是这么用的，组件也可能
+ * 按区块各建一个），而每个实例都挂着自己的 message 监听器。不在这里串一下的话，
+ * 一次调用会回出**两条** `agent-result` —— 一条真的、一条"unknown tool"，
+ * 平台先收到哪条就全看监听器注册顺序。
+ */
+const agentClaims = new Set();
+
+/** 认领一次调用；已经被别人认领过就返回 false */
+function claimAgentCall(callId) {
+  const key = String(callId == null ? "" : callId);
+  if (agentClaims.has(key)) return false;
+  agentClaims.add(key);
+  // 不让它无限长：一次会话里的调用数是有限的，256 条足够挡住"同一次调用"
+  if (agentClaims.size > 256) agentClaims.delete(agentClaims.values().next().value);
+  return true;
+}
+
+/**
  * 建一个桥客户端。
  *
  * @param {object} [options]
@@ -106,6 +140,8 @@ export function createLattice(options = {}) {
   const pending = new Map();
   const listeners = new Map();
   const tickHandlers = new Map();
+  /** 清单 `agent.tools` 声明的那几条工具 → 实现（见 `api.agentTools`） */
+  const agentHandlers = new Map();
 
   let config = {};
   let themeTokens = {};
@@ -218,6 +254,51 @@ export function createLattice(options = {}) {
       }
       case "store-changed": {
         emit("store", data.payload && data.payload.key);
+        return;
+      }
+      /**
+       * 模型调了你声明的工具。和桥是**反方向**的同一条通道：一条消息进，
+       * 一条 `agent-result` 出，而且**一定要回**（不回的那次，平台等 8 秒
+       * 之后告诉模型"它没应"，用户看到的是"这个组件不听话"）。
+       *
+       * 回话永远带上同一个 `callId`，并且总是回给发消息的那个窗口
+       * （`event.source`）—— 父窗口只是最常见的那个，不必假设。
+       */
+      case "agent-call": {
+        const payload = data.payload || {};
+        const callId = payload.callId;
+        const tool = String(payload.tool || "");
+        const source = event.source;
+        const answer = (body) => {
+          if (!source || typeof source.postMessage !== "function") return;
+          source.postMessage(
+            Object.assign({ [BRIDGE_TAG]: 1 }, { type: "agent-result", payload: Object.assign({ callId }, body) }),
+            "*",
+          );
+        };
+
+        const handler = agentHandlers.get(tool);
+        if (!handler) {
+          /*
+           * 没挂实现时**先等一下**：同一个文档里可能有另一个实例挂着它
+           * （各建一个 client 的组件、以及自己的断言页都是这样）。0ms 之后
+           * 还没人认领，才回 `unknown tool` —— 总比让平台干等 8 秒好。
+           */
+          setTimeout(() => {
+            if (claimAgentCall(callId)) answer({ ok: false, error: "unknown tool: " + tool });
+          }, 0);
+          return;
+        }
+        if (!claimAgentCall(callId)) return;
+        /*
+         * 处理器**返回什么就交回什么**，抛错就变成 `ok: false` —— 作者不拼
+         * `{ ok, result }` 那层信封，那种信封每个人都写一遍、每个人写错一次。
+         * 异步也接：`await` 到它回来再回话（平台那边有 8 秒预算）。
+         */
+        Promise.resolve()
+          .then(() => handler(payload.args || {}, { callId, tool }))
+          .then((result) => answer({ ok: true, result: result === undefined ? null : result }))
+          .catch((error) => answer({ ok: false, error: readableError(error) }));
         return;
       }
       default:
@@ -481,6 +562,45 @@ export function createLattice(options = {}) {
           { timeout: 185000 },
         );
       },
+    },
+
+    /**
+     * 把清单 `agent.tools` 里声明的那几条工具**挂上实现**。要 `agent:tools`。
+     *
+     * ```js
+     * const off = lattice.agentTools({
+     *   add: (args) => { items.push(String(args.text)); save(); return { count: items.length }; },
+     *   // 异步也接；抛错就是 ok:false，错误信息原样交给模型
+     *   list: async () => ({ items: items.slice(0, 20) }),
+     * });
+     * ```
+     *
+     * 三条规矩（都在 `WIDGET_SPEC` §3.6 里）：
+     * - **返回值就是 `result`**，抛错就是 `error`。不用自己拼 `{ok, result}` 那层信封。
+     * - **没注册的工具名不会静默沉掉**：有人调就回一条 `unknown tool: <名字>`。
+     * - **别回整份数据**：回话超过 4000 字符是**拒绝**（不是截断），回摘要或者前几条。
+     *
+     * @param {Record<string, (args: Record<string, unknown>, context: {callId?: string, tool: string}) => unknown | Promise<unknown>>} handlers
+     * @returns {() => void} 摘掉这次注册（组件销毁、热重载时用得上）
+     */
+    agentTools(handlers) {
+      if (!handlers || typeof handlers !== "object") {
+        throw new TypeError("lattice.agentTools expects an object of functions");
+      }
+      const added = [];
+      for (const [name, handler] of Object.entries(handlers)) {
+        if (typeof handler !== "function") {
+          throw new TypeError('lattice.agentTools: "' + name + '" is not a function');
+        }
+        agentHandlers.set(name, handler);
+        added.push(name);
+      }
+      return () => {
+        for (const name of added) {
+          // 只摘自己挂上去的那一份：后注册的实现不该被前一次的清理函数带走
+          if (agentHandlers.get(name) === handlers[name]) agentHandlers.delete(name);
+        }
+      };
     },
 
     /** 读系统时间。要 `clock`。 */

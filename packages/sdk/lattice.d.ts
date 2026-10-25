@@ -49,6 +49,20 @@ export interface AssistantReply {
   actions: AssistantAction[];
 }
 
+/**
+ * 一条组件工具的实现（清单 `agent.tools` 里的 `name`）。
+ *
+ * **返回什么就交回什么**，抛错就是 `ok: false`（错误信息原样交给模型）——
+ * 不用自己拼 `{ ok, result }` 那层信封。
+ */
+export type AgentToolHandler = (
+  args: Record<string, unknown>,
+  context: { callId?: string; tool: string },
+) => unknown | Promise<unknown>;
+
+/** 工具名 → 实现。名字必须和清单里声明的一致，否则那条工具会回 `unknown tool` */
+export type AgentToolHandlers = Record<string, AgentToolHandler>;
+
 export declare class LatticeError extends Error {
   constructor(code: BridgeErrorCode, message: string, permission?: Permission);
   readonly code: BridgeErrorCode;
@@ -263,6 +277,14 @@ export interface Lattice {
       persona?: string;
     }): Promise<AssistantReply>;
   };
+
+  /**
+   * 把清单 `agent.tools` 里声明的那几条工具**挂上实现**（要 `agent:tools`）。
+   *
+   * 返回值就是 `result`，抛错就是 `error`；没注册的工具名会回一条
+   * `unknown tool: <名字>` 而不是让模型干等 8 秒。返回的函数摘掉这次注册。
+   */
+  agentTools(handlers: AgentToolHandlers): () => void;
 
   now(): Promise<ClockInfo>;
   copy(text: string): Promise<{ ok: true }>;

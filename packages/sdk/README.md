@@ -74,6 +74,7 @@ my-widget/
 | `network.fetch(input)` | 代发 HTTP，需要 `network` + 清单白名单 |
 | `llm.chat(messages)` / `llm.status()` | 用**用户配的**模型说一句话 / 查配没配，前者需要 `llm:chat`（没有工具） |
 | `assistant.ask({ messages, persona? })` | 让平台的 assistant **替你动桌面**（一轮带工具的对话，很慢），需要 `desktop:control` |
+| `agentTools(handlers)` | 把清单 `agent.tools` 里声明的那几条工具挂上实现，需要 `agent:tools`，见下面"让 assistant 调你的组件" |
 | `now()` | 系统时间，需要 `clock` |
 | `copy(text)` | 写剪贴板，需要 `clipboard:write` |
 | `open(url)` | 用默认浏览器打开 http/https 链接，需要 `shell:open` |
@@ -94,9 +95,24 @@ const { x, y } = await lattice.call("window.moveBy", { dx: 4, dy: 0 });
 
 ### 让 assistant 调你的组件（`agent.tools`）
 
-组件可以在清单里声明工具，让平台的 assistant 直接调它（`lattice.diagram` 就是这么画图的）。契约在 `docs/WIDGET_SPEC.md` §3.6，这里只说 SDK 这一侧最容易踩空的一点：
+组件可以在清单里声明工具，让平台的 assistant 直接调它（`lattice.diagram` 就是这么画图的）。契约在 `docs/WIDGET_SPEC.md` §3.6，SDK 这一侧只有一件事要做：**把名字挂上实现**。
 
-**这个包不处理 `agent-call`。** `lattice.on("agent-call", …)` **不会触发** —— `lattice.js` 的 `handleMessage` 里没有这个分支，`agentTools()` 也还没有（v0.11 留下的三处缺口之一，见 `AGENTS.md` 第 8 节）。所以目前得自己听原始消息：
+```js
+const off = lattice.agentTools({
+  echo: (args) => ({ text: args.text }),          // 返回值就是 result
+  add: async (args) => { items.push(args.text); save(); return { count: items.length }; },
+  // 抛错就是 ok:false，错误信息原样交给模型：
+  // boom: () => { throw new Error("the list is locked"); },
+});
+```
+
+三条要知道的：
+
+- **不用自己拼 `{ ok, result }`**。返回什么就回什么，抛错就回 `ok: false` + 那句 `error.message`。空的错误消息会退成 "the tool failed"（`ok: false` 必须带一句人话，模型会转述给用户）。
+- **没注册的名字不会沉掉**。有人调 `echo2` 而你没挂，SDK 回一条 `unknown tool: echo2` —— 比让模型干等 8 秒再收到"它没应"要好。
+- **别回整份数据**。回话超过 4000 字符是**拒绝**（`too-big`），不是截断。回摘要或者前几条。
+
+`off()` 摘掉这次注册（组件销毁或热重载时用得上）。权限是独立的一条 `agent:tools`（授权界面叫 "Agent tool calls"），和 `network` 无关：允许联网不等于允许往模型里塞数据。不用这个包、或者想自己控制回话时机的话，直接听原始消息照样能跑：
 
 ```js
 window.addEventListener("message", (event) => {
@@ -111,7 +127,7 @@ window.addEventListener("message", (event) => {
 });
 ```
 
-**一定回话，而且带上同一个 `callId`** —— 不回的那次平台等 8 秒，然后回去告诉模型"它没应"，用户看到的是"这个组件不听话"。权限是独立的一条 `agent:tools`（授权界面叫 "Agent tool calls"），和 `network` 无关：允许联网不等于允许往模型里塞数据。
+**一定回话，而且带上同一个 `callId`** —— 不回的那次平台等 8 秒，然后回去告诉模型"它没应"，用户看到的是"这个组件不听话"。
 
 ### 错误
 

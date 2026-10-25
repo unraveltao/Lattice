@@ -78,6 +78,14 @@
       let timerSeq = 0;
       let readyCount = 0;
       let child = null;
+      /*
+       * 组件回给"模型"的那几条话（`agent-result`）。
+       *
+       * 它们和请求/响应走同一个 postMessage 通道，只是**反方向**：宿主发
+       * `agent-call` 进去，组件把 `agent-result` 发回来。所以假宿主这一侧
+       * 得在"只处理 request"之前把它捞出来。
+       */
+      const agentReplies = [];
 
       function reply(source, id, body) {
         source.postMessage({ __lattice: 1, type: "response", id, ...body }, "*");
@@ -89,6 +97,10 @@
 
         if (data.type === "ready") {
           readyCount += 1;
+          return;
+        }
+        if (data.type === "agent-result") {
+          agentReplies.push(data.payload);
           return;
         }
         if (data.type !== "request") return;
@@ -376,6 +388,80 @@
         waited.text,
         "慢的那一轮也回来了",
         "assistant.ask 不跟实例的短超时走（200ms 的一轮在 timeout: 50 下照样回来）",
+      );
+
+      /*
+       * ---- 7.2 让模型调你的组件（`agentTools`）----
+       *
+       * v0.11 的数据平面把"组件把能力声明成工具"做完了，但 SDK 那一侧一直
+       * 没收口：作者得自己听原始 postMessage、自己拼 `{ ok, result }` 信封、
+       * 自己保证"一定回话"。这一节钉的就是那层壳的三条承诺：
+       *   1. 返回值就是 `result`，抛错就是 `ok:false`（不用拼信封）
+       *   2. 没注册的名字回 `unknown tool`，而不是让平台干等 8 秒
+       *   3. 异步处理器也接；回话永远带回同一个 `callId`
+       */
+      eq(typeof sdk.agentTools, "function", "SDK 有 agentTools（v0.11 留下的缺口之一）");
+      const callAgent = (callId, tool, args) =>
+        frame.contentWindow.postMessage(
+          { __lattice: 1, type: "agent-call", payload: { callId, tool, args } },
+          "*",
+        );
+      const lastAgent = () => agentReplies[agentReplies.length - 1];
+
+      const offTools = sdk.agentTools({
+        echo: (args) => ({ text: String(args.text ?? "") }),
+        boom: () => {
+          throw new Error("the list is locked");
+        },
+        quietly: () => undefined,
+        slowly: () => new Promise((resolve) => setTimeout(() => resolve({ waited: true }), 30)),
+      });
+
+      callAgent("c1", "echo", { text: "hi" });
+      log(await waitFor(() => agentReplies.length >= 1), "agentTools 挂上的工具收到了 agent-call");
+      eq(
+        lastAgent(),
+        { callId: "c1", ok: true, result: { text: "hi" } },
+        "返回值就是 result，callId 原样带回",
+      );
+
+      callAgent("c2", "boom");
+      await waitFor(() => agentReplies.length >= 2);
+      eq(
+        lastAgent(),
+        { callId: "c2", ok: false, error: "the list is locked" },
+        "处理器抛错 → ok:false + 那句 message（作者不用拼信封）",
+      );
+
+      callAgent("c3", "quietly");
+      await waitFor(() => agentReplies.length >= 3);
+      eq(
+        lastAgent(),
+        { callId: "c3", ok: true, result: null },
+        "没有返回值 → result 是 null（不是少一个字段的坏回话）",
+      );
+
+      callAgent("c4", "slowly");
+      await waitFor(() => agentReplies.length >= 4, 2000);
+      eq(
+        lastAgent(),
+        { callId: "c4", ok: true, result: { waited: true } },
+        "异步处理器也接：等它回来再回话",
+      );
+
+      callAgent("c5", "nope");
+      await waitFor(() => agentReplies.length >= 5);
+      log(
+        lastAgent()?.ok === false && /unknown tool/.test(String(lastAgent()?.error)),
+        "没注册的工具名回 unknown tool（而不是让平台干等 8 秒）",
+      );
+
+      offTools();
+      callAgent("c6", "echo", { text: "again" });
+      await waitFor(() => agentReplies.length >= 6);
+      log(
+        lastAgent()?.ok === false && /unknown tool/.test(String(lastAgent()?.error)),
+        "off() 之后那个名字不再接单",
       );
 
       // ---- 8. 超时 ----

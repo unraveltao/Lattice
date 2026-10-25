@@ -656,7 +656,22 @@ const { text, actions } = await lattice.assistant.ask({
 - **`agent:tools` 是独立的授权轴**。"允许这个组件联网"不等于"允许 agent 往里塞数据" —— 没授这条权限，你声明的工具**一条都不会出现在模型那一侧**，一次都不会被调用。授权界面上那行字叫 "Agent tool calls"。
 - **一个组件摆了几份时，调用带 `instanceId`**。只摆一份的话模型可以不写（平台替你补上），摆两三份就必须写——三份天气各在哪个城市，只有实例 id 分得清。
 
-组件这一侧的协议是**一条消息进、一条消息出**，走和桥同一个 `postMessage` 通道，只是方向相反：
+用 `@lattice/sdk` 的话，这一侧只剩一件事：**把名字挂上实现**。返回值就是 `result`，抛错就是 `ok: false` + 那句 `error.message`，不用自己拼回话：
+
+```js
+const off = lattice.agentTools({
+  add: (args) => {
+    items.push(String(args.text ?? "").trim());
+    save();
+    return { count: items.length };
+  },
+  list: () => items.slice(0, 5),
+});
+```
+
+没注册的名字 SDK 会回一条 `unknown tool: <名字>` —— 比让模型干等 8 秒再收到"它没应"要好。`off()` 摘掉这次注册。
+
+不用 SDK、或者想自己控制回话时机时，原始协议是**一条消息进、一条消息出**，走和桥同一个 `postMessage` 通道，只是方向相反：
 
 ```js
 window.addEventListener("message", (event) => {
