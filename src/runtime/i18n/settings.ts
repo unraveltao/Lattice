@@ -115,6 +115,41 @@ export const SETTINGS_ZH: Record<string, string> = {
   "The built-in assistant uses your own OpenAI-compatible endpoint. Its key never reaches a widget.":
     "内置助手用你自己的 OpenAI 兼容地址；key 不会交给任何组件。",
 
+  // —— 帮助页 ——
+  "Get help": "获取帮助",
+  "These pages are the repository's own Markdown, bundled with the app.":
+    "这些页面就是仓库里那份 Markdown，跟着应用一起打包。",
+  "They are written in Chinese.": "它们用中文撰写。",
+  "Could not read this page": "这一页读不出来",
+  "All documentation": "全部文档",
+  "Open on GitHub": "在 GitHub 打开",
+  "Report a problem": "报告问题",
+  "Open an issue": "开一个 issue",
+
+  // —— 帮助页的目录（标题即文档名，一句话说它回答什么）——
+  "Start here": "从这里开始",
+  Building: "做组件",
+  "The project": "项目",
+  "Documentation map": "文档地图",
+  "Which page answers which question": "哪份文档回答哪类问题",
+  Glossary: "术语表",
+  "Directory, manifest, placement — the words this project reuses":
+    "目录、清单、实例 —— 这个项目反复用的词",
+  "Widget spec": "组件规范",
+  "Manifest, bridge, permissions, region art": "清单、桥、权限、异形贴图",
+  Architecture: "架构",
+  "Three layers, sandbox, windows, data": "三层、沙箱、窗口、数据",
+  Pitfalls: "踩过的坑",
+  "Look up a symptom, not a version": "按症状查，不按版本",
+  "Platform rules": "平台规矩",
+  "What platform code must not break": "改平台代码不许碰什么",
+  "Build and release": "构建与发版",
+  "Toolchain, packaging, the release checklist": "工具链、打包、发版清单",
+  Roadmap: "路线图",
+  "Where it is, what was overturned, what comes next": "走到哪、被推翻的决定、接下来做什么",
+  "Version archive": "版本档案",
+  "The long-form log of every version": "每个版本的逐条流水",
+
   // —— 档案页 ——
   "No profile yet": "还没有本机档案",
   "Give this computer a name. Nothing leaves it.": "给这台电脑起个名字。它不会离开这台电脑。",

@@ -45,8 +45,18 @@ import { importConfig, openConfigFile } from "./assistant";
 import { ModelProfiles } from "./ModelProfiles";
 import { ProfilePanel } from "./ProfilePanel";
 import { openRepo, REPO, REPO_URL } from "./repo";
+import { DocsPanel } from "./DocsPanel";
 
-type Section = "account" | "models" | "appearance" | "language" | "desktop" | "widgets" | "assistant" | "about";
+type Section =
+  | "account"
+  | "models"
+  | "appearance"
+  | "language"
+  | "desktop"
+  | "widgets"
+  | "assistant"
+  | "about"
+  | "help";
 
 const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
   { id: "account", label: "Account", icon: ICON.user },
@@ -57,6 +67,7 @@ const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
   { id: "widgets", label: "Widgets", icon: ICON.store },
   { id: "assistant", label: "Assistant", icon: ICON.agent },
   { id: "about", label: "About", icon: ICON.info },
+  { id: "help", label: "Get help", icon: ICON.help },
 ];
 
 /**
@@ -171,8 +182,8 @@ export function SettingsMenu({
     setCatalogueOpen(false);
   }, []);
 
-  const openPanel = useCallback(() => {
-    setSection("account");
+  const openPanel = useCallback((at: Section = "account") => {
+    setSection(at);
     setCatalogueOpen(false);
     setOpen(true);
   }, []);
@@ -190,11 +201,19 @@ export function SettingsMenu({
         else openPanel();
         return;
       }
+      // F1 = 帮助。这是唯一一个"不打开设置也要能到"的分区，所以单独一条：
+      // 用户卡住的时候不该先找到设置、再找到"获取帮助"
+      if (event.key === "F1") {
+        event.preventDefault();
+        if (open && section === "help") close();
+        else openPanel("help");
+        return;
+      }
       if (event.key === "Escape") close();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close, open, openPanel]);
+  }, [close, open, openPanel, section]);
 
   /*
    * 焦点陷阱：面板是 modal，Tab 不许跑到画布上的组件 iframe 里。
@@ -497,7 +516,7 @@ export function SettingsMenu({
                     <button
                       key={item.id}
                       type="button"
-                      className={`lattice-settings-nav-item${section === item.id ? " is-active" : ""}`}
+                      className={`lattice-settings-nav-item${section === item.id ? " is-active" : ""}${item.id === "help" ? " is-last" : ""}`}
                       onClick={() => {
                         setSection(item.id);
                         setCatalogueOpen(false);
@@ -978,6 +997,13 @@ export function SettingsMenu({
                       </div>
                     </div>
                   )}
+
+                  {/*
+                    帮助页：目录在左、正文在右是不可能的 —— 设置面板本身已经
+                    是"左导航 + 右正文"，再嵌一层就是三层缩进。所以它是两态：
+                    目录 / 阅读，退出来靠工具栏那颗返回。
+                  */}
+                  {section === "help" && <DocsPanel />}
                 </div>
               </section>
             </div>

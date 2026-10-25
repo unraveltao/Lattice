@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>markdown test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 帮助页那个 Markdown 渲染器。
+       *
+       * 它不是"通用 Markdown"——方言是自己定的，所以边界必须钉死：
+       *   1. 原始 HTML 一律转义（文档里的 HTML 全长在代码块里）
+       *   2. 链接只放行 http(s) / 锚点 / 相对路径，`javascript:` 降级成文字
+       *   3. 行内代码里的语法符号不算语法
+       *   4. 表格的 `\|`、代码块里的 `|` 和 `#` 不许被当成块级语法
+       *   5. 任何一行都要被吃掉 —— 认不出的行当段落，绝不空转
+       */
+      import { renderMarkdown, safeHref, slugify } from "/src/runtime/markdown.ts";
+      import { resolvePath } from "/src/runtime/docs.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const has = (html, needle, text) => log(html.includes(needle), `${text}（找 ${needle}）`);
+      const lacks = (html, needle, text) => log(!html.includes(needle), `${text}（不该有 ${needle}）`);
+
+      // ---- 1. 标题与锚点 ----
+      has(renderMarkdown("# 标题"), '<h1 id="标题">标题</h1>', "h1 带 id");
+      has(renderMarkdown("## 3.6 把能力声明成工具（`agent.tools`）"), 'id="36-把能力声明成工具agenttools"', "锚点规则跟着 GitHub");
+      const dup = renderMarkdown("# 验收\n\n# 验收");
+      has(dup, 'id="验收"', "第一个同名标题拿干净 id");
+      has(dup, 'id="验收-1"', "第二个同名标题加后缀");
+      log(slugify("A B  C") === "a-b-c", "slug 把连续空格并成一个连字符");
+
+      // ---- 2. 段落 ----
+      const para = renderMarkdown("第一行\n第二行\n\n第二段");
+      has(para, "<p>第一行 第二行</p>", "软换行合成一段");
+      log((para.match(/<p>/g) || []).length === 2, "空行分段");
+
+      // ---- 3. 原始 HTML 被转义 ----
+      // 字符串里那个闭合标签必须写成 `<\/script>`：否则 HTML 解析器会把
+      // 这一页的 <script> 就地结束掉，后面所有断言都变成页面上的文字
+      const raw = renderMarkdown("<script>alert(1)<\/script>");
+      lacks(raw, "<script", "原始 HTML 不落成标签");
+      has(raw, "&lt;script&gt;", "原始 HTML 变成实体");
+
+      // ---- 4. 行内代码 ----
+      const code = renderMarkdown("用 `**不是粗体**` 和 `a < b`");
+      has(code, "<code>**不是粗体**</code>", "行内代码里的星号不算语法");
+      has(code, "<code>a &lt; b</code>", "行内代码里的尖括号被转义");
+
+      // ---- 5. 围栏代码 ----
+      const fence = renderMarkdown("```ts\nconst a = `x`; // **不粗**\n# 不是标题\n| 不是表格 |\n```");
+      has(fence, 'class="language-ts"', "代码块带语言");
+      has(fence, "const a = `x`; // **不粗**", "代码块内容原样");
+      lacks(fence, "<h1", "代码块里的 # 不是标题");
+      lacks(fence, "<table", "代码块里的竖线不是表格");
+      lacks(fence, "<strong>", "代码块里的星号不是粗体");
+
+      // ---- 6. 表格 ----
+      const table = renderMarkdown("| 甲 | 乙 |\n| --- | ---: |\n| 1 | `a\\|b` |");
+      has(table, "<thead>", "表格有表头");
+      has(table, "text-align:right", "右对齐被认出来");
+      has(table, "<td>1</td>", "表体单元格");
+      has(table, "a|b", "单元格里的转义竖线还原");
+      log((table.match(/<tr>/g) || []).length === 2, "表格行数对得上");
+      // 组件规范开头那张目录表就是 `| | |` 开头的：表头全空时别画一条空带子
+      const noHead = renderMarkdown("| | |\n| --- | --- |\n| 甲 | 乙 |");
+      lacks(noHead, "<thead>", "表头全空时不画 thead");
+      has(noHead, "<td>甲</td>", "表头全空时内容照旧");
+
+      // ---- 7. 列表 ----
+      const list = renderMarkdown("- 甲\n  - 甲一\n  - 甲二\n- 乙");
+      has(list, "<ul><li>甲<ul><li>甲一</li><li>甲二</li></ul></li><li>乙</li></ul>", "两层嵌套列表");
+      const ordered = renderMarkdown("1. 一\n2. 二");
+      has(ordered, "<ol><li>一</li><li>二</li></ol>", "有序列表");
+      const mixed = renderMarkdown("- 甲\n  1. 一\n  2. 二");
+      has(mixed, "<ol>", "无序里套有序");
+
+      // ---- 8. 引用与分隔线 ----
+      has(renderMarkdown("> 一句"), "<blockquote><p>一句</p></blockquote>", "引用");
+      has(renderMarkdown("---"), "<hr />", "分隔线");
+
+      // ---- 9. 链接与图片 ----
+      const link = renderMarkdown("[文档](./WIDGET_SPEC.md) [站](https://example.com/x)");
+      has(link, 'href="./WIDGET_SPEC.md"', "相对链接保留");
+      has(link, 'href="https://example.com/x"', "http 链接保留");
+      const evil = renderMarkdown("[点我](javascript:alert(1))");
+      lacks(evil, "<a ", "javascript: 不落成链接");
+      has(evil, "点我", "降级之后文字还在");
+      log(safeHref("file:///C:/x") === null, "file: 不放行");
+      log(safeHref("#section") === "#section", "锚点放行");
+      const img = renderMarkdown("![架构图](https://img.shields.io/x.svg)");
+      lacks(img, "<img", "远程图不画");
+      has(img, "架构图", "远程图留下 alt 文字");
+
+      // ---- 10. 强调 ----
+      const em = renderMarkdown("**粗** *斜* ~~删~~");
+      has(em, "<strong>粗</strong>", "粗体");
+      has(em, "<em>斜</em>", "斜体");
+      has(em, "<del>删</del>", "删除线");
+
+      // ---- 11. 认不出的行不许吞掉，也不许空转 ----
+      const odd = renderMarkdown("|\n普通一行");
+      log(odd.includes("普通一行"), "残行之后的内容还在");
+      log(renderMarkdown("").trim() === "", "空文档渲染成空串");
+
+      // ---- 12. 仓库路径解析 ----
+      log(resolvePath("docs/README.md", "./PITFALLS.md") === "docs/PITFALLS.md", "同目录");
+      log(resolvePath("docs/README.md", "../GLOSSARY.md") === "GLOSSARY.md", "上一级");
+      log(resolvePath("GLOSSARY.md", "docs/reference/build.md") === "docs/reference/build.md", "往下走");
+      log(resolvePath("GLOSSARY.md", "../../etc/passwd") === null, "越出仓库根返回 null");
+
+      const passed = lines.filter((line) => line.startsWith("PASS")).length;
+      document.getElementById("out").textContent = lines.join("\n") + `\n\n${passed}/${lines.length} passed`;
+    </script>
+  </body>
+</html>

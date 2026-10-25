@@ -26,6 +26,19 @@ export const REPO = "unraveltao/lattice";
 
 export const REPO_URL = `https://github.com/${REPO}`;
 
+/** 有问题去这儿开一个。帮助页最后一行用它 */
+export const ISSUES_URL = `${REPO_URL}/issues`;
+
+/**
+ * 仓库里某一份文件在网页上的地址。
+ *
+ * 分支写死 `main`：这是个只有一条主线的仓库，而 `blob/HEAD/…` 那个写法
+ * GitHub 不认。真有一天开了 `dev` 分支，帮助页的"在 GitHub 打开"要跟着改。
+ */
+export function repoBlobUrl(path: string): string {
+  return `${REPO_URL}/blob/main/${path}`;
+}
+
 /**
  * 交给系统默认浏览器。
  *
@@ -36,10 +49,14 @@ export const REPO_URL = `https://github.com/${REPO}`;
  * 浏览器预览（`npm run dev`）里没有那条命令，退回 `window.open` 就行：
  * 那是开发者的浏览器，不是用户的。
  */
-export async function openRepo(): Promise<void> {
+export async function openExternal(url: string): Promise<void> {
   if (!isTauri()) {
-    window.open(REPO_URL, "_blank", "noopener");
+    window.open(url, "_blank", "noopener");
     return;
   }
-  await invoke("open_external", { url: REPO_URL });
+  await invoke("open_external", { url });
+}
+
+export async function openRepo(): Promise<void> {
+  await openExternal(REPO_URL);
 }

@@ -4245,8 +4245,14 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-settings-nav-list {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
+}
+
+/* 「获取帮助」沉到导航最底下：它是"我遇到问题了"，不是设置项之一 */
+.lattice-settings-nav-item.is-last {
+  margin-top: auto;
 }
 
 .lattice-settings-nav-item {
@@ -4368,6 +4374,297 @@ button.lattice-chip[aria-pressed="true"] {
   line-height: 1.55;
   color: var(--lattice-text-faint);
 }
+
+/*
+ * 帮助页。
+ *
+ * 两态共用这一套：目录态是一行一个入口（标题 + 一句话 + 箭头），阅读态是
+ * 一份 Markdown 的排版。正文的排版规矩只有一条：**层级靠字号和留白，不靠
+ * 颜色**——文档里已经有大量 `code` 和链接要抢颜色，标题再用颜色分主次，
+ * 一页会有五种彩色，读起来像注释比正文多。
+ */
+.lattice-doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 620px;
+}
+
+.lattice-doc-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+}
+
+.lattice-doc-group-title {
+  margin: 0 0 2px;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--lattice-text-faint);
+}
+
+.lattice-doc-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--lattice-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lattice-doc-row:hover {
+  border-color: var(--lattice-border);
+  background: var(--lattice-surface-3);
+}
+
+.lattice-doc-row .lattice-glyph {
+  flex: none;
+  color: var(--lattice-text-faint);
+}
+
+.lattice-doc-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lattice-doc-row-title {
+  font-size: 13px;
+}
+
+.lattice-doc-row-desc {
+  font-size: 11.5px;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-doc-view {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/*
+ * 工具栏钉在顶上：一份 1200 行的规范读到一半，"返回"和"在 GitHub 打开"
+ * 都还在手边。它压在正文上面，所以底色必须是不透明的 —— 用 surface-2
+ * 而不是 transparent，否则滚过去的内容会从按钮缝里透出来。
+ */
+.lattice-doc-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--lattice-border);
+  background: var(--lattice-surface-2);
+}
+
+.lattice-doc-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--lattice-text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lattice-doc-back:hover {
+  background: var(--lattice-surface-3);
+  color: var(--lattice-text);
+}
+
+.lattice-doc-here {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--lattice-text-faint);
+}
+
+.lattice-doc-body {
+  max-width: 680px;
+  padding: 4px 0 40px;
+  font-size: 13px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.lattice-doc-body > :first-child {
+  margin-top: 0;
+}
+
+.lattice-doc-body h1 {
+  margin: 4px 0 14px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.lattice-doc-body h2 {
+  margin: 26px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--lattice-border);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.lattice-doc-body h3 {
+  margin: 20px 0 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.lattice-doc-body h4,
+.lattice-doc-body h5,
+.lattice-doc-body h6 {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-doc-body p {
+  margin: 0 0 10px;
+}
+
+.lattice-doc-body ul,
+.lattice-doc-body ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.lattice-doc-body li {
+  margin: 3px 0;
+}
+
+.lattice-doc-body li > ul,
+.lattice-doc-body li > ol {
+  margin: 4px 0;
+}
+
+.lattice-doc-body a {
+  color: var(--lattice-primary);
+  text-decoration: none;
+}
+
+.lattice-doc-body a:hover {
+  text-decoration: underline;
+}
+
+.lattice-doc-body strong {
+  font-weight: 600;
+}
+
+.lattice-doc-body hr {
+  margin: 18px 0;
+  border: 0;
+  border-top: 1px solid var(--lattice-border);
+}
+
+.lattice-doc-body blockquote {
+  margin: 0 0 12px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--lattice-border-strong);
+  color: var(--lattice-text-muted);
+}
+
+.lattice-doc-body code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--lattice-surface-3);
+  font-family: var(--lattice-mono);
+  font-size: 11.5px;
+}
+
+.lattice-doc-code {
+  margin: 0 0 12px;
+  overflow-x: auto;
+  border: 1px solid var(--lattice-border);
+  border-radius: 8px;
+  background: var(--lattice-surface-3);
+}
+
+.lattice-doc-code pre {
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.lattice-doc-code code {
+  padding: 0;
+  background: transparent;
+  font-size: 11.5px;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+.lattice-doc-table {
+  margin: 0 0 12px;
+  overflow-x: auto;
+  border: 1px solid var(--lattice-border);
+  border-radius: 8px;
+}
+
+.lattice-doc-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.lattice-doc-table th,
+.lattice-doc-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--lattice-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.lattice-doc-table th {
+  background: var(--lattice-surface-3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/*
+ * 表格里的 `code` 不许折行：`sync_widget_windows` 被切成 `sync_widget_wi / ndows`
+ * 之后，读者要先把两半拼回去才知道那是个函数名。nowrap 之后这一列的
+ * min-content 就是那个词的长度，表格宁可横向滚也不切词。
+ */
+.lattice-doc-table code {
+  white-space: nowrap;
+}
+
+.lattice-doc-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.lattice-doc-body img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+/* 远程图（徽章）被降级成文字，别让它抢注意力 */
+.lattice-doc-alt {
+  color: var(--lattice-text-faint);
+}
+
 
 .lattice-settings-form-head {
   display: flex;
