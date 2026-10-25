@@ -2,14 +2,14 @@
  * 内置 assistant —— **平台这一半**：设置、快照、工具循环。
  *
  * 和三样东西打交道，每样都只有一个入口：
- *   - 模型：`invoke("llm_chat")`（Rust 那边发请求，key 不进前端）
+ *   - 模型：`callCommand("llm_chat_stream")` —— 桌面里是 Rust 发请求，浏览器预览
+ *     走 dev server 的 `/api/llm`（key 仍然只在 Node 里，见 `platform/devLlm.ts`）
  *   - 桌面：`runAgentAction`（**和外部 agent 端点同一个执行器**，撤销/落盘照旧）
  *   - 状态：`useLattice`（快照只读）
  *
  * 循环停在三处：没有工具调用了、到了 `MAX_STEPS`、用户按了停止。
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import {
@@ -42,6 +42,7 @@ import { t } from "../runtime/i18n";
 import type { AuthShape } from "../runtime/llm-models";
 import type { WidgetRecord } from "../runtime/registry";
 import { agentSnapshot, runAgentAction, type AgentReply } from "./agent";
+import { callCommand, hasRust } from "./devLlm";
 import { callHand, cancelHand, type HandsReply } from "./hands";
 
 /** 和 Rust 的 `ProfileView` 对齐。**没有 apiKey 字段**，只有掩码 */
@@ -66,7 +67,7 @@ export interface ProfilesView {
 }
 
 export async function readLlmProfiles(): Promise<ProfilesView> {
-  return await invoke<ProfilesView>("llm_profiles");
+  return await callCommand<ProfilesView>("llm_profiles");
 }
 
 export interface SavedProfile {
@@ -87,7 +88,7 @@ export async function saveLlmProfile(input: {
   model: string;
   temperature: number;
 }): Promise<SavedProfile> {
-  return await invoke<SavedProfile>("llm_profile_save", {
+  return await callCommand<SavedProfile>("llm_profile_save", {
     id: input.id ?? null,
     label: input.label,
     baseUrl: input.baseUrl,
@@ -99,12 +100,12 @@ export async function saveLlmProfile(input: {
 
 /** 删一档。它带着 key 一起走 —— 界面上要两步确认 */
 export async function removeLlmProfile(id: string): Promise<ProfilesView> {
-  return await invoke<ProfilesView>("llm_profile_remove", { id });
+  return await callCommand<ProfilesView>("llm_profile_remove", { id });
 }
 
 /** 空串等于"删掉这一档的 key" */
 export async function saveLlmKey(id: string, key: string): Promise<ProfilesView> {
-  return await invoke<ProfilesView>("llm_set_key", { id, key });
+  return await callCommand<ProfilesView>("llm_set_key", { id, key });
 }
 
 /**
@@ -119,7 +120,7 @@ export async function listModels(options: {
   auth?: AuthShape;
   key?: string;
 } = {}): Promise<string[]> {
-  return await invoke<string[]>("llm_models", {
+  return await callCommand<string[]>("llm_models", {
     profileId: options.profileId ?? null,
     baseUrl: options.baseUrl ?? null,
     auth: options.auth ?? null,
@@ -129,7 +130,7 @@ export async function listModels(options: {
 
 /** 主动切换 active 档：点一下另一条就等于把它设成 active */
 export async function activateLlmProfile(id: string): Promise<ProfilesView> {
-  return await invoke<ProfilesView>("llm_profile_activate", { id });
+  return await callCommand<ProfilesView>("llm_profile_activate", { id });
 }
 
 export type TurnEvent =
@@ -168,7 +169,7 @@ export async function cancelActiveTurn(): Promise<void> {
   const id = activeRequest;
   if (!id) return;
   try {
-    await invoke<boolean>("llm_chat_cancel", { requestId: id });
+    await callCommand<boolean>("llm_chat_cancel", { requestId: id });
   } catch {
     // 那一轮已经结束了：这不是错误
   }
@@ -191,13 +192,19 @@ async function streamChat(options: {
   const requestId = newRequestId();
   activeRequest = requestId;
   // 先挂监听再发请求：迟一步的话，第一段字会在监听注册之前到（尤其是本地模型）
-  const unlisten = await listen<DeltaPayload>("lattice:llm-delta", (event) => {
-    const payload = event.payload;
-    if (!payload || payload.requestId !== requestId) return;
-    if (typeof payload.text === "string" && payload.text) options.onDelta(payload.text);
-  });
+  //
+  // 浏览器预览里没有这条事件（增量是 Rust 从 SSE 切出来的），所以**不挂**：
+  // `listen()` 在没有 `__TAURI_INTERNALS__` 时注册不上，而那一轮的字会在结束时
+  // 整句回来 —— 少一串增量，不是少一次回答。
+  const unlisten: () => void = hasRust()
+    ? await listen<DeltaPayload>("lattice:llm-delta", (event) => {
+        const payload = event.payload;
+        if (!payload || payload.requestId !== requestId) return;
+        if (typeof payload.text === "string" && payload.text) options.onDelta(payload.text);
+      })
+    : () => {};
   try {
-    return await invoke<AssistantReply>("llm_chat_stream", {
+    return await callCommand<AssistantReply>("llm_chat_stream", {
       requestId,
       messages: options.messages,
       tools: options.tools,
@@ -246,13 +253,13 @@ export function localSurface(records: WidgetRecord[]): AssistantSurface {
 export function remoteSurface(): AssistantSurface {
   return {
     async snapshot() {
-      const raw = await invoke<string>("assistant_snapshot");
+      const raw = await callCommand<string>("assistant_snapshot");
       const reply = JSON.parse(raw) as AgentReply;
       if (!reply.ok) throw new Error(reply.error);
       return compactSnapshot(reply.result as DeskSnapshot);
     },
     async act(action, args) {
-      const raw = await invoke<string>("assistant_act", { action, args });
+      const raw = await callCommand<string>("assistant_act", { action, args });
       const reply = JSON.parse(raw) as AgentReply;
       return reply;
     },

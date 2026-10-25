@@ -10,9 +10,8 @@
  *     的同一条理由）
  */
 
-import { invoke } from "@tauri-apps/api/core";
-
 import type { HandsSettings } from "../runtime/hands";
+import { callCommand } from "./devLlm";
 
 /** 和 `platform/agent.ts` 的 `AgentReply` 同形，但多了几只新手才会有的 code */
 export type HandsReply =
@@ -20,11 +19,11 @@ export type HandsReply =
   | { ok: false; code: string; error: string };
 
 export async function readHands(): Promise<HandsSettings> {
-  return await invoke<HandsSettings>("assistant_hands");
+  return await callCommand<HandsSettings>("assistant_hands");
 }
 
 export async function saveHands(hands: HandsSettings): Promise<HandsSettings> {
-  return await invoke<HandsSettings>("assistant_hands_save", { hands });
+  return await callCommand<HandsSettings>("assistant_hands_save", { hands });
 }
 
 /**
@@ -39,7 +38,7 @@ export async function callHand(
   name: string,
   args: unknown,
 ): Promise<HandsReply> {
-  const raw = await invoke<string>("assistant_tool", {
+  const raw = await callCommand<string>("assistant_tool", {
     requestId,
     name,
     args: JSON.stringify(args ?? {}),
@@ -55,7 +54,7 @@ export async function callHand(
 /** 叫停正在跑的那只手（命令会被真的 kill）。**幂等** */
 export async function cancelHand(requestId: string): Promise<boolean> {
   try {
-    return await invoke<boolean>("hands_cancel", { requestId });
+    return await callCommand<boolean>("hands_cancel", { requestId });
   } catch {
     return false;
   }

@@ -370,6 +370,40 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 **组件拿到的只有 `{text, actions}`。** 它看不到工具调用、看不到快照、也不能决定执行什么
 （那是"借"，不是"长手"）。作者视角的契约见 [WIDGET_SPEC §3.5](./WIDGET_SPEC.md)。
 
+### 4.8 浏览器预览里的 assistant（`npm run dev`）[已实现]
+
+浏览器里没有 Rust，`isTauri()` 为 false，而 §4 的每一条路都是 `invoke("llm_…")`。所以
+`npm run dev` 期间 dev server 自己挂了一个中间件（`scripts/dev-llm-proxy.mjs`），把
+`llm_profiles` / `llm_profile_save` / `llm_profile_remove` / `llm_profile_activate` /
+`llm_set_key` / `llm_models` / `llm_chat` / `llm_chat_stream` / `assistant_hands*` 搬到
+`/api/llm/*` 上。前端只有一个分叉点：`platform/devLlm.ts` 的 `callCommand()`（`isTauri()`
+为真走 IPC，为假走这条）。
+
+**key 仍然不进前端。** 读写都发生在 Node 里，前端只看得见 `keyHint` 掩码；`llm_set_key`
+会把用户**刚粘进来的**明文发过去（和桌面面板里打字是同一件事），发完就不回传。
+
+三道闸，每一道都对着"这个口子会不会被人借走"：
+
+1. **只认本机**（`req.socket.remoteAddress` 是回环）。就算有人把 dev server 开成 `--host`，
+   这个口子也不会跟着出去。
+2. **只认本机的 `Origin`**。组件 iframe 的源是不透明的 `"null"`，过不去。
+3. **POST 必须是 `application/json`**。跨源请求要先过预检，而没人答那份预检 —— 不可信
+   代码没法借这个口子花用户的 key。
+
+**为什么不是那条 agent 回环端点**（`127.0.0.1:65401`，§1）：它默认关（预览时多半没在跑）、
+请求体上限 64 KB（带工具的对话轻易超过）、没有流式增量，而且它是一道**有令牌的公开口子**
+—— 拿到 token 的任何进程都能拿用户的 key 花钱。dev server 的中间件只在这台机器上、只在
+`npm run dev` 期间存在，浏览器根本不用越过第二道口。
+
+**这一层不复制的东西**：流式增量（`lattice:llm-delta` 是 Rust 从 SSE 切出来的）、六只手的
+执行（`assistant_tool` 的白名单与额度都在 Rust 里，这里回一句 `desktop-only`）、审计
+（`agent.rs::audit`）。所以浏览器预览是"能用"，不是"和桌面一样"：回答在结束时整句出现，
+手一按会得到"桌面应用里才有"。
+
+**这一层必须复制的东西**：`llm_policy.rs` / `llm.rs` 的那几条规则（base URL 归一化、三种
+鉴权、错误翻译、`assistant.json` 的 v3 形状）。改一边要改另一边 —— `npm run test:llm-proxy`
+（23 条）用 Rust 测试里的同一组样例钉住它，这是唯一的提醒。
+
 ## 5. 明确不做（v1）
 
 **后台自主调控。** 比如"每天按天气自动换主题"——那需要一个常驻订阅，而人在环（用户说
