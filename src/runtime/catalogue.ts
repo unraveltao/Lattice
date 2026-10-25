@@ -72,6 +72,20 @@ export interface CatalogueEntry {
   publisher: CataloguePublisher | null;
   /** 按版本**降序**排好，[0] 就是最新 */
   versions: CataloguePackage[];
+  /**
+   * 合并时补上的来源（0010）：这条是**哪个源**给的。
+   *
+   * `parseCatalogue` 不填（一份目录里的条目都来自同一个源，写一遍是重复的），
+   * `mergeCatalogues` 填。界面拿它显示来源角标、按源说"读不到"。
+   */
+  sourceId?: string;
+  /**
+   * 另外还有哪些源也提供同一个 id（显示用的**名字**，不是 id）。
+   *
+   * 只在合并时出现，而且只在真的撞了的时候 —— 空数组就是"只有这一个源有它"。
+   * 撞了不静默：两个源里的同 id 是两段代码、两把钥匙，用户得知道还有另一份。
+   */
+  alsoIn?: string[];
 }
 
 export interface Catalogue {
@@ -451,4 +465,171 @@ export function keyFingerprint(key: string): string {
 export function isNewer(candidate: string, baseline: string): boolean {
   if (!parseVersion(candidate) || !parseVersion(baseline)) return false;
   return (compareVersions(candidate, baseline) ?? 0) > 0;
+}
+
+/* ─────────────────────── 目录源：一个列表，一张合并表（0010） ─────────────────────── */
+
+/**
+ * 一个目录源。
+ *
+ * `id` 是**稳定的身份**，进 React key、进"同 id 冲突谁赢"的判定，**不进信任链** ——
+ * 认发布者靠包上的 `publisher.key`，不靠源的名字。官方那份固定叫 `official`，
+ * 其余由地址归一化得到（`sourceIdFor`），撞名加 `-2`。
+ *
+ * `enabled` 是"参不参与合并"，不是"删掉"：地址和它在磁盘上的缓存都留着，
+ * 翻回来不用重新粘一遍。
+ */
+export interface CatalogueSource {
+  id: string;
+  kind: "url" | "bundled";
+  url: string;
+  enabled: boolean;
+}
+
+/** 目录为什么不是最新的。两个都会让界面多一行说明 */
+export interface CatalogueNotice {
+  kind: "stale" | "fallback";
+  message: string;
+}
+
+/** 一个源的读况。停用的源也会有（界面要显示"停用中，上次读到……"） */
+export interface SourceSnapshot {
+  source: CatalogueSource;
+  catalogue: Catalogue | null;
+  warnings: string[];
+  error: string | null;
+  /** 目录地址，界面上显示"从哪儿读的" */
+  origin: string;
+  /** ms */
+  at: number;
+  notice: CatalogueNotice | null;
+}
+
+/** 合并之后的条目：多带一个"来自哪个源"，以及"另外还有谁提供它" —— 见 `CatalogueEntry` 那两个可选字段 */
+export type SourcedEntry = CatalogueEntry & { sourceId: string };
+
+export interface MergeConflict {
+  id: string;
+  /** 生效的那个源 */
+  winner: string;
+  /** 被盖住的源（顺序同上） */
+  shadowed: string[];
+}
+
+/**
+ * 地址 → 稳定 id。
+ *
+ * 取地址的**头**一段（域名 + 前几节路径）：尾部通常是 `registry.json`，
+ * 每个源都一样，拿来当 id 会全撞在一起。非字母数字一律压成 `-`，
+ * 所以同一个地址换个大小写、带不带结尾 `/` 都得到同一个 id。
+ */
+export function sourceIdFor(url: string): string {
+  const clean = url
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
+  const slug = clean.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!slug) return "src";
+  const head = slug.slice(0, 40).replace(/-+$/, "");
+  return `src-${head}`;
+}
+
+/** 一个源在界面上叫什么：目录自己的名字，再退回 id */
+export function sourceLabel(snapshot: Pick<SourceSnapshot, "source" | "catalogue">): string {
+  const name = snapshot.catalogue ? pickText(snapshot.catalogue.name) : "";
+  return name || snapshot.source.id;
+}
+
+/**
+ * 把盘上的 `sources` 归一化。
+ *
+ * 三条硬规矩（`tests/catalogue.html` 钉着）：
+ *
+ * 1. **空列表补官方那份**。一个源都没有是一个无法自愈的状态 —— 商店空着，用户
+ *    不知道该往里填什么。这里补的不是"内置目录"，是调用方给的那份官方地址。
+ * 2. **按地址去重**。同一个地址加两次只是两行一样的东西，缓存文件还只有一份。
+ * 3. **id 撞了就加 `-2`**。id 进 React key，两个一样的 key 会让卡片串成一张。
+ */
+export function normalizeSources(raw: unknown, fallbackUrl: string): CatalogueSource[] {
+  const out: CatalogueSource[] = [];
+  const ids = new Set<string>();
+  const urls = new Set<string>();
+  const items = Array.isArray(raw) ? raw : [];
+
+  for (const item of items) {
+    const entry = record(item);
+    if (!entry) continue;
+
+    const kind = entry.kind === "bundled" ? "bundled" : "url";
+    const url = kind === "bundled" ? "" : text(entry.url);
+    if (kind === "url" && !url) continue;
+    // 同地址只留第一次那一份：它的启用状态与位置就是用户刚刚摆的那个
+    if (kind === "url" && urls.has(url)) continue;
+    if (kind === "url") urls.add(url);
+
+    const wanted = text(entry.id);
+    const base = /^[a-z0-9][a-z0-9._-]*$/i.test(wanted)
+      ? wanted
+      : kind === "bundled"
+        ? "bundled"
+        : sourceIdFor(url);
+    let id = base;
+    for (let suffix = 2; ids.has(id); suffix += 1) id = `${base}-${suffix}`;
+    ids.add(id);
+
+    out.push({ id, kind, url, enabled: entry.enabled !== false });
+  }
+
+  if (out.length === 0) {
+    return [{ id: "official", kind: "url", url: fallbackUrl.trim(), enabled: true }];
+  }
+  return out;
+}
+
+/**
+ * 多个源合并成一张表。
+ *
+ * **同一个 `widgetId` 出现在两个源里时按列表顺序先到先得**，被盖住的只用一句话
+ * 说出来（`alsoIn`）。为什么不是"挑版本高的"：两个源里的同 id 是**两段代码、
+ * 两把钥匙**，不是同一件东西的两个版本 —— 挑高的那个等于让"我一个都没见过的
+ * 更新"静默换掉用户已经信任的发布者。顺序由用户在设置里调。
+ *
+ * 停用的源（`enabled: false`）完全不进合并。
+ */
+export function mergeCatalogues(list: readonly SourceSnapshot[]): {
+  entries: SourcedEntry[];
+  conflicts: MergeConflict[];
+} {
+  const entries: SourcedEntry[] = [];
+  const byId = new Map<string, SourcedEntry>();
+  /** id → 生效那份源的显示名，冲突行要用 */
+  const winnerLabel = new Map<string, string>();
+  const conflicts = new Map<string, MergeConflict>();
+
+  for (const snapshot of list) {
+    if (!snapshot.source.enabled || !snapshot.catalogue) continue;
+    const label = sourceLabel(snapshot);
+    for (const entry of snapshot.catalogue.entries) {
+      const win = byId.get(entry.id);
+      if (!win) {
+        const sourced: SourcedEntry = { ...entry, sourceId: snapshot.source.id, alsoIn: [] };
+        byId.set(entry.id, sourced);
+        winnerLabel.set(entry.id, label);
+        entries.push(sourced);
+        continue;
+      }
+      const alsoIn = (win.alsoIn ??= []);
+      if (alsoIn.includes(label)) continue;
+      alsoIn.push(label);
+      const conflict = conflicts.get(entry.id) ?? {
+        id: entry.id,
+        winner: winnerLabel.get(entry.id) ?? snapshot.source.id,
+        shadowed: [],
+      };
+      conflict.shadowed.push(label);
+      conflicts.set(entry.id, conflict);
+    }
+  }
+
+  return { entries, conflicts: [...conflicts.values()] };
 }

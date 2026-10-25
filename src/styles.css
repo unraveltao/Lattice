@@ -3105,6 +3105,52 @@ button.lattice-chip[aria-pressed="true"] {
 }
 
 /*
+ * 订阅了不止一个源时，商店顶上那几行"每源读况"（0010）。
+ *
+ * 一行一个源：名字在左、状态在右。**关掉的源也在这里**（灰一档）—— 用户得看得见
+ * "我关掉的那个还在，只是没在参与"，否则他会以为设置没生效。
+ * 读不到的那一行用警示色，但只染那一行：一个源挂了不该让整间商店变红。
+ */
+.lattice-store-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--lattice-border);
+  list-style: none;
+  font-size: 11px;
+}
+
+.lattice-store-sources li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--lattice-text-faint);
+}
+
+.lattice-store-sources li.is-bad {
+  color: var(--lattice-danger);
+}
+
+.lattice-store-source-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-store-source-note {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
  * 目录卡片不画成"虚线可用"：它和可安装的包不是一回事 ——
  * 那个在你磁盘上，这个在网上，点下去要下载、要验签。
  */
@@ -4678,6 +4724,49 @@ button.lattice-chip[aria-pressed="true"] {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/*
+ * 目录源那一列（0010）：一行一个源 = 启停开关 + 名字 + 上移 / 下移 / 删。
+ *
+ * 名字 `flex: 1` 并吃掉溢出（省略号 + `title` 里放完整地址）：地址可以很长，
+ * 而这一列只有 224px 宽，不让它缩的话三颗按钮会被挤到面板外面去。
+ * 关掉的源整行降一档不透明度：它还在列表里，但不参与合并。
+ */
+.lattice-source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lattice-source-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  border-radius: 6px;
+}
+
+.lattice-source-row[data-off="1"] {
+  opacity: 0.55;
+}
+
+.lattice-source-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lattice-text);
+}
+
+.lattice-source-row .lattice-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .lattice-settings-danger {

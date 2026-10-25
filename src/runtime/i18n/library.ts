@@ -68,6 +68,12 @@ export const LIBRARY_ZH: Record<string, string> = {
   "Needs a decision": "需要你决定",
   "Install all {count} widgets at once": "一次安装全部 {count} 个组件",
 
+  // —— 商店：订阅了不止一个源时的那几行 ——
+  "Turned off": "已关掉",
+  "{count} widgets": "{count} 个组件",
+  "Another source also offers it: {names}. This card uses the one above it in the list.":
+    "另外还有来源提供它：{names}。这张卡用的是列表里更靠上的那一份。",
+
   // —— 商店：已安装条目的静默统计 ——
   "Already installed — {versions}.": "已安装 —— {versions}。",
   "{count} up to date": "{count} 个已是最新",

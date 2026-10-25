@@ -10,7 +10,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import type { Permission, WidgetLayer } from "../runtime/manifest";
 import type { LangPref } from "../runtime/i18n";
-import { normalizeKey } from "../runtime/catalogue";
+import { normalizeKey, normalizeSources, sourceIdFor, type CatalogueSource } from "../runtime/catalogue";
 import type { Appearance } from "../runtime/appearance";
 import type { ConfigValues } from "../runtime/config";
 
@@ -109,30 +109,32 @@ export interface DesktopRect {
 export type ThemeMode = "light" | "dark" | "system";
 
 /**
- * 目录从哪儿来。
+ * 目录源的形状住在 `runtime/catalogue.ts`（0010）：那一侧要拿它做合并的纯逻辑，
+ * 而纯逻辑不该反过来 import 平台层。这里只把默认值与判定留下。
  *
  * `bundled` 是跟着应用一起发的 `public/store/registry.json` —— 断网时的兜底，
- * 用的是仓库里那把公开的演示钥匙。`url` 是真正的目录：默认指向官方那一份，
- * 用户也可以填自己搭的静态托管。
- *
- * 空 url 一律退回 `bundled`，不要出现"地址是空的但模式是 url"这种状态。
+ * 用的是仓库里那把公开的演示钥匙。它现在**也是列表里可以加的一项**，
+ * 不再是"空地址"的隐式退路。
  */
-export interface CatalogueSource {
-  kind: "bundled" | "url";
-  url: string;
-}
+export type { CatalogueSource } from "../runtime/catalogue";
 
 /**
  * 官方目录的地址。
  *
- * 它就是一个静态文件（GitHub Pages），没有服务端。**默认读这一份**：
+ * 它就是一个静态文件（GitHub Pages），没有服务端。**默认只订这一份**：
  * 内置那份是演示目录、用公开的 `dev-publisher.key` 签，和线上这份的发布者
  * 钥匙不是同一把 —— 让用户一上手就读线上，就不会在切源时连着吃几个
  * "发布者钥匙变了"的确认。
  */
 export const OFFICIAL_CATALOGUE_URL = "https://unraveltao.github.io/lattice-registry/registry.json";
 
-export const OFFICIAL_CATALOGUE_SOURCE: CatalogueSource = { kind: "url", url: OFFICIAL_CATALOGUE_URL };
+/** 官方那一份源的完整形状（id 固定 `official`：迁移与"同 id 冲突"都按它认） */
+export const OFFICIAL_CATALOGUE_SOURCE: CatalogueSource = {
+  id: "official",
+  kind: "url",
+  url: OFFICIAL_CATALOGUE_URL,
+  enabled: true,
+};
 
 /** 这个地址是不是官方目录（设置里要显示成 "Official" 而不是一长串 URL） */
 export function isOfficialCatalogue(url: string): boolean {
@@ -286,8 +288,14 @@ interface LatticeState {
    * 事件同步 —— 托盘菜单改了状态，主窗口得跟着变。
    */
   paused: boolean;
-  /** 组件目录的来源。默认跟着应用走的本地目录 */
-  catalogueSource: CatalogueSource;
+  /**
+   * 订阅的组件目录源，**一个列表，按顺序生效**（0010）。
+   *
+   * 顺序决定同一时刻"同一个 `widgetId` 被两个源提供时谁赢"；`enabled` 决定参不参与
+   * 合并。列表**不许空** —— 空商店是一个用户无法自愈的状态，删到最后一个时
+   * `removeCatalogueSource` 会明确拒绝（界面那颗按钮也是灰的）。
+   */
+  sources: CatalogueSource[];
   /**
    * 每个组件第一次安装时记下的发布者公钥。
    *
@@ -341,8 +349,14 @@ interface LatticeState {
   uninstallWidget: (widgetId: string) => void;
   grant: (widgetId: string, permission: Permission) => void;
   revoke: (widgetId: string, permission: Permission) => void;
-  /** 换目录来源。`kind` 为 url 但地址是空的时退回 bundled */
-  setCatalogueSource: (source: CatalogueSource) => void;
+  /** 加一个目录源。id 与"同地址去重"都由 `normalizeSources` 定，调用方只管给地址 */
+  addCatalogueSource: (source: { kind: "url" | "bundled"; url: string }) => void;
+  /** 改一个源（地址 / 启用）。改地址会重算 id 之外的一切，缓存按地址分文件，不用清 */
+  updateCatalogueSource: (id: string, patch: Partial<Pick<CatalogueSource, "kind" | "url" | "enabled">>) => void;
+  /** 删一个源。**最后一个不许删** —— 空商店无法自愈，界面那颗按钮也是灰的 */
+  removeCatalogueSource: (id: string) => void;
+  /** 调顺序（-1 上移 / 1 下移）。顺序决定同 id 冲突谁赢 */
+  moveCatalogueSource: (id: string, delta: -1 | 1) => void;
   /** 记住这个组件的发布者公钥（第一次装、或者用户确认了换人之后） */
   trustKey: (widgetId: string, key: string) => void;
   /** 拉黑一把发布者公钥：之后任何由它签的包都不装（不管版本、不管装没装过） */
@@ -368,19 +382,37 @@ export function snap(value: number, enabled: boolean): number {
  *
  * 1：目录的默认源从"内置演示目录"改成"官方远端目录"。
  *    不迁的话，这个改动只对新装的机器生效 —— 已经用过的人会一直停在演示目录上。
+ * 2：目录源从单值 `catalogueSource` 变成列表 `sources`（0010）。
+ *    单值那份迁成一条源，id 照同一套规则算（官方那条固定 `official`）。
  */
-const STATE_VERSION = 1;
+const STATE_VERSION = 2;
 
 export function migrateState(persisted: unknown, version: number): Record<string, unknown> {
-  const state = (persisted ?? {}) as Record<string, unknown>;
+  let state = (persisted ?? {}) as Record<string, unknown>;
 
   if (version < 1) {
-    const source = state.catalogueSource as CatalogueSource | undefined;
+    const source = state.catalogueSource as Partial<CatalogueSource> | undefined;
     // 旧默认就是"内置 + 空地址"，它和"用户主动选了 Bundled"在盘上长得一样，
-    // 分不开，所以一起迁到官方目录。真想留在内置那份的，设置里还能选回去
+    // 分不开，所以一起迁到官方目录。真想留在内置那份的，设置里还能加回来
     if (!source || (source.kind === "bundled" && !String(source.url ?? "").trim())) {
-      return { ...state, catalogueSource: { ...OFFICIAL_CATALOGUE_SOURCE } };
+      state = { ...state, catalogueSource: { kind: "url", url: OFFICIAL_CATALOGUE_URL } };
     }
+  }
+
+  if (version < 2) {
+    const legacy = state.catalogueSource as Partial<CatalogueSource> | undefined;
+    const kind = legacy?.kind === "bundled" ? "bundled" : "url";
+    const url = kind === "bundled" ? "" : String(legacy?.url ?? "").trim() || OFFICIAL_CATALOGUE_URL;
+    const rest = { ...state };
+    delete rest.catalogueSource;
+    // 迁移只负责"变成列表"，把 id 与去重交给同一份归一化 —— 两处各写一遍迟早对不上
+    return {
+      ...rest,
+      sources: normalizeSources(
+        [{ id: kind === "bundled" ? "bundled" : isOfficialCatalogue(url) ? "official" : sourceIdFor(url), kind, url, enabled: true }],
+        OFFICIAL_CATALOGUE_URL,
+      ),
+    };
   }
 
   return state;
@@ -405,7 +437,7 @@ export const useLattice = create<LatticeState>()(
       inspectorOpen: true,
       lastClosed: null,
       paused: false,
-      catalogueSource: { ...OFFICIAL_CATALOGUE_SOURCE },
+      sources: [{ ...OFFICIAL_CATALOGUE_SOURCE }],
       trustedKeys: {},
       blockedKeys: [],
       ratings: {},
@@ -585,12 +617,55 @@ export const useLattice = create<LatticeState>()(
           };
         }),
 
-      setCatalogueSource: (source) =>
-        set({
-          catalogueSource:
-            source.kind === "url" && !source.url.trim()
-              ? { kind: "bundled", url: "" }
-              : { kind: source.kind, url: source.url.trim() },
+      /*
+       * 源的那几个动作全部收在 `normalizeSources` 后面（和"值只在
+       * `resolveConfig` 里合并"同一条规矩）：地址去重、id 撞名加后缀、
+       * 空列表补官方 —— 一处判据，四个入口共用。别在某个入口里自己拼一条。
+       */
+      addCatalogueSource: (source) =>
+        set((state) => {
+          const kind = source.kind === "bundled" ? "bundled" : "url";
+          const url = kind === "bundled" ? "" : source.url.trim();
+          if (kind === "url" && !url) return state;
+          const id = kind === "bundled" ? "bundled" : sourceIdFor(url);
+          return {
+            sources: normalizeSources([...state.sources, { id, kind, url, enabled: true }], OFFICIAL_CATALOGUE_URL),
+          };
+        }),
+
+      updateCatalogueSource: (id, patch) =>
+        set((state) => {
+          const next = state.sources.map((item) => {
+            if (item.id !== id) return item;
+            const kind = patch.kind === "bundled" ? "bundled" : patch.kind === "url" ? "url" : item.kind;
+            const raw = patch.url ?? item.url;
+            const url = kind === "bundled" ? "" : raw.trim();
+            return { ...item, kind, url, enabled: patch.enabled ?? item.enabled };
+          });
+          return { sources: normalizeSources(next, OFFICIAL_CATALOGUE_URL) };
+        }),
+
+      removeCatalogueSource: (id) =>
+        set((state) => {
+          // 最后一个不许删：空商店用户没法自己修好，而"至少留一个"是零成本的
+          if (state.sources.length <= 1) return state;
+          return {
+            sources: normalizeSources(
+              state.sources.filter((item) => item.id !== id),
+              OFFICIAL_CATALOGUE_URL,
+            ),
+          };
+        }),
+
+      moveCatalogueSource: (id, delta) =>
+        set((state) => {
+          const from = state.sources.findIndex((item) => item.id === id);
+          const to = from + delta;
+          if (from < 0 || to < 0 || to >= state.sources.length) return state;
+          const next = [...state.sources];
+          const [moved] = next.splice(from, 1);
+          next.splice(to, 0, moved);
+          return { sources: next };
         }),
 
       trustKey: (widgetId, key) =>
@@ -672,7 +747,7 @@ export const useLattice = create<LatticeState>()(
         restoreOnLaunch: state.restoreOnLaunch,
         libraryOpen: state.libraryOpen,
         inspectorOpen: state.inspectorOpen,
-        catalogueSource: state.catalogueSource,
+        sources: state.sources,
         trustedKeys: state.trustedKeys,
         blockedKeys: state.blockedKeys,
         ratings: state.ratings,

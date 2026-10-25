@@ -28,6 +28,7 @@ import {
   type CatalogueSource,
 } from "../src/platform/store";
 import type { Catalogue, CatalogueEntry, CataloguePackage } from "../src/runtime/catalogue";
+import { sourceIdFor } from "../src/runtime/catalogue";
 
 const lines: string[] = [];
 const log = (pass: boolean, text: string) => lines.push((pass ? "PASS " : "FAIL ") + text);
@@ -89,6 +90,9 @@ function snapshot(notice: CatalogueSnapshot["notice"]): CatalogueSnapshot {
 function binding(notice: CatalogueSnapshot["notice"]): StoreBinding {
   return {
     snapshot: snapshot(notice),
+    sources: [],
+    conflicts: [],
+    sourceLabels: {},
     busy: false,
     busyId: null,
     installedVersions: new Map(),
@@ -118,42 +122,92 @@ eq(
 );
 
 // ---------------------------------------------------------------------------
-// 2. 老状态迁移
+// 2. 老状态迁移：单值 catalogueSource → 源列表（0010）
 // ---------------------------------------------------------------------------
+
+const sourcesOf = (state: Record<string, unknown>) => state.sources as CatalogueSource[];
 
 const migrated = migrateState({ catalogueSource: { kind: "bundled", url: "" } }, 0);
 eq(
-  (migrated.catalogueSource as CatalogueSource).url,
-  OFFICIAL_CATALOGUE_URL,
-  "旧默认（内置 + 空地址）迁到官方目录",
+  sourcesOf(migrated).map((item) => [item.id, item.url]),
+  [["official", OFFICIAL_CATALOGUE_URL]],
+  "旧默认（内置 + 空地址）迁成官方那一条源",
 );
 
 const custom = migrateState({ catalogueSource: { kind: "url", url: "https://me.example/reg.json" } }, 0);
 eq(
-  (custom.catalogueSource as CatalogueSource).url,
-  "https://me.example/reg.json",
+  sourcesOf(custom).map((item) => item.url),
+  ["https://me.example/reg.json"],
   "用户自己填过的地址一个字都不动",
+);
+eq(
+  sourcesOf(custom)[0].id,
+  sourceIdFor("https://me.example/reg.json"),
+  "自定义源的 id 由地址算出来（不是随便编一个）",
+);
+eq(
+  "catalogueSource" in custom,
+  false,
+  "旧字段删掉了：一份事实不许有两个家，留着它下次读又会被当真",
 );
 
 eq(
-  migrateState({ placements: [] }, 0).catalogueSource,
-  { kind: "url", url: OFFICIAL_CATALOGUE_URL },
-  "连 catalogueSource 都没有的更早状态，也落到官方目录",
+  sourcesOf(migrateState({ placements: [] }, 0)).length,
+  1,
+  "连 catalogueSource 都没有的更早状态，也落到官方目录（不许出现空列表）",
 );
 
 const kept = migrateState({ catalogueSource: { kind: "bundled", url: "" } }, 1);
 eq(
-  (kept.catalogueSource as CatalogueSource).kind,
+  sourcesOf(kept)[0].kind,
   "bundled",
-  "已经是 v1 的状态不再迁移（用户主动选了内置就要留住）",
+  "v1 盘上主动选了内置的那份，迁成一条 bundled 源（不悄悄改成官方）",
 );
 
-// 新装：没有盘上状态时，store 的默认值本身就是官方目录
+// 新装：没有盘上状态时，store 的默认值本身就是官方那一份
 eq(
-  useLattice.getState().catalogueSource.url,
-  OFFICIAL_CATALOGUE_URL,
-  "默认目录源就是官方那一份",
+  useLattice.getState().sources.map((item) => [item.id, item.url]),
+  [["official", OFFICIAL_CATALOGUE_URL]],
+  "默认只有一个源，就是官方那一份",
 );
+
+// 那一列动作：加 / 停用 / 排序 / 删，以及"最后一个删不掉"
+const store = useLattice.getState();
+store.addCatalogueSource({ kind: "url", url: "https://a.example/r.json" });
+eq(
+  useLattice.getState().sources.map((item) => item.id),
+  ["official", "src-a-example-r-json"],
+  "加一个源：排在后面",
+);
+eq(
+  useLattice.getState().sources[1].enabled,
+  true,
+  "新加的源默认是启用的（不启用等于加了没用）",
+);
+
+store.addCatalogueSource({ kind: "url", url: "https://a.example/r.json" });
+eq(useLattice.getState().sources.length, 2, "同一个地址再加一次不会多出一行");
+
+store.updateCatalogueSource("official", { enabled: false });
+eq(useLattice.getState().sources[0].enabled, false, "能停用一个源（地址留着，只是不参与合并）");
+
+store.moveCatalogueSource("src-a-example-r-json", -1);
+eq(
+  useLattice.getState().sources.map((item) => item.id),
+  ["src-a-example-r-json", "official"],
+  "上移一格：顺序决定同 id 冲突谁赢",
+);
+store.moveCatalogueSource("src-a-example-r-json", -1);
+eq(
+  useLattice.getState().sources[0].id,
+  "src-a-example-r-json",
+  "已经在最上面时再上移什么也不做（不越界）",
+);
+
+store.removeCatalogueSource("official");
+eq(useLattice.getState().sources.length, 1, "能删掉一个源");
+store.removeCatalogueSource("src-a-example-r-json");
+eq(useLattice.getState().sources.length, 1, "最后一个删不掉 —— 空商店用户没法自己修好");
 
 // ---------------------------------------------------------------------------
 // 3. 时间写成人话

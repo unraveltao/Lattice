@@ -21,7 +21,7 @@
 | v0.3 | 平台能力 | ✅ 完成 | 调度器、系统指标、落盘备份、关闭撤销、CSP 锁定、出网闸门、每实例配置、网络白名单代理、托盘/自启、目录监听、崩溃隔离、双屏边界夹紧全部落地 |
 | v0.4 | 开发体验 | ✅ 完成 | SDK、脚手架、打包工具、媒体控制、调试面板 |
 | v0.5 | 分发 | ✅ 完成 | 目录是一份静态 JSON：装、更新、回滚、举报、新权限复核全部落地 |
-| v0.6 | 生态 | 🟡 进行中 | 目录上线（Pages 已开）+ 目录缓存/断网兜底落地；剩首次引导、多源列表、真机验收 |
+| v0.6 | 生态 | 🟡 进行中 | 目录上线（Pages 已开）+ 目录缓存/断网兜底 + **多源列表**落地（`sources: [...]`，合并成一张表、每源一行读况，见 [design/0010](./design/0010-multi-source-catalogue.md)）；剩首次引导、第三方作者的发布流程、真机验收 |
 | v0.7 | 交付 | 🟡 进行中 | NSIS 安装包 + 自动更新（见 v0.7 一节） |
 | v0.8 | Agent 接入 | 🟡 进行中 | 默认关的回环端点：只绑 127.0.0.1、令牌、审计日志、8 个白名单动作（读日志用 `npm run agent -- state`）；还差一次 CLI 往返的真机验收 |
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
@@ -34,13 +34,13 @@
 
 | 指标 | 数值 | 备注 |
 | --- | --- | --- |
-| 前端 TS/TSX | 22 251 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
-| 样式 CSS | 5 968 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css` + `assistant-window.css`） |
+| 前端 TS/TSX | 22 786 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
+| 样式 CSS | 6 057 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css` + `assistant-window.css`） |
 | Rust | 22 854 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
 | 组件 SDK | 801 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
 | 官方组件 + 示例 | 23 770 行 | 16 个官方包 + 1 个示例（含每个包里的 SDK 副本；未跟踪的桌宠不计） |
 | 构建脚本 | 4 853 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
-| 浏览器断言 | 2 377 条 | 51 个自检页，跑一遍的真实计数（0 failed） |
+| 浏览器断言 | 2 408 条 | 51 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 57 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + 浏览器预览那条通道 24 条，都不依赖 dev server。**CI 只跑前四条（33 条）**，`test:llm-proxy` 还没进 workflow |
 | Rust 单测 | 415 条 | 364 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 92 个 | |
@@ -201,9 +201,10 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
   - **顺带验一次真机**：现在所有验签都是打本地 `127.0.0.1:1420` 的目录。跨域 + 真 HTTPS + 真 DNS 的组合没跑过，第一次上线必须拿真地址装一遍、更新一遍、回滚一遍。
   - **进度**：仓库已经推到 GitHub（`unraveltao/lattice-registry`），CI 全绿 —— 六个官方包 + sidecar + 图标 + `build.mjs` / `sign.mjs` / `serve.mjs` / Pages workflow 都在，`registry.json` 已生成并通过真实解析器与真实 HTTP 的端到端校验。**目录自己不再签一遍**：签名在 sidecar 里，由作者在自己机器上做，CI 只校验不签名（一旦 CI 能签，私钥就得进仓库）。官方包用的是新生成的发布者钥匙 `f842c1bf…`，**不是**仓库里那把公开的 `dev-publisher.key` —— 后者任何人都能用，拿它签公开发布的包等于没有签名。代价：已经用内置目录装过组件的机器，第一次切到这个源会看到一次"发布者钥匙变了"的确认。
   - **Pages 已经开了**（`https://unraveltao.github.io/lattice-registry/registry.json` 返回 200，六个包都能下载，`Access-Control-Allow-Origin: *`）。那个开关只能人点一次：`configure-pages` 的 `enablement: true` 试过两次都是 `Resource not accessible by integration` —— GITHUB_TOKEN 没有创建站点的权限。
-- [ ] **多目录源（列表，不是单值）** —— `catalogueSource` 现在是 `{ kind, url }` 单值，切源等于"上一份目录整个消失"。真生态里一个人会同时订阅官方源和别人的源。改成 `sources: [{ id, url, enabled }]`：合并展示、按源分组、每个源单独显示"上次读到的时间 / 失败原因"。
-  - **id 冲突不做"高版本胜"**：那等于谁都能覆盖别人的包。按源优先级取一份，另一份明确标成"Source B also has `demo.clock`"。同名不是安全问题（信任锚点是包上的钥匙），是显示问题。
-  - 这条不做，"公开目录上线"就退化成"二选一"—— 用户填了第三方源就看不见官方更新，反过来也一样。
+- [x] **多目录源（列表，不是单值）** —— `catalogueSource` 曾是 `{ kind, url }` 单值，切源等于"上一份目录整个消失"。真生态里一个人会同时订阅官方源和别人的源。现在 `state.json` v2 里是 `sources: [{ id, kind, url, enabled }]`：并发读、合并成一张表、每源单独一行显示"读到几条 / 为什么读不到 / 已关掉"，卡片带来源角标。推理与四条边界在 [`design/0010`](./design/0010-multi-source-catalogue.md)。
+  - **id 冲突不做"高版本胜"**：那等于谁都能覆盖别人的包。按源顺序取一份，另一份在卡片上明写"另外还有来源提供它：…"。同名不是安全问题（信任锚点是包上的钥匙），是显示问题。
+  - **退回内置那份只给官方源**：自定义源读不到就显示读不到 —— 拿演示目录的包顶在一个第三方源的名字底下，等于把包挂在错误的发布者名下。
+  - 断言：`tests/catalogue.html` 71 → 92（id 计算、归一化、合并顺序与冲突）、`tests/catalogue-cache.html` 20 → 30（v0/v1 → v2 迁移 + store 上那列动作，含"最后一个源删不掉"）。**真机还没走**：设置里加一个真的第三方目录，看两行读况、断网只红一行、顺序换过之后冲突那句换名字、重启后顺序还在。
 - [x] **目录的增量与缓存** —— 每次读目录都是全量 GET。加 `If-None-Match` / `If-Modified-Since`，304 就直接用内存里那份；网络失败时退回**上一次成功读到的那份**，并在界面上一行说明"Showing the catalogue from 3 hours ago"。断网等于商店空白，是现在最容易被误认为"应用坏了"的状态。
   - **做完了，四条边界记在这里**：缓存落在 `%APPDATA%\com.iron-tom.lattice\catalogue-cache\<sha256(url)[..16]>.json`，内容是 `{schema, url, at, etag, text}`，**地址对不上就整份作废**（用户把源从 A 改成 B，A 的旧内容不能顶 B）；解码任何一条不合法都当"没有缓存"，缓存是加速不是真相，读坏的后果应该是"照常走网络"而不是"界面上一堆怪报错"；ETag 只接受 128 字符以内、不带 `\r\n` 的值（它下一轮会被塞回请求头）；**304 那条其实省不下多少流量**（目录才几 KB），它的价值是"内容真的没变"这个证据，没有它每次启动都要重新解析一份没变的 JSON。
   - **默认源同时改了**：`catalogueSource` 默认从"内置演示目录"变成官方远端目录。内置那份用仓库里公开的 `dev-publisher.key` 签，和线上那把不是同一把钥匙 —— 让用户一上手就读线上，就不会在切源时连着吃六个"发布者钥匙变了"的确认。内置那份退成**断网兜底**：远端读不到且没有缓存时才顶上，界面上必须写明"这是随应用带的那份"（那份里的包是另一把钥匙签的，用户待会儿看到确认得有前因后果）。旧盘上的状态用 `persist` 的 `version: 1` + `migrateState` 迁过去，否则这个改动只对新装的机器生效。

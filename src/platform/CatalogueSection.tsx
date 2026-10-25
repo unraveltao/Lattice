@@ -23,9 +23,12 @@ import {
   isDemoPublisherKey,
   keyFingerprint,
   planInstall,
+  sourceLabel,
   type CatalogueEntry,
   type CataloguePackage,
   type InstallPlan,
+  type MergeConflict,
+  type SourceSnapshot,
 } from "../runtime/catalogue";
 import { PERMISSION_LABELS, permissionLabel, type Permission } from "../runtime/manifest";
 import { useLang, useT } from "../runtime/i18n";
@@ -37,6 +40,12 @@ import { LibSection } from "./LibSection";
 
 export interface StoreBinding {
   snapshot: CatalogueSnapshot | null;
+  /** 每源的读况（含停用的）—— 商店顶那几行状态用它 */
+  sources: SourceSnapshot[];
+  /** 同一个 id 被多个源提供：谁赢、谁被盖住 */
+  conflicts: MergeConflict[];
+  /** 源 id → 界面上的名字（卡片角标用） */
+  sourceLabels: Record<string, string>;
   /** 正在读目录 */
   busy: boolean;
   /** 正在装的那一个（卡片上转圈，别的按钮禁用） */
@@ -289,6 +298,31 @@ export function CatalogueSection({
         </details>
       )}
 
+      {/*
+        订阅了不止一个源时，把每源的读况摊出来：哪个读到了、哪个读不到、哪个关着。
+        一个源挂了**只让它自己这行变红** —— 整间商店空白是"我订阅了两个、其中一个
+        挂了"最常见的坏结果，也是最没必要的一种。
+      */}
+      {store.sources.length > 1 && (
+        <ul className="lattice-store-sources">
+          {store.sources.map((item) => {
+            const sourceName = sourceLabel(item);
+            return (
+              <li key={item.source.id} className={item.error ? "is-bad" : undefined}>
+                <span className="lattice-store-source-name">{sourceName}</span>
+                <span className="lattice-store-source-note">
+                  {!item.source.enabled
+                    ? t("Turned off")
+                    : item.error
+                      ? item.error
+                      : t("{count} widgets", { count: item.catalogue?.entries.length ?? 0 })}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
       {rows.length === 0 && (
         <p className="lattice-hint">
           {tokens.length > 0
@@ -439,7 +473,23 @@ function CatalogueCard({
         {plan.pkg.size > 0 && (
           <span className="lattice-mono">{Math.max(1, Math.round(plan.pkg.size / 1024))} KB</span>
         )}
+        {/* 订阅了不止一个源时才标出来源：只有一个源时这枚角标每张卡都一样，纯噪声 */}
+        {store.sources.length > 1 && entry.sourceId && (
+          <span className="lattice-mono">{store.sourceLabels[entry.sourceId] ?? entry.sourceId}</span>
+        )}
       </div>
+
+      {/*
+        同 id 被两个源提供时说一句。**不静默**：两个源里的同 id 是两段代码、两把钥匙，
+        用户得知道另有一份 —— 但也不能让他以为可以"挑一个装"（安装只看生效的那份）。
+      */}
+      {entry.alsoIn && entry.alsoIn.length > 0 && (
+        <p className="lattice-store-note">
+          {t("Another source also offers it: {names}. This card uses the one above it in the list.", {
+            names: entry.alsoIn.join(listSep),
+          })}
+        </p>
+      )}
 
       {plan.pkg.permissions.length > 0 && (
         <div className="lattice-perm-list">

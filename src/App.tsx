@@ -23,7 +23,7 @@ import type { StoreBinding } from "./platform/CatalogueSection";
 import {
   backupInfo,
   installCataloguePackage,
-  loadCatalogue,
+  loadCatalogues,
   reportWidget,
   rollbackWidget,
   type BackupInfo,
@@ -34,8 +34,11 @@ import {
   isBlockedKey,
   isDemoPublisherKey,
   keyFingerprint,
+  sourceLabel,
   type CatalogueEntry,
   type CataloguePackage,
+  type MergeConflict,
+  type SourceSnapshot,
 } from "./runtime/catalogue";
 import { buildSpecs, closeDesktop, minimizeMain, syncDesktop } from "./platform/desktop";
 import { Glyph, ICON, ThemeGlyph } from "./platform/icons";
@@ -266,7 +269,7 @@ export default function App() {
    * "为什么这里还是旧版本"变成要查的事。读一次几百毫秒，界面上有刷新按钮。
    * 用户配置（从哪儿读）落在 store 里。
    */
-  const catalogueSource = useLattice((state) => state.catalogueSource);
+  const sources = useLattice((state) => state.sources);
   const trustedKeys = useLattice((state) => state.trustedKeys);
   const trustKey = useLattice((state) => state.trustKey);
   const blockedKeys = useLattice((state) => state.blockedKeys);
@@ -279,6 +282,9 @@ export default function App() {
   const resolvePermissionReview = useLattice((state) => state.resolvePermissionReview);
   const grant = useLattice((state) => state.grant);
   const [catalogue, setCatalogue] = useState<CatalogueSnapshot | null>(null);
+  /** 每源的读况与"同一个 id 被两个源提供"的冲突，只给商店里的那几行用 */
+  const [catalogueSources, setCatalogueSources] = useState<SourceSnapshot[]>([]);
+  const [catalogueConflicts, setCatalogueConflicts] = useState<MergeConflict[]>([]);
   const [catalogueBusy, setCatalogueBusy] = useState(false);
   const [catalogueBusyId, setCatalogueBusyId] = useState<string | null>(null);
   /** 每个组件有没有可回滚的上一版。磁盘状态，只在刷新清单时重读 */
@@ -642,15 +648,21 @@ export default function App() {
    *
    * 失败不抛给调用方：目录挂了不该让整个界面报错，那一段自己会画成
    * "读不到 + 重试"，上面两段（已安装 / 可安装）照常工作。
+   *
+   * 多源（0010）：并发取、逐源兜底，合并成一份给商店，另留一份"每源读况"
+   * 给那几行状态 —— 一个源挂了只让它自己那行变红。
    */
   const refreshCatalogue = useCallback(async () => {
     setCatalogueBusy(true);
     try {
-      setCatalogue(await loadCatalogue(catalogueSource));
+      const view = await loadCatalogues(sources);
+      setCatalogue(view.snapshot);
+      setCatalogueSources(view.sources);
+      setCatalogueConflicts(view.conflicts);
     } finally {
       setCatalogueBusy(false);
     }
-  }, [catalogueSource]);
+  }, [sources]);
 
   useEffect(() => {
     void refreshCatalogue();
@@ -1013,6 +1025,12 @@ export default function App() {
   const storeBinding = useMemo<StoreBinding>(
     () => ({
       snapshot: catalogue,
+      sources: catalogueSources,
+      conflicts: catalogueConflicts,
+      // 源 id → 名字：卡片上的来源角标与商店顶上那几行共用同一份
+      sourceLabels: Object.fromEntries(
+        catalogueSources.map((item) => [item.source.id, sourceLabel(item)]),
+      ),
       busy: catalogueBusy,
       busyId: catalogueBusyId,
       installedVersions,
@@ -1037,6 +1055,8 @@ export default function App() {
     }),
     [
       catalogue,
+      catalogueSources,
+      catalogueConflicts,
       catalogueBusy,
       catalogueBusyId,
       blockedKeys,

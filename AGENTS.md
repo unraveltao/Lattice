@@ -486,7 +486,7 @@ public/widgets/<id>/
 
 - **签名只有一份实现**：`scripts/sign-widget.mjs` 用 Node 的 `crypto.sign(null, bytes, key)`，Rust 侧 `signature.rs` 用 `ed25519-dalek` —— 同一套算法。要换其中一边，先跑 `npm run sign:widget -- --selftest`，它里面有一条两边都认的向量。
 - **`publisher` 写在目录根上**（一处写、所有条目共用），条目级也可以覆盖。`parseCatalogue` 是"条目级优先、没有就继承根级" —— 改格式时两处一起改，只改一边的症状是"每个条目都说没有 publisher key"。
-- **换目录地址**走设置菜单的 `Widget catalogue`（`store.catalogueSource`：`bundled` 或 `{ kind: "url", url }`，默认是官方远端那一份）。远端地址只允许 http/https，取目录走 `store_load_catalogue`（2MB 上限 + 磁盘缓存 + ETag），取包走 `store_download`（16MB，缓存到 `store-cache/<sha256>.lattice`）。**别在渲染进程里直接 `fetch` 远端目录**：那样 CSP 和出网白名单都得为平台自己开一个口子。
+- **目录地址是一个列表**（设置菜单 → `Widget catalogue`）：`store.sources: [{ id, kind, url, enabled }]`（`state.json` v2，见 [design/0010](./docs/design/0010-multi-source-catalogue.md)）。官方那份 id 固定 `official`，其余由地址算（`runtime/catalogue.ts::sourceIdFor`）。并发读、合并成一张表，**同 id 按列表顺序先到先得**（不挑版本高的 —— 两个源里的同 id 是两段代码两把钥匙）。`enabled: false` 的源不发请求、不进合并。远端地址只允许 http/https，取目录走 `store_load_catalogue`（2MB 上限 + 按 URL 分文件的磁盘缓存 + ETag），取包走 `store_download`（16MB，缓存到 `store-cache/<sha256>.lattice`）。**别在渲染进程里直接 `fetch` 远端目录**：那样 CSP 和出网白名单都得为平台自己开一个口子。**退回内置那份只给官方源** —— 让演示目录的包顶在一个第三方源的名字底下，等于把包挂在错误的发布者名下，界面上还看不出来。
 - **目录缓存有四种结局，别只测一种**：200（正常）、304（`If-None-Match` 命中，用缓存文本）、网络失败但有缓存（`stale: true` + 原因，界面上多一行 "Showing an older copy"）、网络失败且没缓存（`Err`，退回内置那份并标 "Offline"）。缓存文件在 `%APPDATA%\com.iron-tom.lattice\catalogue-cache\<sha256(url)[..16]>.json`，删掉它就能回到"第一次装"的状态。纯逻辑在 `catalogue_policy.rs`（有单测），网络那半只能在真机验。
 - 本地钉住的钥匙在 `store.trustedKeys`（`widgetId → key`），跟着 `state.json` 走。要重来一遍"第一次安装"，删掉那个组件再装。
 

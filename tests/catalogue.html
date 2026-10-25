@@ -24,12 +24,13 @@
       /*
        * 组件目录（registry.json）的校验与安装计划。
        *
-       * 这页钉五件事：
+       * 这页钉六件事：
        *   1. 坏条目单独丢弃、不整包失败；整份不是目录才明确拒绝
        *   2. 相对地址按目录地址补全（少一个 `/` 就是全部 404）
        *   3. 安装计划的六种结论：装 / 更新 / 已最新 / 目录更旧 / 没签名 / 换人了 / 被拉黑
        *   4. "换人了"优先于"有新版本" —— 警告不能被包装成一次普通更新
        *   5. "被拉黑"优先于前两者 —— 拉黑是用户说过的话，不该被换钥匙绕过
+       *   6. 多个目录源（0010）：id 怎么算、列表怎么归一化、同 id 谁赢、关掉的源去哪了
        */
       import {
         addedPermissions,
@@ -39,11 +40,15 @@
         isNewer,
         keyFingerprint,
         latestPackage,
+        mergeCatalogues,
         normalizeKey,
+        normalizeSources,
         parseCatalogue,
         pickPackage,
         planInstall,
         resolveCatalogueUrl,
+        sourceIdFor,
+        sourceLabel,
       } from "/src/runtime/catalogue.ts";
 
       const lines = [];
@@ -400,6 +405,121 @@
       log(isNewer("1.2.0", "1.0.0"), "isNewer 认得出新版本");
       log(!isNewer("1.0.0", "1.0.0"), "同版本不是更新");
       log(!isNewer("bad", "1.0.0"), "写坏的版本不当成更新");
+
+      // ---- 10. 目录源：地址 → 稳定 id（0010） ----
+      eq(
+        sourceIdFor("https://example.com/lattice/registry.json"),
+        "src-example-com-lattice-registry-json",
+        "id 取地址的头一段，协议与标点都压掉",
+      );
+      eq(
+        sourceIdFor("HTTPS://Example.COM/lattice/registry.json"),
+        "src-example-com-lattice-registry-json",
+        "同一个地址换个大小写还是同一个 id",
+      );
+      eq(sourceIdFor(""), "src", "空地址也退成一个能用的 id，不返回空串");
+      {
+        const long = sourceIdFor(`https://example.com/${"a".repeat(80)}.json`);
+        log(long.startsWith("src-example-com-") && long.length <= 44, `长地址截到 40 个字符（得到 ${long.length + 4} 字符）`);
+      }
+
+      // ---- 11. 源列表归一化 ----
+      const OFFICIAL = "https://official.example/registry.json";
+      eq(
+        normalizeSources(null, OFFICIAL).map((item) => [item.id, item.url]),
+        [["official", OFFICIAL]],
+        "没有列表时补一份官方源",
+      );
+      eq(normalizeSources([], OFFICIAL)[0].url, OFFICIAL, "空列表补的那份用的是调用方给的官方地址");
+      eq(
+        normalizeSources([{ kind: "url", url: "https://a.example/r.json" }], OFFICIAL).map((item) => [
+          item.id,
+          item.enabled,
+        ]),
+        [["src-a-example-r-json", true]],
+        "地址决定 id，默认启用",
+      );
+      eq(
+        normalizeSources(
+          [
+            { kind: "url", url: "https://a.example/r.json" },
+            { kind: "url", url: "https://a.example/r.json" },
+          ],
+          OFFICIAL,
+        ).length,
+        1,
+        "同一个地址加两次只留第一份",
+      );
+      eq(
+        normalizeSources(
+          [
+            { kind: "url", url: "https://a.example/r.json" },
+            { kind: "url", url: "https://b.example/r.json" },
+          ],
+          OFFICIAL,
+        ).map((item) => item.id),
+        ["src-a-example-r-json", "src-b-example-r-json"],
+        "两个不同的源各自一个 id、顺序照输入走",
+      );
+      eq(
+        normalizeSources([{ kind: "url", url: "https://a.example/r.json", enabled: false }], OFFICIAL)[0]
+          .enabled,
+        false,
+        "关掉的源照样留在列表里（只是不参与合并）",
+      );
+      eq(
+        normalizeSources([{ kind: "url", url: "https://a.example/r.json", id: "same" }, { kind: "url", url: "https://b.example/r.json", id: "same" }], OFFICIAL).map((item) => item.id),
+        ["same", "same-2"],
+        "id 撞了就加后缀（它是 React key，重复会让卡片串成一张）",
+      );
+
+      // ---- 12. 合并：同一个 id 先到先得 ----
+      const snapshotOf = (id, url, name, widgets, enabled = true) => ({
+        source: { id, kind: "url", url, enabled },
+        catalogue: parseCatalogue(doc({ name, widgets }), BASE).catalogue,
+        warnings: [],
+        error: null,
+        origin: url,
+        at: 0,
+        notice: null,
+      });
+
+      {
+        const first = snapshotOf("a", "https://a.example/r.json", "Alpha", [entry()]);
+        const second = snapshotOf("b", "https://b.example/r.json", "Beta", [entry()]);
+        const merged = mergeCatalogues([first, second]);
+        eq(merged.entries.length, 1, "两个源都有同一个 id 时只出一张卡");
+        eq(merged.entries[0].sourceId, "a", "生效的是列表里靠前的那个源");
+        eq(merged.entries[0].alsoIn, ["Beta"], "被盖住的那个源要能被说出来");
+        eq(
+          merged.conflicts,
+          [{ id: "lattice.clock", winner: "Alpha", shadowed: ["Beta"] }],
+          "冲突记的是名字，不是 id —— 那句话是给人看的",
+        );
+      }
+
+      {
+        const first = snapshotOf("a", "https://a.example/r.json", "Alpha", [entry()]);
+        const off = snapshotOf("b", "https://b.example/r.json", "Beta", [entry({ id: "lattice.todo" })], false);
+        const merged = mergeCatalogues([first, off]);
+        eq(merged.entries.map((item) => item.id), ["lattice.clock"], "关掉的源整个不进合并");
+        eq(merged.conflicts, [], "关掉的源也不会被报成冲突");
+      }
+
+      {
+        const first = snapshotOf("a", "https://a.example/r.json", "Alpha", [entry()]);
+        const second = snapshotOf("b", "https://b.example/r.json", "Beta", [entry({ id: "lattice.todo" })]);
+        const merged = mergeCatalogues([first, second]);
+        eq(merged.entries.length, 2, "id 不撞时两个源的东西都在");
+        eq(merged.entries.every((item) => (item.alsoIn ?? []).length === 0), true, "没撞就不写 alsoIn");
+        eq(merged.conflicts, [], "没撞就没有冲突行");
+      }
+
+      eq(
+        sourceLabel({ source: { id: "src-x", kind: "url", url: "", enabled: true }, catalogue: null }),
+        "src-x",
+        "读不到的源退回用 id 当名字",
+      );
 
       document.getElementById("out").innerHTML = lines
         .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)

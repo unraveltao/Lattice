@@ -22,38 +22,47 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import {
+  mergeCatalogues,
   parseCatalogue,
+  sourceLabel,
   type Catalogue,
   type CatalogueEntry,
+  type CatalogueNotice,
   type CataloguePackage,
+  type CatalogueSource,
+  type MergeConflict,
+  type SourceSnapshot,
 } from "../runtime/catalogue";
 import { t } from "../runtime/i18n";
 import { appBaseUrl, isTauri } from "../runtime/registry";
-import type { CatalogueSource } from "./store";
+import { isOfficialCatalogue } from "./store";
 
 /**
- * 这一份目录是"怎么读到的"。
+ * 合并之后的那一份目录。
  *
- * `stale` 和 `fallback` 都会让界面多一行说明。两者的区别是**内容来自谁**：
- * 前者还是那个远端目录（只是旧了），后者已经换成内置那份了 —— 里面的包
- * 是另一把钥匙签的，装的时候会多一次确认。
+ * 商店的其余部分（卡片、批量安装、搜索）只认这一份 —— 它们不需要知道"共有几个源"。
+ * 每源的读况在 `CatalogueView.sources` 里，给设置页与那几行状态用。
  */
-export interface CatalogueNotice {
-  kind: "stale" | "fallback";
-  message: string;
-}
-
 export interface CatalogueSnapshot {
   catalogue: Catalogue | null;
-  /** 丢弃了哪些条目、为什么 —— 界面折叠显示，不刷屏 */
+  /** 丢弃了哪些条目、为什么 —— 界面折叠显示，不刷屏。多源时前面带源名 */
   warnings: string[];
   /** 一个字都没有可显示的时候才有值 */
   error: string | null;
-  /** 目录地址，界面上显示"从哪儿读的" */
+  /** 官方那份的地址（"从哪儿读的"这句话在多源下已经说不准了，留作兜底） */
   origin: string;
   at: number;
   /** 读到了，但不是最新那份 —— 界面要说出来 */
   notice: CatalogueNotice | null;
+}
+
+export interface CatalogueView {
+  /** 合并后的目录，商店只认这一份 */
+  snapshot: CatalogueSnapshot;
+  /** 每源的读况（含停用的，界面要能说"停用了"） */
+  sources: SourceSnapshot[];
+  /** 同一个 id 被多个源提供：谁赢、谁被盖住 */
+  conflicts: MergeConflict[];
 }
 
 /** Rust 那边 `store_load_catalogue` 的返回 */
@@ -111,24 +120,31 @@ export function describeAge(atSeconds: number, now = Date.now()): string {
   return t("{days} days ago", { days });
 }
 
-function empty(error: string, origin: string, at: number): CatalogueSnapshot {
-  return { catalogue: null, warnings: [], error, origin, at, notice: null };
+function emptySource(source: CatalogueSource, error: string, origin: string, at: number): SourceSnapshot {
+  return { source, catalogue: null, warnings: [], error, origin, at, notice: null };
 }
 
-/** 把取回来的文本变成快照。解析失败时 `error` 有值、`catalogue` 是 null */
-function read(text: string, origin: string, at: number, notice: CatalogueNotice | null): CatalogueSnapshot {
+/** 把取回来的文本变成一份源的读况。解析失败时 `error` 有值、`catalogue` 是 null */
+function readSource(
+  source: CatalogueSource,
+  text: string,
+  origin: string,
+  at: number,
+  notice: CatalogueNotice | null,
+): SourceSnapshot {
   let raw: unknown;
   try {
     raw = JSON.parse(text);
   } catch (error) {
-    return empty(t("the catalogue is not valid JSON: {error}", { error: String(error) }), origin, at);
+    return emptySource(source, t("the catalogue is not valid JSON: {error}", { error: String(error) }), origin, at);
   }
 
   const parsed = parseCatalogue(raw, dirOf(origin));
   if (!parsed.catalogue) {
-    return empty(parsed.warnings[0] ?? t("the catalogue could not be read"), origin, at);
+    return emptySource(source, parsed.warnings[0] ?? t("the catalogue could not be read"), origin, at);
   }
   return {
+    source,
     catalogue: parsed.catalogue,
     warnings: parsed.warnings,
     error: null,
@@ -155,33 +171,44 @@ async function readBundled(url: string): Promise<{ text: string } | { error: str
   }
 }
 
-export async function loadCatalogue(source: CatalogueSource): Promise<CatalogueSnapshot> {
+/**
+ * 读一个源。
+ *
+ * **只有官方那一份**在读不到时退回随应用发的那份（`bundled`）。别的源读不到就
+ * 显示"读不到 + 上次读到的时间" —— 一份自定义源的名字底下列着演示目录的包，
+ * 等于把包挂在错误的发布者名下，而界面上看不出来（0010 §3 第 4 条）。
+ */
+async function loadSource(source: CatalogueSource): Promise<SourceSnapshot> {
   const at = Date.now();
   const bundledUrl = `${appBaseUrl()}store/registry.json`;
+  const official = source.kind === "url" && isOfficialCatalogue(source.url);
   const useBundled = source.kind === "bundled" || !source.url.trim();
 
   if (useBundled) {
     const bundled = await readBundled(bundledUrl);
-    return "error" in bundled ? empty(bundled.error, bundledUrl, at) : read(bundled.text, bundledUrl, at, null);
+    return "error" in bundled
+      ? emptySource(source, bundled.error, bundledUrl, at)
+      : readSource(source, bundled.text, bundledUrl, at, null);
   }
 
   const url = source.url.trim();
   if (!isTauri()) {
-    return empty(t("a remote catalogue needs the desktop app — run npm run tauri:dev"), url, at);
+    return emptySource(source, t("a remote catalogue needs the desktop app — run npm run tauri:dev"), url, at);
   }
 
   let fetched: CatalogueText;
   try {
     fetched = await invoke<CatalogueText>("store_load_catalogue", { url });
   } catch (error) {
+    if (!official) return emptySource(source, String(error), url, at);
     /*
-     * 远端彻底读不到：Rust 那边连缓存都没有（第一次装、或者缓存被清过）。
+     * 官方那份彻底读不到：Rust 那边连缓存都没有（第一次装、或者缓存被清过）。
      * 这时候退回内置那份，**但要说出来** —— 那份里的包是另一把钥匙签的，
      * 用户待会儿看到"发布者钥匙变了"的确认，得有前因后果。
      */
     const fallback = await readBundled(bundledUrl);
-    if ("error" in fallback) return empty(String(error), url, at);
-    return read(fallback.text, bundledUrl, at, {
+    if ("error" in fallback) return emptySource(source, String(error), url, at);
+    return readSource(source, fallback.text, bundledUrl, at, {
       kind: "fallback",
       message: t("{url} could not be reached ({reason}). This is the catalogue that ships with the app.", {
         url,
@@ -201,7 +228,95 @@ export async function loadCatalogue(source: CatalogueSource): Promise<CatalogueS
       }
     : null;
 
-  return read(fetched.text, url, at, notice);
+  return readSource(source, fetched.text, url, at, notice);
+}
+
+/**
+ * 读全部源，再合并成一张表。
+ *
+ * 几条别改回去的：
+ *
+ * - **并发取，逐源 `try`**。串行会让三份目录叠成三次等待；而一个源的失败绝不能
+ *   变成"整间商店空白" —— 那是"我订阅了两个，其中一个挂了"最常见的坏结果。
+ * - **停用的源不发请求**，但仍然出现在 `sources` 里：界面要能显示它"停用了"。
+ * - **只有合并空了才算 `error`**。任何一个源读成功，商店就照常显示别家的东西。
+ * - `warnings` 前面带源名：坏条目本来就会说出组件 id，但不说是哪个源给的，
+ *   多源之后就没法排查了。
+ */
+export async function loadCatalogues(sources: CatalogueSource[]): Promise<CatalogueView> {
+  const enabled = sources.filter((item) => item.enabled);
+  const settled = await Promise.all(
+    enabled.map((source) =>
+      loadSource(source).catch((error) => emptySource(source, String(error), source.url, Date.now())),
+    ),
+  );
+
+  const idle: SourceSnapshot[] = sources
+    .filter((item) => !item.enabled)
+    .map((source) => ({
+      source,
+      catalogue: null,
+      warnings: [],
+      error: null,
+      origin: source.url,
+      at: 0,
+      notice: null,
+    }));
+
+  // 顺序与 `sources` 一致：合并的"先到先得"靠的就是这个顺序
+  const ordered = sources
+    .map((source) => settled.find((item) => item.source.id === source.id))
+    .filter((item): item is SourceSnapshot => Boolean(item));
+
+  const merged = mergeCatalogues(ordered);
+
+  const warnings = ordered.flatMap((item) =>
+    item.warnings.map((line) => `${sourceLabel(item)}: ${line}`),
+  );
+
+  const live = ordered.filter((item) => item.catalogue);
+  const failures = ordered.filter((item) => !item.catalogue && item.error);
+  const notices = ordered.filter((item) => item.notice);
+
+  const single = enabled.length === 1 ? live[0]?.catalogue ?? null : null;
+  const updated = live
+    .map((item) => item.catalogue?.updated ?? "")
+    .filter(Boolean)
+    .sort()
+    .pop() ?? "";
+
+  const snapshot: CatalogueSnapshot = {
+    catalogue:
+      live.length === 0
+        ? null
+        : {
+            schema: 1,
+            name: single?.name ?? t("{count} sources", { count: enabled.length }),
+            updated,
+            base: single?.base ?? "",
+            entries: merged.entries,
+          },
+    warnings,
+    error:
+      live.length === 0
+        ? failures.length > 0
+          ? failures
+              .map((item) => `${sourceLabel(item)}: ${item.error ?? ""}`)
+              .join(" · ")
+          : t("no catalogue sources are turned on")
+        : null,
+    origin: ordered[0]?.origin ?? "",
+    at: Date.now(),
+    notice:
+      notices.length === 0
+        ? null
+        : {
+            kind: notices.some((item) => item.notice?.kind === "fallback") ? "fallback" : "stale",
+            message: notices.map((item) => item.notice?.message ?? "").join("\n"),
+          },
+  };
+
+  return { snapshot, sources: [...ordered, ...idle], conflicts: merged.conflicts };
 }
 
 function toBase64(bytes: Uint8Array): string {

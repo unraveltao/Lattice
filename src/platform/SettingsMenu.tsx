@@ -28,14 +28,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { readAgentStatus, setAgentEnabled, type AgentStatus } from "./agent";
 import { isStaleTarget, readAutostart, writeAutostart, type AutostartState } from "./autostart";
 import { Glyph, ICON, ThemeGlyph } from "./icons";
-import { keyFingerprint } from "../runtime/catalogue";
-import {
-  useLattice,
-  isOfficialCatalogue,
-  OFFICIAL_CATALOGUE_SOURCE,
-  OFFICIAL_CATALOGUE_URL,
-  type ThemeMode,
-} from "./store";
+import { keyFingerprint, type CatalogueSource } from "../runtime/catalogue";
+import { useLattice, isOfficialCatalogue, type ThemeMode } from "./store";
 import { isTauri } from "../runtime/registry";
 import { parseUsage, type UsageData } from "../runtime/usage";
 import { appVersion, checkForUpdate, installUpdate, type UpdateState } from "./updater";
@@ -71,10 +65,21 @@ const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
 ];
 
 /**
- * 目录来源的三档。和 `CatalogueSource` 不是一回事：那边只有"内置 / 地址"，
- * 官方目录本身也是一个地址，但界面上该显示"官方"而不是一长串 URL。
+ * 一个源在界面上叫什么。
+ *
+ * 官方那份写 "Official"（一长串 GitHub Pages 地址谁也不看第二眼），随应用发的那份写
+ * "Bundled"，其余的取**主机名** —— 完整地址挂到 `title` 上，要看细节悬停一下。
+ * 名字不参与任何判定（认发布者靠包上的钥匙），所以"好看"在这里就是全部要求。
  */
-type CatalogueDraftKind = "official" | "url" | "bundled";
+function sourceName(source: CatalogueSource, t: (key: string) => string): string {
+  if (source.kind === "bundled") return t("Bundled");
+  if (isOfficialCatalogue(source.url)) return t("Official");
+  try {
+    return new URL(source.url).host || source.url;
+  } catch {
+    return source.url;
+  }
+}
 
 const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
   { value: "light", label: "Light" },
@@ -132,17 +137,26 @@ export function SettingsMenu({
   const toggleRestoreOnLaunch = useLattice((state) => state.toggleRestoreOnLaunch);
   const paused = useLattice((state) => state.paused);
   const setPaused = useLattice((state) => state.setPaused);
-  const catalogueSource = useLattice((state) => state.catalogueSource);
-  const setCatalogueSource = useLattice((state) => state.setCatalogueSource);
+  const sources = useLattice((state) => state.sources);
+  const addCatalogueSource = useLattice((state) => state.addCatalogueSource);
+  const updateCatalogueSource = useLattice((state) => state.updateCatalogueSource);
+  const removeCatalogueSource = useLattice((state) => state.removeCatalogueSource);
+  const moveCatalogueSource = useLattice((state) => state.moveCatalogueSource);
   const blockedKeys = useLattice((state) => state.blockedKeys);
   const unblockKey = useLattice((state) => state.unblockKey);
   const t = useT();
 
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<Section>("account");
-  /** Widgets 区里"目录来源"是一个子表单，不是第七个导航项 */
+  /**
+   * Widgets 区里"目录来源"是一个子表单，不是第七个导航项。
+   *
+   * 0010 之后它是一列源：每行能启停 / 上移下移 / 删，底下一行"加一个源"。
+   * `draftUrl` 只属于"加"，改地址请删掉重加 —— 地址就是缓存文件的键，
+   * 就地改会让"上一次读到的时间"从一个地址跳到另一个地址上。
+   */
   const [catalogueOpen, setCatalogueOpen] = useState(false);
-  const [draftKind, setDraftKind] = useState<CatalogueDraftKind>("official");
+  const [addingSource, setAddingSource] = useState(false);
   const [draftUrl, setDraftUrl] = useState("");
   /** 「打开配置文件」失败时的原话。成功不说话 —— 编辑器自己会跳出来 */
   const [configNote, setConfigNote] = useState<string | null>(null);
@@ -391,21 +405,18 @@ export function SettingsMenu({
         : t("Ask the release page whether a newer version exists");
 
   const startCatalogue = useCallback(() => {
-    setDraftKind(isOfficialCatalogue(catalogueSource.url) ? "official" : catalogueSource.kind);
-    setDraftUrl(catalogueSource.url);
+    setAddingSource(false);
+    setDraftUrl("");
     setCatalogueOpen(true);
-  }, [catalogueSource]);
+  }, []);
 
-  const saveCatalogue = useCallback(() => {
-    setCatalogueSource(
-      draftKind === "bundled"
-        ? { kind: "bundled", url: "" }
-        : draftKind === "official"
-          ? { ...OFFICIAL_CATALOGUE_SOURCE }
-          : { kind: "url", url: draftUrl },
-    );
-    setCatalogueOpen(false);
-  }, [draftKind, draftUrl, setCatalogueSource]);
+  const commitSource = useCallback(() => {
+    const url = draftUrl.trim();
+    if (!url) return;
+    addCatalogueSource({ kind: "url", url });
+    setDraftUrl("");
+    setAddingSource(false);
+  }, [addCatalogueSource, draftUrl]);
 
   const staleAutostart = isStaleTarget(autostart);
   const autostartHint = autostartError
@@ -725,11 +736,9 @@ export function SettingsMenu({
                         <Glyph d={ICON.store} />
                         <span className="lattice-menu-label">{t("Widget catalogue")}</span>
                         <span className="lattice-menu-note">
-                          {isOfficialCatalogue(catalogueSource.url)
-                            ? t("Official")
-                            : catalogueSource.kind === "bundled"
-                              ? t("Bundled")
-                              : t("Custom URL")}
+                          {sources.length === 1
+                            ? sourceName(sources[0], t)
+                            : t("{count} sources", { count: sources.length })}
                         </span>
                         <Glyph d={ICON.chevron} size={13} />
                       </button>
@@ -777,51 +786,117 @@ export function SettingsMenu({
                         <span>{t("Widget catalogue")}</span>
                       </div>
 
-                      <div className="lattice-segmented is-full">
-                        <button
-                          type="button"
-                          className={`lattice-segment${draftKind === "official" ? " is-active" : ""}`}
-                          onClick={() => setDraftKind("official")}
-                        >
-                          {t("Official")}
-                        </button>
-                        <button
-                          type="button"
-                          className={`lattice-segment${draftKind === "url" ? " is-active" : ""}`}
-                          onClick={() => setDraftKind("url")}
-                        >
-                          {t("Custom URL")}
-                        </button>
-                        <button
-                          type="button"
-                          className={`lattice-segment${draftKind === "bundled" ? " is-active" : ""}`}
-                          onClick={() => setDraftKind("bundled")}
-                        >
-                          {t("Bundled")}
-                        </button>
-                      </div>
-
-                      <label className="lattice-textfield">
-                        <span>{t("Catalogue address")}</span>
-                        <input
-                          value={draftKind === "official" ? OFFICIAL_CATALOGUE_URL : draftUrl}
-                          onChange={(event) => setDraftUrl(event.target.value)}
-                          placeholder="https://example.com/lattice/registry.json"
-                          disabled={draftKind !== "url"}
-                          spellCheck={false}
-                          autoComplete="off"
-                        />
-                      </label>
-
                       <p className="lattice-account-hint">
-                        {draftKind === "bundled"
-                          ? t(
-                              "The catalogue that ships with the app — a demo for when the network is down. Its packages are signed with a public key, so switching back to a real catalogue later will ask you to confirm a different publisher.",
-                            )
-                          : t(
+                        {t(
+                          "Sources are read in this order. When two of them offer the same widget, the one higher in the list is the one the shop shows — a widget id is not a shared namespace across catalogues.",
+                        )}
+                      </p>
+
+                      <ul className="lattice-source-list">
+                        {sources.map((source, index) => (
+                          <li key={source.id} className="lattice-source-row" data-off={source.enabled ? "0" : "1"}>
+                            <label
+                              className="lattice-switch"
+                              title={t("Turn this source off to keep its address but leave it out of the shop")}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={source.enabled}
+                                onChange={(event) =>
+                                  updateCatalogueSource(source.id, { enabled: event.target.checked })
+                                }
+                                aria-label={t("Use this source")}
+                              />
+                            </label>
+                            <span className="lattice-source-name" title={source.url || undefined}>
+                              {sourceName(source, t)}
+                            </span>
+                            <button
+                              type="button"
+                              className="lattice-icon-btn is-tiny"
+                              disabled={index === 0}
+                              onClick={() => moveCatalogueSource(source.id, -1)}
+                              title={t("Move up")}
+                              aria-label={t("Move up")}
+                            >
+                              <Glyph d={ICON.up} size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              className="lattice-icon-btn is-tiny"
+                              disabled={index === sources.length - 1}
+                              onClick={() => moveCatalogueSource(source.id, 1)}
+                              title={t("Move down")}
+                              aria-label={t("Move down")}
+                            >
+                              <Glyph d={ICON.down} size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              className="lattice-icon-btn is-tiny"
+                              disabled={sources.length <= 1}
+                              onClick={() => removeCatalogueSource(source.id)}
+                              title={
+                                sources.length <= 1
+                                  ? t("The last source cannot be removed — the shop would have nothing to read")
+                                  : t("Remove this source")
+                              }
+                              aria-label={t("Remove this source")}
+                            >
+                              <Glyph d={ICON.trash} size={12} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+
+                      {addingSource ? (
+                        <>
+                          <label className="lattice-textfield">
+                            <span>{t("Catalogue address")}</span>
+                            <input
+                              value={draftUrl}
+                              onChange={(event) => setDraftUrl(event.target.value)}
+                              placeholder="https://example.com/lattice/registry.json"
+                              spellCheck={false}
+                              autoComplete="off"
+                            />
+                          </label>
+                          <p className="lattice-account-hint">
+                            {t(
                               "A plain JSON file — any static host works, no server needed. Packages are verified against the publisher key in that file before they are installed.",
                             )}
-                      </p>
+                          </p>
+                          <div className="lattice-settings-form-actions">
+                            <button
+                              type="button"
+                              className="lattice-btn is-small"
+                              onClick={() => {
+                                setAddingSource(false);
+                                setDraftUrl("");
+                              }}
+                            >
+                              {t("Cancel")}
+                            </button>
+                            <button
+                              type="button"
+                              className="lattice-btn is-small is-primary"
+                              onClick={commitSource}
+                              disabled={!draftUrl.trim()}
+                            >
+                              {t("Add")}
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="lattice-menu-row"
+                          onClick={() => setAddingSource(true)}
+                        >
+                          <Glyph d={ICON.plus} />
+                          <span className="lattice-menu-label">{t("Add a source")}</span>
+                        </button>
+                      )}
 
                       <div className="lattice-blocked">
                         <div className="lattice-blocked-head">
@@ -850,15 +925,7 @@ export function SettingsMenu({
 
                       <div className="lattice-settings-form-actions">
                         <button type="button" className="lattice-btn is-small" onClick={() => setCatalogueOpen(false)}>
-                          {t("Cancel")}
-                        </button>
-                        <button
-                          type="button"
-                          className="lattice-btn is-small is-primary"
-                          onClick={saveCatalogue}
-                          disabled={draftKind === "url" && !draftUrl.trim()}
-                        >
-                          {t("Save")}
+                          {t("Done")}
                         </button>
                       </div>
                     </div>

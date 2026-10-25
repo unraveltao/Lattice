@@ -152,6 +152,10 @@ const store: StoreBinding = {
     at: Date.now(),
     notice: null,
   },
+  // 单一源的常态：不铺"每源读况"那一段，卡片上也不带来源角标
+  sources: [],
+  conflicts: [],
+  sourceLabels: {},
   busy: false,
   busyId: null,
   installedVersions: new Map([

@@ -81,6 +81,18 @@ export const SETTINGS_ZH: Record<string, string> = {
 
   // —— 商店来源表单 ——
   "Catalogue address": "商店地址",
+  "Sources are read in this order. When two of them offer the same widget, the one higher in the list is the one the shop shows — a widget id is not a shared namespace across catalogues.":
+    "这些来源按顺序读。两个来源都提供同一个组件时，商店里显示的是排在更靠上的那一份 —— 组件 id 在不同商店之间不是共享的命名空间。",
+  "Turn this source off to keep its address but leave it out of the shop": "关掉这个来源：地址留着，但它的组件不进商店",
+  "Use this source": "使用这个来源",
+  "Move up": "上移",
+  "Move down": "下移",
+  "Remove this source": "删掉这个来源",
+  "The last source cannot be removed — the shop would have nothing to read": "最后一个来源删不得：删了商店就没有可读的东西了",
+  "Add a source": "加一个来源",
+  Add: "添加",
+  Done: "完成",
+  "{count} sources": "{count} 个来源",
   "The catalogue that ships with the app — a demo for when the network is down. Its packages are signed with a public key, so switching back to a real catalogue later will ask you to confirm a different publisher.":
     "跟着应用一起发的那份商店数据，断网时用它兜底演示。里面的包是用一把公开钥匙签的，所以以后换回真商店，会让你先确认另一个发布者。",
   "A plain JSON file — any static host works, no server needed. Packages are verified against the publisher key in that file before they are installed.":
