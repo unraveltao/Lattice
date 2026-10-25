@@ -55,6 +55,7 @@ import {
 import { hasRust } from "./devLlm";
 import { AUTH_SHAPES, PRESETS, knownModel, type AuthShape, type Preset } from "../runtime/llm-models";
 import { useT } from "../runtime/i18n";
+import { describeFailure } from "../runtime/llm-errors";
 
 /** 和 Rust 的 `DEFAULT_TEMPERATURE` 对齐：模型没存过温度时表单显示这个 */
 const DEFAULT_TEMPERATURE = 0.6;
@@ -192,7 +193,7 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
         if (!next.profiles.length) startNew();
       })
       .catch((problem) => {
-        if (!cancelled) setError(String(problem instanceof Error ? problem.message : problem));
+        if (!cancelled) setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       });
     if (hasRust()) {
       void configPath()
@@ -219,7 +220,7 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
       if (!stillThere) setDraft(null);
       setNote(t("Read the file again."));
     } catch (problem) {
-      setError(String(problem instanceof Error ? problem.message : problem));
+      setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
     }
   }, [apply, draft?.id, t]);
 
@@ -236,7 +237,7 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
         if (!cancelled) apply(next);
       })
       .catch((problem) => {
-        if (!cancelled) setError(String(problem instanceof Error ? problem.message : problem));
+        if (!cancelled) setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       });
     return () => {
       cancelled = true;
@@ -283,7 +284,7 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
       );
       if (stored?.configured) onReady?.();
     } catch (problem) {
-      setError(String(problem instanceof Error ? problem.message : problem));
+      setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
     } finally {
       setSaving(false);
     }
@@ -324,7 +325,7 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
       }
       if (!model.trim() && list[0]) setModel(list[0]);
     } catch (problem) {
-      const message = String(problem instanceof Error ? problem.message : problem);
+      const message = describeFailure(String(problem instanceof Error ? problem.message : problem));
       setProbes((prev) => ({ ...prev, [slot]: { state: "bad", label: t("Connection failed"), detail: message, fingerprint } }));
       setError(message);
     } finally {
@@ -343,7 +344,7 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
       if (stored) fill(stored);
       setNote(t("Key removed from this machine."));
     } catch (problem) {
-      setError(String(problem instanceof Error ? problem.message : problem));
+      setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
     } finally {
       setSaving(false);
     }
@@ -355,7 +356,7 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
       try {
         apply(await activateLlmProfile(id));
       } catch (problem) {
-        setError(String(problem instanceof Error ? problem.message : problem));
+        setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       }
     },
     [apply],
@@ -371,7 +372,7 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
         if (draft?.id === id) setDraft(null);
         setNote(t("Profile deleted, along with its key."));
       } catch (problem) {
-        setError(String(problem instanceof Error ? problem.message : problem));
+        setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       } finally {
         setSaving(false);
         setConfirmRemove(null);

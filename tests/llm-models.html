@@ -39,6 +39,12 @@
         normalizeAuth,
         presetFor,
       } from "/src/runtime/llm-models.ts";
+      import {
+        FAILURE_TAG,
+        describeFailure,
+        parseLlmFailure,
+      } from "/src/runtime/llm-errors.ts";
+      import { setLanguage } from "/src/runtime/i18n.ts";
 
       const lines = [];
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
@@ -88,6 +94,45 @@
         "不要 key 的预设只能是本机地址（别把 key 该有的地方配成 none）",
       );
       eq(isLoopbackBase("localhost:8080/v1"), true, "不带协议的 localhost 也认");
+
+      // ---- 6. 供应商失败那句话：Rust 给码，前端给句子 ----
+      //
+      // 抬头是 `@@llm:{...}` 一行（`llm_policy.rs::failure_tag`），后面是英文原句。
+      // 两边字面量必须一样，否则认不出 → 用户看到一整串机器码。
+      eq(FAILURE_TAG, "@@llm:", "抬头字面量和 llm_policy.rs 的 FAILURE_TAG 一致");
+
+      const tagged =
+        '@@llm:{"code":"key-rejected","status":401,"detail":"invalid api key"}\nthe provider rejected the API key (HTTP 401) — invalid api key. Check the key in Assistant settings';
+      const parsed = parseLlmFailure(tagged);
+      eq(parsed.code, "key-rejected", "拆出失败码");
+      eq(parsed.status, 401, "拆出状态码");
+      eq(parsed.detail, "invalid api key", "拆出供应商原话");
+      log(parsed.english.includes("Check the key"), "英文原句也留着（认不出码时用它）");
+
+      eq(parseLlmFailure("could not read assistant.json"), null, "不是这个形状 = 不管它");
+      eq(describeFailure("could not read assistant.json"), "could not read assistant.json", "别的错误原样过（调用点可以无脑套）");
+
+      setLanguage("en");
+      log(describeFailure(tagged).includes("HTTP 401"), "英文界面照旧那句");
+      log(describeFailure(tagged).includes("invalid api key"), "供应商原话贴在句子后面");
+
+      setLanguage("zh");
+      log(describeFailure(tagged).includes("API key"), "中文界面换成中文（key 这个词不翻）");
+      log(describeFailure(tagged).includes("invalid api key"), "中文界面也带着供应商原话");
+      log(!describeFailure(tagged).includes("Check the key"), "英文原句不再露出来");
+      setLanguage("en");
+
+      const unknownCode = '@@llm:{"code":"what-is-this","status":0,"detail":""}\nthe provider said no';
+      eq(describeFailure(unknownCode), "the provider said no", "不认识的码退回英文原句，而不是空白");
+
+      const brokenHead = '@@llm:{"code":"key-re';
+      eq(parseLlmFailure(brokenHead), null, "抬头半截（日志被切）当认不出");
+      eq(parseLlmFailure('@@llm:{"code":"tls","status":null,"detail":""}\nthe TLS handshake failed').code, "tls", "网络那几条没有状态码也认得出");
+
+      log(
+        describeFailure('@@llm:{"code":"timeout","status":null,"detail":""}\nthe provider did not answer in time').length > 0,
+        "网络失败也有一条能读的话",
+      );
 
       document.getElementById("out").textContent = lines.join("\n");
     </script>

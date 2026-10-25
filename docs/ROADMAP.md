@@ -34,15 +34,15 @@
 
 | 指标 | 数值 | 备注 |
 | --- | --- | --- |
-| 前端 TS/TSX | 23 202 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
+| 前端 TS/TSX | 23 321 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
 | 样式 CSS | 6 103 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css` + `assistant-window.css`） |
-| Rust | 22 899 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
+| Rust | 22 995 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
 | 组件 SDK | 943 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
 | 官方组件 + 示例 | 24 866 行 | 18 个官方包 + 1 个示例（含每个包里的 SDK 副本） |
 | 构建脚本 | 4 958 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
-| 浏览器断言 | 2 539 条 | 53 个自检页，跑一遍的真实计数（0 failed） |
+| 浏览器断言 | 2 555 条 | 53 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 59 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + 浏览器预览那条通道 26 条，都不依赖 dev server。**CI 只跑前四条（33 条）**，`test:llm-proxy` 还没进 workflow |
-| Rust 单测 | 415 条 | 364 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
+| Rust 单测 | 416 条 | 365 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 50 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 94 个 | |
 | 权限 | 12 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐 |
 | 踩过的坑 | 85 条 | [`PITFALLS.md`](./PITFALLS.md) |
@@ -329,7 +329,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **偏好变了、生效语言没变，也要通知订阅者**。系统是中文时，"中文"和"跟随系统"解析出来是同一个语言、界面上一个字都不变；只按"语言变了"通知的话，用户点那一下看不到任何反应。
   - **桌面窗口读不到这档偏好**。`widgetHost.ts` 是独立 webview、**不加载 store** —— 让它自己用 `navigator.language` 猜一遍，就会出现"界面已切成英文、桌面卡片上的提示还是中文"。所以语言随 `HostConfig.lang` 下去当初值、变化走 `lattice:language` 广播，和 `lattice:theme` 同一个形状（这两条是仅有的两条**故意全局**的事件，见不变量 9）。
   - **权限名要走 `permissionLabel()`**。`PERMISSION_LABELS` 是英文原文，同时也是中文表的 key —— 界面上直接读它，中文环境里权限列表就永远是英文。
-  - 边界：组件清单里那些字（`name` / `description` / `config` 标签 / `help` / `changelog`）**不进这张表** —— 它们是作者写的，跟着包和签名走，平台没有理由认识第三方组件的每一句话；它们怎么双语见下一条；`tests/i18n.html` 钉住"分片都在 / 占位符两边一致 / 同一句没有两种译法 / 偏好变了要通知"。**已知缺口**：Rust 侧直接生成的那几句给人看的话（`llm.rs` 的"key 只在 Rust 里"那几条、`llm_policy::describe_status` 的 401/404/429）还是英文 —— 它们跨过 IPC 才到界面，进中文表要先在 Rust 里认一遍 key，这一版没做，先记着而不是假装没这回事。
+  - 边界：组件清单里那些字（`name` / `description` / `config` 标签 / `help` / `changelog`）**不进这张表** —— 它们是作者写的，跟着包和签名走，平台没有理由认识第三方组件的每一句话；它们怎么双语见下一条；`tests/i18n.html` 钉住"分片都在 / 占位符两边一致 / 同一句没有两种译法 / 偏好变了要通知"。**当时留着的缺口已经收了**（[0014](./design/0014-llm-failure-codes.md)）：供应商与网络失败那几句不再由 Rust 拼成英文 —— Rust 只回"哪一种失败 + 状态码 + 供应商原话"（一行 `@@llm:{…}` 抬头），句子由 `runtime/llm-errors.ts` 按界面语言拼；`llm.rs` 自己那几条 IO / 配置读写错误仍然有意留英文（"文件坏了"是事实，不是文案）。
 - [x] **组件的字也跟着换语言**。上一版把**平台**的字统一了，可桌宠叫"大肥鱼"、气泡里写"说点什么…"—— 界面切成英文，她还是中文的。用户指出的正是这条缝。两半一起补：
   - **清单里能写两门**：`name` / `description` / `config[].label` / `.help` / `.placeholder` / `options[].label` / `help[].title` / `help[].items[]` / `changelog[].changes[]` 都接受 `{ "zh": …, "en": … }`，平台按当前语言挑（`runtime/widget-text.ts` 的 `normalizeText` / `pickText` / `textVariants`）。**单字符串永远有效**，只写一门的第三方组件照旧能用，缺的那门**退到另一门**而不是空白 —— 和 `t()` 缺翻译退成英文同一个取舍。上限按门各算，写坏一门只丢那一门。
   - **HTML 里的字由组件自己挑**：桥加了 `lang.get`（不要权限，返回 `{ lang, locale }`）和一条 `language` 推送。两个宿主都在 `ready`、iframe `load`、语言变化三处推 —— 只读一次的话用户换语言组件不动，只听推送的话组件停在建文档那一刻（重载、热更新都会碰上）。SDK 把它包成 `lattice.language` + `lattice.on("language")`，启动时自动拉一次。

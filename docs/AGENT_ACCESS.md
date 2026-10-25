@@ -609,7 +609,7 @@ cwd 在 workspace 里照样问（一条命令能做的事不止"写这个目录"
 | `agent_policy.rs`（HTTP 解析 / 令牌 / 白名单 / `say`） | 26 条 `rustc --test`，见 `.scratch/agent-test.rs` |
 | `platform/agent.ts`（动作执行器） | `tests/agent.html` 57 条，跑的是**真 store** |
 | `scripts/lattice-agent.mjs`（客户端） | `npm run test:agent`，14 条，起假端点测请求形状、`say` 的整句传递与退出码 |
-| `llm_policy.rs`（地址 / 请求体 / 响应 / 工具调用 / 错误翻译） | 48 条 `rustc --test`，见 `.scratch/llm-test.rs` |
+| `llm_policy.rs`（地址 / 请求体 / 响应 / 工具调用 / 错误翻译） | 50 条 `rustc --test`，见 `.scratch/llm-test.rs` |
 | `runtime/assistant.ts`（工具表 / 工具表裁剪 / 人设 / 历史裁剪 / 快照预算） | `tests/assistant.html` |
 | `hands_policy.rs`（六组开关 / 审批三档 / 两个模式 / 预算） | 21 条 `rustc --test`；`runtime/hands.ts` 那一侧见 `tests/hands.html` |
 | `skills_policy.rs`（正文上限 / 启用清单 / 坏条目） | 19 条 `rustc --test`；面板那侧见 `tests/skills.html` |

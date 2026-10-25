@@ -88,6 +88,7 @@ import {
   type SkillView,
 } from "../runtime/skills";
 import { useT } from "../runtime/i18n";
+import { describeFailure } from "../runtime/llm-errors";
 import { widgetToolSpecs, type WidgetToolSource } from "../runtime/widget-tools";
 import { ModelProfiles } from "./ModelProfiles";
 
@@ -367,7 +368,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         if (!current || !current.configured) setView("setup");
       })
       .catch((problem) => {
-        if (!cancelled) setError(String(problem));
+        if (!cancelled) setError(describeFailure(String(problem)));
       });
     // 手是另一份配置（同一个文件，另一个命令）。读失败不该挡住对话 ——
     // 最坏情况是"这一轮没有手"，那本来就是默认状态
@@ -496,7 +497,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         );
         setSessions(await listSessions());
       } catch (problem) {
-        setSessionNote(String(problem instanceof Error ? problem.message : problem));
+        setSessionNote(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       }
     },
     [active?.model, profiles?.activeId, rememberSession, t],
@@ -545,7 +546,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       await deleteSession(id);
       setSessions(await listSessions());
     } catch (problem) {
-      setSessionNote(String(problem instanceof Error ? problem.message : problem));
+      setSessionNote(describeFailure(String(problem instanceof Error ? problem.message : problem)));
     }
   }, [busy, startNewChat]);
 
@@ -654,7 +655,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         },
       });
     } catch (problem) {
-      const message = String(problem instanceof Error ? problem.message : problem);
+      const message = describeFailure(String(problem instanceof Error ? problem.message : problem));
       setError(message);
       setEntries((list) => [...list, { kind: "error", text: message }]);
       // 这一轮算废了：把刚推进去的 user 撤掉，重试时不会出现两遍
@@ -687,7 +688,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         setHands(saved);
       } catch (problem) {
         setHands(hands);
-        setError(String(problem instanceof Error ? problem.message : problem));
+        setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       }
     },
     [hands],
@@ -746,7 +747,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     } catch (problem) {
       /* 开关没存上就别切模式：一步都没落地比半步落地好收拾 */
       setHands(hands);
-      setError(String(problem instanceof Error ? problem.message : problem));
+      setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       return;
     }
     setMode("everything");
@@ -756,7 +757,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       setModeEffective(view.effective);
     } catch (problem) {
       setMode(mode);
-      setError(String(problem instanceof Error ? problem.message : problem));
+      setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
     }
   }, [fullAccessBlocked, riskAck, hands, mode]);
 
@@ -769,7 +770,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         setHands(saved);
       } catch (problem) {
         setHands(hands);
-        setError(String(problem instanceof Error ? problem.message : problem));
+        setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       }
     },
     [hands],
@@ -793,7 +794,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       const saved = await saveHands(next);
       setHands(saved);
     } catch (problem) {
-      setError(String(problem instanceof Error ? problem.message : problem));
+      setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
     }
     // 完全访问里这颗按钮是"停 + 收手 + 把门也关上"：模式回内部，问话回来。
     // 模式条那颗「关掉」不一样 —— 那个留着六个勾（手还在，只是每步问你）
@@ -805,7 +806,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         setModeEffective(view.effective);
       } catch (problem) {
         setMode(mode);
-        setError(String(problem instanceof Error ? problem.message : problem));
+        setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       }
     }
   }, [hands.workspace, hands.approvalMode, mode]);
@@ -818,7 +819,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         const saved = await saveHands(next);
         setHands(saved);
       } catch (problem) {
-        setError(String(problem instanceof Error ? problem.message : problem));
+        setError(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       }
     },
     [hands],
@@ -868,7 +869,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       } catch (problem) {
         // 存不进去就退回原样：别把界面画成一个假的"已勾上"
         setSkills(before);
-        setSkillsNote(String(problem instanceof Error ? problem.message : problem));
+        setSkillsNote(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       } finally {
         setSkillsBusy(false);
       }
@@ -894,7 +895,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       setSkillPath("");
       setSkillsNote(t("Added. Turn it on when you want it used."));
     } catch (problem) {
-      setSkillsNote(String(problem instanceof Error ? problem.message : problem));
+      setSkillsNote(describeFailure(String(problem instanceof Error ? problem.message : problem)));
     } finally {
       setSkillsBusy(false);
     }
@@ -909,7 +910,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       const view = await removeSkill(id);
       setSkills(view.skills);
     } catch (problem) {
-      setSkillsNote(String(problem instanceof Error ? problem.message : problem));
+      setSkillsNote(describeFailure(String(problem instanceof Error ? problem.message : problem)));
     } finally {
       setSkillsBusy(false);
     }
@@ -928,7 +929,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       const total = found.reduce((sum, server) => sum + (server.ok ? server.tools.length : 0), 0);
       setMcpNote(t("Found {count} tools.", { count: total }));
     } catch (problem) {
-      setMcpNote(String(problem instanceof Error ? problem.message : problem));
+      setMcpNote(describeFailure(String(problem instanceof Error ? problem.message : problem)));
     } finally {
       setMcpBusy(false);
     }
@@ -945,7 +946,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         setMcpFound([]);
         setMcpNote(t("Saved. Refresh to see its tools."));
       } catch (problem) {
-        setMcpNote(String(problem instanceof Error ? problem.message : problem));
+        setMcpNote(describeFailure(String(problem instanceof Error ? problem.message : problem)));
       } finally {
         setMcpBusy(false);
       }

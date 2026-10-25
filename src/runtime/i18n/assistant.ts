@@ -302,4 +302,22 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "I understand the risks and want to continue": "我明白风险，继续",
   "This was already on when Lattice started.": "棂启动的时候它就已经是「完全访问」了。",
   "Got it": "知道了",
+
+  // —— 供应商失败的句子（`runtime/llm-errors.ts`）——
+  // Rust 只给"哪一种失败 + 状态码"，句子在这里。**加码三处一起改**：
+  // `llm_policy.rs::status_code` / `llm-errors.ts` 的 `SENTENCES` / 这张表。
+  // “detail”（供应商原话）不翻译，由调用方贴在句子后面
+  "The provider rejected the API key (HTTP {status}) — check the key in Assistant settings":
+    "供应商拒绝了这把 API key（HTTP {status}）—— 去助手设置里换一把",
+  "The endpoint was not found (HTTP {status}) — the base URL is usually https://api.<name>.com/v1":
+    "找不到这个接口（HTTP {status}）—— base URL 一般长这样：https://api.<name>.com/v1",
+  "The request was too large (HTTP {status})": "这一次请求太大了（HTTP {status}）",
+  "The provider is rate limiting or out of quota (HTTP {status})": "供应商在限流，或者额度用完了（HTTP {status}）",
+  "The provider rejected the request (HTTP {status})": "供应商拒绝了这次请求（HTTP {status}）",
+  "The provider returned an error (HTTP {status})": "供应商那边出错了（HTTP {status}）",
+  "Unexpected HTTP status {status}": "意料之外的 HTTP 状态码 {status}",
+  "Could not reach the provider — check the base URL and your connection": "连不上供应商 —— 检查 base URL 和网络",
+  "The TLS handshake failed (a proxy or a certificate problem)": "TLS 握手失败（代理或证书的问题）",
+  "The provider did not answer in time": "供应商没有及时回话",
+  "The request could not be sent": "请求发不出去",
 };

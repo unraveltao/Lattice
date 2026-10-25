@@ -898,10 +898,47 @@ impl StreamAcc {
 // 人话
 // ---------------------------------------------------------------------------
 
+/// 失败那条字符串的**机器可读抬头**：`@@llm:{"code":"…","status":401,"detail":"…"}`
+/// 一行，换行，然后是给人看的英文原句。
+///
+/// 为什么要这么别扭：**文案的家在前端**（`src/runtime/i18n/assistant.ts`），而失败
+/// 是在 Rust 里认出来的。让 Rust 也持有一份中文表，等于把 i18n 变成第二份真源
+/// （`docs/README.md` 的"一份事实只有一个家"）。所以 Rust 只给"是哪一种失败 + 两三个
+/// 数字"，句子由前端按界面语言拼；**认不出的就原样显示**（英文那句还在，日志里也照旧
+/// 能读）。`tests/llm-models.html` 与 `llm_policy.rs` 各钉一份。
+pub const FAILURE_TAG: &str = "@@llm:";
+
+fn failure_tag(code: &str, status: Option<u16>, detail: &str) -> String {
+    let status = match status {
+        Some(value) => value.to_string(),
+        None => "null".to_string(),
+    };
+    format!(
+        "{FAILURE_TAG}{{\"code\":\"{}\",\"status\":{},\"detail\":\"{}\"}}\n",
+        escape(code),
+        status,
+        escape(detail)
+    )
+}
+
+/// HTTP 状态码 → 失败码。**只有这一处判据**：前端按码挑句子，别在前端重判状态码
+pub fn status_code(status: u16) -> &'static str {
+    match status {
+        401 | 403 => "key-rejected",
+        404 => "not-found",
+        413 => "too-large",
+        429 => "rate-limited",
+        400..=499 => "rejected",
+        500..=599 => "server-error",
+        _ => "unexpected",
+    }
+}
+
 /// HTTP 状态码 → 人话。
 ///
 /// 这一层的价值在于**别把 401 说成"连不上"**：用户看到"检查你的网络"会去
-/// 重启路由器，而真正要做的是换一把 key。
+/// 重启路由器，而真正要做的是换一把 key。抬头给前端换语言，这句英文留给日志与
+/// 认不出抬头的调用方（多行里第一行是抬头，第二行才是人话）。
 pub fn describe_status(status: u16, body: &str) -> String {
     let snippet = body_snippet(body);
     let detail = if snippet.is_empty() {
@@ -909,7 +946,7 @@ pub fn describe_status(status: u16, body: &str) -> String {
     } else {
         format!(" — {snippet}")
     };
-    match status {
+    let english = match status {
         401 | 403 => format!(
             "the provider rejected the API key (HTTP {status}){detail}. Check the key in Assistant settings"
         ),
@@ -921,22 +958,38 @@ pub fn describe_status(status: u16, body: &str) -> String {
         400..=499 => format!("the provider rejected the request (HTTP {status}){detail}"),
         500..=599 => format!("the provider returned an error (HTTP {status}){detail}"),
         _ => format!("unexpected HTTP status {status}{detail}"),
-    }
+    };
+    format!("{}{english}", failure_tag(status_code(status), Some(status), &snippet))
 }
 
-/// 网络层失败 → 人话。`send()` 给的是 Win32 错误码，直接甩给用户等于没说
+/// 网络层失败 → 人话。`send()` 给的是 Win32 错误码，直接甩给用户等于没说。
+///
+/// 抬头里的码和 `runtime/llm-models.ts` 的 `describeFailure` 是同一套词；`send-error`
+/// 带上原始错误当 detail（那是最有用的一段）。
 pub fn describe_failure(error: &str) -> String {
     let lower = error.to_ascii_lowercase();
     if lower.contains("connecting to the host") || lower.contains("12029") || lower.contains("12007") {
-        return "could not reach the provider — check the base URL and your connection".to_string();
+        return format!(
+            "{}could not reach the provider — check the base URL and your connection",
+            failure_tag("unreachable", None, "")
+        );
     }
     if lower.contains("12044") || lower.contains("12045") || lower.contains("12175") {
-        return "the TLS handshake failed (a proxy or a certificate problem)".to_string();
+        return format!(
+            "{}the TLS handshake failed (a proxy or a certificate problem)",
+            failure_tag("tls", None, "")
+        );
     }
     if lower.contains("12002") || lower.contains("timeout") {
-        return "the provider did not answer in time".to_string();
+        return format!(
+            "{}the provider did not answer in time",
+            failure_tag("timeout", None, "")
+        );
     }
-    format!("the request could not be sent: {error}")
+    format!(
+        "{}the request could not be sent: {error}",
+        failure_tag("send-error", None, error)
+    )
 }
 
 fn body_snippet(body: &str) -> String {
@@ -1251,14 +1304,57 @@ mod tests {
         let long = "a".repeat(400);
         let text = describe_status(400, &format!("{{\"error\":\"{long}\"}}"));
         assert!(text.contains('…'));
-        assert!(text.chars().count() < 400);
+        // 抬头那行是给机器看的（有长度上限的是供应商那句话，不是整条），
+        // 所以量的是换行之后那半
+        let english = text.split_once('\n').map(|(_, rest)| rest).unwrap_or("");
+        assert!(english.chars().count() < 400, "{}", english.chars().count());
+    }
+
+    /// 抬头那一行是**前端换语言的唯一依据**：码对不对、detail 有没有被转义、
+    /// 英文那句还在不在（日志与认不出抬头的调用方都靠它）
+    #[test]
+    fn failure_tag_carries_a_machine_readable_code() {
+        let text = describe_status(401, "{\"error\":\"bad key\"}");
+        assert!(text.starts_with(FAILURE_TAG), "{text}");
+        let (head, english) = text.split_once('\n').expect("抬头和英文之间必须有换行");
+        assert!(head.contains("\"code\":\"key-rejected\""), "{head}");
+        assert!(head.contains("\"status\":401"), "{head}");
+        assert!(head.contains("bad key"), "detail 要带上供应商那句话：{head}");
+        assert!(english.contains("API key"), "英文原句还得在：{english}");
+
+        assert_eq!(status_code(403), "key-rejected");
+        assert_eq!(status_code(404), "not-found");
+        assert_eq!(status_code(413), "too-large");
+        assert_eq!(status_code(429), "rate-limited");
+        assert_eq!(status_code(418), "rejected");
+        assert_eq!(status_code(502), "server-error");
+        assert_eq!(status_code(0), "unexpected");
+
+        // detail 里的引号和反斜杠必须被转义，否则前端 JSON.parse 会当场炸
+        let quoted = describe_status(400, "{\"error\":\"he said \\\"no\\\"\"}");
+        let head = quoted.split_once('\n').map(|(head, _)| head).unwrap_or("");
+        assert!(head.contains("he said"), "{head}");
+        assert!(!head.contains("\\\"no\\\"\n"), "不能把换行带进 JSON：{head}");
     }
 
     #[test]
     fn network_failures_are_translated() {
-        assert!(describe_failure("connecting to the host failed (Win32 error 12029)").contains("could not reach"));
-        assert!(describe_failure("sending the request failed (Win32 error 12175)").contains("TLS"));
-        assert!(describe_failure("something odd").contains("something odd"));
+        let unreachable = describe_failure("connecting to the host failed (Win32 error 12029)");
+        assert!(unreachable.contains("could not reach"));
+        assert!(unreachable.starts_with(FAILURE_TAG));
+        assert!(unreachable.contains("\"code\":\"unreachable\""));
+
+        let tls = describe_failure("sending the request failed (Win32 error 12175)");
+        assert!(tls.contains("TLS"));
+        assert!(tls.contains("\"code\":\"tls\""));
+
+        let timeout = describe_failure("the request failed (timeout)");
+        assert!(timeout.contains("\"code\":\"timeout\""), "{timeout}");
+
+        let other = describe_failure("something odd");
+        assert!(other.contains("something odd"));
+        assert!(other.contains("\"code\":\"send-error\""));
+        assert!(other.contains("\"detail\":\"something odd\""));
     }
 
     #[test]
