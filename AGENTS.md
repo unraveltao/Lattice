@@ -661,6 +661,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
   - 端到端只有真机：`npm run store:index` 之后起 `tauri:dev`，在设置里把目录切成 Bundled，装一个 → 改版本再装一次（看 `widget-backups/` 出现）→ 回滚（看两个版本互换）→ 举报（看 `%APPDATA%\com.iron-tom.lattice\reports\<id>-<时间戳>.json`）。**验签失败的三条要各自单独造**：改目录里的 `sha256`（摘要不符）、改包里的一个字节（同上）、把 `publisher.key` 换成另一把（签名不符）。三条报的错必须**不一样**，否则等于没验。
   - 界面上"该不该装"的判断全在 `planInstall` 里，别在 JSX 里再写一份 —— 两份判断的后果是"卡片说能装、点了报错"。
   - 发公共目录：`npm run publish:widget -- <组件目录> --key ../lattice-registry/.keys/publisher.key`。它把打包、签名、写 sidecar、跑 registry 的 `build.mjs` 串成一次执行，最后只说"要提交哪几个文件"。**验收标准是幂等**：同一个目录连跑两次，registry 的 `git status` 必须是空的 —— 第二次不能因为把 sidecar 的 `published` 改成今天而脏一份 `registry.json`。
+  - **目录里显示的名字 / 描述 / 图标取自最新那一版包的清单**（`build.mjs` 里按版本挑，不是按文件名）。所以"本地清单改成 `{ zh, en }` 了、商店里还是英文名"只有一个原因：新版本还没发上去。三个连带事实：改了名要发新版本，只改本地清单不够；图标要另放一份 `registry/icons/<id>.svg`（包里的 `icon.svg` 不会被目录读）；`registry.json` 的排序遇到 `{ zh, en }` 先挑 `en` 再比，别把 `localeCompare` 直接用在对象上。
 - 改了**调试面板**：`tests/debug.html`（43 条，总线 + 过滤 / 统计纯函数）+ `tests/debug-panel.html`（15 条，把真组件挂起来点按钮）。后者**必须 `import "../src/styles.css"`**，否则面板渲染成裸 HTML。它同时也是一张验收图：`--screenshot` 出来的就是面板长什么样。
 - 改了**媒体控制 / 声音折线**：`tests/music.html`（66 条）自带假宿主，覆盖"有会话 / 没会话 / 权限被拒 / 直播没时长 / 点按钮 / 改轮询间隔"。它替身的坑记住一条：`setConfig()` 要 `Object.assign` 到 handler 捕获的那个对象上，否则 `config.get` 回的还是启动时那份，用例会假通过。
 - 改了组件库（列表 / 搜索 / 安装态）：`tests/library-search.html` 钉的是**判定规则**（空查询不筛、大小写与空白归一、多词 AND、权限名算命中、不做模糊匹配）。搜索的边界只在 `runtime/library-search.ts` 里写一份，组件里别再复制一遍 —— 复制的后果是"测试过了，界面上还是不对"。
