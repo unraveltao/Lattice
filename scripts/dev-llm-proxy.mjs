@@ -67,6 +67,48 @@ export function normalizeApprovalMode(raw) {
   return APPROVAL_MODES.includes(text) ? text : "ask";
 }
 
+/** 两个模式（0009），顺序和 `hands_policy::ASSISTANT_MODES` 一致 */
+const ASSISTANT_MODES = ["internal", "everything"];
+
+/** 坏值落回 `internal`：**坏值不许放大权限**，和审批档落回 `ask` 同一条理由 */
+export function normalizeMode(raw) {
+  const text = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  return ASSISTANT_MODES.includes(text) ? text : "internal";
+}
+
+/**
+ * 技能启用清单的归一化，和 `skills_policy::normalize_enabled` 同一句判据：
+ * 只留形状合法的 id、去重、保持顺序，**不改条数**（超过 4 份是"用户该看见一句
+ * 太多了"，不是替他把后面几份洗掉）。
+ *
+ * 这份清单住在 `assistant.json` 里，而技能正文住在 `skills/<id>/SKILL.md` ——
+ * 浏览器预览这一个中间件只可能洗掉前者，正文由 Rust 那侧的目录扫。
+ */
+export function normalizeSkillIds(list) {
+  const out = [];
+  for (const raw of Array.isArray(list) ? list : []) {
+    const id = String(raw ?? "").trim();
+    if (!skillIdOk(id) || out.includes(id)) continue;
+    out.push(id);
+  }
+  return out;
+}
+
+/** `skills_policy::id_ok` 的同一个字母表：小写、数字、`-`、`_`，不超过 48 个码点 */
+function skillIdOk(id) {
+  if (!id || [...id].length > 48) return false;
+  if (id.startsWith("-") || id.endsWith("-")) return false;
+  return /^[a-z0-9_-]+$/.test(id);
+}
+
+/** `skills` 那一节：只认 `{ enabled: [...] }`，别的形状当空 */
+function skillsOf(value) {
+  const at = value && typeof value === "object" ? value : {};
+  return { enabled: normalizeSkillIds(at.enabled) };
+}
+
 const DEFAULT_TEMPERATURE = 0.6;
 
 /** 预期内的失败。catch 到它就回 400，其余一律 500（那是这个中间件自己的 bug） */
@@ -463,11 +505,15 @@ export function assistantPath(env = process.env) {
 
 export function emptyConfig() {
   return {
-    version: 3,
+    // 和 `llm.rs` 的 `CONFIG_VERSION` 对齐：这个中间件写出去的每一份都是 v4
+    version: 4,
+    // 两个模式（0009）：浏览器预览里切不了，但**不许把它洗成 internal**
+    mode: "internal",
     activeId: "",
     hands: { files: false, shell: false, web: false, screen: false, input: false, mcp: false },
     workspace: "",
     approvalMode: "ask",
+    skills: { enabled: [] },
     profiles: [],
   };
 }
@@ -520,7 +566,7 @@ function migrateLegacy(value) {
 /** 归一化：坏档逐条丢、名字补上、active 不能悬空。**原地改，不写盘** */
 export function normalizeConfig(config) {
   const next = config && typeof config === "object" ? config : emptyConfig();
-  next.version = 3;
+  next.version = 4;
 
   const seen = [];
   next.profiles = (Array.isArray(next.profiles) ? next.profiles : [])
@@ -554,11 +600,15 @@ export function normalizeConfig(config) {
   next.workspace = String(next.workspace ?? "").trim();
   // 审批档：空串 / 拼错一律落成 `ask`（和 `hands_policy::normalize_approval` 同一句）
   next.approvalMode = normalizeApprovalMode(next.approvalMode);
+  // 模式与技能：**这里少一样，用户改一次手的开关就把那样洗掉了** —— 这两节由别的
+  // 页面（Assistant 区的模式开关 / 技能列表）写，这个中间件只负责原样带回去
+  next.mode = normalizeMode(next.mode);
+  next.skills = skillsOf(next.skills);
   return next;
 }
 
 /**
- * 把磁盘上的文本读成配置。v2/v3 直接用，v1 就地迁移。
+ * 把磁盘上的文本读成配置。v2/v3/v4 直接搬，v1 就地迁移。
  *
  * 读失败 / 坏档一律"当它没有"，但**不写回**：只有用户下一次保存才落盘。顺手写
  * 一次空配置的后果是"一次解析失败永久丢 key"，而 key 换不了。
@@ -578,9 +628,11 @@ export function parseConfig(text) {
     // 逐个字段搬：漏一个的症状是"刚存下的设置读回来是默认值"。`normalizeConfig`
     // 只负责归一化，它不会替你把漏掉的字段补成文件里的那份
     config.approvalMode = value.approvalMode;
+    config.mode = value.mode;
+    config.skills = value.skills;
     config.profiles = value.profiles;
     config.hands = value.hands;
-    config.version = 3;
+    config.version = 4;
   }
   return normalizeConfig(config);
 }

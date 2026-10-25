@@ -39,9 +39,9 @@
 | Rust | 22 854 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
 | 组件 SDK | 943 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
 | 官方组件 + 示例 | 23 890 行 | 16 个官方包 + 1 个示例（含每个包里的 SDK 副本；未跟踪的桌宠不计） |
-| 构建脚本 | 4 853 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
+| 构建脚本 | 4 958 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
 | 浏览器断言 | 2 450 条 | 52 个自检页，跑一遍的真实计数（0 failed） |
-| Node 断言 | 57 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + 浏览器预览那条通道 24 条，都不依赖 dev server。**CI 只跑前四条（33 条）**，`test:llm-proxy` 还没进 workflow |
+| Node 断言 | 59 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + 浏览器预览那条通道 26 条，都不依赖 dev server。**CI 只跑前四条（33 条）**，`test:llm-proxy` 还没进 workflow |
 | Rust 单测 | 415 条 | 364 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 92 个 | |
 | 权限 | 12 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐 |

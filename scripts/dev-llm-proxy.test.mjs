@@ -387,7 +387,7 @@ test("存 key：写进文件，回的是掩码；空串等于删掉", async () =
 
   // 首尾空格要修掉：粘进来时几乎总带着换行
   assert.equal(readConfig(env).profiles[0].apiKey, "sk-new-key-abcdefgh");
-  assert.equal(JSON.parse(readFileSync(configFile, "utf8")).version, 3, "写出去永远是 v3");
+  assert.equal(JSON.parse(readFileSync(configFile, "utf8")).version, 4, "写出去永远是 v4");
 
   const cleared = await call("POST", "/api/llm/profiles", { op: "key", id: "p-1e9ac1", key: "" });
   assert.equal(cleared.value.profiles[0].keyHint, "");
@@ -568,6 +568,59 @@ test("审批档：三选一，存下来的是归一化之后那个字面量", as
     hands: { files: true, workspace: "", approvalMode: "read-only" },
   });
   assert.equal(typo.value.approvalMode, "ask");
+});
+
+test("存手与审批档不会洗掉模式和技能清单", async () => {
+  // 这两节由别的页面写（Assistant 区的模式开关、技能列表），而"存手的开关"走的是
+  // 这个中间件：读一遍再写一遍，读漏了就是**静默数据丢失** —— 桌面端下次启动看到的是
+  // "一份技能都没启用"。这一条钉的就是那次丢掉的东西。
+  seed({
+    version: 4,
+    mode: "everything",
+    activeId: "",
+    hands: {},
+    workspace: "",
+    approvalMode: "ask",
+    skills: { enabled: ["weekly-report", "deep-work"] },
+    profiles: [],
+  });
+
+  const saved = await call("POST", "/api/llm/hands", {
+    hands: { files: true, workspace: "", approvalMode: "auto" },
+  });
+  assert.equal(saved.status, 200);
+
+  const onDisk = JSON.parse(readFileSync(configFile, "utf8"));
+  assert.equal(onDisk.version, 4, "写出去的永远是 v4");
+  assert.equal(onDisk.mode, "everything", "模式没有被洗成 internal");
+  assert.deepEqual(onDisk.skills.enabled, ["weekly-report", "deep-work"], "技能清单还在");
+  assert.equal(onDisk.approvalMode, "auto", "同一份写入里该变的还是要变");
+});
+
+test("坏模式与坏技能 id 逐条落回，不放大权限", async () => {
+  seed({
+    version: 4,
+    mode: "EVERYTHING ",
+    activeId: "",
+    hands: {},
+    workspace: "",
+    skills: { enabled: ["Weekly", "../etc", "ok-one", "ok-one", null, "-bad", "x".repeat(49)] },
+    profiles: [],
+  });
+
+  // 读一次就会归一化，写盘发生在任何一次保存里
+  const saved = await call("POST", "/api/llm/hands", { hands: { files: false, workspace: "" } });
+  assert.equal(saved.status, 200);
+  const onDisk = JSON.parse(readFileSync(configFile, "utf8"));
+  assert.equal(onDisk.mode, "everything", "大小写与首尾空格不算错");
+  assert.deepEqual(onDisk.skills.enabled, ["ok-one"], "大写、路径、重复、空串、首尾连字符、超长都丢掉");
+
+  // 旧文件（v3）没有这两节：落回"内部 + 一份技能都没启用"，和 Rust 的 v3 → v4 同一句
+  seed({ version: 3, activeId: "", hands: {}, workspace: "", approvalMode: "ask", profiles: [] });
+  await call("POST", "/api/llm/hands", { hands: { files: false, workspace: "" } });
+  const migrated = JSON.parse(readFileSync(configFile, "utf8"));
+  assert.equal(migrated.mode, "internal", "旧文件没有 mode 就落回内部");
+  assert.deepEqual(migrated.skills.enabled, [], "旧文件没有技能清单就是空的");
 });
 
 test("三道闸：只认本机 Origin、只收 JSON、别的路径不归它管", async () => {
