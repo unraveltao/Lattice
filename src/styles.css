@@ -3522,6 +3522,10 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-assistant-head {
   display: flex;
+  /* 头 / 模式条 / 会话条 / 输入区都是**定高**的：窗口拉到最小尺寸时，
+   * 该被压的只有中间那块能滚的对话区。不写 `flex: none` 的话，flex 会按
+   * 基准尺寸把所有子项等比压扁 —— 表现是模式条的字被挤掉半行 */
+  flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -3548,9 +3552,21 @@ button.lattice-chip[aria-pressed="true"] {
    它不是"这一轮的一部分"，是"这是哪一份对话" */
 .lattice-assistant-chats {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 6px;
   padding: 8px 12px 0;
+}
+
+/* 会话条里的图标按钮和下拉框同高，别一个 24 一个 26 地错位 */
+.lattice-assistant-chats .lattice-icon-btn {
+  flex: none;
+}
+
+/* 会话存不上 / 被截断的那一行。**要自己的左右留白**：它是面板的直接子项，
+   而面板本身没有 padding（各段各自管），不写就会贴着窗口左边缘 */
+.lattice-assistant-note {
+  margin: 6px 12px 0;
 }
 
 .lattice-assistant-chat-select {
@@ -3659,6 +3675,7 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-assistant-composer {
   display: flex;
+  flex: none;
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px 12px;
@@ -3690,8 +3707,9 @@ button.lattice-chip[aria-pressed="true"] {
   align-items: center;
 }
 
+/* 元信息占左边，按钮被推到右边（`margin-right: auto` 在这个方向上就是"往右顶"） */
 .lattice-assistant-meta {
-  margin-left: auto;
+  margin-right: auto;
   font-family: var(--lattice-mono);
   font-size: 11px;
   color: var(--lattice-text-faint);
@@ -3700,6 +3718,7 @@ button.lattice-chip[aria-pressed="true"] {
 /* 审批确认条：贴在输入框上面，**不会自己消失** —— 它阻塞着这一轮 */
 .lattice-assistant-approval {
   display: flex;
+  flex: none;
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
@@ -4785,13 +4804,24 @@ button.lattice-chip[aria-pressed="true"] {
 
 /* ---- 两个模式（0009）：常驻模式条 ----
  * 「全部」用警示色，但**不整块铺满**：它得一直在，而一直在的东西用大色块
- * 会让人学会无视它。所以只有一条底色 + 一行字，真正的阻断留给切过去那一次确认。 */
+ * 会让人学会无视它。所以只有一条底色 + 一行字，真正的阻断留给切过去那一次确认。
+ *
+ * 用 grid 而不是 flex：模式名要和那段解释的**第一行**对齐。flex 的
+ * `align-items: center` 会把 "INTERNAL" 摆到三行字的中间，看着像掉进段落里。 */
 .lattice-assistant-mode {
-  display: flex;
-  align-items: center;
+  display: grid;
+  flex: none;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--lattice-border);
+}
+
+/* 只有两格（内部模式：名字 + 按钮）时按钮落在 1fr 那列，`justify-self` 把它顶到右边 */
+.lattice-assistant-mode > .lattice-btn {
+  align-self: center;
+  justify-self: end;
 }
 
 .lattice-assistant-mode-name {
@@ -4832,6 +4862,7 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-assistant-mode-note {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -4844,6 +4875,7 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-assistant-mode-confirm {
   display: flex;
+  flex: none;
   flex-direction: column;
   gap: 8px;
   padding: 12px;

@@ -59,6 +59,16 @@
   white-space: nowrap;
 }
 
+/* 窗口拉到最窄（320）时把这个药丸收掉：它和右边那颗 ▢/▤ 按钮说的是同一件事
+ * （那颗按钮还有 tooltip 和点亮态），而它占的那 100px 正是标题被截成
+ * "ASSISTA…" 的原因。小窗是独立 webview，viewport 就是窗口本身，所以
+ * 媒体查询在这里判的正是窗口宽度 */
+@media (max-width: 380px) {
+  .lattice-assistant-bar-mode {
+    display: none;
+  }
+}
+
 /* 标题栏按钮：和面板里的小按钮同一套形状，只是更小一点 */
 .lattice-assistant-bar-btn {
   flex: none;

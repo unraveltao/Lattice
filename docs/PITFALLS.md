@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **76 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **79 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -120,6 +120,7 @@
 | 系统卡片的逐核条偶尔全部归零，或者显示成一排和实际负载对不上的高度，下一拍又自己好了 | 逐核数据是"这一拍每个核的累计计数"，要和**上一拍的数组按索引相减**。休眠唤醒 / CPU 热插拔会让核数变（8 → 16），按索引对上去就是拿 A 核的计数减 B 核的 | `metrics_policy::per_core` 发现长度不一致就返回**空数组**，组件把那一行收起来，下一拍自然恢复。宁可不画，也别画一条看着合理、其实全错的曲线 |
 | 提交量显示成"15 MB / 24 MB"，比任务管理器小 4096 倍 | `PERFORMANCE_INFORMATION` 里的 `CommitTotal` / `CommitLimit` / `SystemCache` 单位是**页**，不是字节 | 乘 `PageSize` 再用。同一个结构体里 `ProcessCount` / `ThreadCount` / `HandleCount` 是**计数**、不用乘 —— 一个结构体里混着两种单位，抄字段的时候要一个字段一个字段看 |
 | 热力图顶上第一格显示成 `Oct!ov`，两个字叠在一起 | 月份标签是按列硬摆的（`grid-column: index + 1`），一列 11px（格子 9 + 缝 2），而 `Oct` 在 11px 下约 20px 宽。第一列的标签是**开头那个不完整的月份**，11 月 1 日偏偏就落在第 2 列 —— 两个标签只隔 1 列，浏览器照摆，不报错 | 摆之前先做碰撞检查：`usage.ts::heatMonthLabels` 把间距小于 3 列的挤掉，让位的是**开头的残月**（它本来就只盖住一两列），真实月份起点留着。`tests/usage.html` 扫一整年逐周确认最小间距 ≥ 3。凡是"按索引摆文本"的地方都要问一句"最挤的时候多挤" |
+| 小窗里两行标题、两个 ×：上面那行写 "ASSISTANT"，下面那行写 "Assistant · 模型"，两个关闭隔着 34px 各管一次 | `AssistantPanel` 被**两个宿主复用**（主窗口的抽屉 / 独立小窗），而它自己头上画了一整行（标题 + 齿轮 + ×）。抽屉外面什么都没有，这一行是它唯一的标题和关闭；小窗外面已经有一条 `.lattice-assistant-bar`（标题 + 底板/锁/模式/关闭四个按钮），于是同一件事被画了两遍 | 面板按 `variant` 收：`drawer` 照旧画整行，`window` 在对话态**整行不渲染**、齿轮落进会话条，只有设置态留一行做"返回"。判据是"**宿主已经给的东西，面板里不许再给一遍**" —— 以后往这一行加按钮，先问一句"小窗外面是不是已经有了" |
 
 ## 构建、工具链与验证
 
@@ -135,6 +136,8 @@
 | 用 `mouse_event` 合成点击，坐标明明在窗口里（`WindowFromPoint` 也确认了），界面毫无反应 | 注入的输入到不了 WebView2 的渲染进程 —— 而且前台窗口随时会被别的应用（聊天工具）抢走，`SetForegroundWindow` 从后台进程调经常是**静默失败**的 | 别靠合成点击验交互。交互逻辑放进能自动化跑的页面（`tests/debug-panel.html` 直接 `.click()`），真机只看"渲染出来的样子" |
 | `tests/sdk.html` 偶尔报"启动时向宿主报了一次 ready"，重跑又好了 | `postMessage` 是**宏任务**，而 `await` 子窗口的 promise 只排**微任务** —— 微任务先跑完。所以"子页面已经发了 ready"不代表"父页面的监听器已经收到" | 跨窗口的断言一律用 `waitFor(条件, 超时)` 轮询，别直接断言。这条是真机上整套测试一起跑、机器忙的时候才暴露的 |
 | 刚给这台机器装了真的 gcc（`ring` 要它），Rust 这边反而编不动了 —— 停在 `resource.rc` 上，只有一句 `windres: preprocessing failed.` | 预处理 `.rc` 时 windres 会自己 spawn `gcc -E -xc-header`，而 MSYS2 的 gcc 16.2.0 对**任何** `-x` 都静默退出 1（`gcc -E -x c foo.c` 一样是 1，一个字的诊断都没有）。装真 gcc 之前这里走的是 `gcc-shim`，它不认参数、也就不碰 `-x`，所以同一个故障是"修好一个坏掉另一个" | `.toolchain/windres-shim/x86_64-w64-mingw32-windres.exe`：往参数里塞一句 `--preprocessor <.toolchain>/gcc-shim/gcc.exe` 再转发给真 windres（棂的 `resource.rc` 没有 `#include` / `#ifdef`，"原样复制"就是正确的预处理结果），`-V` / `--version` 的探测请求原样转发（`embed-resource` 靠它认编译器种类）；`scripts/tauri.mjs` 发现这个目录就把它排到 PATH 最前。**两个 shim 各管一件事**：`windres-shim` 管"谁来预处理"，`gcc-shim` 管"预处理怎么做" —— `ring` 的 `.c` 仍然必须走真 gcc |
+| 改完 CSS 打开页面，**一点样式都没有**：按钮是系统默认样子、元素挤成一坨，可 `styles.css` 明明有 12 万字节 | vite 的 CSS transform 缓存被写坏了 —— 多个进程同时改同一个 `.css`（这个仓库常态：几个 agent 并行）时，watcher 和 transform 抢同一份缓存，产物是**空串**：`curl /src/styles.css` 回来的 JS 里 `__vite__css = ""`。症状看着像"我的 CSS 语法错了"，其实内容完全正常 | 先别动 CSS：`curl -s http://127.0.0.1:1420/src/styles.css \| grep '__vite__css = ""'`，命中就 `touch src/styles.css`（只改 mtime，不动内容），一秒恢复。判据是"**文件有内容、页面没样式**" —— 那就不是 CSS 的问题 |
+| 想拍一张窄窗口（320 宽）的布局图，`--window-size=320,420` 拍出来却是 500 宽，`@media (max-width: 380px)` 死活不生效 | Chrome 的窗口有最小尺寸（这台机器上 500），`--window-size` 给再小也会被抬上去；`--headless=old` 一样。于是"窄窗口"根本没被造出来，媒体查询当然不匹配 —— 而这个失败**长得像"媒体查询写错了"** | 窄视口只能靠 iframe 造：外层页面里放一个 `width="320"` 的 iframe，iframe 的 viewport 就是它的框，媒体查询在里面判的正是这个宽度。顺带把 `innerWidth` 写进 `data-*` 用 `--dump-dom` 读出来核对，别靠截图反推 |
 
 ## 目录、签名与网络
 

@@ -939,23 +939,39 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
 
   return (
     <aside className={`lattice-assistant${variant === "window" ? " is-window" : ""}`} aria-label={t("Assistant")}>
-      <header className="lattice-assistant-head">
-        <span className="lattice-assistant-title">{header}</span>
-        <span className="lattice-assistant-actions">
-          <button
-            type="button"
-            className={`lattice-icon-btn${view === "setup" ? " is-active" : ""}`}
-            onClick={() => setView(view === "setup" ? "chat" : "setup")}
-            title={view === "setup" ? t("Back to chat") : t("Model settings")}
-            aria-label={t("Assistant settings")}
-          >
-            {view === "setup" ? "←" : "⚙"}
-          </button>
-          <button type="button" className="lattice-icon-btn" onClick={onClose} aria-label={t("Close")}>
-            ×
-          </button>
-        </span>
-      </header>
+      {/*
+        小窗**不画这一行**。它外面已经有一条标题栏（`AssistantWindow` 的
+        `.lattice-assistant-bar`：标题 + 底板/锁/模式/关闭四个按钮），这里再画一遍
+        就是两行字、两个 ×，隔着 34px 各关一次；上面那行写 "ASSISTANT"，这行写
+        "Assistant · 模型"，说的还是同一件事。齿轮挪进会话条（对话态那个 ⚙），
+        所以只有设置态才留这一行做"返回"。
+
+        抽屉没有外面那条 bar，这一行是它唯一的标题和关闭，照旧。
+      */}
+      {(variant === "drawer" || view === "setup") && (
+        <header className="lattice-assistant-head">
+          <span className="lattice-assistant-title">
+            {variant === "window" ? t("Model settings") : header}
+          </span>
+          <span className="lattice-assistant-actions">
+            <button
+              type="button"
+              className={`lattice-icon-btn${view === "setup" ? " is-active" : ""}`}
+              onClick={() => setView(view === "setup" ? "chat" : "setup")}
+              title={view === "setup" ? t("Back to chat") : t("Model settings")}
+              aria-label={t("Assistant settings")}
+            >
+              {view === "setup" ? "←" : "⚙"}
+            </button>
+            {/* 小窗的关闭在窗口标题栏上，这一行不再放第二个 */}
+            {variant === "drawer" && (
+              <button type="button" className="lattice-icon-btn" onClick={onClose} aria-label={t("Close")}>
+                ×
+              </button>
+            )}
+          </span>
+        </header>
+      )}
 
       {/* 常驻模式条（0009）：模式是存盘的，忘记自己还在「全部」是它唯一的价格。
           所以这条必须一直在看得见的地方 —— 用打断去兜是另一种烦 */}
@@ -963,17 +979,28 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         className="lattice-assistant-mode"
         data-on={modeIgnoresSwitches(mode) ? "1" : "0"}
         data-held={modeIgnoresSwitches(mode) && !modeEffective ? "1" : "0"}
+        /* 内部模式下那段解释不占地方，改挂在这里：悬停能读到，但不用天天看 */
+        title={
+          modeIgnoresSwitches(mode)
+            ? undefined
+            : t("Only manages Lattice: the desktop and widget tools. The six hands stay off.")
+        }
       >
         <span className="lattice-assistant-mode-name">
           {modeIgnoresSwitches(mode) ? t("Everything") : t("Internal")}
         </span>
-        <span className="lattice-assistant-mode-hint">
-          {modeIgnoresSwitches(mode)
-            ? modeEffective
+        {/*
+          那段解释**只在「全部」时写**。它是警告，警告要一直在、但不能占着
+          三行常驻 —— 内部模式是默认态，模式名本身就说完了，多写一句的代价是
+          400 宽的小窗里对话区少两行。0009 记的也是"一行"。
+        */}
+        {modeIgnoresSwitches(mode) && (
+          <span className="lattice-assistant-mode-hint">
+            {modeEffective
               ? t("Files, commands, the web, the screen, input and MCP servers. Approvals are not asked.")
-              : t("Held back by read-only mode — nothing can be changed.")
-            : t("Only manages Lattice: the desktop and widget tools. The six hands stay off.")}
-        </span>
+              : t("Held back by read-only mode — nothing can be changed.")}
+          </span>
+        )}
         <button
           type="button"
           className="lattice-btn is-small"
@@ -1337,24 +1364,45 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
                 </option>
               ))}
             </select>
+            {/* 「新建」用图标：下拉框里那一项已经写着 "New chat"，旁边再放一个同名字的
+                按钮等于把同一句话说两遍，还吃掉 70px —— 320 宽的时候下拉框就没字了 */}
             <button
               type="button"
-              className="lattice-btn is-small"
+              className="lattice-icon-btn"
               onClick={startNewChat}
               disabled={busy}
+              title={t("New chat")}
+              aria-label={t("New chat")}
             >
-              {t("New chat")}
+              ＋
             </button>
-            <button
-              type="button"
-              className="lattice-btn is-small is-danger"
-              onClick={() => void removeCurrentSession()}
-              disabled={busy || !currentId}
-            >
-              {t("Delete this chat")}
-            </button>
+            {/* 没有会话可删时**不渲染**，不是灰着 —— 灰按钮也在占位 */}
+            {currentId && (
+              <button
+                type="button"
+                className="lattice-btn is-small is-danger"
+                onClick={() => void removeCurrentSession()}
+                disabled={busy}
+              >
+                {t("Delete this chat")}
+              </button>
+            )}
+            {/* 小窗没有面板头了，齿轮落到这一行 —— 它管的就是"这一份对话用哪个模型" */}
+            {variant === "window" && (
+              <button
+                type="button"
+                className="lattice-icon-btn"
+                onClick={() => setView("setup")}
+                title={t("Model settings")}
+                aria-label={t("Assistant settings")}
+              >
+                ⚙
+              </button>
+            )}
           </div>
-          {sessionNote && <p className="lattice-assistant-hint">{sessionNote}</p>}
+          {sessionNote && (
+            <p className="lattice-assistant-hint lattice-assistant-note">{sessionNote}</p>
+          )}
           <div className="lattice-assistant-body" ref={bodyRef}>
             {entries.length === 0 && (
               <p className="lattice-assistant-hint">
@@ -1428,6 +1476,11 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
               disabled={busy}
             />
             <div className="lattice-assistant-foot">
+              {/* 元信息在左、按钮在右：按钮固定在右下角，用户按回车之前手就在那儿 */}
+              <span className="lattice-assistant-meta">
+                {usage ? `${usage.prompt} → ${usage.completion} tokens` : ""}
+                {active?.keySource === "env" ? ` · ${t("key from the environment")}` : ""}
+              </span>
               {busy ? (
                 <button type="button" className="lattice-btn is-small" onClick={stop}>
                   {t("Stop")}
@@ -1442,10 +1495,6 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
                   {t("Send")}
                 </button>
               )}
-              <span className="lattice-assistant-meta">
-                {usage ? `${usage.prompt} → ${usage.completion} tokens` : ""}
-                {active?.keySource === "env" ? ` · ${t("key from the environment")}` : ""}
-              </span>
             </div>
           </div>
         </>
