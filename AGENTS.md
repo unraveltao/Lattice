@@ -53,10 +53,10 @@ src/
   widgetHost.ts           桌面窗口的宿主页：装 iframe、画窗饰、处理拖拽缩放
   widgetHost.css          窗饰与缩放手柄样式
   platform/
-    store.ts              Zustand + 文件落盘适配器（Placement / 授权 / 主题 / desktopRects）
+    store.ts              Zustand + 文件落盘适配器（Placement / 授权 / 主题 / desktopRects / 回收站）；`instanceIdFor` 是新实例 id 的唯一拼法
     Canvas.tsx            画布：放置、空态、缺失组件占位
     WidgetFrame.tsx       画布里的一个组件实例 = 一个沙箱 iframe + 拖拽缩放；**也是数据平面答话的那一份**（挂载时登记 `agent-call` 处理器，卸载按 handler 身份删）
-    LibraryPanel.tsx      组件库：已安装 / 可安装 / 加载失败 + 搜索过滤 + 评分与举报入口
+    LibraryPanel.tsx      组件库：已安装 / 可安装 / 加载失败 + 搜索过滤 + 评分与举报入口 + 回收站那一段（有内容才画）
     LibSection.tsx        可折叠的一段：标题行（开合 + 计数）+ 右侧动作位（组件库与属性面板共用）
     CatalogueSection.tsx  商店区：目录条目的卡片、权限对比、安装 / 更新 / 换钥匙确认
     HelpContent.tsx       组件的"怎么用"：分节正文 + 可折叠变更记录；属性面板与卡片 `?` 共用这一份
@@ -95,6 +95,7 @@ src/
     llm-errors.ts         供应商失败的**前端那一半**（0014）：把 `@@llm:{…}` 抬头拆成「码 + 状态 + 供应商原话」，按码挑句子（`describeFailure`）；认不出就原样返回，所以每个错误位都能无脑套（`tests/llm-models.html` 钉着抬头字面量与 `llm_policy.rs` 一致）
     align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 命中判定 + 排序（档位 × 字段权重；`matchScore` 是唯一判据，`matchesWidget` 与 `rankWidgets` 都从它出去）（纯函数，`tests/library-search.html` 36 条钉着）
+    trash.ts              组件回收站的纯逻辑（VELA §3.3）：留 20 条 / 7 天、同一实例一个坑、`canRestore`（组件还装着才让恢复）；条目就是 `ClosedPlacement`，不另存一份快照（纯函数，`tests/trash.html` 20 条）
     onboarding.ts         首次引导的纯逻辑（0011）：`firstRunVisible`（只在"没按过 `Got it` **且**一件都没装"时出卡 —— 少了后一条，老机器升级上来会被问一次"要开始吗"）、`catalogueDeadEnd`（源里没东西 / 全都装过早，两种"没得装"各说各的；搜索中闭嘴）（纯函数，`tests/onboarding.html` 22 条）
     i18n.ts               界面文案的中英切换：**key 就是英文原句**、缺翻译退化成英文、`useT()`（组件）/ `t()`（模块）/ `setLanguage()` / `languagePayload()`（给组件看的"现在是哪一门"，`tests/i18n.html` 钉着）
     i18n/*.ts             中文表按域分片（common / shell / library / panels / settings / assistant / misc）；**纯数据，一个 import 都不许有**
@@ -218,7 +219,7 @@ docs/                     架构、组件规范、路线图与踩坑、代码签
 9. **`emit_to` 是广播，收件人自己认领**。`emit_to(label)` 听着像"只发给那个窗口"，其实不是：JS 侧 `listen()` 注册的监听器 target 是 `Any`，而 Tauri 的匹配规则是 `target == Any || filter(target)`（`event/listener.rs::match_any_or_filter`）—— **任何** emit 都会送到**每个**窗口的 `Any` 监听器上。所以凡是"发给某个窗口"的事件，载荷里都要带身份（`instanceId` 或窗口 `label`），由宿主页比一次再处理。不带的后果不是报错，是**串味**：拖 A 的底板滑杆四张卡片一起变色，撤 A 的一项权限四个组件一起重载、未落盘的草稿当场丢。`lattice:theme` 是唯一**故意**全局的（平台切明暗，所有窗口都该跟着换）。
 10. **看不见就别跑**。组件的心跳一律挂在 `runtime/schedule.ts` 的时间轴上，不自己 `setInterval`。窗口不可见时整条时间轴停摆，回来只补一拍。**"不可见"有两个来源**：`document.visibilityState` 和 Rust 发来的 `lattice:window-visible` —— 前者对"窗口最小化"完全无感（实测最小化前后都是 `visible`），只盯它等于没停。加了新的"窗口状态"判断，先想清楚该不该停摆，别在组件里各写一套。
     - **`requestAnimationFrame` 不是例外，是另一件事**：它画的是"这一帧的读数"，正确性不依赖它跑多少拍 —— 秒表存的是按下去的那一刻，卡片藏起来时 rAF 自然停，回来按时间戳重算一次就是对的。需要**平台在不可见时也保持节奏**、或者要**多组件对齐同一拍**的，才必须走时间轴。另外时间轴的最小间隔是 250ms（`MIN_INTERVAL`），拿它刷百分秒会每帧跳 25 个数，看着像卡了而不是在计时。
-11. **关窗口 ≠ 删用户数据**。`widget_close` 收一个 `reason`，**只有 `reason == "user"`（宿主页 ✕ 按钮）才发 `lattice:widget-close` 让主窗口删 placement**；别的来路（组件自己调桥的 `window.close`、或将来任何新入口）只关窗口，实例记进 `Runner.suppressed`，本次运行不再重建。placement 是用户摆好的布局，属于用户数据；窗口只是它的一个渲染。一条命令兼两种语义的代价，是任何一次意外调用都会静默删掉用户的东西 —— 这条坑真实发生过三次。加新的"关闭"入口时，`reason` 必须显式传，不许省；`widget_close` 里那行 `eprintln!` 也不许删，它记录的正是"谁关的"。（`reason: user` 这一路仍然会真的删 —— 手滑的兜底不在这里，在 UI 侧：`removePlacement` 会把快照留在 `lastClosed` 里，主窗口底部弹 8 秒 `Undo`。所以**别在 `removePlacement` 之外的地方直接 `filter` 掉 placement**，那等于绕开撤销。）
+11. **关窗口 ≠ 删用户数据**。`widget_close` 收一个 `reason`，**只有 `reason == "user"`（宿主页 ✕ 按钮）才发 `lattice:widget-close` 让主窗口删 placement**；别的来路（组件自己调桥的 `window.close`、或将来任何新入口）只关窗口，实例记进 `Runner.suppressed`，本次运行不再重建。placement 是用户摆好的布局，属于用户数据；窗口只是它的一个渲染。一条命令兼两种语义的代价，是任何一次意外调用都会静默删掉用户的东西 —— 这条坑真实发生过三次。加新的"关闭"入口时，`reason` 必须显式传，不许省；`widget_close` 里那行 `eprintln!` 也不许删，它记录的正是"谁关的"。（`reason: user` 这一路仍然会真的删 —— 手滑的兜底不在这里，在 UI 侧：`removePlacement` 会把快照留在 `lastClosed` 里、主窗口底部弹 8 秒 `Undo`，**同时**塞进落盘的 `trash`（组件库底部的"最近删除"，留 20 条 / 7 天，判据在 `runtime/trash.ts`）。两条兜底答的是两个问题：撤销条救"手滑当场"，回收站救"当时没看着屏幕"。所以**别在 `removePlacement` 之外的地方直接 `filter` 掉 placement**，那等于两条兜底一起绕开；也别只塞其中一处 —— 只进 `lastClosed` 的话，8 秒之后那件东西再也没有去处。）
 12. **组件的 CSP 只在 `csp.rs` 里改**。组件是不可信代码，沙箱挡"碰宿主"，CSP 挡"往外发"。四条必须记住的：
     - **`'self'` 在这里是废的**。组件跑在 `sandbox="allow-scripts"` 的 iframe 里，文档源是 opaque，`'self'` 匹配不到任何东西 —— 写上等于把组件自己的 `widget.js` 也拦了，组件白屏。协议源必须显式写出来。
     - **协议源跟平台走**：Windows 是 `http://lattice-widget.localhost`，别处是 `lattice-widget://localhost`，必须和 `runtime/registry.ts::widgetSchemeBase` 一字不差。两处对不上，症状是"组件坏了"，最难查。
@@ -312,7 +313,7 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 
 | 东西                                                  | 位置                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | 谁写                                                                                     |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| 摆放、已安装、授权、主题、网格吸附、本机档案、桌面矩形、目录地址、钉住的发布者钥匙、评分、待复核的权限 | `%APPDATA%\com.iron-tom.lattice\state.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `store.ts` → `state_write`                                                             |
+| 摆放、已安装、授权、主题、网格吸附、本机档案、桌面矩形、**回收站（`trash`，最多 20 条）**、目录地址、钉住的发布者钥匙、评分、待复核的权限 | `%APPDATA%\com.iron-tom.lattice\state.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `store.ts` → `state_write`                                                             |
 | 组件私有数据                                              | `%APPDATA%\com.iron-tom.lattice\widget-data\<widgetId>.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `bridge.ts` → `widget_store_write`                                                     |
 | assistant 的模型档、**API key** 与手的开关                    | `%APPDATA%\com.iron-tom.lattice\assistant.json`（**v4**：`{version: 4, mode, activeId, hands: {files, shell, web, screen, input, mcp}, approvalMode, workspace, profiles: [{id, label, baseUrl, auth, apiKey, model, temperature, models}]}`；**`approvalMode` 是三档审批（`ask` / `auto` / `readonly`，坏值与旧文件一律落回 `ask`）**；**`mode` 是两个模式（`internal` / `everything`，坏值一律落 `internal` —— 坏值不许放大权限）**；v1 的 `{baseUrl, model, temperature, apiKey}` 读到时就地升级成一条档、**手全关**、档位落回 `ask`，`skills.enabled` 是启用的技能 id（只存 id，正文在 `skills/<id>/SKILL.md`；升级与导入都不替用户勾上任何一份 —— 正文会常驻每一轮的提示词）；v3 升 v4 时 `mode` 落 `internal`、`skills` 落空（升级不替用户开门），临时文件 + 原子替换） | `llm.rs`（**只有 Rust 读得到明文 key**，前端只见 `keyHint` 掩码）                                      |
 | assistant 连的 MCP 服务                                 | `%APPDATA%\com.iron-tom.lattice\mcp.json`（`{version, servers: [{id, label, transport, command, args, url}]}`；临时文件 + 原子替换；坏了当"没有服务"，不让它拦住启动）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `mcp.rs`（**`id` 由 Rust 生成并复用**，界面只读写其余字段 —— id 进了工具名，换一次等于工具换了名字，模型记着的老名字全部失效）         |
@@ -352,10 +353,11 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 ### 加一个平台状态字段
 
 1. `store.ts`：interface + 初始值 + action
-2. `partialize` 里加上（不加 = 不持久化）
-3. 运行态要用的话，一路加下去：`buildSpecs` → `WidgetWindowSpec`（TS）→ `WidgetWindowSpec`（Rust）→ `HostConfig` → **`Applied`**
+2. `partialize` 里加上（不加 = 不持久化）。**新字段不加 `STATE_VERSION`** —— 落盘合并会给老状态填上默认值，版本号只留给"旧字段的含义变了"（`migrateState`）
+3. 会**过期**的字段（回收站那种"留 7 天"）还要在读回路径上裁一次：关机那几天照样算过期，只在写入时裁的话，一台两周没开的机器回来会看到一堆早就该没了的东西。位置是 `onRehydrateStorage`（那里也是 `hydrated = true` 的地方，写完盘之前的状态才有意义）
+4. 运行态要用的话，一路加下去：`buildSpecs` → `WidgetWindowSpec`（TS）→ `WidgetWindowSpec`（Rust）→ `HostConfig` → **`Applied`**
 
-第 3 步最后那个 `Applied` 最容易漏。`Applied` 是"已经写进 Win32 的状态"，不在里面的字段永远不会触发窗口更新——撤销权限对已打开的桌面窗口无效，就是这么来的。
+第 4 步最后那个 `Applied` 最容易漏。`Applied` 是"已经写进 Win32 的状态"，不在里面的字段永远不会触发窗口更新——撤销权限对已打开的桌面窗口无效，就是这么来的。
 
 ### 加一句界面文案 / 改一句文案
 
@@ -689,7 +691,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 
 - `npm run typecheck` —— 必跑，当前是干净的
 - **`npm run check:tokens`** —— 三张表（字号 / 圆角 / 间距）的守门人，扫 `src/**/*.css`，越界就红并指出行号；`npm run test:tokens` 钉规则本身（半像素、`font` 简写、豁免、以及"仓库现状是干净的"）。改样式前后各跑一次，比肉眼数 `10.5px` 靠谱。真要写规矩外的值，行尾加 `/* token-ok 理由 */`，理由不写会被报。
-- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（54 页 / 2 645 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。**改断言就顺手 `grep -n '<页名>' AGENTS.md docs/`**：这一页和 §3 / §7 / `docs/AGENT_ACCESS.md` 里有十几处手写的「N 条」，条数没人替你核（`check:docs` 只对账总数），飘了不会红。
+- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（55 页 / 2 677 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。**改断言就顺手 `grep -n '<页名>' AGENTS.md docs/`**：这一页和 §3 / §7 / `docs/AGENT_ACCESS.md` 里有十几处手写的「N 条」，条数没人替你核（`check:docs` 只对账总数），飘了不会红。
 - **断言页别等 iframe**。`--virtual-time-budget` 会让虚拟时钟一路快进到 9 秒，而 iframe 的 `load` 走真实网络 —— 谁先到看运气，快进赢了就 dump 到一个空的 `<pre>`，`test:browser` 报"0 条 —— 一条断言都没跑完"。那个症状和"页面没有断言"一模一样，别去调 budget（调大只是让赌局更偏一点，还是赌）。正确做法是**同步加载**：组件把纯逻辑挂在 `window.__latticeXxx` 上，普通 `<script src>` 引进来就能断言；拿不到那个对象时也要先 `log(false, …)` 再 `flush()`，否则页面永远吐 0 条。
 - 改了组件 UI：`npm run dev` 后在浏览器里看；要截固定尺寸的图，用 Edge headless：
   ```bash

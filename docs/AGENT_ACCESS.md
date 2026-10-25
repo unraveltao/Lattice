@@ -623,6 +623,6 @@ cwd 在 workspace 里照样问（一条命令能做的事不止"写这个目录"
 | 六只手（`assistant_tool`） | **2026-10-25 真机逐只跑过**：文件（中文目录 `中文 目录/hello.txt` 读出 `第一行：你好，世界`；二进制回 `binary`；`file.search` 命中中文；`file.write` 落 40 字节 UTF-8 无 BOM，`parents: true` 建出两层新目录）、`shell.run`（`Write-Output '你好，世界 😀'` 原样回、`exit 3` 回 `code: 3`、stderr 有内容、cwd 是 workspace；按 Stop 1517ms 后回 `cancelled` 且子进程没了；`timeoutMs: 2000` 跑 20 秒的睡眠 → 2013ms 回 `timedOut: true`、没留孤儿）、`web.fetch`（example.com 折成正文；`http://github.com` 跟到 `https://github.com/` 并报新地址；`ftp://` 回 `bad_args`）、屏幕（`screen.windows` 22 个窗口、焦点窗口排第一、认得出 `Tauri Window` 那份；`screen.capture` 落 3456×1081 PNG，签名与 IHDR 都对）、MCP（自建 stdio 探针：起 `node` 进程 → `initialize` → `tools/list` → `mcp.probe.echo` → `tools/call` 回 `probe echo: 你好 MCP`，第二次发现走缓存 3ms）、键鼠（`input.click` 落在算好的点、`input.type` 打出 `你好 😀!`、`input.key` 的 `Enter` 进到 contenteditable） |
 | 一轮完整对话（Deny / Allow） | **2026-10-25 真机**：真网关、真 `runAssistantTurn`。让它写文件并 `approve → false`：确认条请求是 `Write 12 characters to …\denied-写.txt`，工具结果 `the user declined this action…`，模型回"你拒绝了这次写入，所以我没有改动任何东西"，**磁盘上确实没有那个文件**；换成 `approve → true`：写文件 + `shell.run Get-Date` 两条都 `ok`，落盘 19 字节 UTF-8、内容 `probe-write-允许`。读（`file.list` / `file.read`）不弹确认，和 `needsApproval` 一致 |
 
-每页的断言条数以**跑一遍**为准（`npm run test:browser`：54 页 / 2 645 条 / 0 failed）。表里只写
+每页的断言条数以**跑一遍**为准（`npm run test:browser`：55 页 / 2 677 条 / 0 failed）。表里只写
 "哪一页钉住哪一块"，不写死每页多少条 —— 那个数字改一次断言就要同步改三份文档，而它本来只回答
 "这一块有没有人看着"。

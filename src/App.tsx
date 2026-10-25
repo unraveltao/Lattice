@@ -43,7 +43,7 @@ import {
 import { buildSpecs, closeDesktop, minimizeMain, syncDesktop } from "./platform/desktop";
 import { Glyph, ICON, ThemeGlyph } from "./platform/icons";
 import { SettingsMenu, type SettingsSection } from "./platform/SettingsMenu";
-import { nextFreeSlot, useLattice, type ThemeMode } from "./platform/store";
+import { instanceIdFor, nextFreeSlot, useLattice, type ThemeMode } from "./platform/store";
 import { permissionLabel } from "./runtime/manifest";
 import { isTauri, loadRegistry, type WidgetLoadError, type WidgetRecord } from "./runtime/registry";
 import { DEBUG_EVENT, ingest } from "./runtime/debug";
@@ -225,6 +225,10 @@ export default function App() {
   const lastClosed = useLattice((state) => state.lastClosed);
   const restoreLastClosed = useLattice((state) => state.restoreLastClosed);
   const dismissLastClosed = useLattice((state) => state.dismissLastClosed);
+  const trash = useLattice((state) => state.trash);
+  const restoreTrashed = useLattice((state) => state.restoreTrashed);
+  const deleteTrashed = useLattice((state) => state.deleteTrashed);
+  const emptyTrash = useLattice((state) => state.emptyTrash);
   const setPaused = useLattice((state) => state.setPaused);
   const [desktopBusy, setDesktopBusy] = useState(false);
   /** 安装结果提示：成功会自己消失，失败留着让人看清 */
@@ -631,7 +635,7 @@ export default function App() {
       const { w, h } = record.manifest.size;
       const slot = nextFreeSlot(useLattice.getState().placements, w, h);
       addPlacement({
-        instanceId: `${record.manifest.id}#${crypto.randomUUID().slice(0, 8)}`,
+        instanceId: instanceIdFor(record.manifest.id),
         widgetId: record.manifest.id,
         x: slot.x,
         y: slot.y,
@@ -1001,7 +1005,7 @@ export default function App() {
       const y = Math.max(0, Math.round(event.clientY - bounds.top - 12));
 
       addPlacement({
-        instanceId: `${record.manifest.id}#${crypto.randomUUID().slice(0, 8)}`,
+        instanceId: instanceIdFor(record.manifest.id),
         widgetId: record.manifest.id,
         x,
         y,
@@ -1237,6 +1241,10 @@ export default function App() {
           onAddSource={openSourceList}
           onboarded={onboarded}
           onDismissOnboarding={dismissOnboarding}
+          trash={trash}
+          onRestoreTrash={restoreTrashed}
+          onDeleteTrash={deleteTrashed}
+          onEmptyTrash={emptyTrash}
           open={libraryOpen}
           onToggle={() => setPanelOpen("library", !libraryOpen)}
         />

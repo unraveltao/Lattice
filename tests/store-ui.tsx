@@ -243,6 +243,11 @@ function render(
      */
     onboarded: true,
     onDismissOnboarding: () => calls.push("dismiss-onboarding"),
+    /* 回收站默认空着：这一页验的是商店那几段，多一段"最近删除"只会挪位置 */
+    trash: [],
+    onRestoreTrash: (instanceId: string) => calls.push(`restore-trash:${instanceId}`),
+    onDeleteTrash: (instanceId: string) => calls.push(`delete-trash:${instanceId}`),
+    onEmptyTrash: () => calls.push("empty-trash"),
     onAddSource: () => calls.push("add-source"),
     open: true,
     onToggle: () => {},

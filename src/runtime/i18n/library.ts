@@ -32,6 +32,19 @@ export const LIBRARY_ZH: Record<string, string> = {
   "Install all": "全部安装",
   "Install all {count} bundled widgets at once": "一次安装全部 {count} 个内置组件",
 
+  // —— 组件回收站（`runtime/trash.ts` 的判据，这一段只是画出来） ——
+  "Recently removed": "最近删除",
+  "Deleting a widget leaves a copy here for seven days. Restore it if you removed the wrong one.":
+    "删掉的组件会在这里留七天。删错了可以拿回来。",
+  Restore: "恢复",
+  "Its widget isn't installed": "这个组件已经卸载了",
+  "Delete from the trash": "从回收站里删掉",
+  "Empty trash": "清空回收站",
+  Empty: "清空",
+  "Empty?": "确定清空？",
+  Keep: "留着",
+  "This cannot be undone.": "清空之后就找不回来了。",
+
   // —— 组件库卡片（Installed / `{count} star(s)` / `How to use {name}` 在 common） ——
   Review: "待确认",
   Local: "本地",

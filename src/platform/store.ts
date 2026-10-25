@@ -13,6 +13,7 @@ import type { LangPref } from "../runtime/i18n";
 import { normalizeKey, normalizeSources, sourceIdFor, type CatalogueSource } from "../runtime/catalogue";
 import type { Appearance } from "../runtime/appearance";
 import type { ConfigValues } from "../runtime/config";
+import { dropTrash, pruneTrash, pushTrash } from "../runtime/trash";
 
 /**
  * 状态存哪儿。
@@ -163,10 +164,15 @@ export interface PermissionReview {
 }
 
 /**
- * 刚被删掉的那一个组件，留着给人反悔。
+ * 被删掉的那一个组件，留着给人反悔。
  *
- * 只活在内存里，**不进 `state.json`**：它是"这一次操作还能撤回"的状态，
- * 不是用户配置。重启之后还弹一条"撤销刚才的删除"只会莫名其妙。
+ * 两个地方用它，寿命完全不同：
+ *
+ * - `lastClosed`：**只活在内存里**。它是"这一次操作还能撤回"的状态，不是用户
+ *   配置；重启之后还弹一条"撤销刚才的删除"只会莫名其妙。
+ * - `trash`：**跟着 `state.json` 落盘**。8 秒撤销条过去之后，用户还能在组件库
+ *   的回收站里找回来 —— 那是用户摆好的布局，属于用户数据（不变量 11）。
+ *   留多久、留几份由 `runtime/trash.ts` 说（7 天 / 20 条）。
  *
  * `rect` 一起存下来，是因为桌面窗口的位置在 `desktopRects` 里，删 placement
  * 时那份也跟着删了 —— 只把 placement 塞回去，组件会掉到画布坐标推算的位置上，
@@ -181,7 +187,7 @@ export interface ClosedPlacement {
    * 用户看到的还是"东西回来了，但我的设置没了"。
    */
   config?: ConfigValues;
-  /** 删除发生的时刻，提示条用它算"该消失了没有" */
+  /** 删除发生的时刻，提示条用它算"该消失了没有"，回收站用它算年龄与过期 */
   at: number;
 }
 
@@ -277,8 +283,19 @@ interface LatticeState {
    * 那两颗 ✕（宿主页窗饰上的、画布卡片上的）都是**不可逆删除**，而 ✕ 只有
    * 22×22、还挂在会淡入的窗饰上 —— 手滑一次，用户的布局就少一块。所以删的
    * 时候留一份快照，主窗口底部弹 8 秒的撤销条。
+   *
+   * **内存里的这一份是"这一次还能撤回"**；落盘的那一份在 `trash` 里。
    */
   lastClosed: ClosedPlacement | null;
+  /**
+   * 组件回收站：最近删掉的几份摆放，跟着 `state.json` 落盘。
+   *
+   * 8 秒撤销条只救"手滑的那一下"，救不了"当时没看着屏幕"。这里留 7 天 / 20 条，
+   * 判据与裁剪都在 `runtime/trash.ts`（纯函数，`tests/trash.html` 钉着）。
+   * 一条 entry 和 `lastClosed` 是同一个形状 —— 恢复要的东西一样多（摆放、
+   * 桌面矩形、配置），没有理由存两套。
+   */
+  trash: ClosedPlacement[];
   /**
    * 桌面上那批组件窗口是不是被"暂停"了（藏起来了）。
    *
@@ -335,6 +352,19 @@ interface LatticeState {
   restoreLastClosed: () => void;
   /** 用户点了"不用了"或者提示条自己过期 */
   dismissLastClosed: () => void;
+  /**
+   * 从回收站恢复一条（`instanceId` 是回收站里那条的实例 id）。
+   *
+   * **恢复出来会不会是一张破卡，不在这里判**：store 只知道 `installedIds`，而
+   * "这个组件还装着"是「磁盘上有（user）或者 `installedIds` 里有（bundled）」，
+   * 那份合起来的集合在 `App` 里（`installedSet`）。判据是
+   * `runtime/trash.ts::canRestore`，界面据此把恢复按钮按灰并写清原因。
+   */
+  restoreTrashed: (instanceId: string) => void;
+  /** 从回收站彻底删掉一条 */
+  deleteTrashed: (instanceId: string) => void;
+  /** 清空回收站 */
+  emptyTrash: () => void;
   updatePlacement: (instanceId: string, patch: Partial<Omit<Placement, "instanceId" | "widgetId">>) => void;
   bringToFront: (instanceId: string) => void;
   select: (instanceId: string | null) => void;
@@ -382,6 +412,16 @@ interface LatticeState {
 }
 
 export const GRID = 8;
+
+/**
+ * 新实例的 id：`<widgetId>#<8 位随机>`。
+ *
+ * 只在这一处拼 —— 这个形状会进 `state.json`、进桌面窗口的 label、进 agent 的动作
+ * 参数（`widget:<instanceId>`），在别处再拼一遍迟早拼出第二种写法。
+ */
+export function instanceIdFor(widgetId: string): string {
+  return `${widgetId}#${crypto.randomUUID().slice(0, 8)}`;
+}
 
 export function snap(value: number, enabled: boolean): number {
   return enabled ? Math.round(value / GRID) * GRID : Math.round(value);
@@ -450,6 +490,7 @@ export const useLattice = create<LatticeState>()(
       libraryOpen: true,
       inspectorOpen: true,
       lastClosed: null,
+      trash: [],
       paused: false,
       sources: [{ ...OFFICIAL_CATALOGUE_SOURCE }],
       onboarded: false,
@@ -476,6 +517,7 @@ export const useLattice = create<LatticeState>()(
           const nextConfigs = { ...state.configs };
           const config = nextConfigs[instanceId];
           delete nextConfigs[instanceId];
+          const at = Date.now();
           return {
             placements: state.placements.filter((item) => item.instanceId !== instanceId),
             desktopRects: nextRects,
@@ -484,7 +526,9 @@ export const useLattice = create<LatticeState>()(
               state.selectedInstanceId === instanceId ? null : state.selectedInstanceId,
             // 留一份快照给人反悔。找不到目标（已经被删过）就保持原样，
             // 别把上一次的撤销机会顺手丢掉
-            lastClosed: target ? { placement: target, rect, config, at: Date.now() } : state.lastClosed,
+            lastClosed: target ? { placement: target, rect, config, at } : state.lastClosed,
+            // 同一份快照也进回收站：8 秒撤销条只救手滑，救不了"当时没看着屏幕"
+            trash: target ? pushTrash(state.trash, { placement: target, rect, config, at }, at) : state.trash,
           };
         }),
 
@@ -495,7 +539,7 @@ export const useLattice = create<LatticeState>()(
           const { instanceId } = last.placement;
           // 可能已经通过别的路回来了（重装、重新投放），别加出两份
           if (state.placements.some((item) => item.instanceId === instanceId)) {
-            return { lastClosed: null };
+            return { lastClosed: null, trash: dropTrash(state.trash, instanceId) };
           }
           return {
             placements: [...state.placements, last.placement],
@@ -507,10 +551,39 @@ export const useLattice = create<LatticeState>()(
               : state.configs,
             selectedInstanceId: instanceId,
             lastClosed: null,
+            // 撤销回来了就不再在回收站里挂着 —— 同一件东西不该有两个去处
+            trash: dropTrash(state.trash, instanceId),
           };
         }),
 
       dismissLastClosed: () => set({ lastClosed: null }),
+
+      restoreTrashed: (instanceId) =>
+        set((state) => {
+          const entry = state.trash.find((item) => item.placement.instanceId === instanceId);
+          if (!entry) return state;
+
+          /*
+           * 撞号（这个实例被别的路放回来了）就换一个新 id：摆放、桌面矩形、配置
+           * 三处都用同一个键，换的时候必须一起换，否则配置挂到别人的实例上。
+           */
+          const occupied = state.placements.some((item) => item.instanceId === instanceId);
+          const nextId = occupied ? instanceIdFor(entry.placement.widgetId) : instanceId;
+          const placement = { ...entry.placement, instanceId: nextId };
+          return {
+            placements: [...state.placements, placement],
+            desktopRects: entry.rect
+              ? { ...state.desktopRects, [nextId]: entry.rect }
+              : state.desktopRects,
+            configs: entry.config ? { ...state.configs, [nextId]: entry.config } : state.configs,
+            selectedInstanceId: nextId,
+            trash: dropTrash(state.trash, instanceId),
+          };
+        }),
+
+      deleteTrashed: (instanceId) => set((state) => ({ trash: dropTrash(state.trash, instanceId) })),
+
+      emptyTrash: () => set({ trash: [] }),
 
       updatePlacement: (instanceId, patch) =>
         set((state) => ({
@@ -747,9 +820,18 @@ export const useLattice = create<LatticeState>()(
       storage: createJSONStorage(() => platformStorage),
       version: STATE_VERSION,
       migrate: migrateState,
-      onRehydrateStorage: () => (_state, error) => {
+      onRehydrateStorage: () => (state, error) => {
         if (error) console.error("Failed to hydrate platform state", error);
         hydrated = true;
+        /*
+         * 回收站的过期在**读盘之后**做一次：不开应用的那几天也得算数，否则
+         * "留 7 天"会变成"用满 7 天之后才开始过期"。裁过才写，`set` 会触发一次
+         * persist —— 没变化时不动它。
+         */
+        if (state) {
+          const kept = pruneTrash(state.trash ?? [], Date.now());
+          if (kept.length !== (state.trash ?? []).length) useLattice.setState({ trash: kept });
+        }
       },
       partialize: (state) => ({
         placements: state.placements,
@@ -771,6 +853,7 @@ export const useLattice = create<LatticeState>()(
         blockedKeys: state.blockedKeys,
         ratings: state.ratings,
         permissionReviews: state.permissionReviews,
+        trash: state.trash,
       }),
     },
   ),

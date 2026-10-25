@@ -1003,6 +1003,33 @@ button {
   gap: 8px;
 }
 
+/*
+ * 回收站的一行：图标 / 名字 + 删于何时 / 两颗按钮。
+ *
+ * 故意比组件卡片矮一截（卡片有说明、版本、权限、评分五层，这里只有一行）：
+ * 这一栏是"找回来"的地方，不是逛的地方。份数上限 20，所以不做虚拟滚动。
+ */
+.lattice-trash-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+}
+
+.lattice-trash-row + .lattice-trash-row {
+  border-top: 1px solid var(--lattice-border);
+}
+
+.lattice-trash-when {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--lattice-text-faint);
+}
+
+.lattice-trash-row .lattice-card-actions {
+  margin-top: 0;
+}
+
 /* 目录段里再套一层"Nothing to install"：和上面的卡片留一道浅分隔 */
 .lattice-lib-section.is-nested {
   margin-top: 2px;

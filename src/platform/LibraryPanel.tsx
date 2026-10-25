@@ -30,12 +30,13 @@ import { permissionLabel, isPermissionReady } from "../runtime/manifest";
 import { useT } from "../runtime/i18n";
 import { useText } from "../runtime/widget-text";
 import { hasHelp } from "../runtime/help";
+import { canRestore } from "../runtime/trash";
 import { CatalogueSection, type StoreBinding } from "./CatalogueSection";
 import { HelpDialog } from "./HelpContent";
 import { LibSection } from "./LibSection";
-import type { BackupInfo } from "./catalogue";
+import { describeAge, type BackupInfo } from "./catalogue";
 import { Glyph, ICON, PanelGlyph, WidgetIconMark } from "./icons";
-import type { Rating } from "./store";
+import type { ClosedPlacement, Rating } from "./store";
 
 /** 安装结果提示。成功的会自己消失，失败的留着等用户处理 */
 export interface InstallNotice {
@@ -73,6 +74,16 @@ interface LibraryPanelProps {
   onboarded: boolean;
   onDismissOnboarding: () => void;
   /**
+   * 回收站（`runtime/trash.ts` 定判据，`store.ts` 落盘）。
+   *
+   * 面板只**画**它：留多久、留几份、"这条还能不能恢复"全在纯函数里。
+   * 空的时候这一段不出现 —— 一行"最近删除 0"等于每天提醒用户删过东西。
+   */
+  trash: ClosedPlacement[];
+  onRestoreTrash: (instanceId: string) => void;
+  onDeleteTrash: (instanceId: string) => void;
+  onEmptyTrash: () => void;
+  /**
    * 把设置打开到 Widgets（源列表）那一页。
    *
    * 首次引导卡与目录段底部共用这一个回调 —— 两处说的都是"另一个源从哪儿加"，
@@ -104,6 +115,10 @@ export function LibraryPanel({
   onReport,
   onboarded,
   onDismissOnboarding,
+  trash,
+  onRestoreTrash,
+  onDeleteTrash,
+  onEmptyTrash,
   onAddSource,
   open,
   onToggle,
@@ -122,6 +137,11 @@ export function LibraryPanel({
    * 一个月用不上一次。收起来不等于藏起来：`⋯` 常亮，一次点击全都在。
    */
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  /*
+   * "清空"按到第二下没有。清空**没有撤销**，而这一栏恰恰是撤销的最后一层，
+   * 所以它不许一下就空 —— 第一下只把按钮换成"确定清空？"。
+   */
+  const [emptyArmed, setEmptyArmed] = useState(false);
   // 按空格切成多个词，每个词都得命中（"clock 24" 这种组合才有意义）
   const tokens = useMemo(() => tokenize(query), [query]);
   const filtering = tokens.length > 0;
@@ -611,6 +631,103 @@ export function LibraryPanel({
           forceOpen={filtering}
           onAddSource={onAddSource}
         />
+
+        {/*
+          回收站沉在目录段之后、错误段之前。
+
+          位置是刻意的：它回答的是"我刚才删错了"，不是日常要用的东西 ——
+          排在已安装 / 可安装 / 目录前面会把一次手滑抬成这一屏的主角。
+          有内容才画（空的时候连标题都不出）。
+        */}
+        {trash.length > 0 && (
+          <LibSection
+            title="Recently removed"
+            count={trash.length}
+            action={
+              emptyArmed ? (
+                <>
+                  <button
+                    type="button"
+                    className="lattice-btn is-small is-primary"
+                    title={t("This cannot be undone.")}
+                    onClick={() => {
+                      onEmptyTrash();
+                      setEmptyArmed(false);
+                    }}
+                  >
+                    {t("Empty?")}
+                  </button>
+                  <button
+                    type="button"
+                    className="lattice-btn is-small"
+                    onClick={() => setEmptyArmed(false)}
+                  >
+                    {t("Keep")}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="lattice-btn is-small"
+                  title={t("Empty trash")}
+                  onClick={() => setEmptyArmed(true)}
+                >
+                  {t("Empty")}
+                </button>
+              )
+            }
+          >
+            <p className="lattice-hint">
+              {t(
+                "Deleting a widget leaves a copy here for seven days. Restore it if you removed the wrong one.",
+              )}
+            </p>
+            {trash.map((entry) => {
+              const instanceId = entry.placement.instanceId;
+              const known = widgets.find((item) => item.manifest.id === entry.placement.widgetId);
+              const name = known ? text(known.manifest.name) : entry.placement.widgetId;
+              const restorable = canRestore(entry, installedIds);
+              return (
+                <div key={instanceId} className="lattice-trash-row">
+                  <span className="lattice-card-glyph" aria-hidden>
+                    {known?.iconUrl ? (
+                      <WidgetIconMark url={known.iconUrl} size={17} />
+                    ) : (
+                      name.trim().slice(0, 1)
+                    )}
+                  </span>
+                  <span className="lattice-card-heading">
+                    <span className="lattice-card-name">{name}</span>
+                    <span className="lattice-trash-when">
+                      {describeAge(entry.at / 1000)}
+                      {restorable ? "" : ` · ${t("Its widget isn't installed")}`}
+                    </span>
+                  </span>
+                  <div className="lattice-card-actions">
+                    <button
+                      type="button"
+                      className="lattice-btn is-small"
+                      disabled={!restorable}
+                      title={restorable ? t("Restore") : t("Its widget isn't installed")}
+                      onClick={() => onRestoreTrash(instanceId)}
+                    >
+                      {t("Restore")}
+                    </button>
+                    <button
+                      type="button"
+                      className="lattice-icon-btn is-tiny"
+                      aria-label={t("Delete from the trash")}
+                      title={t("Delete from the trash")}
+                      onClick={() => onDeleteTrash(instanceId)}
+                    >
+                      <Glyph d={ICON.trash} size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </LibSection>
+        )}
 
         {errors.length > 0 && (
           <div className="lattice-errors">

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>trash test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 组件回收站的纯逻辑：留多久、留几份、同一实例几个坑、什么时候不能恢复。
+       *
+       * 这页钉六件事：
+       *   1. 超过 7 天的丢掉 —— 回收站不是备份
+       *   2. 最多 20 条，丢最老的
+       *   3. 同一个实例只占一个坑，时间是最新那次
+       *   4. 新删的排最前
+       *   5. `at` 在未来的条目留着（时钟回拨过，别因此丢用户东西）
+       *   6. 组件不在 `installedIds` 里就不能恢复
+       *
+       * 时钟自己给（`now` 是参数）：这里一次 `Date.now()` 都不调，断言才不会
+       * 因为机器慢半拍而红。
+       */
+      import {
+        TRASH_LIMIT,
+        TRASH_TTL_MS,
+        canRestore,
+        dropTrash,
+        pruneTrash,
+        pushTrash,
+      } from "/src/runtime/trash.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text}（得到 ${JSON.stringify(actual)}）`,
+        );
+
+      /** 一条回收站记录的形状和 `ClosedPlacement` 一样：摆放 + 时刻 */
+      const item = (instanceId, widgetId, at) => ({
+        placement: { instanceId, widgetId, x: 0, y: 0, w: 2, h: 2, layer: "desktop" },
+        at,
+      });
+
+      const NOW = 1_800_000_000_000;
+      const DAY = 24 * 60 * 60 * 1000;
+      const ids = (list) => list.map((entry) => entry.placement.instanceId).join(",");
+
+      // —— 过期 ——
+      eq(pruneTrash([item("a#1", "a", NOW - 3 * DAY)], NOW).length, 1, "三天前还在");
+      eq(pruneTrash([item("a#1", "a", NOW - 8 * DAY)], NOW).length, 0, "八天前被裁掉");
+      eq(
+        pruneTrash([item("a#1", "a", NOW - TRASH_TTL_MS)], NOW).length,
+        0,
+        "正好 7 天的不留（边界是“不超过”）",
+      );
+      eq(
+        pruneTrash([item("a#1", "a", NOW - TRASH_TTL_MS + 1)], NOW).length,
+        1,
+        "差一毫秒没到 7 天的还在",
+      );
+
+      // —— 未来时间戳 ——
+      eq(
+        pruneTrash([item("a#1", "a", NOW + 5 * DAY)], NOW).length,
+        1,
+        "时间戳在未来的留着（时钟回拨不该丢用户东西）",
+      );
+
+      // —— 条数上限 ——
+      const many = Array.from({ length: TRASH_LIMIT + 5 }, (_, index) =>
+        item(`w${index}#1`, "w", NOW - index * 1000),
+      );
+      eq(pruneTrash(many, NOW).length, TRASH_LIMIT, `最多留 ${TRASH_LIMIT} 条`);
+      eq(pruneTrash(many, NOW)[0].placement.instanceId, "w0#1", "留下的是最新的那一头");
+      eq(
+        pruneTrash(many, NOW).at(-1).placement.instanceId,
+        `w${TRASH_LIMIT - 1}#1`,
+        "丢掉的是最老的那一头",
+      );
+
+      // —— 放进回收站 ——
+      eq(ids(pushTrash([], item("a#1", "a", NOW), NOW)), "a#1", "空列表放进去就是它");
+      eq(
+        ids(pushTrash([item("a#1", "a", NOW - 1000)], item("b#1", "b", NOW), NOW)),
+        "b#1,a#1",
+        "新删的排最前",
+      );
+
+      // 同一个实例只占一个坑：连删两次不该出现两张一模一样的卡
+      const replaced = pushTrash([item("a#1", "a", NOW - 1000)], item("a#1", "a", NOW), NOW);
+      eq(replaced.length, 1, "同一个实例只留一条");
+      eq(replaced[0].at, NOW, "时间更新成最后一次删的");
+
+      // 别的实例不受影响（上面的 filter 只按 instanceId 判）
+      eq(
+        ids(
+          pushTrash(
+            [item("a#1", "a", NOW - 9000), item("a#2", "a", NOW - 8000)],
+            item("a#1", "a", NOW),
+            NOW,
+          ),
+        ),
+        "a#1,a#2",
+        "同一个组件的另一个实例不动",
+      );
+
+      // 放进去的时候顺手裁剪：一次塞超过上限也只会留 20 条
+      const filled = Array.from({ length: TRASH_LIMIT }, (_, index) =>
+        item(`old${index}#1`, "old", NOW - DAY),
+      );
+      const overflow = pushTrash(filled, item("new#1", "new", NOW), NOW);
+      eq(overflow.length, TRASH_LIMIT, "塞进去时顺手裁到上限");
+      eq(overflow[0].placement.instanceId, "new#1", "新的在最前，没被裁掉");
+
+      // —— 拿掉一条 ——
+      eq(dropTrash([item("a#1", "a", NOW), item("b#1", "b", NOW)], "a#1").length, 1, "删掉一条");
+      eq(dropTrash([item("a#1", "a", NOW)], "zzz").length, 1, "删不存在的 id 什么也不动");
+
+      // —— 能不能恢复 ——
+      const installed = new Set(["lattice.clock"]);
+      log(canRestore(item("a#1", "lattice.clock", NOW), installed), "装着的能恢复");
+      log(
+        !canRestore(item("a#1", "lattice.todo", NOW), installed),
+        "卸载了的不让恢复（恢复出来是一张破卡）",
+      );
+      log(!canRestore(item("a#1", "lattice.clock", NOW), new Set()), "空清单一条都不能恢复");
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>
