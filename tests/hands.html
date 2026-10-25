@@ -370,8 +370,9 @@
       eq(normalizeMode("everything"), "everything", "认得出 everything");
       eq(normalizeMode("internal"), "internal", "认得出 internal");
       eq(normalizeMode(""), "internal", "空串落回内部");
-      eq(normalizeMode("EVERYTHING"), "internal", "大小写不对也不放大权限");
-      eq(normalizeMode(true), "internal", "旧文件里的布尔也不放大权限");
+      eq(normalizeMode(" Everything "), "everything", "大小写与空白不算坏值（和 normalizeApproval 一样宽松）");
+      eq(normalizeMode("full"), "internal", "认不出来的词落内部，不放大权限");
+      eq(normalizeMode(true), "internal", "旧文件里的布尔落内部");
       eq(normalizeMode(undefined), "internal", "没有这个字段 = 内部");
 
       ok(modeIgnoresSwitches("everything"), "全部模式不看开关");

@@ -90,9 +90,11 @@ export type AssistantMode = (typeof ASSISTANT_MODES)[number];
 /** 出厂模式：只够管内部 —— 六组手一只都不给 */
 export const DEFAULT_ASSISTANT_MODE: AssistantMode = "internal";
 
-/** 认不出来的值（含旧文件里的布尔、空串、大小写不对）一律落 `internal` */
+/** 认不出来的值（含旧文件里的布尔、空串、乱写的词）一律落 `internal` */
 export function normalizeMode(raw: unknown): AssistantMode {
-  const text = typeof raw === "string" ? raw : "";
+  // 宽松和 `normalizeApproval` 一样：`" Everything "` 说的是同一件事。
+  // 宽松的只有**形状**，不是"哪些值算数" —— 认不出来的词一律落内部。
+  const text = typeof raw === "string" ? raw.trim().toLowerCase() : "";
   return (ASSISTANT_MODES as readonly string[]).includes(text)
     ? (text as AssistantMode)
     : DEFAULT_ASSISTANT_MODE;

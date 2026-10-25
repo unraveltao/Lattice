@@ -191,6 +191,8 @@ pub fn run() {
             llm::llm_chat_cancel,
             llm::assistant_hands,
             llm::assistant_hands_save,
+            llm::assistant_mode,
+            llm::assistant_mode_set,
             assistant_session::assistant_sessions,
             assistant_session::assistant_session_load,
             assistant_session::assistant_session_save,

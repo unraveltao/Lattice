@@ -35,7 +35,15 @@ import {
   type SessionSummary,
   type SessionUsage,
 } from "./assistant";
-import { discoverMcpTools, readHands, readMcpServers, saveHands, saveMcpServers } from "./hands";
+import {
+  discoverMcpTools,
+  readHands,
+  readMcpServers,
+  readMode,
+  saveHands,
+  saveMcpServers,
+  saveMode,
+} from "./hands";
 import {
   allTools,
   systemPrompt,
@@ -49,11 +57,15 @@ import {
   HAND_GROUPS,
   HAND_LABELS,
   HAND_READY,
+  DEFAULT_ASSISTANT_MODE,
   HANDS_OFF,
+  effectiveHands,
+  modeIgnoresSwitches,
   mcpToolSpecs,
   normalizeApproval,
   splitCommandLine,
   type ApprovalMode,
+  type AssistantMode,
   type HandGroup,
   type HandsSettings,
   type McpServer,
@@ -103,6 +115,13 @@ function messagesFromSession(messages: SessionMessage[]): ChatMessage[] {
     })) as ChatMessage[];
 }
 
+/**
+ * 启动之后是否已经提示过「全部」模式。**进程级一个布尔就够**（主窗口抽屉与
+ * 小窗各一份，各提示一次）。反复弹会把常驻模式条的意义抹掉 —— 用户学会无视它
+ * 之后，真正需要的提示也一起被无视了
+ */
+let modeRemindedOnce = false;
+
 export interface AssistantPanelProps {
   open: boolean;
   onClose: () => void;
@@ -148,6 +167,18 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
 
   /** 用户拨开的那几只手。读一次、拨一次存一次（和模型档同一份 JSON） */
   const [hands, setHands] = useState<HandsSettings>(HANDS_OFF);
+  /**
+   * 两个模式（0009）：内部 / 全部。**存盘**，每次开面板读一次。
+   *
+   * `effective` 也一起收下来：只读档压在「全部」上面时它是 false，模式条要照实
+   * 说"被只读档压住"，而不是把模式偷偷显示成 internal
+   */
+  const [mode, setMode] = useState<AssistantMode>(DEFAULT_ASSISTANT_MODE);
+  const [modeEffective, setModeEffective] = useState(true);
+  /** 切到「全部」之前那一次确认。**只往提权的方向问**，切回来不问 */
+  const [modeConfirm, setModeConfirm] = useState(false);
+  /** 启动时就已经在「全部」模式：开面板提示一次（这是存盘的唯一代价） */
+  const [modeReminder, setModeReminder] = useState(false);
   /**
    * 外部服务（MCP）：服务器列表 + 上一次发现的结果。
    * 两者都是**每次开面板重新读**（发现走内存缓存，重读不贵）
@@ -301,6 +332,22 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       })
       .catch(() => {
         // 保持全关
+      });
+    // 模式也是同一份配置里的字段（0009）。读不到 = 内部 —— 往安全那边倒
+    void readMode()
+      .then((view) => {
+        if (cancelled) return;
+        setMode(view.mode);
+        setModeEffective(view.effective);
+        // 存的就是「全部」：**启动之后第一次打开面板提示一次**。
+        // 之后只靠常驻的那条模式条，不再打断用户
+        if (!modeRemindedOnce) {
+          modeRemindedOnce = true;
+          if (modeIgnoresSwitches(view.mode)) setModeReminder(true);
+        }
+      })
+      .catch(() => {
+        // 保持内部
       });
     // 服务器列表也是同一类东西：读不到就当"一个都没配"。
     // **发现不在开机时做** —— 那要起进程，面板一打开就卡几秒不值得
@@ -463,15 +510,18 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     alwaysThisTurn.current.clear();
     /* 外部服务的工具表是**动态的**：先问一次（走 Rust 的内存缓存），再合进表里。
      * 发现失败不该挡掉这一轮 —— 大不了这次没有外部工具，比整轮报错好 */
+    /* 「全部」模式下六组**临时全开**（用户存的那一份不动）。这一份 `handsOn`
+     * 是这一轮唯一的真相：工具表、提示词、执行器三处都用它 */
+    const handsOn = effectiveHands(hands, mode);
     let extra: Record<string, ToolSpec> = {};
-    if (hands.mcp) {
+    if (handsOn.mcp) {
       try {
         extra = mcpToolSpecs(await discoverMcpTools(false));
       } catch {
         extra = {};
       }
     }
-    const table = allTools("platform", hands, extra, widgetToolSpecs(widgetSources));
+    const table = allTools("platform", handsOn, extra, widgetToolSpecs(widgetSources));
     try {
       // 第一条永远是 system：桌面现状每次现拍，模型不该记着"上次的桌面"。
       // 快照可能是 IPC 往返（独立小窗那条路），所以先 await 再拼
@@ -479,7 +529,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       if (conversation[0]?.role === "system") conversation.shift();
       conversation.unshift({
         role: "system",
-        content: systemPrompt(snapshot, { hands, tools: table, catalogue }),
+        content: systemPrompt(snapshot, { hands: handsOn, tools: table, catalogue }),
       });
       conversation.push({ role: "user", content: text });
 
@@ -492,7 +542,8 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         // 工具表、提示词、执行器三处用**同一份** hands：少一处就是"它调了一个
         // 提示里说它做不到的工具"那种鬼故事
         tools: table,
-        hands,
+        hands: handsOn,
+        mode,
         widgets: widgetSources,
         approve,
         onEvent: (event) => {
@@ -572,6 +623,43 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
   );
 
   /** 换审批档并落盘。和拨开关同一条规矩：先落盘再更新界面 */
+  /* 切模式。往提权的方向（→ 全部）先弹一次确认，把四条硬线印在上面；
+   * 往安全的方向（→ 内部）**不问** —— 拦着用户往回走没有道理 */
+  const changeMode = useCallback(
+    (next: AssistantMode) => {
+      if (next === mode) return;
+      if (modeIgnoresSwitches(next)) {
+        setModeConfirm(true);
+        return;
+      }
+      setMode(next);
+      void saveMode(next)
+        .then((view) => {
+          setMode(view.mode);
+          setModeEffective(view.effective);
+        })
+        .catch(() => {
+          /* 存不上就退回原样：别把界面画成一个假的"已切回内部" */
+          setMode(mode);
+        });
+    },
+    [mode],
+  );
+
+  const confirmEverything = useCallback(() => {
+    setModeConfirm(false);
+    setModeReminder(false);
+    setMode("everything");
+    void saveMode("everything")
+      .then((view) => {
+        setMode(view.mode);
+        setModeEffective(view.effective);
+      })
+      .catch(() => {
+        setMode(mode);
+      });
+  }, [mode]);
+
   const setApprovalMode = useCallback(
     async (mode: ApprovalMode) => {
       const next = { ...hands, approvalMode: mode };
@@ -724,6 +812,64 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
           </button>
         </span>
       </header>
+
+      {/* 常驻模式条（0009）：模式是存盘的，忘记自己还在「全部」是它唯一的价格。
+          所以这条必须一直在看得见的地方 —— 用打断去兜是另一种烦 */}
+      <div
+        className="lattice-assistant-mode"
+        data-on={modeIgnoresSwitches(mode) ? "1" : "0"}
+        data-held={modeIgnoresSwitches(mode) && !modeEffective ? "1" : "0"}
+      >
+        <span className="lattice-assistant-mode-name">
+          {modeIgnoresSwitches(mode) ? t("Everything") : t("Internal")}
+        </span>
+        <span className="lattice-assistant-mode-hint">
+          {modeIgnoresSwitches(mode)
+            ? modeEffective
+              ? t("Files, commands, the web, the screen, input and MCP servers. Approvals are not asked.")
+              : t("Held back by read-only mode — nothing can be changed.")
+            : t("Only manages Lattice: the desktop and widget tools. The six hands stay off.")}
+        </span>
+        <button
+          type="button"
+          className="lattice-btn is-small"
+          onClick={() => changeMode(modeIgnoresSwitches(mode) ? "internal" : "everything")}
+        >
+          {modeIgnoresSwitches(mode) ? t("Switch to internal") : t("Switch to everything")}
+        </button>
+      </div>
+
+      {/* 存的就是「全部」：启动之后第一次开面板提示一次，之后靠上面那条 */}
+      {modeReminder && (
+        <div className="lattice-assistant-mode-note">
+          <span>{t("This was already on when Lattice started.")}</span>
+          <button type="button" className="lattice-btn is-small" onClick={() => setModeReminder(false)}>
+            {t("Got it")}
+          </button>
+        </div>
+      )}
+
+      {/* 打开之前那一次确认：把四条硬线印在上面。**只往提权的方向问** */}
+      {modeConfirm && (
+        <div className="lattice-assistant-mode-confirm" role="alertdialog" aria-label={t("Switch to everything?")}>
+          <span className="lattice-assistant-mode-confirm-title">{t("Switch to everything?")}</span>
+          <ul>
+            <li>{t("It reads and writes files anywhere, runs commands, fetches pages, screenshots, moves the mouse and calls MCP servers — without asking.")}</li>
+            <li>{t("It still cannot install, uninstall or grant widgets.")}</li>
+            <li>{t("Editing Lattice's own settings always asks.")}</li>
+            <li>{t("Widgets cannot borrow it, and agent calls are unaffected.")}</li>
+            <li>{t("The budget does not change: 24 steps, 5 minutes, 200k tokens.")}</li>
+          </ul>
+          <span className="lattice-assistant-mode-confirm-actions">
+            <button type="button" className="lattice-btn is-small" onClick={confirmEverything}>
+              {t("Switch to everything")}
+            </button>
+            <button type="button" className="lattice-btn is-small" onClick={() => setModeConfirm(false)}>
+              {t("Cancel")}
+            </button>
+          </span>
+        </div>
+      )}
 
       {view === "setup" ? (
         <div className="lattice-assistant-body">

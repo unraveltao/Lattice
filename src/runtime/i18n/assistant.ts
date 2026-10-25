@@ -227,4 +227,28 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Add server": "添加服务器",
   "Found {count} tools.": "找到 {count} 个工具。",
   "Saved. Refresh to see its tools.": "已保存。点重新发现看看它有哪些工具。",
+
+  // —— 两个模式（0009）：内部 / 全部 ——
+  // 简体名词就用"内部 / 全部"，和 ROADMAP 与设计稿一致；不写"全权"（那是 0006 的名字）
+  Everything: "全部",
+  Internal: "内部",
+  "Files, commands, the web, the screen, input and MCP servers. Approvals are not asked.":
+    "文件、命令、网页、屏幕、键鼠和 MCP 服务。一律不问。",
+  "Held back by read-only mode — nothing can be changed.": "被只读档压住 —— 什么都不能改。",
+  "Only manages Lattice: the desktop and widget tools. The six hands stay off.":
+    "只管棂自己：桌面动作与组件工具。六只手一只都不开。",
+  "Switch to internal": "切回内部",
+  "Switch to everything": "切到全部",
+  "Switch to everything?": "切到「全部」？",
+  "It reads and writes files anywhere, runs commands, fetches pages, screenshots, moves the mouse and calls MCP servers — without asking.":
+    "它能读写任何地方的文件、跑命令、取网页、截屏、动鼠标、调 MCP 服务 —— 都不问。",
+  "It still cannot install, uninstall or grant widgets.":
+    "装 / 卸 / 授权组件仍然不在它的能力表里。",
+  "Editing Lattice's own settings always asks.": "改棂自己的设置永远要问。",
+  "Widgets cannot borrow it, and agent calls are unaffected.":
+    "组件借不到它，agent 的 HTTP 端点也不受影响。",
+  "The budget does not change: 24 steps, 5 minutes, 200k tokens.":
+    "预算不变：24 步 / 5 分钟 / 20 万 token。",
+  "This was already on when Lattice started.": "棂启动的时候它就已经在「全部」模式了。",
+  "Got it": "知道了",
 };

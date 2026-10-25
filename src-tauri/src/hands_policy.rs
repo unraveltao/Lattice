@@ -98,49 +98,42 @@ pub fn readonly_blocks(mode: &str, name: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// 全权模式（0006）—— 一次会话级的定时授权
+// 两个模式（0009）—— 内部 / 全部。一个存盘的开关，不是第四档审批
 // ---------------------------------------------------------------------------
 //
-// 它**不是第四档审批**，所以 `APPROVAL_MODES` 一直是那三个字面量。这里只有
-// 三个纯函数：时长夹紧、到期判定、开关合并 —— 会话态本身在 `full_access.rs`
-// 的 `AtomicU64` 里（那一位只能在这一份文件之外，因为它是进程状态）。
+// 「全权」最后落成的形状是一个**模式**（0006 的定时授权被 0009 推翻）：模式管
+// "能碰什么"，审批档管"要不要问"。`APPROVAL_MODES` 一直是那三个字面量 ——
+// 模式不是第四个值。这里只有四个纯函数：字面量、归一化、开关合并、能不能盖过审批档；
+// 存盘在 `llm.rs`（`assistant.json` v4 的 `mode`），调用时的裁决在 `hands.rs`。
 
-/// 时长档位（分钟）。**没有"永久"**：高权限的价值是"这段时间别烦我"，不是
-/// "以后永远别烦我" —— 需要更久就再点一次延长
-pub const FULL_ACCESS_MINUTES: [u64; 4] = [15, 30, 60, 120];
-/// 面板默认选中的那一档
-pub const FULL_ACCESS_DEFAULT_MINUTES: u64 = 30;
-/// 一次授权最多多久。夹的是"手滑多打一位数"，不是"用户不能用得久"
-pub const FULL_ACCESS_MAX_MINUTES: u64 = 120;
+/// 只有两个。多一个"部分"就是第四档审批换个名字
+pub const ASSISTANT_MODES: [&str; 2] = ["internal", "everything"];
+/// 出厂模式：只够管内部 —— 六组手一只都不给
+pub const DEFAULT_ASSISTANT_MODE: &str = "internal";
 
-/// 把用户给的分钟夹进 `1..=120`；`0`（没传 / 解析失败）落回默认 30。
+/// 认不出来的模式一律落回 `internal`。
 ///
 /// 方向是故意的：**坏值不许放大权限**，和 `normalize_approval` 对陌生值落回
-/// `ask` 同一条理由。不夹的话，一个 `3000` 就是 50 小时的全权。
-pub fn clamp_full_minutes(raw: u64) -> u64 {
-    match raw {
-        0 => FULL_ACCESS_DEFAULT_MINUTES,
-        minutes => minutes.min(FULL_ACCESS_MAX_MINUTES),
+/// `ask` 同一条理由。旧文件里的布尔、空串、大小写不对都走这一条。
+pub fn normalize_mode(raw: &str) -> &'static str {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "everything" => "everything",
+        _ => DEFAULT_ASSISTANT_MODE,
     }
 }
 
-/// 全权还剩几毫秒。`until == 0`（从没开过）与已过期都是 `0`。
+/// 全部模式下六组开关**不算数**：不是"替你打开"，而是"不看它"。
 ///
-/// 判定只认这一个数：`full_access_active` 就是它 > 0，所以"过期"只有一种解释。
-pub fn full_access_remaining(now_ms: u64, until_ms: u64) -> u64 {
-    until_ms.saturating_sub(now_ms)
+/// 区别很实在 —— 前者是替用户改设置（切换那一刻就把开关写回去了），后者只在
+/// 这一轮算表时不看；切回内部，用户原来关着的仍然是关着的。
+pub fn mode_ignores_switches(mode: &str) -> bool {
+    normalize_mode(mode) == "everything"
 }
 
-/// 全权现在开着吗。**每次调用现算**，不靠一个定时器把状态改掉 ——
-/// 面板重挂载、进程被挂起、系统时间被调，都不会留下一个"假的开着"
-pub fn full_access_active(now_ms: u64, until_ms: u64) -> bool {
-    full_access_remaining(now_ms, until_ms) > 0
-}
-
-/// 全权期间的开关：六组临时全开。**返回新值，不改入参** ——
-/// 用户存的那一份要能在结束之后原样回来
-pub fn effective_hands(hands: Hands, full: bool) -> Hands {
-    if !full {
+/// 这一轮真的能用的手。**返回新值，不改入参** ——
+/// 用户存的那一份要能在切回内部之后原样回来
+pub fn effective_hands(hands: Hands, mode: &str) -> Hands {
+    if !mode_ignores_switches(mode) {
         return hands;
     }
     Hands {
@@ -153,18 +146,18 @@ pub fn effective_hands(hands: Hands, full: bool) -> Hands {
     }
 }
 
-/// 全权能不能盖过这一档。`readonly` **优先**：用户说"别改"之后，
-/// 一个还没到期的授权也不许把东西改掉（结束全权是界面的事，这里是兜底）。
+/// 模式能不能盖过这一档审批。`readonly` **优先**：用户说"别改"之后，
+/// 一个「全部」模式也不许把东西改掉（模式条上会写明"被只读档压住"，这里是兜底）。
 /// `mode` 已经是 `normalize_approval` 给过的三个字面量之一
-pub fn full_access_overrides(mode: &str, full: bool) -> bool {
-    full && mode != "readonly"
+pub fn everything_overrides(approval: &str, mode: &str) -> bool {
+    mode_ignores_switches(mode) && approval != "readonly"
 }
 
-/// 审计那一栏的"这一笔是在全权下做的"标记。**加在最后**：
-/// 目标是 `shell.run · npm test`，标记是 `… · full`，别插到中间去
-pub fn mark_full(detail: &str, full: bool) -> String {
-    if full {
-        format!("{detail} · full")
+/// 审计那一栏的"这一笔是在全部模式下做的"标记。**加在最后**：
+/// 目标是 `shell.run · npm test`，标记是 `… · everything`，别插到中间去
+pub fn mark_everything(detail: &str, mode: &str) -> String {
+    if mode_ignores_switches(mode) {
+        format!("{detail} · everything")
     } else {
         detail.to_string()
     }
@@ -376,72 +369,72 @@ mod tests {
 
     // ---- 全权（0006）----
 
-    #[test]
-    fn full_access_minutes_are_clamped_short() {
-        // 坏值一律往短里夹：`0` 是"看着开了其实立刻到期"，`3000` 是 50 小时
-        assert_eq!(clamp_full_minutes(0), FULL_ACCESS_DEFAULT_MINUTES);
-        assert_eq!(clamp_full_minutes(1), 1);
-        assert_eq!(clamp_full_minutes(15), 15);
-        assert_eq!(clamp_full_minutes(120), 120);
-        assert_eq!(clamp_full_minutes(121), FULL_ACCESS_MAX_MINUTES);
-        assert_eq!(clamp_full_minutes(3000), FULL_ACCESS_MAX_MINUTES);
-        // 默认值自己必须在档位表里，否则界面会显示一个选不中的时长
-        assert!(FULL_ACCESS_MINUTES.contains(&FULL_ACCESS_DEFAULT_MINUTES));
-        assert_eq!(FULL_ACCESS_MAX_MINUTES, *FULL_ACCESS_MINUTES.iter().max().unwrap());
-    }
-
-    #[test]
-    fn an_expired_grant_is_the_same_as_not_started() {
-        // 「没开过」（0）与「过期了」必须落到同一个答案：否则界面会出现
-        // 一个"开着、但剩余时间是 0"的状态，用户没法判断要不要点结束
-        assert_eq!(full_access_remaining(1_000, 0), 0);
-        assert_eq!(full_access_remaining(1_000, 1_000), 0);
-        assert_eq!(full_access_remaining(1_000, 999), 0);
-        assert!(!full_access_active(1_000, 0));
-        assert!(!full_access_active(1_000, 1_000));
-        assert!(!full_access_active(1_000, 1));
-    }
-
-    #[test]
-    fn a_running_grant_counts_down() {
-        assert_eq!(full_access_remaining(1_000, 61_000), 60_000);
-        assert!(full_access_active(1_000, 1_001));
-        assert!(full_access_active(0, 1));
-    }
-
-    #[test]
-    fn full_access_turns_every_switch_on_without_touching_the_input() {
-        let stored = Hands::default();
-        let forced = effective_hands(stored, true);
-        for group in GROUPS {
-            assert!(forced.enabled(group), "full access should open every group");
+        #[test]
+    fn modes_are_exactly_internal_and_everything() {
+        assert_eq!(ASSISTANT_MODES, ["internal", "everything"]);
+        assert_eq!(DEFAULT_ASSISTANT_MODE, "internal");
+        for mode in ASSISTANT_MODES {
+            assert_eq!(normalize_mode(mode), mode);
         }
-        // 入参一动不动：结束之后用户存的那一份必须原样回来
-        assert!(stored.none());
-        // 没开全权时原样返回（同一个值，不是复制一份）
-        let untouched = effective_hands(stored, false);
-        assert_eq!(untouched.files, stored.files);
-        assert!(untouched.none());
     }
 
     #[test]
-    fn readonly_wins_over_a_grant() {
-        // 用户说"别改"之后，一个还没到期的授权不许把东西改掉
-        assert!(full_access_overrides("ask", true));
-        assert!(full_access_overrides("auto", true));
-        assert!(!full_access_overrides("readonly", true));
-        // 没开全权时它什么都不盖过 —— 平时的裁决还是 `approvalFor` 那一份
+    fn bad_modes_never_elevate() {
+        // 坏值一律落内部。写成"落 everything"的话，一个坏文件就是全开
+        for raw in ["", " ", "bogus", "true", "full", "all", "内部"] {
+            assert_eq!(normalize_mode(raw), "internal", "{raw} should fall back to internal");
+        }
+        // 大小写与空白不算坏值：它说的是同一件事（和 `normalize_approval` 一样宽松）
+        assert_eq!(normalize_mode("Everything"), "everything");
+        assert_eq!(normalize_mode(" everything\n"), "everything");
+        assert_eq!(normalize_mode("INTERNAL"), "internal");
+    }
+
+    #[test]
+    fn everything_turns_every_switch_on_without_touching_the_input() {
+        let stored = Hands {
+            files: false,
+            shell: false,
+            web: false,
+            screen: false,
+            input: false,
+            mcp: false,
+        };
+        let forced = effective_hands(stored, "everything");
+        assert!(forced.files && forced.shell && forced.web && forced.screen && forced.input && forced.mcp);
+        // 存的那一份没被改：切回内部之后用户关着的仍然是关着的
+        assert_eq!(effective_hands(stored, "internal"), stored);
+        // 内部模式什么都不动（连"已经全开"的那份也原样返回）
+        let all_on = Hands {
+            files: true,
+            shell: true,
+            web: true,
+            screen: true,
+            input: true,
+            mcp: true,
+        };
+        assert_eq!(effective_hands(all_on, "internal"), all_on);
+    }
+
+    #[test]
+    fn readonly_still_wins_over_everything() {
+        assert!(everything_overrides("ask", "everything"));
+        assert!(everything_overrides("auto", "everything"));
+        // 用户在只读档里，模式再高也不许改东西
+        assert!(!everything_overrides("readonly", "everything"));
+        // 内部模式什么都不盖过 —— 平时的裁决还是 `approvalFor` 那一份
         for mode in APPROVAL_MODES {
-            assert!(!full_access_overrides(mode, false));
+            assert!(!everything_overrides(mode, "internal"));
         }
+        // 坏值当内部，不许盖过
+        assert!(!everything_overrides("ask", "whatever"));
     }
 
     #[test]
-    fn the_audit_marker_goes_last() {
-        // 目标是 `shell.run · npm test`，标记加在最后；插到中间会让人以为
-        // "full" 是命令的一部分
-        assert_eq!(mark_full("shell.run · npm test", true), "shell.run · npm test · full");
-        assert_eq!(mark_full("shell.run · npm test", false), "shell.run · npm test");
-        assert_eq!(mark_full("", true), " · full");
+    fn audit_suffix_marks_everything_at_the_end() {
+        assert_eq!(mark_everything("shell.run · npm test", "everything"), "shell.run · npm test · everything");
+        assert_eq!(mark_everything("shell.run · npm test", "internal"), "shell.run · npm test");
+        assert_eq!(mark_everything("shell.run · npm test", "bogus"), "shell.run · npm test");
     }
-}
+
+                }

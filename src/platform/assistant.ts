@@ -29,12 +29,15 @@ import {
   type ToolSpec,
 } from "../runtime/assistant";
 import {
+  DEFAULT_ASSISTANT_MODE,
   HANDS_OFF,
   approvalSummary,
   handGroup,
+  modeIgnoresSwitches,
   overBudget,
   MAX_TURN_TOKENS,
   MAX_TURN_MS,
+  type AssistantMode,
   type HandGroup,
   type HandsSettings,
 } from "../runtime/hands";
@@ -331,6 +334,14 @@ export interface TurnOptions {
   /** 用户拨开的手（`assistant_hands` 读来的那份）。不传 = 一条都没有 */
   hands?: HandsSettings;
   /**
+   * 这一轮是什么模式（0009）。不传 = 内部。
+   *
+   * 它管**要不要问**（`approvalFor` 的 `everything`），"能碰什么"由调用方把
+   * `effectiveHands(hands, mode)` 传进 `hands` —— 工具表、提示词、执行器三处
+   * 用的必须是同一份，所以"六组全开"这件事只在调用方算一次。
+   */
+  mode?: AssistantMode;
+  /**
    * 这一轮能调的组件工具（数据平面）。不传 = 一条都没有。
    *
    * 它**不是**工具表的一部分：表由 `allTools` 拼（那是唯一一处合表），这里要的
@@ -412,10 +423,14 @@ function budgetNote(kind: "time" | "tokens"): string {
  * 返回 `false` 表示是被 `shouldStop` 叫停的，界面可以据此不写"完成"。
  */
 export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
-  const { messages, surface, onEvent, shouldStop, tools, maxChars, hands, approve, widgets } = options;
+  const { messages, surface, onEvent, shouldStop, tools, maxChars, hands, mode, approve, widgets } =
+    options;
   const widgetSources = widgets ?? [];
   const defs = toolDefs(tools);
   const active = hands ?? HANDS_OFF;
+  // 「全部」模式：**审批不问**（问就不叫全部了）。`readonly` 仍然优先 ——
+  // 那一档连工具表都裁过一遍，这里再兜一次（0009 §3）
+  const everything = modeIgnoresSwitches(mode ?? DEFAULT_ASSISTANT_MODE);
   const startedAt = Date.now();
   let tokens = 0;
 
@@ -480,7 +495,7 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
         // **必须在执行之前** await —— 放在之后等于"先删了再问"（0003 §5）。
         // 桌面动作和手走同一个裁决：`placement.remove` 是唯一会问的桌面动作，
         // 它在 `auto` 档也仍然问（`DANGEROUS_ACTIONS`）
-        const gate = approvalFor(call.name, active.approvalMode);
+        const gate = approvalFor(call.name, active.approvalMode, { everything });
         if (gate === "deny") {
           result = {
             ok: false,

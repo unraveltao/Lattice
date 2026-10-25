@@ -4707,3 +4707,94 @@ button.lattice-chip[aria-pressed="true"] {
   background: var(--lattice-danger-soft);
   border-radius: 6px;
 }
+
+/* ---- 两个模式（0009）：常驻模式条 ----
+ * 「全部」用警示色，但**不整块铺满**：它得一直在，而一直在的东西用大色块
+ * 会让人学会无视它。所以只有一条底色 + 一行字，真正的阻断留给切过去那一次确认。 */
+.lattice-assistant-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--lattice-border);
+}
+
+.lattice-assistant-mode-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-assistant-mode-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-assistant-mode[data-on="1"] {
+  background: var(--lattice-danger-soft);
+  border-bottom-color: var(--lattice-danger);
+}
+
+.lattice-assistant-mode[data-on="1"] .lattice-assistant-mode-name,
+.lattice-assistant-mode[data-on="1"] .lattice-assistant-mode-hint {
+  color: var(--lattice-danger);
+}
+
+/* 只读档压在「全部」上面：模式没变，但"能不能动手"变了 —— 照实说 */
+.lattice-assistant-mode[data-held="1"] {
+  background: var(--lattice-surface-2);
+}
+
+.lattice-assistant-mode[data-held="1"] .lattice-assistant-mode-name,
+.lattice-assistant-mode[data-held="1"] .lattice-assistant-mode-hint {
+  color: var(--lattice-text-muted);
+}
+
+.lattice-assistant-mode-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted);
+  border-bottom: 1px solid var(--lattice-border);
+}
+
+.lattice-assistant-mode-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--lattice-text);
+  background: var(--lattice-danger-soft);
+  border-bottom: 1px solid var(--lattice-danger);
+}
+
+.lattice-assistant-mode-confirm-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lattice-danger);
+}
+
+.lattice-assistant-mode-confirm ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 16px;
+}
+
+.lattice-assistant-mode-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

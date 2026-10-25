@@ -104,6 +104,10 @@ struct AssistantConfig {
     /// 陈旧的 set 盖回 `ask`，等于用户以为关掉的确认又回来了
     #[serde(default)]
     approval_mode: String,
+    /// 两个模式（0009）：`internal` / `everything`。**默认内部** —— v3 升级上来的
+    /// 用户一条手都没开，升级不该替他把六组手全打开（`normalize` 兜住坏值）
+    #[serde(default)]
+    mode: String,
 }
 
 /// 磁盘上的六个开关。和 `hands_policy::Hands` 分开：那份不引 serde
@@ -179,6 +183,9 @@ pub(crate) struct HandsState {
     pub workspace: String,
     /// 已经归一化过的三个字面量之一（`hands_policy::normalize_approval`）
     pub approval: &'static str,
+    /// 已经归一化过的两个字面量之一（`hands_policy::normalize_mode`）。
+    /// 读不到 / 坏值都是 `internal` —— 坏值不许放大权限
+    pub mode: String,
 }
 
 fn settings_of(config: &AssistantConfig) -> HandsSettings {
@@ -202,6 +209,7 @@ pub(crate) fn hands_state(app: &AppHandle) -> HandsState {
         hands: config.hands.to_policy(),
         workspace: config.workspace.clone(),
         approval: hands_policy::normalize_approval(&config.approval_mode),
+        mode: hands_policy::normalize_mode(&config.mode).to_string(),
     }
 }
 
@@ -222,7 +230,51 @@ pub fn assistant_hands_save(app: AppHandle, hands: HandsSettings) -> Result<Hand
     Ok(settings_of(&config))
 }
 
-/// v1 的形状：四个平铺字段。**只用来读**，写出去永远是 v3
+/// 面板与小窗要的那两个数：**现在是什么模式**、这一轮**真的算不算全开**。
+///
+/// 分成两个字段是必须的：只读档压在「全部」上面的那种组合里，模式仍然是
+/// `everything`（用户选的是它），但"能用六只手"是假的 —— 界面要照实说
+/// "被只读档压住"，而不是偷偷把模式显示成 `internal`
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModeView {
+    pub mode: String,
+    pub effective: bool,
+}
+
+fn mode_view(app: &AppHandle) -> ModeView {
+    let state = hands_state(app);
+    ModeView {
+        effective: hands_policy::everything_overrides(state.approval, &state.mode),
+        mode: state.mode,
+    }
+}
+
+/// 现在是什么模式。面板 / 小窗每次挂载都问一次，**不信自己的缓存**
+#[tauri::command]
+pub fn assistant_mode(app: AppHandle) -> ModeView {
+    mode_view(&app)
+}
+
+/// 切模式。**写到盘上**（和审批档同一条规矩：不进 `state.json`）。
+///
+/// 三条：
+/// - 坏值落内部（`normalize_mode` 只有这一个方向），所以"某某传了个怪值"不会
+///   变成全开；
+/// - 切模式**不动** `approvalMode` 与六组开关：一个设置不该顺手改另一个设置
+///   （往前台走的那一步，用户回来时看到的必须还是他自己摆的样子）；
+/// - **进审计**：切换本身是这段时间里最该留痕的一件事，哪怕只留一条。
+#[tauri::command]
+pub fn assistant_mode_set(app: AppHandle, mode: String) -> Result<ModeView, String> {
+    let mut config = read_config(&app);
+    config.mode = hands_policy::normalize_mode(&mode).to_string();
+    normalize(&mut config);
+    write_config(&app, &config)?;
+    let _ = crate::agent::audit(&app, "assistant.mode", &config.mode, 200, 0);
+    Ok(mode_view(&app))
+}
+
+/// v1 的形状：四个平铺字段。**只用来读**，写出去永远是当前版本（v4）
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LegacyConfig {
@@ -460,7 +512,7 @@ fn migrate_legacy(value: &serde_json::Value) -> AssistantConfig {
         models: Vec::new(),
     };
     AssistantConfig {
-        version: 3,
+        version: 4,
         active_id: profile.id.clone(),
         profiles: vec![profile],
         // 迁移出来的配置一条手都不开：老用户没同意过"它能跑命令"
@@ -470,10 +522,13 @@ fn migrate_legacy(value: &serde_json::Value) -> AssistantConfig {
 
 /// 归一化：坏档逐条丢、名字补上、active 不能悬空。**原地改，不写盘**。
 fn normalize(config: &mut AssistantConfig) {
-    config.version = 3;
+    config.version = 4;
     // 空串、大小写、拼错一律落成 `ask`：老文件里没有这个键（读了就是空串），
     // 升级上来的用户默认仍然是"写之前问一句"
     config.approval_mode = hands_policy::normalize_approval(&config.approval_mode).to_string();
+    // 模式同上，但方向更要紧：**认不出来的值落内部**。一个坏值变成全开，
+    // 是这份文件能给用户造成的最坏结果
+    config.mode = hands_policy::normalize_mode(&config.mode).to_string();
 
     let mut seen: Vec<String> = Vec::new();
     config.profiles.retain_mut(|profile| {
@@ -1181,10 +1236,12 @@ mod tests {
             r#"{"baseUrl":"https://api.deepseek.com/v1","model":"deepseek-chat",
                 "temperature":0.4,"apiKey":"sk-abc"}"#,
         );
-        // 当前是 v3（v2 加了多档，v3 加了 hands + workspace）。这条断言跟着
-        // `normalize` 里的 `config.version = 3` 走 —— 它红过一次，因为版本号
-        // 抬了而这里没跟。
-        assert_eq!(config.version, 3);
+        // 当前是 v4（v2 加了多档，v3 加了 hands + workspace，v4 加了 mode）。
+        // 这条断言跟着 `normalize` 里的 `config.version = 4` 走 ——
+        // 它红过一次，因为版本号抬了而这里没跟。
+        assert_eq!(config.version, 4);
+        // v1 升级上来的用户是**内部**模式：升级不替用户开门
+        assert_eq!(config.mode, "internal");
         assert_eq!(config.profiles.len(), 1);
         assert_eq!(config.active_id, "p-1e9ac1");
         let profile = &config.profiles[0];

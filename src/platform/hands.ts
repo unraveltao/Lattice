@@ -12,6 +12,7 @@
 
 import type { HandsSettings, McpServer, McpServerTools } from "../runtime/hands";
 import { callCommand } from "./devLlm";
+import type { AssistantMode } from "../runtime/hands";
 
 /** 和 `platform/agent.ts` 的 `AgentReply` 同形，但多了几只新手才会有的 code */
 export type HandsReply =
@@ -24,6 +25,30 @@ export async function readHands(): Promise<HandsSettings> {
 
 export async function saveHands(hands: HandsSettings): Promise<HandsSettings> {
   return await callCommand<HandsSettings>("assistant_hands_save", { hands });
+}
+
+/**
+ * 现在是什么模式（0009）。
+ *
+ * `effective` 是"这一轮真的算不算全开" —— 只读档压在「全部」上面时它是 `false`，
+ * 而 `mode` 仍然是用户选的那个。界面要照实说"被只读档压住"，不能偷偷把模式
+ * 显示成 internal：那样用户会以为自己的选择没保存。
+ */
+export interface ModeView {
+  mode: AssistantMode;
+  effective: boolean;
+}
+
+export async function readMode(): Promise<ModeView> {
+  return await callCommand<ModeView>("assistant_mode");
+}
+
+/**
+ * 切模式。**Rust 归一化之后再落盘**，返回值是它真正存下来的那一份 ——
+ * 界面拿它覆盖本地，不自己猜"现在到底是什么模式"（坏值会被落回 internal）。
+ */
+export async function saveMode(mode: AssistantMode): Promise<ModeView> {
+  return await callCommand<ModeView>("assistant_mode_set", { mode });
 }
 
 /**

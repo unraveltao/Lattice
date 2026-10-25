@@ -30,7 +30,13 @@
 /* 内容压在两层之上。面板是 flex 子项，只补定位，别动它的布局 */
 .lattice-assistant-window > .lattice-assistant-bar,
 .lattice-assistant-window > .lattice-assistant {
+  /* `position: relative` 会**盖掉** `.is-window` 里的 `position: static`（这条
+   * 规则在后面，赢），而主窗口那份 `.lattice-assistant` 带着 `right: 14px`。
+   * 相对定位 + `right` = 整块面板往左挪 14px：左边被切掉一条、右边空一条，
+   * 用户看到的只是"面板没对齐"，而查起来会以为是 padding。
+   * 所以这里把四个方向一起收回来 —— 面板在小窗里就是**铺满**。 */
   position: relative;
+  inset: auto;
   z-index: 2;
 }
 
