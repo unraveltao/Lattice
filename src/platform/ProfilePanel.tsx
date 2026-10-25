@@ -18,6 +18,7 @@ import {
   currentStreak,
   describeMinutes,
   fromDayKey,
+  heatMonthLabels,
   type UsageData,
 } from "../runtime/usage";
 import type { Profile } from "./store";
@@ -47,6 +48,9 @@ export function UsageHeatmap({ days, today }: { days: Record<string, number>; to
   const t = useT();
   const language = lang();
   const weeks = buildHeatmap(days, today);
+  // 挨太近的标签只留后一个 —— 不然开头那个残月和它后面那个真实月份
+  // 会在 11px 的格子上叠成 `Oct!ov`（见 heatMonthLabels 的注释）
+  const monthLabels = heatMonthLabels(weeks);
   const monthFormat = new Intl.DateTimeFormat(locale(), { month: "short" });
   const dayFormat = new Intl.DateTimeFormat(locale(), { month: "short", day: "numeric" });
 
@@ -57,8 +61,8 @@ export function UsageHeatmap({ days, today }: { days: Record<string, number>; to
         style={{ gridTemplateColumns: `repeat(${weeks.length}, var(--lattice-heat-cell))` }}
         aria-hidden="true"
       >
-        {weeks.map((week, index) => {
-          const date = week.monthStart ? fromDayKey(week.monthStart) : null;
+        {monthLabels.map((start, index) => {
+          const date = start ? fromDayKey(start) : null;
           return (
             <span key={index} style={{ gridColumn: index + 1 }}>
               {date ? monthFormat.format(date) : ""}

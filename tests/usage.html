@@ -33,6 +33,7 @@
         currentStreak,
         dayKey,
         describeMinutes,
+        heatMonthLabels,
         isDayKey,
         levelFor,
         parseUsage,
@@ -101,6 +102,39 @@
 
       // 周一为一周的开始
       eq(dayKey(startOfWeek(new Date(2026, 9, 25))), "2026-10-19", "周日归到本周一");
+
+      // ---- 4b. 月份标签不能叠 ----
+      // 复现：今天 2026-10-25，画布从 2025-10-20 开始（10 月只剩 12 天），
+      // 11 月 1 日就落在第 2 列 —— 原来两个标签只隔 1 列，渲染成 `Oct!ov`
+      const tight = buildHeatmap({}, new Date(2026, 9, 25));
+      const tightLabels = heatMonthLabels(tight);
+      eq(tightLabels.length, tight.length, "标签数组和列数一样长");
+      eq(tightLabels[0], null, "开头那个残月让位（10 月只剩 12 天）");
+      eq(tightLabels[1], "2025-11-01", "真实月份起点保留");
+      const tightAt = tightLabels.flatMap((value, index) => (value ? [index] : []));
+      log(
+        tightAt.every((index, i) => i === 0 || index - tightAt[i - 1] >= 3),
+        `标签之间至少隔 3 列（得到 ${JSON.stringify(tightAt)}）`,
+      );
+
+      // 残月和真实月份起点隔得够远时，两个都留（边界：正好 3 列）
+      const roomy = buildHeatmap({}, new Date(2026, 9, 8)); // 第一列 2025-10-06
+      const roomyLabels = heatMonthLabels(roomy);
+      eq(roomyLabels[0], "2025-10-06", "隔 3 列时残月保留");
+      eq(roomyLabels[3], "2025-11-01", "11 月 1 日在第 4 列");
+      // 53 列 = 371 天，比一年长几天，所以跨 13 个月份起点是正常的
+      eq(roomyLabels.filter(Boolean).length, 13, "53 列里有 13 个月份标签");
+
+      // 任意一天都不许叠：扫一整年，每周试一次
+      let worstGap = Infinity;
+      for (let offset = 0; offset < 371; offset += 7) {
+        const probe = new Date(2026, 0, 1 + offset);
+        const at = heatMonthLabels(buildHeatmap({}, probe)).flatMap((value, index) =>
+          value ? [index] : [],
+        );
+        for (let i = 1; i < at.length; i += 1) worstGap = Math.min(worstGap, at[i] - at[i - 1]);
+      }
+      log(worstGap >= 3, `扫一年，最小的标签间距是 ${worstGap} 列`);
 
       // ---- 5. 统计 ----
       const days = { "2026-10-20": 5, "2026-10-21": 5, "2026-10-23": 5, "2026-10-24": 5 };

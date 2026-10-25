@@ -181,6 +181,47 @@ export function buildHeatmap(
   return result;
 }
 
+/**
+ * 两个月份标签之间至少隔几列。
+ *
+ * 一列 11px（格子 9 + 缝 2），而 `Oct` 在 11px 字号下约 20px 宽、
+ * `10月` 约 24px —— 挨着放必然叠字。3 列是两种语言都够用的最小值；
+ * 真实的月份起点之间至少隔 4 列，所以这个值不会误伤正常标签。
+ */
+export const HEAT_MONTH_MIN_GAP = 3;
+
+/**
+ * 哪几列该写月份标签（不写的给 null）。
+ *
+ * 只有一处会挤：第一列的标签是"开头那个**不完整**的月份"（画布从 10 月
+ * 20 日开始，那 10 月只剩 12 天），而 11 月 1 日可能就落在第 2 列 ——
+ * 两个标签只隔 1 列，于是渲染成 `Oct!ov`。
+ *
+ * 让位的是**开头那个残月**，不是真实月份起点：残月本来只盖住一两列，
+ * 而"11 月从这里开始"是读这张图的人真正需要的信息。反过来的话，
+ * 图上会写着 10 月却几乎看不到 10 月。
+ */
+export function heatMonthLabels(
+  weeks: HeatWeek[],
+  minGap = HEAT_MONTH_MIN_GAP,
+): (string | null)[] {
+  const columns: number[] = [];
+  weeks.forEach((week, index) => {
+    if (week.monthStart) columns.push(index);
+  });
+
+  for (let i = 0; i < columns.length - 1; i += 1) {
+    if (columns[i + 1] - columns[i] < minGap) {
+      columns.splice(i, 1);
+      i -= 1;
+    }
+  }
+
+  const out: (string | null)[] = weeks.map(() => null);
+  for (const index of columns) out[index] = weeks[index].monthStart;
+  return out;
+}
+
 /** 有记录的天数 */
 export function activeDays(days: Record<string, number>): number {
   return Object.values(days).filter((minutes) => minutes > 0).length;
