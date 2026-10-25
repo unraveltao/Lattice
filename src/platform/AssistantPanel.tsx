@@ -1599,71 +1599,75 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
           )}
 
           <div className="lattice-assistant-composer">
-            <textarea
-              ref={inputRef}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void send();
-                }
-              }}
-              rows={2}
-              placeholder={t("Ask it to do something on the desktop (Enter to send, Shift+Enter for a new line)")}
-              disabled={busy}
-            />
-            <div className="lattice-assistant-foot">
-              {/*
-                完全访问的开关在**输入框左下角**：它和「发送」同一行，属于"我要让
-                它放手干"那一下，不该占标题区。整颗用警示色 —— 它开的是一个不再
-                逐条问话的开关，长得像个普通按钮才是错的。开着的时候同一颗变成
-                「关掉」，关掉不问（0009）。
-              */}
-              <button
-                type="button"
-                className="lattice-assistant-grant"
-                data-on={fullAccess ? "1" : "0"}
-                data-open={modeConfirm ? "1" : "0"}
-                onClick={() => {
-                  if (fullAccess) {
-                    changeMode("internal");
-                  } else if (modeConfirm) {
-                    setModeConfirm(false);
-                  } else {
-                    requestFullAccess();
+            {/* 输入位和下面那排是**同一张卡片**（`field`）。分开摆的时候，输入框
+                自己是个带边的浅色块、按钮们裸在面板上，两块各说各的 */}
+            <div className="lattice-assistant-field">
+              <textarea
+                ref={inputRef}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void send();
                   }
                 }}
-                title={
-                  fullAccess
-                    ? t("Turning it off again takes one click, and turning it off never asks.")
-                    : undefined
-                }
-                aria-expanded={fullAccess ? undefined : modeConfirm}
-              >
-                <AlertIcon />
-                <span>{fullAccess ? t("Turn off full access") : t("Enable Full access")}</span>
-                {!fullAccess && <ChevronIcon />}
-              </button>
-              {/* 元信息在左、按钮在右：按钮固定在右下角，用户按回车之前手就在那儿 */}
-              <span className="lattice-assistant-meta">
-                {usage ? `${usage.prompt} → ${usage.completion} tokens` : ""}
-                {active?.keySource === "env" ? ` · ${t("key from the environment")}` : ""}
-              </span>
-              {busy ? (
-                <button type="button" className="lattice-btn is-small" onClick={stop}>
-                  {t("Stop")}
-                </button>
-              ) : (
+                rows={2}
+                placeholder={t("Ask it to do something on the desktop (Enter to send, Shift+Enter for a new line)")}
+                disabled={busy}
+              />
+              <div className="lattice-assistant-foot">
+                {/*
+                  完全访问的开关在**输入框左下角**：它和「发送」同一行，属于"我要让
+                  它放手干"那一下，不该占标题区。整颗用警示色 —— 它开的是一个不再
+                  逐条问话的开关，长得像个普通按钮才是错的。开着的时候同一颗变成
+                  「关掉」，关掉不问（0009）。
+                */}
                 <button
                   type="button"
-                  className="lattice-btn is-small is-primary"
-                  onClick={() => void send()}
-                  disabled={!draft.trim()}
+                  className="lattice-assistant-grant"
+                  data-on={fullAccess ? "1" : "0"}
+                  data-open={modeConfirm ? "1" : "0"}
+                  onClick={() => {
+                    if (fullAccess) {
+                      changeMode("internal");
+                    } else if (modeConfirm) {
+                      setModeConfirm(false);
+                    } else {
+                      requestFullAccess();
+                    }
+                  }}
+                  title={
+                    fullAccess
+                      ? t("Turning it off again takes one click, and turning it off never asks.")
+                      : undefined
+                  }
+                  aria-expanded={fullAccess ? undefined : modeConfirm}
                 >
-                  {t("Send")}
+                  <AlertIcon />
+                  <span>{fullAccess ? t("Turn off full access") : t("Enable Full access")}</span>
+                  {!fullAccess && <ChevronIcon />}
                 </button>
-              )}
+                {/* 元信息在左、按钮在右：按钮固定在右下角，用户按回车之前手就在那儿 */}
+                <span className="lattice-assistant-meta">
+                  {usage ? `${usage.prompt} → ${usage.completion} tokens` : ""}
+                  {active?.keySource === "env" ? ` · ${t("key from the environment")}` : ""}
+                </span>
+                {busy ? (
+                  <button type="button" className="lattice-btn is-small" onClick={stop}>
+                    {t("Stop")}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="lattice-btn is-small is-primary"
+                    onClick={() => void send()}
+                    disabled={!draft.trim()}
+                  >
+                    {t("Send")}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </>

@@ -4816,11 +4816,90 @@ button.lattice-chip[aria-pressed="true"] {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/*
+ * 两颗心思各站一头：左边是"存/丢/算了"（只碰这张表单），右边是"测一下"
+ * （碰网络、花钱、花时间）。贴在一起读起来像一串同级的步骤，分开之后
+ * 点完的结果就落在测连接右边那盏灯上。
+ * 窄面板里会折行，`margin-left: auto` 让折下去的那一组仍然靠右。
+ */
 .lattice-model-editor-foot {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  justify-content: space-between;
+}
+
+.lattice-model-foot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.lattice-model-probe {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  margin-left: auto;
+}
+
+/*
+ * 灯。8px 是"看得见但不抢眼"的尺寸 —— 它要能在一行字里被余光扫到，
+ * 又不能长得像一颗按钮。
+ */
+.lattice-lamp {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  background: var(--lattice-text-faint);
+  border-radius: 50%;
+  transition: background-color 120ms ease;
+}
+
+/* 外面那圈光是"亮着"的唯一来源：8px 的纯色块在深色底上分不出亮没亮 */
+.lattice-model-probe.is-ok .lattice-lamp {
+  background: var(--lattice-accent);
+  box-shadow: 0 0 0 3px var(--lattice-accent-soft);
+}
+
+.lattice-model-probe.is-bad .lattice-lamp {
+  background: var(--lattice-danger);
+  box-shadow: 0 0 0 3px var(--lattice-danger-soft);
+}
+
+/* 正在测：灰灯呼吸。不换颜色 —— 换琥珀色等于多一档"可能行"，而这里只有两种结局 */
+.lattice-model-probe.is-busy .lattice-lamp {
+  animation: lattice-lamp-pulse 1s ease-in-out infinite;
+}
+
+@keyframes lattice-lamp-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.lattice-model-probe-label {
+  /*
+   * 固定宽度是给"按钮不许动"用的：这一组靠右，灯后面那句话一变长（Failed →
+   * Connected · 12 models），按钮就会被推着往左跑 —— 而它刚刚就在鼠标底下。
+   * 132px 放得下最长的那一句（11px 字号），再长就省略号，全文在 title 里。
+   */
+  width: 132px;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--lattice-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lattice-model-probe.is-ok .lattice-model-probe-label {
+  color: var(--lattice-accent);
+}
+
+.lattice-model-probe.is-bad .lattice-model-probe-label {
+  color: var(--lattice-danger);
 }
 
 /* 虚线：它长得像"再放一个进来"的空位，不像一颗已经存在的按钮 */
