@@ -2,9 +2,9 @@
 
 <h1>棂 · Lattice</h1>
 
-<p><strong>Widgets for the Windows desktop, written in plain HTML.</strong><br>
-The platform does the parts a web page cannot: real windows, a sandbox, permissions, install and update.<br>
-No server anywhere in the loop.</p>
+<p><strong>Your own widgets on the Windows desktop — a widget is just a web page.</strong><br>
+Whoever writes one writes HTML / CSS / JS; real windows, the sandbox, permissions, install and update are the platform's job.<br>
+No account, no server.</p>
 
 <p>
 <a href="https://github.com/unraveltao/lattice/actions/workflows/ci.yml"><img src="https://github.com/unraveltao/lattice/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
@@ -16,7 +16,7 @@ No server anywhere in the loop.</p>
 
 <p><a href="docs/screenshot-desktop.png"><img src="docs/screenshot-desktop.png" width="900" alt="Three widgets on a plain desktop: clock, to-do list and bookmarks"></a></p>
 
-<p><sub>Three of the widgets that ship with the platform — clock, to-do and bookmarks — captured from a running build<br>
+<p><sub>Three of the official widgets — clock, to-do and bookmarks — captured from a running build<br>
 at 2× and placed on a plain wallpaper. Nothing from a real desktop is in the frame.</sub></p>
 
 </div>
@@ -25,11 +25,43 @@ at 2× and placed on a plain wallpaper. Nothing from a real desktop is in the fr
 
 ## What it is
 
-棂 (*líng*) is the wooden lattice inside a window pane — the frame that every pane is set into.
+**Lattice is a widget platform for the Windows desktop. The little things sitting on your desktop — a clock, a to-do list, system stats, whatever is playing — are each a widget, and they are not pictures. They are real windows.**
 
-Lattice is a shell for widgets you write yourself. A widget is a folder: `index.html`, a stylesheet, a script, and a `manifest.json` that says what it is allowed to ask for. Drop the folder into the window and it is installed, copied under `%APPDATA%` and served from its own protocol. Drag it onto the canvas to see it live, then **Send to desktop** and it becomes a frameless window that stays there across restarts.
+Those windows have no frame, stay out of the taskbar, and do not steal focus from whatever you are typing into. They can be pinned above everything else, or tucked under ordinary windows against the wallpaper. Position is remembered per monitor, so a mix of display scalings will not fling a card off the edge; data lives on disk and everything is back where it was after a restart.
 
-The important part is the sentence above "it becomes a window". A widget never touches Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are ten permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
+The difference from other desktop toys: **widgets are not built in, they are installed.** The 15 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
+
+The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame every pane is set into.
+
+## What you can do with it
+
+| You want | Widget | What it gives you |
+| --- | --- | --- |
+| A glance at the time, and how long is left | Clock · Calendar · Timetable · Countdown | The current time; a month view with your own events; this week's classes with a live now line; a countdown to a date |
+| Nothing slipping through | Todo · Note · Bookmarks | A list on the desktop; a scratch note that saves itself; the links you keep coming back to |
+| To know what the machine is doing | System | CPU and memory with a one-minute trace, per-core load, commit charge, disk, network, uptime |
+| To work for a stretch | Focus · Stopwatch | A pomodoro that is still right after you close the lid and come back; a stopwatch |
+| A quick sum | Calculator · Convert | Arithmetic you can copy out; two-way conversion for length / mass / temperature / data / time / speed |
+| The desktop to move with the music | Music | What is playing, skip and pause, a level that follows the sound |
+| One look before you go out | Weather | Current conditions for one city, refreshed on a timer, still readable when the network is gone |
+| To let a model do the clicking | Activity board + `Ctrl+K` assistant | See what it did on this machine; you bring the model, the key never leaves Rust |
+| None of the above | Write one | See [Writing a widget](#writing-a-widget) |
+
+## What it is not
+
+- **Not a skin engine.** No DSL, no skin format to learn: a widget is a web page, so the CSS you already know just works.
+- **Not the widget panel Windows ships with.** That one only Microsoft and its partners can publish to; here you write your own and drop the folder in.
+- **Not one Chromium per widget.** Every widget shares the system WebView2, so a dozen widgets is not a dozen browsers.
+
+## Two ways to use it
+
+**Just want to use it** → grab the [installer](#install-and-build), pick a few from the library, drag them onto the canvas, hit **Send to desktop**. They stay there across restarts.
+
+**Want to write one** → see [Writing a widget](#writing-a-widget). One folder, four files, no build step; dropping the folder into the window is the install.
+
+## How it works
+
+The important part is that a widget *becomes a window* while never touching Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are ten permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
 
 **The platform ships empty.** The 15 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
 
@@ -37,9 +69,9 @@ So is the absence of a server. The catalogue is a static `registry.json`, the pa
 
 ## Where it stands
 
-v0.10 is the current version: **a model you bring, hands that stay ours.** The platform has an assistant of its own — `Ctrl+K`, or the button in the top bar, brings up a small draggable window: paste an OpenAI-compatible base URL and an API key once, and it answers there *and* in a widget's bubble. There is no model bundled and no proxy in between: the key lives in `assistant.json` under Rust's control, the frontend only ever sees `sk-1…cdef`, and the only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had. A widget that asks for `llm:chat` gets text back, never tools.
+v0.10 is the current version. The last three releases: v0.8 let an agent drive the desktop (an opt-in loopback endpoint, 8 allowlisted actions, every call in an audit log); v0.9 added sound you can see and links that get out; v0.10 brought the built-in assistant — **a model you bring, hands that stay ours**: `Ctrl+K` opens a small window, paste an OpenAI-compatible base URL and a key once, and the key lives in `assistant.json` under Rust's control while the frontend only ever sees `sk-1…cdef`. The only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had; a widget that asks for `llm:chat` gets text back, never tools.
 
-v0.9 added **sound you can see, links that get out.** The music widget was renamed from `lattice.media` to `lattice.music` (it reads *what is playing* before it reads *how loud*), the player name is translated from AUMID into something a person recognises, the card was re-laid-out for its real 268 × 172 budget, and two capabilities landed: `audio:level` — a WASAPI loopback tap on the default output device that returns one number in `0..1` — and `shell:open`, which hands an http/https URL to the default browser and nothing else. `lattice.bookmarks` is the widget that proves it.
+How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 
 | Version | What it added |
 | --- | --- |
@@ -223,6 +255,12 @@ npm run pack:widget -- demo.mine      # folder → .lattice, drag straight into 
 [`examples/counter`](./examples/counter) is the reference implementation. [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) is the contract: the full method table, the config field types, the manifest rules, and the traps that only show up once a widget is real — native form controls, a transparent background, the space the chrome eats. The SDK source and its one-page manual live in [`packages/sdk`](./packages/sdk); every widget carries a copy at `sdk/lattice.js`, kept in sync by `npm run sdk:sync` and checked by `npm run test:sdk`.
 
 ## Install and build
+
+**To just install it, no compiling.** Take the Windows installer (`*-setup.exe`) from [Releases](https://github.com/unraveltao/lattice/releases) and run it.
+
+The first launch gets stopped by SmartScreen as an "unknown publisher" — the installer is not code-signed yet, so click **More info → Run anyway**. That is a procurement problem, not a technical one, and it sits in the known-gaps table in [AGENTS.md](./AGENTS.md) rather than being quietly ignored.
+
+What follows is for people changing the code.
 
 A build needs Node 20.19+ (or 22.12+), Rust (the `windows-gnu` toolchain) and the WebView2 runtime — all standard [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/).
 
