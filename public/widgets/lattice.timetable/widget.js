@@ -309,6 +309,177 @@
     });
   }
 
+  // -------------------------------------------------------------------------
+  // 纯函数：粘贴导入
+  // -------------------------------------------------------------------------
+
+  /** 一行里有几个字段：带引号的按 CSV 规矩解开，`"数学, 分析"` 是一个字段 */
+  function splitFields(line, delimiter) {
+    if (delimiter !== "," && line.indexOf('"') === -1) {
+      return line.split(delimiter).map(function (cell) {
+        return cell.trim();
+      });
+    }
+
+    var out = [];
+    var cell = "";
+    var quoted = false;
+
+    for (var i = 0; i < line.length; i += 1) {
+      var ch = line.charAt(i);
+      if (quoted) {
+        if (ch === '"' && line.charAt(i + 1) === '"') {
+          cell += '"';
+          i += 1;
+        } else if (ch === '"') {
+          quoted = false;
+        } else {
+          cell += ch;
+        }
+        continue;
+      }
+      if (ch === '"' && cell.trim() === "") {
+        quoted = true;
+        cell = "";
+        continue;
+      }
+      if (ch === delimiter) {
+        out.push(cell.trim());
+        cell = "";
+        continue;
+      }
+      cell += ch;
+    }
+    out.push(cell.trim());
+    return out;
+  }
+
+  /** 这一行该按什么切：Excel 复制出来是 Tab，逗号 / 分号按行认（中文区域用分号） */
+  function delimiterOf(line) {
+    if (line.indexOf("\t") !== -1) return "\t";
+    if (line.indexOf(",") !== -1) return ",";
+    if (line.indexOf(";") !== -1) return ";";
+    return "\t";
+  }
+
+  /**
+   * 星期那一格 → 0..6，认不出来是 null。
+   *
+   * 四种写法都要认：`3`（Excel 里的数字）、`周三` / `星期三` / `礼拜三`、
+   * 光一个 `三`、英文 `wed` / `Wednesday`。多认几种不是"模糊匹配"：这一格
+   * 只有七个合法值，认错的空间比认不出来的空间小。
+   */
+  function importDay(value) {
+    var text = String(value == null ? "" : value)
+      .trim()
+      .toLowerCase()
+      .replace(/^星期|^周|^礼拜/, "");
+    if (!text) return null;
+
+    if (/^[1-7]$/.test(text)) return Number(text) - 1;
+
+    var zh = "一二三四五六日天";
+    var zhIndex = zh.indexOf(text.charAt(0));
+    if (text.length === 1 && zhIndex !== -1) {
+      // 「日」和「天」都是周日：表里那一格是 6
+      return zhIndex >= 6 ? 6 : zhIndex;
+    }
+
+    var en = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+    for (var i = 0; i < en.length; i += 1) {
+      if (text.indexOf(en[i]) === 0) return i;
+    }
+    return null;
+  }
+
+  /** 时刻那一格：`8:00` / `08:00` / `8：00` / `08:00:00`（Excel 有时候带秒） */
+  function importTime(value) {
+    var direct = parseTime(value);
+    if (direct != null) return direct;
+    var match = /^(\d{1,2})\s*[:：.]\s*(\d{2})\s*[:：.]\s*\d{2}$/.exec(
+      String(value == null ? "" : value).trim(),
+    );
+    if (!match) return null;
+    return parseTime(match[1] + ":" + match[2]);
+  }
+
+  /** 周次那一格：认「单 / 双」，别的（含 `1-16`）都当每周 —— 数据里只有这三档 */
+  function importWeeks(value) {
+    var text = String(value == null ? "" : value).trim().toLowerCase();
+    if (text.indexOf("单") !== -1 || text.indexOf("odd") !== -1) return "odd";
+    if (text.indexOf("双") !== -1 || text.indexOf("even") !== -1) return "even";
+    return "all";
+  }
+
+  /** 表头那一行：认得出来就跳过，不算"坏行"（从 Excel 连标题一起复制是常态） */
+  var HEADER_WORDS = /课程|科目|名称|星期|时间|开始|结束|教室|地点|周次|class|course|name|day|start|end|room|week/i;
+
+  /**
+   * 一坨多行文本 → 若干节课。
+   *
+   * 列固定（后两列可省）：`课程 星期 开始 结束 [教室] [周次]`。规矩和
+   * `normalizeCourses` 一致 —— **坏行逐条丢、报数、不整批失败**：粘进来的
+   * 东西是别人给的格式，一行不合法不该让另外二十行白粘。
+   */
+  function parseImport(text) {
+    var lines = String(text == null ? "" : text)
+      .split(/\r?\n/)
+      .filter(function (line) {
+        return line.trim() !== "";
+      });
+
+    var courses = [];
+    var skipped = 0;
+    var header = false;
+    var truncated = false;
+
+    for (var i = 0; i < lines.length; i += 1) {
+      var cells = splitFields(lines[i], delimiterOf(lines[i]));
+
+      if (!header && i === 0 && cells.length >= 3 && HEADER_WORDS.test(cells.join(" "))) {
+        if (importDay(cells[1]) == null) {
+          header = true;
+          continue;
+        }
+      }
+
+      var name = String(cells[0] == null ? "" : cells[0]).trim();
+      var day = importDay(cells[1]);
+      var start = importTime(cells[2]);
+      var end = importTime(cells[3]);
+
+      if (!name || day == null || start == null || end == null) {
+        skipped += 1;
+        continue;
+      }
+      if (end <= start || end - start > 12 * 60) {
+        skipped += 1;
+        continue;
+      }
+      if (courses.length >= MAX_COURSES) {
+        truncated = true;
+        skipped += 1;
+        continue;
+      }
+
+      courses.push({
+        name: name.slice(0, 80),
+        day: day,
+        start: formatTime(start),
+        end: formatTime(end),
+        room: String(cells[4] == null ? "" : cells[4]).trim().slice(0, 40),
+        weeks: importWeeks(cells[5]),
+      });
+    }
+
+    return { courses: courses, rows: lines.length, skipped: skipped, header: header, truncated: truncated };
+  }
+
+  /** 判重的身份：同名、同一天、同一段时间就是同一节课 */
+  function courseKey(course) {
+    return [course.name, course.day, course.start, course.end].join("|");
+  }
+
   /**
    * 读存档：坏一条丢一条，不让一份写坏的数据把整张课表清空。
    * 和 `normalizeEvents` / `normalizeConfig` 同一条规矩。
@@ -510,6 +681,8 @@
   var storageDenied = false;
   var editorOpen = false;
   var editorState = null;
+  /** 粘贴导入那张表单开着没有。它不改 `courses`，所以不挡 `reload` */
+  var importOpen = false;
   var currentRange = { start: 8 * 60, end: 18 * 60, hours: 10 };
   var currentDayCount = 5;
   var renderedKey = "";
@@ -545,6 +718,18 @@
   var deleteEl = document.getElementById("f-delete");
   var cancelEl = document.getElementById("f-cancel");
   var saveEl = document.getElementById("f-save");
+
+  var importOpenEl = document.getElementById("import-open");
+  var importerEl = document.getElementById("importer");
+  var importTitleEl = document.getElementById("import-title");
+  var importSubEl = document.getElementById("import-sub");
+  var importHintEl = document.getElementById("import-hint");
+  var importTextEl = document.getElementById("import-text");
+  var importErrorEl = document.getElementById("import-error");
+  var importCancelEl = document.getElementById("import-cancel");
+  var importApplyEl = document.getElementById("import-apply");
+  /** 上一次预演的结论（能加几节 / 已有几节），按输入实时算 */
+  var importPreview = { fresh: [], parsed: null };
 
   /** HTML 里写死的字段名，按 id 收在一处，换语言时挨个换 */
   var LABEL_ELS = {
@@ -607,6 +792,113 @@
     deleteEl.textContent = say("删除", "Delete");
     cancelEl.textContent = say("取消", "Cancel");
     if (editorState) paintEditorChrome();
+
+    importOpenEl.setAttribute("aria-label", say("粘贴导入课程", "Paste a timetable"));
+    importOpenEl.title = say("粘贴导入课程", "Paste a timetable");
+    importTitleEl.textContent = say("粘贴导入", "Paste a timetable");
+    importHintEl.textContent = say(
+      "每行一节：课程、星期、开始、结束、教室、周次。用 Tab 或逗号分开，星期写 1–7 或周一，周次写单 / 双。",
+      "One class per line: name, day, start, end, room, weeks. Separate with tabs or commas; day can be 1–7 or Mon, weeks can be odd / even.",
+    );
+    importTextEl.placeholder = say(
+      "高等数学\t1\t08:00\t09:30\tA101",
+      "Calculus\t1\t08:00\t09:30\tA101",
+    );
+    importCancelEl.textContent = say("取消", "Cancel");
+    paintImportPreview();
+  }
+
+  /**
+   * 预览：能加进来几节、几节已经在表里、几行读不出来。
+   *
+   * 判重放在**应用之前**算，是因为"我按了导入，结果只多了三节"必须有前因 ——
+   * 按完才发现少了一半，用户只会以为是 bug。
+   */
+  function paintImportPreview() {
+    if (!importOpen) return;
+
+    var parsed = parseImport(importTextEl.value);
+    var seen = new Set(
+      courses.map(function (course) {
+        return courseKey(course);
+      }),
+    );
+    var fresh = parsed.courses.filter(function (course) {
+      var key = courseKey(course);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    importPreview = { fresh: fresh, parsed: parsed };
+
+    var parts = [];
+    if (fresh.length > 0) {
+      parts.push(say(fresh.length + " 节可以加进来", fresh.length + " ready to add"));
+    }
+    var duplicate = parsed.courses.length - fresh.length;
+    if (duplicate > 0) {
+      parts.push(say(duplicate + " 节已经在表里", duplicate + " already there"));
+    }
+    if (parsed.skipped > 0) {
+      parts.push(say(parsed.skipped + " 行读不出来", parsed.skipped + " rows unreadable"));
+    }
+    if (parsed.truncated) {
+      parts.push(say("表最多 " + MAX_COURSES + " 节", MAX_COURSES + " classes at most"));
+    }
+
+    importSubEl.textContent = parts.length > 0 ? parts.join(" · ") : "";
+    importErrorEl.textContent = "";
+    importApplyEl.textContent =
+      fresh.length > 0 ? say("导入 " + fresh.length + " 节", "Add " + fresh.length) : say("导入", "Add");
+    importApplyEl.disabled = fresh.length === 0;
+  }
+
+  function openImporter() {
+    importOpen = true;
+    importerEl.classList.add("is-open");
+    importerEl.setAttribute("aria-hidden", "false");
+    importTextEl.value = "";
+    paintImportPreview();
+    importTextEl.focus();
+  }
+
+  function closeImporter() {
+    importOpen = false;
+    importerEl.classList.remove("is-open");
+    importerEl.setAttribute("aria-hidden", "true");
+    importTextEl.value = "";
+    if (pendingReload) {
+      pendingReload = false;
+      reload(false);
+    }
+  }
+
+  function applyImporter() {
+    var fresh = importPreview.fresh;
+    if (!fresh || fresh.length === 0) {
+      importErrorEl.textContent = say(
+        "没有能加进来的课。每行至少要有课程名、星期、开始、结束。",
+        "Nothing to add. Each line needs a name, a day, a start and an end.",
+      );
+      return;
+    }
+
+    var next = courses.slice();
+    fresh.forEach(function (course) {
+      if (next.length >= MAX_COURSES) return;
+      next.push(
+        Object.assign({}, course, {
+          id: makeId(),
+          color: colorFor(course.name),
+        }),
+      );
+    });
+
+    courses = next;
+    touched = true;
+    closeImporter();
+    renderAll();
+    persist();
   }
 
   /** 编辑器标题和主按钮跟着"新增 / 编辑"变，也跟语言变 */
@@ -1167,6 +1459,27 @@
     openEditor(null, nextDefaultSlot());
   });
 
+  importOpenEl.addEventListener("click", openImporter);
+  importTextEl.addEventListener("input", paintImportPreview);
+  importCancelEl.addEventListener("click", closeImporter);
+  importApplyEl.addEventListener("click", applyImporter);
+  document.getElementById("import-form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    applyImporter();
+  });
+  importerEl.addEventListener("keydown", function (event) {
+    // 粘完就想按下去：Tab / 逗号那一行已经结束了，回车不该是"换行"
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      applyImporter();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeImporter();
+    }
+  });
+
   daysEl.addEventListener("click", function (event) {
     var button = event.target.closest(".tt-pick");
     if (!button || !editorState) return;
@@ -1230,7 +1543,13 @@
    * 冒泡到编辑器。补一条窗口级监听：编辑器开着就认这一下。
    */
   window.addEventListener("keydown", function (event) {
-    if (!editorOpen || event.key !== "Escape") return;
+    if (event.key !== "Escape") return;
+    if (importOpen) {
+      event.preventDefault();
+      closeImporter();
+      return;
+    }
+    if (!editorOpen) return;
     event.preventDefault();
     closeEditor();
   });
@@ -1334,6 +1653,11 @@
     layoutDay: layoutDay,
     resolveRange: resolveRange,
     isNowCourse: isNowCourse,
+    parseImport: parseImport,
+    courseKey: courseKey,
+    importDay: importDay,
+    importTime: importTime,
+    importWeeks: importWeeks,
     COLORS: COLORS.slice(),
     MAX_COURSES: MAX_COURSES,
     snapshot: function () {
@@ -1345,6 +1669,7 @@
         saveError: saveError,
         storageDenied: storageDenied,
         editorOpen: editorOpen,
+        importOpen: importOpen,
         range: { start: currentRange.start, end: currentRange.end },
         days: currentDayCount,
         week: weekNumber(config.termStart, new Date()),

@@ -542,6 +542,131 @@
         denied.frame.remove();
       }
 
+      // ---- 14. 粘贴导入 ----
+      /*
+       * 从 Excel 复制出来的东西是别人给的格式，所以这一段的重点是**坏行
+       * 逐条丢、报数、不整批失败**，以及"按按钮之前就知道会加进来几节"。
+       */
+      const imp = mountTimetable({
+        initial: [
+          { id: "math", name: "Calculus", room: "A101", day: 0, start: "09:00", end: "10:30", color: 0 },
+        ],
+      });
+      const impApi = await apiOf(imp.frame, imp.ready);
+      const impDoc = imp.frame.contentDocument;
+      const impWin = imp.frame.contentWindow;
+      const impSnap = () => impApi.snapshot();
+      await setLang("en", imp.frame);
+
+      const parsed = impApi.parseImport(
+        [
+          "Class\tDay\tStart\tEnd\tRoom\tWeeks",
+          "Linear Algebra\t1\t08:00\t09:30\tA101",
+          "Physics\t周二\t10:00\t11:30\tB203\t单",
+          "Chemistry;3;14:00;15:30;C301;双",
+          '"Math, Analysis",4,08:00:00,09:30,D404',
+        ].join("\n"),
+      );
+      eq(parsed.header, true, "第一行表头被认出来并跳过");
+      eq(parsed.courses.length, 4, "四行不同写法的课都读出来了");
+      eq(parsed.skipped, 0, "表头不算坏行");
+      eq(
+        parsed.courses.map((course) => course.day),
+        [0, 1, 2, 3],
+        "星期认四种写法：数字 / 周二 / 3 / 4",
+      );
+      eq(parsed.courses[1].weeks, "odd", "「单」读成单周");
+      eq(parsed.courses[2].weeks, "even", "分号分隔 + 「双」读成双周");
+      eq(parsed.courses[0].room, "A101", "教室那一列");
+      eq(parsed.courses[3].name, "Math, Analysis", "带引号的字段里那个逗号不是分隔符");
+      eq(parsed.courses[3].start, "08:00", "Excel 那种带秒的时刻也认");
+
+      const bad = impApi.parseImport(
+        [
+          "Too few\t1\t08:00",
+          "\t1\t08:00\t09:00",
+          "Backwards\t1\t10:00\t09:00",
+          "Fine\t2\t09:00\t10:00",
+        ].join("\n"),
+      );
+      eq(bad.skipped, 3, "列不够 / 没名字 / 结束早于开始都跳过");
+      eq(bad.courses.map((course) => course.name), ["Fine"], "只留下能读的那一行");
+
+      const many = [];
+      for (let i = 0; i < impApi.MAX_COURSES + 5; i += 1) {
+        many.push(`Class ${i}\t1\t08:00\t09:00`);
+      }
+      const capped = impApi.parseImport(many.join("\n"));
+      eq(capped.courses.length, impApi.MAX_COURSES, "一次粘太多也被上限截住");
+      eq(capped.truncated, true, "截住了要说一声");
+
+      eq(
+        impApi.importDay("Wed") === 2 && impApi.importDay("星期日") === 6 && impApi.importDay("9") === null,
+        true,
+        "星期那格：Wed / 星期日 认，9 不认",
+      );
+      eq(impApi.importWeeks("1-16") === "all", true, "周次写 1-16 落到「每周」（数据里只有三档）");
+      eq(
+        impApi.courseKey({ name: "A", day: 1, start: "09:00", end: "10:00" }) ===
+          impApi.courseKey({ name: "A", day: 1, start: "09:00", end: "10:00", room: "X" }),
+        true,
+        "判重只看名字 / 星期 / 起止，不看教室",
+      );
+
+      // 界面：打开、预览、按下、落盘
+      impDoc.getElementById("import-open").click();
+      await sleep(20);
+      eq(impSnap().importOpen, true, "导入面板打开");
+      eq(impDoc.getElementById("importer").classList.contains("is-open"), true, "面板真的摊开了");
+      eq(impDoc.getElementById("import-apply").disabled, true, "什么都没粘时按钮是灰的");
+
+      const impText = impDoc.getElementById("import-text");
+      impText.value = "Linear Algebra\t1\t08:00\t09:30\tA101\nPhysics\t2\t10:00\t11:30";
+      impText.dispatchEvent(new impWin.Event("input", { bubbles: true }));
+      await sleep(30);
+      eq(
+        impDoc.getElementById("import-apply").textContent,
+        "Add 2",
+        "按钮上写着真正会加进来几节",
+      );
+      eq(impDoc.getElementById("import-apply").disabled, false, "有能加的课，按钮可点");
+
+      const setCallsBefore = imp.state.setCalls;
+      impDoc.getElementById("import-apply").click();
+      await sleep(120);
+      eq(impSnap().importOpen, false, "导入后面板关上");
+      eq(impSnap().courses.length, 3, "原来那一节 + 新加的两节");
+      eq(imp.state.setCalls, setCallsBefore + 1, "导入之后落盘一次");
+      eq(imp.state.stored.courses.length, 3, "盘上也是三节");
+      eq(
+        impDoc.querySelectorAll(".tt-course").length,
+        3,
+        "新加的课画在格子上",
+      );
+
+      // 同一份再粘一次：判重，按钮变灰，标题行写清原因
+      impDoc.getElementById("import-open").click();
+      await sleep(20);
+      impText.value = "Linear Algebra\t1\t08:00\t09:30\tA101";
+      impText.dispatchEvent(new impWin.Event("input", { bubbles: true }));
+      await sleep(30);
+      eq(impDoc.getElementById("import-apply").disabled, true, "重复的课不让加第二遍");
+      eq(
+        impDoc.getElementById("import-sub").textContent.includes("already there"),
+        true,
+        "说明里写清了它已经在表里",
+      );
+
+      impDoc
+        .getElementById("importer")
+        .dispatchEvent(new impWin.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await sleep(20);
+      eq(impSnap().importOpen, false, "Escape 关掉导入面板");
+      eq(impSnap().courses.length, 3, "Escape 不加课");
+
+      imp.frame.remove();
+      await sleep(30);
+
       document.getElementById("out").innerHTML = lines
         .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
         .join("\n");

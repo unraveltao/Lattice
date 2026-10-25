@@ -1,10 +1,10 @@
 {
   "id": "lattice.timetable",
   "name": { "zh": "课程表", "en": "Timetable" },
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": {
-    "zh": "一周的课程表：教室、颜色和一条实时的「现在」线——点任意空格加课",
-    "en": "A weekly class timetable with rooms, colours and a live now line — click any slot to add a class"
+    "zh": "一周的课程表：教室、颜色和一条实时的「现在」线——点空格加课，也可以把整张表粘进来",
+    "en": "A weekly class timetable with rooms, colours and a live now line — click a slot, or paste the whole week in"
   },
   "author": "Lattice",
   "entry": "index.html",
@@ -71,7 +71,7 @@
   "help": {
     "sections": [
       {
-        "title": { "zh": "加一节课", "en": "Adding a class" },
+        "title": { "zh": "加课", "en": "Adding classes" },
         "items": [
           {
             "zh": "点网格里的空格子，或者顶栏的 +。编辑器打开时，那一天和那个时间已经填好了。",
@@ -84,6 +84,18 @@
           {
             "zh": "点「保存」或按回车存下。按 Escape 关掉编辑器，不保存。",
             "en": "Save with the button or Enter. Escape closes the editor without saving."
+          },
+          {
+            "zh": "从教务系统或 Excel 里复制一整片区域，点顶栏那颗向下箭头粘进去：一行一节课，列依次是课程、星期、开始、结束、教室、周次。",
+            "en": "Copy the whole grid from Excel or your school's system and paste it with the arrow button: one class per line — name, day, start, end, room, weeks."
+          },
+          {
+            "zh": "星期写 1–7 或周一，周次写 单 / 双，留空就是每周。读不出来的行会跳过去，不会让整张表失败。",
+            "en": "Day is 1–7 or Mon, weeks is odd / even, blank means every week. Rows that cannot be read are skipped instead of failing the whole paste."
+          },
+          {
+            "zh": "已经在表里的课（同名、同一天、同一段时间）不会再加一遍——按钮上那个数字就是真正会多出来的节数。",
+            "en": "Classes already on the timetable (same name, day and times) are not added twice — the number on the button is what will really be added."
           }
         ]
       },
@@ -175,6 +187,20 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.2.0",
+      "date": "2026-10-26",
+      "changes": [
+        {
+          "zh": "顶栏多了一颗粘贴导入：从 Excel 或教务系统复制一整片区域，一行一节课，读不出来的行跳过并报数。",
+          "en": "A paste-import button in the top bar: copy a whole grid from Excel, one class per line, unreadable rows are skipped and counted."
+        },
+        {
+          "zh": "已经在表里的课不会重复加；按钮上写着真正会多出来的节数。",
+          "en": "Classes already on the timetable are never added twice; the button says how many will really be added."
+        }
+      ]
+    },
     {
       "version": "0.1.1",
       "date": "2026-10-25",

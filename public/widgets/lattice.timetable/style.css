@@ -501,6 +501,54 @@ button {
   color: var(--muted);
 }
 
+/*
+ * 粘贴区：多行、等宽、不许用户拖大。
+ *
+ * 等宽是因为它是**表格**（一行一节课、列对列），比例字体会让从 Excel 里
+ * 复制出来的对齐在眼前散掉。不许拖大是因为整张卡会跟着长，而这是一个
+ * 320px 高的卡片 —— 装不下的行由外面的可滚区域兜。
+ */
+.tt-textarea {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 74px;
+  padding: 6px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow: auto;
+  outline: none;
+  resize: none;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
+}
+
+.tt-textarea:hover {
+  border-color: color-mix(in srgb, var(--fg) 22%, transparent);
+}
+
+.tt-textarea:focus {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+.tt-textarea::placeholder {
+  color: var(--muted);
+}
+
+.tt-import-hint {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 /* ---------- 选择器（全部自绘） ---------- */
 
 .tt-daypick,

@@ -16,6 +16,15 @@
         <h1 class="tt-title">
           <span id="title-label">课程表</span> <span class="tt-week" id="week"></span>
         </h1>
+        <!--
+          粘进来一整张课表。它是"加很多节课"，`+` 是"加一节" —— 两个入口并排，
+          因为一开始用的那一次（新生拿到教务系统的导出）就是一次性输二十节课。
+        -->
+        <button class="tt-add" id="import-open" type="button" aria-label="粘贴导入课程" title="粘贴导入课程">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 2.6v7.2M4.8 6.6 8 9.8l3.2-3.2M3 12.4h10" />
+          </svg>
+        </button>
         <button class="tt-add" id="add" type="button" aria-label="添加课程" title="添加课程">+</button>
       </header>
 
@@ -122,6 +131,48 @@
             <span class="tt-actions-spacer"></span>
             <button class="tt-btn" id="f-cancel" type="button">取消</button>
             <button class="tt-btn is-primary" id="f-save" type="button">保存</button>
+          </div>
+        </form>
+      </section>
+
+      <!--
+        粘贴导入。和编辑器用同一套外壳（整张卡翻成表单），但只做一件事：
+        一坨多行文本 → 一堆课。没有文件对话框、没有 xlsx 解析 —— 从 Excel
+        选中区域 Ctrl+C 出来的就是 TSV，粘贴这条路不需要任何新平台能力。
+      -->
+      <section
+        class="tt-editor"
+        id="importer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="import-title"
+        aria-hidden="true"
+      >
+        <form class="tt-form" id="import-form" novalidate>
+          <header class="tt-editor-head">
+            <h2 class="tt-editor-title" id="import-title">导入课程</h2>
+            <span class="tt-editor-sub" id="import-sub"></span>
+          </header>
+
+          <p class="tt-import-hint" id="import-hint">
+            每行一节：课程、星期、开始、结束、教室、周次。用 Tab 或逗号分开。
+          </p>
+
+          <textarea
+            class="tt-textarea"
+            id="import-text"
+            rows="6"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="高等数学&#9;1&#9;08:00&#9;09:30&#9;A101"
+          ></textarea>
+
+          <p class="tt-error" id="import-error" role="alert"></p>
+
+          <div class="tt-actions">
+            <span class="tt-actions-spacer"></span>
+            <button class="tt-btn" id="import-cancel" type="button">取消</button>
+            <button class="tt-btn is-primary" id="import-apply" type="button">导入</button>
           </div>
         </form>
       </section>
