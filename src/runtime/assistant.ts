@@ -18,7 +18,16 @@
  */
 
 import { t } from "./i18n";
-import { describeHand, handsPrompt, handsTools, isHandName, type HandsSettings } from "./hands";
+import {
+  describeHand,
+  handsPrompt,
+  handsTools,
+  isHandName,
+  needsApproval,
+  normalizeApproval,
+  type ApprovalMode,
+  type HandsSettings,
+} from "./hands";
 
 /**
  * 一次对话里最多几轮"模型 → 工具 → 模型"。到顶就停，别让它自己转圈。
@@ -202,11 +211,51 @@ export type Caller = "platform" | "widget";
 /** 组件那一轮不给的动作。改这里要同时改 `systemPrompt` 里那句"你删不了" */
 export const WIDGET_DENIED_ACTIONS: ReadonlySet<string> = new Set(["placement.remove"]);
 
-/** 这一轮的工具表。默认全给 */
-export function toolsFor(caller: Caller = "platform"): Record<string, ToolSpec> {
-  if (caller === "platform") return TOOL_SPECS;
+/**
+ * 不可逆的那几个：`auto` 档**也仍然要问**。
+ *
+ * 今天它和 `WIDGET_DENIED_ACTIONS` 恰好是同一个集合，但**是两个概念，别合并**：
+ * 一个是"组件不许用"（组件那条路没有确认条，只能整条拿掉），一个是"连自动档
+ * 也要问"。哪天 `widget.install` 进了工具表，只有第二个会跟着变。
+ */
+export const DANGEROUS_ACTIONS: ReadonlySet<string> = new Set(["placement.remove"]);
+
+/**
+ * 一次工具调用的裁决（0003 §3）。返回三值而不是布尔：**"问"和"拒"是两件事**。
+ *
+ * - `ask`（默认档）：会改东西的要点头；只读的直接放行
+ * - `auto`：只读的和会改的都放行，**不可逆的仍然问**
+ * - `readonly`：只读的放行，会改的**直接拒**。不当成"问" —— 只读档里用户
+ *   已经说过"别改"，再问他一次等于把设置当建议
+ *
+ * 认不出来的名字一律按"会改东西"算（`needsApproval` 的默认值就是 `true`）。
+ */
+export function approvalFor(name: string, mode: ApprovalMode = "ask"): "allow" | "ask" | "deny" {
+  if (mode === "readonly") return needsApproval(name) ? "deny" : "allow";
+  if (mode === "auto") return DANGEROUS_ACTIONS.has(name) ? "ask" : "allow";
+  return needsApproval(name) || DANGEROUS_ACTIONS.has(name) ? "ask" : "allow";
+}
+
+/**
+ * 这一轮的工具表。
+ *
+ * `readonly` 在桌面这一侧就是**一张空表**：八个动作全都改状态（桌面快照在提示
+ * 里，不是工具），所以没有"只读的桌面动作"可留。留成"能调但会被拒"只会让模型
+ * 试着调、看着它失败、然后开始编。
+ */
+export function toolsFor(
+  caller: Caller = "platform",
+  mode: ApprovalMode = "ask",
+): Record<string, ToolSpec> {
+  const base =
+    caller === "platform"
+      ? TOOL_SPECS
+      : Object.fromEntries(
+          Object.entries(TOOL_SPECS).filter(([name]) => !WIDGET_DENIED_ACTIONS.has(name)),
+        );
+  if (mode !== "readonly") return base;
   return Object.fromEntries(
-    Object.entries(TOOL_SPECS).filter(([name]) => !WIDGET_DENIED_ACTIONS.has(name)),
+    Object.entries(base).filter(([name]) => approvalFor(name, mode) === "allow"),
   );
 }
 
@@ -216,14 +265,19 @@ export function toolsFor(caller: Caller = "platform"): Record<string, ToolSpec> 
  * 两张表在这里第一次也是唯一一次合并。`caller` 一路传下去：组件那条路
  * （`widget`）拿到的手是空表 —— "组件能不能跑命令"这个问题的答案写死在
  * `handsTools` 里，不靠调用方记得传什么。
+ *
+ * 审批档也是**从这里进去的**：它住在 `hands` 里，所以"给什么工具"和
+ * "要不要点头"读的是同一份东西。
  */
 export function allTools(
   caller: Caller = "platform",
   hands?: HandsSettings,
   extra: Record<string, ToolSpec> = {},
 ): Record<string, ToolSpec> {
-  if (!hands) return toolsFor(caller);
-  return { ...toolsFor(caller), ...handsTools(hands, caller, extra) };
+  const mode = hands ? normalizeApproval(hands.approvalMode) : "ask";
+  const desktop = toolsFor(caller, mode);
+  if (!hands) return desktop;
+  return { ...desktop, ...handsTools(hands, caller, extra) };
 }
 
 /** OpenAI 兼容协议要的形状 */
@@ -386,8 +440,14 @@ export interface CatalogueHint {
  */
 export function systemPrompt(snapshot: string, options: PromptOptions = {}): string {
   const tools = options.tools ?? TOOL_SPECS;
+  // 审批档从 `hands` 里读，**不另开一个参数**：工具表和这段话必须是同一份裁决
+  // 生出来的，两个入口就给得起两种说法（0004 §5 的同一条理由）
+  const mode = normalizeApproval(options.hands?.approvalMode ?? "ask");
+  const readonly = mode === "readonly";
   const lines = [
-    "你是「棂」的桌面助手。用户在自己的 Windows 桌面上摆了一堆小组件，你能看到这些摆放，也能改动它们。",
+    readonly
+      ? "你是「棂」的桌面助手。用户在自己的 Windows 桌面上摆了一堆小组件。现在是**只读档**：你能看到这些摆放，但不能改动它们。"
+      : "你是「棂」的桌面助手。用户在自己的 Windows 桌面上摆了一堆小组件，你能看到这些摆放，也能改动它们。",
     "",
     "规则：",
     "1. 只能通过给定的工具操作桌面。动手之前先看快照，用快照里真实的 instanceId；不要编造。",
@@ -398,6 +458,12 @@ export function systemPrompt(snapshot: string, options: PromptOptions = {}): str
   if (!("placement.remove" in tools)) {
     lines.push(
       "5. 这一轮你没有删除组件的工具。用户想删，就让他自己在画布上点 ✕ —— 不要说「已经删掉了」。",
+    );
+  }
+  if (readonly) {
+    lines.push(
+      "",
+      "现在是**只读档**：改桌面的工具、写文件、跑命令、点键鼠都不在表里。用户要你动手，就直说现在是只读档，并告诉他去 Assistant settings 把审批档改成「每次确认」或「自动」—— 那不是你绕得过去的限制。",
     );
   }
   const persona = options.persona;

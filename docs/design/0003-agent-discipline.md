@@ -11,8 +11,11 @@ code: src/runtime/assistant.ts, src/platform/assistant.ts, src/platform/Assistan
 > **会话与观察两段已于 2026-10-25 落地**：四份文件一个目录
 > （`assistant-sessions/<id>.json`，50 份 / 200 条 / 1 MB，超了从最旧丢并说出来）、
 > 面板顶部那条会话条、提示词里组件说明首句（≤120 字 × 8）与商店一段（≤8）。
-> 审批档位那一条（`approvalMode` 三档）**仍然没做** —— 0004 把它做成了"六组开关 +
-> 按工具判"，而 `readonly` / `auto` 这两档还欠着。看手之前先看 [0004](./0004-agent-hands.md)。
+> 审批档位那一条（`approvalMode` 三档）**也已落地**（2026-10-25，在会话之后）：
+> `assistant.json` 顶层 `approvalMode`（`ask` / `auto` / `readonly`，默认 `ask`），
+> 三值裁决 `approvalFor(name, mode) → allow | ask | deny` 只在 `runtime/assistant.ts` 一处，
+> `readonly` 让工具表**连 schema 都不给**、Rust 的 `assistant_tool` 再拒一次；
+> `auto` 仍然问 `DANGEROUS_ACTIONS`（删除组件）。看手之前先看 [0004](./0004-agent-hands.md)。
 
 ## 1. 问题
 

@@ -545,12 +545,29 @@ test("六只手的开关：读写同一份文件", async () => {
     input: false,
     mcp: false,
     workspace: "D:\\work",
+    // 没给档位 → `ask`（多问一次是麻烦，少问一次是事故）
+    approvalMode: "ask",
   });
 
   const read = await call("GET", "/api/llm/hands");
   assert.deepEqual(read.value, saved.value);
   // 拨得动 ≠ 接好了：浏览器里这些开关只是存进文件，执行仍然要 Rust
   assert.equal(readConfig(env).hands.files, true);
+});
+
+test("审批档：三选一，存下来的是归一化之后那个字面量", async () => {
+  seed(legacy());
+  const ro = await call("POST", "/api/llm/hands", {
+    hands: { files: true, workspace: "", approvalMode: "ReadOnly" },
+  });
+  assert.equal(ro.value.approvalMode, "readonly");
+  assert.equal(readConfig(env).approvalMode, "readonly");
+
+  // 拼错的不许变成"更宽松的那一档"
+  const typo = await call("POST", "/api/llm/hands", {
+    hands: { files: true, workspace: "", approvalMode: "read-only" },
+  });
+  assert.equal(typo.value.approvalMode, "ask");
 });
 
 test("三道闸：只认本机 Origin、只收 JSON、别的路径不归它管", async () => {

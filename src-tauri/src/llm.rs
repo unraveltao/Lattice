@@ -99,6 +99,11 @@ struct AssistantConfig {
     /// 这里只是"没给绝对路径时去哪儿"
     #[serde(default)]
     workspace: String,
+    /// 审批档（0003 §3：`ask` / `auto` / `readonly`）。**跟着模型档一起落在
+    /// 这一份文件里**，不进 `state.json`：那份是前端整体回写的，审批档被一次
+    /// 陈旧的 set 盖回 `ask`，等于用户以为关掉的确认又回来了
+    #[serde(default)]
+    approval_mode: String,
 }
 
 /// 磁盘上的六个开关。和 `hands_policy::Hands` 分开：那份不引 serde
@@ -162,12 +167,18 @@ pub struct HandsSettings {
     pub mcp: bool,
     #[serde(default)]
     pub workspace: String,
+    /// `ask` / `auto` / `readonly`。和六个开关**同一份载荷走**：它决定工具表、
+    /// 提示词与这里的执行，三处必须同源（0003 §3）
+    #[serde(default)]
+    pub approval_mode: String,
 }
 
-/// 命令执行侧要的那一份：能力组 + 工作目录
+/// 命令执行侧要的那一份：能力组 + 工作目录 + 审批档
 pub(crate) struct HandsState {
     pub hands: hands_policy::Hands,
     pub workspace: String,
+    /// 已经归一化过的三个字面量之一（`hands_policy::normalize_approval`）
+    pub approval: &'static str,
 }
 
 fn settings_of(config: &AssistantConfig) -> HandsSettings {
@@ -179,6 +190,7 @@ fn settings_of(config: &AssistantConfig) -> HandsSettings {
         input: config.hands.input,
         mcp: config.hands.mcp,
         workspace: config.workspace.clone(),
+        approval_mode: hands_policy::normalize_approval(&config.approval_mode).to_string(),
     }
 }
 
@@ -189,6 +201,7 @@ pub(crate) fn hands_state(app: &AppHandle) -> HandsState {
     HandsState {
         hands: config.hands.to_policy(),
         workspace: config.workspace.clone(),
+        approval: hands_policy::normalize_approval(&config.approval_mode),
     }
 }
 
@@ -202,6 +215,8 @@ pub fn assistant_hands_save(app: AppHandle, hands: HandsSettings) -> Result<Hand
     let mut config = read_config(&app);
     config.hands = HandsFile::from_settings(&hands);
     config.workspace = hands.workspace.trim().to_string();
+    // 认不出来的档一律落成 `ask`（`normalize_approval` 只有这一个方向）
+    config.approval_mode = hands_policy::normalize_approval(&hands.approval_mode).to_string();
     normalize(&mut config);
     write_config(&app, &config)?;
     Ok(settings_of(&config))
@@ -456,6 +471,9 @@ fn migrate_legacy(value: &serde_json::Value) -> AssistantConfig {
 /// 归一化：坏档逐条丢、名字补上、active 不能悬空。**原地改，不写盘**。
 fn normalize(config: &mut AssistantConfig) {
     config.version = 3;
+    // 空串、大小写、拼错一律落成 `ask`：老文件里没有这个键（读了就是空串），
+    // 升级上来的用户默认仍然是"写之前问一句"
+    config.approval_mode = hands_policy::normalize_approval(&config.approval_mode).to_string();
 
     let mut seen: Vec<String> = Vec::new();
     config.profiles.retain_mut(|profile| {

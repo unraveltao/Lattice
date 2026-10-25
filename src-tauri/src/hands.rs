@@ -145,7 +145,7 @@ fn status_of(reply: &str) -> u16 {
         return 200;
     }
     match value.get("code").and_then(Value::as_str).unwrap_or("") {
-        "disabled" | "denied" => 403,
+        "disabled" | "denied" | "readonly" => 403,
         "" => 500,
         _ => 400,
     }
@@ -219,6 +219,16 @@ fn run(app: &AppHandle, name: &str, raw_args: &str, cancel: Arc<AtomicBool>) -> 
             "disabled",
             format!(
                 "the \"{group}\" capability is switched off in Assistant settings, so this tool is not available"
+            ),
+        );
+    }
+    // 只读档的第二道闸（0003 §3）。前端那张表已经把这些工具裁掉了，这里是
+    // "一次渲染进程的 bug 不该变成一条写盘命令"的那一条
+    if hands_policy::readonly_blocks(state.approval, name) {
+        return fail(
+            "readonly",
+            format!(
+                "the assistant is in read-only mode, so \"{name}\" is not available — change the approval mode in Assistant settings first"
             ),
         );
     }

@@ -26,7 +26,7 @@
 | v0.8 | Agent 接入 | 🟡 进行中 | 默认关的回环端点：只绑 127.0.0.1、令牌、审计日志、8 个白名单动作（读日志用 `npm run agent -- state`）；还差一次 CLI 往返的真机验收 |
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
-| v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的**会话与观察已落地**（`assistant-sessions/<id>.json` 一条会话一个文件，50 份 / 200 条 / 1 MB 三道额度，面板顶部一条能挑回 / 新开 / 删的会话条，提示词里补了组件说明首句与商店那一段），剩下的只有 `approvalMode` 三档与 B 数据平面 |
+| v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的**会话与观察已落地**（`assistant-sessions/<id>.json` 一条会话一个文件，50 份 / 200 条 / 1 MB 三道额度，面板顶部一条能挑回 / 新开 / 删的会话条，提示词里补了组件说明首句与商店那一段），**审批档也落了**（`approvalMode` 三档 `ask` / `auto` / `readonly`，`readonly` 连 schema 都不给、Rust 再拒一次，`auto` 仍然问删除），剩下的只有 B 数据平面 |
 
 **当前规模**（截至本次改动，2026-10-25）：
 
@@ -350,7 +350,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **增量只用来画**：`lattice:llm-delta` 带 `requestId`（广播，不变量 9），前端只在气泡里滚字；权威结果是命令的返回值，最后覆盖整条气泡。所以"拼增量拼错了"最多闪一下，不会留下一句错话。
   - **工具参数按 `index` 累加**，拼完整才解析；用户按停止时**不再执行任何工具** —— 半截参数要么解析失败，要么更糟：解析成功但少一个字段，模型会拿错的值去改桌面。
   - 代价照旧：分片节奏只有真机算数（`cargo test` 在本机跑不了），所以纯逻辑先在 `llm_policy.rs` 钉住 23 条（半包 / 多字节 / `[DONE]` / 坏帧 / 多档位累加），传输层靠真机验一次。
-- [ ] **agent 加纪律，手不扩**（[`design/0003-agent-discipline.md`](./design/0003-agent-discipline.md)）—— 会话落 `assistant-sessions/`（关掉应用还能接着聊）、审批默认 `ask` 只拦不可逆动作、每轮 token / 墙钟上限、提示词补一段"装了哪些组件、它们怎么用"。**装组件、卸组件、授权、写存储仍然不进工具表**：那等于让一段提示词替用户点"信任这把新钥匙"（不变量 15 / 8）。**这一版只落了一半**：审批档与三道预算被下面 0004 的 P1 吸收并扩成"按能力组开关 + 写/跑必问"；**会话与观察已于 2026-10-25 落地**（`assistant-sessions/<id>.json` 一条会话一个文件、面板顶部那条会话条、提示词里组件说明首句与商店一段），题面里的"审批默认 `ask`"改由 0003 §3 的 `approvalMode` 三档接手，**那一档还没做**。
+- [ ] **agent 加纪律，手不扩**（[`design/0003-agent-discipline.md`](./design/0003-agent-discipline.md)）—— 会话落 `assistant-sessions/`（关掉应用还能接着聊）、审批默认 `ask` 只拦不可逆动作、每轮 token / 墙钟上限、提示词补一段"装了哪些组件、它们怎么用"。**装组件、卸组件、授权、写存储仍然不进工具表**：那等于让一段提示词替用户点"信任这把新钥匙"（不变量 15 / 8）。**这一版只落了一半**：审批档与三道预算被下面 0004 的 P1 吸收并扩成"按能力组开关 + 写/跑必问"；**会话与观察已于 2026-10-25 落地**（`assistant-sessions/<id>.json` 一条会话一个文件、面板顶部那条会话条、提示词里组件说明首句与商店一段），题面里的"审批默认 `ask`"由 0003 §3 的 `approvalMode` 三档接上（`ask` / `auto` / `readonly`，默认 `ask`）。
 - [x] **给 assistant 一双手，落 P1–P6**（[`design/0004-agent-hands.md`](./design/0004-agent-hands.md)）—— 用户要的是"和其他 agent 一样：读文件、跑代码、上网、调外部服务、动屏幕"。六期全落地（纪律 / 文件 / 命令 / 网页 / 屏幕与键鼠 / MCP）—— 最后那期"调各种外部服务"就是 P6，`mcp.json` 里配一条服务，它的工具就出现在工具表里：
   - **两条执行器通道，永不合并**：桌面动作仍是 `AGENT_ACTIONS` + `runAgentAction`（8 个别名），新的手走 `runtime/hands.ts` → Rust `assistant_tool`；`handGroup(name)` 非空就是后者。`toolsFor("widget")` 里一条新手都没有 —— 组件那侧的手不扩。
   - **能力组默认全关**，`assistant.json` 升 v3（`{version: 3, activeId, hands, workspace, profiles[]}`），v1 就地升级成一条档、**手落成全关**。开一组 = 把那一组的 schema 递给模型，同时 Rust 独立再判一次（前端开关不是安全边界）。
@@ -371,7 +371,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **一次调用一条连接，不复用**：省掉"连接池 + 谁负责重启 + 半死连接怎么判"三个问题；代价写明 —— stdio 的 `npx` 服务每次调用都要重付一次启动（几秒），慢但不会错。额度：握手 30s、调用 120s、返回文本 40k 字、描述 300 字、`tools/list` 缓存一份。
   - **MCP 一律问，而且没有沙箱**：`mcp.*` 全部走审批（`needsApproval` 认前缀），因为服务器是用户自己配的可执行文件、跑起来之后平台关不住它 —— 没有文件、网络、命令那三道收窄，`AGENTS.md` §7 第 15 条把这条写作承诺而不是缺口。审计只记工具名本身（哪台服务、哪个工具），不记参数、不记返回。
   - 验证：`tests/hands.html` **97 条**（P1 建、P5 补、P6 补）、`tests/assistant.html` 122 条、`input_policy.rs` 23 + `screen_policy.rs` 21 + `web_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9 条 `rustc --test`、`mcp_policy.rs` 17 条 `rustc --test`、全量自检 **46 页 / 1 981 条 / 0 failed**。`hands.rs` 那 7 条与 `mcp.rs` 那 8 条只有 `cargo test` 跑得了（本机跑不了）。**真机还没走**：读一个中文路径的文件、`echo 你好`、`Deny` 之后磁盘没变化、Stop 之后子进程真的没了、取一个真页面并跟一次 302、列一次窗口、在一张空白画布上点一下再 `Ctrl+S`；P6 再走一条：`npx -y @modelcontextprotocol/server-filesystem D:\` 存进 `mcp.json`、点 Refresh 看到工具、真调一个（列一次目录）、`Deny` 之后什么都没发生 —— 记在 `AGENTS.md` §8。
-- 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P6 全落了 —— **六只手到这里齐全**；0003 的会话与观察随后也落了（会话落盘 + 提示词里的观察段）。接下来是 0003 §3 剩下的 `approvalMode` 三档（`ask` / `auto` / `readonly`）与 B 数据平面（组件把能力声明成工具），以及 P6 留下的几条实用缺口：HTTP 服务的 OAuth / 自定义头、websocket 传输、连接复用（现在一次调用一条连接，`npx` 那类服务首调慢几秒）。
+- 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P6 全落了 —— **六只手到这里齐全**；0003 的会话、观察与审批三档随后也落了（会话落盘 + 提示词里的观察段 + `approvalMode`）。接下来是 B 数据平面（组件把能力声明成工具），以及 P6 留下的几条实用缺口：HTTP 服务的 OAuth / 自定义头、websocket 传输、连接复用（现在一次调用一条连接，`npx` 那类服务首调慢几秒）。
 
 ## 长期要盯的风险
 

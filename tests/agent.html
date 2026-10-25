@@ -48,7 +48,7 @@
 
       // ---- 夹具 ----
 
-      const record = (id, size = {}) => ({
+      const record = (id, size = {}, help = { sections: [] }) => ({
         manifest: {
           id,
           name: id.split(".").pop(),
@@ -56,6 +56,7 @@
           size: { w: 240, h: 140, minW: 160, minH: 110, ...size },
           layer: "desktop",
           permissions: ["clock"],
+          help,
         },
         source: "builtin",
         dir: "",
@@ -63,7 +64,14 @@
         iconUrl: null,
       });
 
-      const records = [record("lattice.clock"), record("lattice.todo", { minW: 200, minH: 150 })];
+      const records = [
+        record("lattice.clock", {}, {
+          sections: [
+            { title: "How to use", items: ["Tap the clock to switch between 12 and 24 hour time."] },
+          ],
+        }),
+        record("lattice.todo", { minW: 200, minH: 150 }),
+      ];
 
       const reset = (patch = {}) =>
         useLattice.setState({
@@ -109,6 +117,12 @@
       eq(snap.widgets.length, 2, "快照列出所有能装的组件");
       eq(snap.widgets[0].installed, true, "已装的标 installed");
       eq(snap.actions.length, 8, "快照自己告诉 agent 有哪些动作");
+      eq(
+        snap.widgets[0].about,
+        "Tap the clock to switch between 12 and 24 hour time.",
+        "快照带作者写的第一句说明（模型据此回答「能设成上海吗」）",
+      );
+      eq(snap.widgets[1].about, "", "没写说明的组件 about 是空串 —— 不替作者编一句");
       ok(
         !JSON.stringify(snap).includes("storage"),
         "快照里不该出现组件存储 —— 那是用户的内容，不是布局",

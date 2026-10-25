@@ -83,8 +83,10 @@ export async function setAgentEnabled(enabled: boolean): Promise<AgentStatus> {
  * 空串 = 这个组件没写说明。**不编一句**：给模型一句我们拼的说明，它就分不清
  * 哪句是作者说的、哪句是平台猜的，最后会照着猜的去用组件。
  */
-function firstAbout(help: WidgetHelp): string {
-  const first = help.sections[0]?.items[0];
+function firstAbout(help: WidgetHelp | undefined): string {
+  // 清单里的 `help` 是可选的；归一化过的 record 一定带（空数组），但快照也会被
+  // 测试夹具和将来的调用方拿裸清单来喂 —— 一个组件没写说明，不该让整份快照拿不到。
+  const first = help?.sections[0]?.items[0];
   return first ? pickText(first).trim() : "";
 }
 

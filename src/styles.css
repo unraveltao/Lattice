@@ -3745,6 +3745,12 @@ button.lattice-chip[aria-pressed="true"] {
   color: var(--lattice-text);
 }
 
+/* 审批档：三个开关样子的按钮，同一时刻只亮一个（`is-primary`） */
+.lattice-approval-modes {
+  display: flex;
+  gap: 8px;
+}
+
 .lattice-hand-row {
   display: flex;
   gap: 8px;

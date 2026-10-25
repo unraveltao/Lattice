@@ -44,12 +44,16 @@ import {
   type ToolSpec,
 } from "../runtime/assistant";
 import {
+  APPROVAL_LABELS,
+  APPROVAL_MODES,
   HAND_GROUPS,
   HAND_LABELS,
   HAND_READY,
   HANDS_OFF,
   mcpToolSpecs,
+  normalizeApproval,
   splitCommandLine,
+  type ApprovalMode,
   type HandGroup,
   type HandsSettings,
   type McpServer,
@@ -157,7 +161,11 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
    * 用户不管它，模型就一直等着 —— 所以确认条必须贴在输入框上面，
    * 不能是一个会自己消失的提示
    */
-  const [approval, setApproval] = useState<{ name: string; detail: string; group: HandGroup } | null>(
+  const [approval, setApproval] = useState<{
+    name: string;
+    detail: string;
+    group: HandGroup | null;
+  } | null>(
     null,
   );
   const approvalResolve = useRef<((allowed: boolean) => void) | null>(null);
@@ -524,10 +532,32 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     [hands],
   );
 
+  /** 换审批档并落盘。和拨开关同一条规矩：先落盘再更新界面 */
+  const setApprovalMode = useCallback(
+    async (mode: ApprovalMode) => {
+      const next = { ...hands, approvalMode: mode };
+      setHands(next);
+      try {
+        const saved = await saveHands(next);
+        setHands(saved);
+      } catch (problem) {
+        setHands(hands);
+        setError(String(problem instanceof Error ? problem.message : problem));
+      }
+    },
+    [hands],
+  );
+
   const turnAllOff = useCallback(async () => {
     // 「一键关掉」== 关掉并且当场叫停这一轮：用户按下它的时候，
-    // 大概率正是看见某条命令不对
-    const next = { ...HANDS_OFF, workspace: hands.workspace };
+    // 大概率正是看见某条命令不对。
+    // **审批档要留着**：它管的不只是手（`readonly` 连桌面动作都挡），
+    // 借这一下把它松回 `ask` 等于"关手"顺手开了另一扇门
+    const next = {
+      ...HANDS_OFF,
+      workspace: hands.workspace,
+      approvalMode: normalizeApproval(hands.approvalMode),
+    };
     setHands(next);
     stopFlag.current = true;
     void cancelActiveTurn();
@@ -538,7 +568,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     } catch (problem) {
       setError(String(problem instanceof Error ? problem.message : problem));
     }
-  }, [hands.workspace]);
+  }, [hands.workspace, hands.approvalMode]);
 
   const setWorkspace = useCallback(
     async (value: string) => {
@@ -673,8 +703,31 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
                 {t("Turn all off")}
               </button>
             </header>
+            {/*
+              审批档放在组开关**上面**：它说的是"接上之后要不要点头"，
+              先有它再看下面六组，读起来才对。三档不是三个开关 —— 同一时刻只有一档
+              （0003 §3）
+            */}
+            <div className="lattice-approval-modes" role="group" aria-label={t("Approval")}>
+              {APPROVAL_MODES.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`lattice-btn is-small${
+                    normalizeApproval(hands.approvalMode) === mode ? " is-primary" : ""
+                  }`}
+                  aria-pressed={normalizeApproval(hands.approvalMode) === mode}
+                  onClick={() => void setApprovalMode(mode)}
+                >
+                  {t(APPROVAL_LABELS[mode].label)}
+                </button>
+              ))}
+            </div>
             <p className="lattice-assistant-hint">
-              {t("Nothing is on by default. Reading files and fetching pages run without asking; writing, commands and clicks always ask you first.")}
+              {t(APPROVAL_LABELS[normalizeApproval(hands.approvalMode)].hint)}
+            </p>
+            <p className="lattice-assistant-hint">
+              {t("Nothing is on by default. A group has to be turned on before its tools exist at all.")}
             </p>
             {HAND_GROUPS.map((group) => (
               <label

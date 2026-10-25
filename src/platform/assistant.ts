@@ -14,6 +14,7 @@ import { listen } from "@tauri-apps/api/event";
 
 import {
   MAX_STEPS,
+  approvalFor,
   compactSnapshot,
   describeToolCall,
   parseArguments,
@@ -31,7 +32,6 @@ import {
   HANDS_OFF,
   approvalSummary,
   handGroup,
-  needsApproval,
   overBudget,
   MAX_TURN_TOKENS,
   MAX_TURN_MS,
@@ -293,7 +293,8 @@ export interface ApprovalRequest {
   args: Record<string, unknown>;
   /** 路径 / 命令 / 坐标 —— 用户点 Allow 之前必须看得懂的那一行 */
   detail: string;
-  group: HandGroup;
+  /** 哪一组手。`null` = 桌面动作（今天只有 `placement.remove` 会问到这里） */
+  group: HandGroup | null;
 }
 
 /** `true` 才执行。抛异常按"拒绝"处理（宁可少做，也不要带着未知状态往下跑） */
@@ -407,11 +408,7 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
 
       if (!parsed.ok) {
         result = { ok: false, code: "bad_args", error: parsed.error };
-      } else if (!group) {
-        // 桌面动作：走 surface（主窗口本地跑，小窗 IPC 转给主窗口）。
-        // 循环不需要知道区别 —— 它只要一个 `AgentReply`
-        result = await surface.act(call.name, parsed.value);
-      } else if (!active[group]) {
+      } else if (group && !active[group]) {
         // 开关关着，而模型还是调了：前端没把 schema 给它时不该发生，
         // 但真发生了就要说清楚，别让它以为"工具坏了"
         result = {
@@ -419,22 +416,44 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
           code: "disabled",
           error: t("The {group} capability is switched off in Assistant settings.", { group }),
         };
-      } else if (needsApproval(call.name)) {
-        // **审批必须在执行之前** await。放在之后等于"先删了再问"（0003 §5）
-        const detail = approvalSummary(call.name, parsed.value);
-        const allowed = approve
-          ? await approve({ name: call.name, args: parsed.value, detail, group })
-          : false;
-        if (shouldStop?.()) return false;
-        result = allowed
-          ? await runHand(call.name, parsed.value)
-          : {
+      } else {
+        // 审批（0003 §3）：`allow` 直接跑，`ask` 先问，`deny` 连执行器都不碰。
+        // **必须在执行之前** await —— 放在之后等于"先删了再问"（0003 §5）。
+        // 桌面动作和手走同一个裁决：`placement.remove` 是唯一会问的桌面动作，
+        // 它在 `auto` 档也仍然问（`DANGEROUS_ACTIONS`）
+        const gate = approvalFor(call.name, active.approvalMode);
+        if (gate === "deny") {
+          result = {
+            ok: false,
+            code: "readonly",
+            error: t("Read-only mode is on, so {name} is not available. Tell the user where to change it.", {
+              name: call.name,
+            }),
+          };
+        } else if (gate === "ask") {
+          const detail = approvalSummary(call.name, parsed.value);
+          const allowed = approve
+            ? await approve({ name: call.name, args: parsed.value, detail, group })
+            : false;
+          if (shouldStop?.()) return false;
+          if (!allowed) {
+            result = {
               ok: false,
               code: "denied",
               error: "the user declined this action — do not retry it; ask what they want instead",
             };
-      } else {
-        result = await runHand(call.name, parsed.value);
+          } else {
+            result = group
+              ? await runHand(call.name, parsed.value)
+              : await surface.act(call.name, parsed.value);
+          }
+        } else {
+          // 桌面动作走 surface（主窗口本地跑，小窗 IPC 转给主窗口）。
+          // 循环不需要知道区别 —— 它只要一个 `AgentReply`
+          result = group
+            ? await runHand(call.name, parsed.value)
+            : await surface.act(call.name, parsed.value);
+        }
       }
 
       onEvent({

@@ -141,8 +141,23 @@ export const ASSISTANT_ZH: Record<string, string> = {
   // —— 手：设置面板里的六组开关（0004）——
   "What it may do": "它能做什么",
   "Turn all off": "全部关掉",
-  "Nothing is on by default. Reading files and fetching pages run without asking; writing, commands and clicks always ask you first.":
-    "默认全关。读文件和抓网页不问；写文件、跑命令、点按一定会先问你。",
+  "Nothing is on by default. A group has to be turned on before its tools exist at all.":
+    "默认全关。得先把一组打开，那一组工具才会存在。",
+
+  // —— 审批档：三选一（0003 §3）——
+  Approval: "审批档",
+  Ask: "每次确认",
+  Automatic: "自动",
+  "Read-only": "只读",
+  "Writes, commands and clicks wait for you. Reads run straight away.":
+    "写文件、跑命令、点键鼠都会等你点头；读的那几只直接用。",
+  "Nothing asks except removing a widget — the one step that cannot be undone.":
+    "除了删除组件（那一步撤不回来），别的都不问。",
+  "Writing tools are not even offered. It can look and talk, nothing else.":
+    "会改东西的工具根本不给它。它只能看和说。",
+  "Read-only mode is on, so {name} is not available. Tell the user where to change it.":
+    "现在是只读档，{name} 用不了。告诉用户去哪儿改。",
+  "Remove the widget {instanceId}": "删掉组件 {instanceId}",
   Files: "文件",
   "Read, list and search files anywhere; writing needs your approval.":
     "随便读、列、搜；要写就得你点头。",

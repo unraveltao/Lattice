@@ -48,6 +48,7 @@
         WIDGET_DENIED_ACTIONS,
         aboutLine,
         allTools,
+        approvalFor,
         compactSnapshot,
         describeToolCall,
         normalizeAskMessages,
@@ -60,6 +61,7 @@
         trimHistory,
       } from "../src/runtime/assistant.ts";
       import { AGENT_ACTIONS } from "../src/platform/agent.ts";
+      import { APPROVAL_MODES, HANDS_OFF, normalizeApproval } from "../src/runtime/hands.ts";
 
       const lines = [];
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
@@ -455,6 +457,66 @@
         normalizeAskMessages(parseAskMessages(JSON.stringify([{ role: "user", content: "挪一下" }]))).ok,
         "解析之后再 normalize 才是能跑的路径（这一条钉的正是真机那个坑）",
       );
+
+      // ---- 0003 §3：审批档三档 ----
+      //
+      // 三档的判据只有一句话，但它决定三样东西：给模型什么工具、提示词怎么说、
+      // 以及这一步到底跑不跑。三处不同源的症状是"它调了一个提示里说做不到的工具"，
+      // 或者更糟："只读档里它居然改了桌面"。
+
+      eq(APPROVAL_MODES, ["ask", "auto", "readonly"], "三档的名字就是磁盘上那三个字面量");
+      eq(normalizeApproval("ReadOnly"), "readonly", "档名大小写不算区别");
+      eq(normalizeApproval("  auto "), "auto", "前后空白不算区别");
+      for (const junk of ["", "yes", "read-only", "off", "auto2"]) {
+        eq(normalizeApproval(junk), "ask", `认不出来的档一律退回 ask（${JSON.stringify(junk)}）`);
+      }
+
+      eq(approvalFor("file.read", "ask"), "allow", "ask 档：读直接放行");
+      eq(approvalFor("file.write", "ask"), "ask", "ask 档：写要点头");
+      eq(approvalFor("placement.remove", "ask"), "ask", "ask 档：删组件要点头");
+      eq(approvalFor("file.write", "auto"), "allow", "auto 档：写不问");
+      eq(approvalFor("shell.run", "auto"), "allow", "auto 档：命令不问");
+      eq(approvalFor("placement.remove", "auto"), "ask", "auto 档：删组件**仍然**问（那一步撤不回来）");
+      eq(approvalFor("file.read", "readonly"), "allow", "只读档：读放行");
+      eq(approvalFor("file.write", "readonly"), "deny", "只读档：写是**拒**不是问（再问一次等于把设置当建议）");
+      eq(approvalFor("placement.remove", "readonly"), "deny", "只读档：桌面动作也拒");
+      eq(approvalFor("mcp.a.b", "readonly"), "deny", "只读档：外部服务的工具一律拒");
+
+      eq(Object.keys(toolsFor("platform", "readonly")), [], "只读档：桌面动作一个都不留（八个全都改状态）");
+      eq(
+        Object.keys(toolsFor("platform", "auto")).sort(),
+        Object.keys(TOOL_SPECS).sort(),
+        "auto 档的桌面表和默认一样（它靠裁决挡，不靠裁表）",
+      );
+      ok(
+        !Object.keys(toolsFor("widget", "readonly")).includes("placement.move"),
+        "只读档对组件借手那条路同样生效",
+      );
+
+      const roHands = { ...HANDS_OFF, files: true, shell: true, input: true, approvalMode: "readonly" };
+      const roTable = allTools("platform", roHands);
+      ok(!("file.write" in roTable), "只读档：写文件不在表里");
+      ok(!("shell.run" in roTable), "只读档：跑命令不在表里");
+      ok(!("input.click" in roTable), "只读档：点键鼠不在表里");
+      ok("file.read" in roTable, "只读档：读文件还在");
+      // 表里剩下的每一个都必须裁决为 allow，否则会出现"给了却调不动"
+      for (const name of Object.keys(roTable)) {
+        eq(approvalFor(name, "readonly"), "allow", `只读档的表里 ${name} 是能跑的`);
+      }
+
+      const roPrompt = systemPrompt("{}", { hands: roHands, tools: roTable });
+      ok(roPrompt.includes("只读档"), "只读档的提示词自己说了现在是只读");
+      ok(!roPrompt.includes("shell.run"), "只读档的提示词不提跑命令（表和话同源）");
+      ok(!roPrompt.includes("file.write"), "只读档的提示词不提写文件");
+      ok(!roPrompt.includes("每次都要点头"), "只读档不说「每次点头」这种做不到的话");
+
+      const autoHands = { ...HANDS_OFF, files: true, input: true, approvalMode: "auto" };
+      const autoPrompt = systemPrompt("{}", { hands: autoHands, tools: allTools("platform", autoHands) });
+      ok(!autoPrompt.includes("每次都要点头"), "auto 档不再声称每次都要点头");
+      ok(autoPrompt.includes("自动档"), "auto 档明说现在是自动档");
+      const askHands = { ...HANDS_OFF, files: true };
+      const askPrompt = systemPrompt("{}", { hands: askHands, tools: allTools("platform", askHands) });
+      ok(askPrompt.includes("用户要当场点头"), "ask 档照旧写明写文件要点头");
 
       // ---- 0004：手与循环的上限 ----
 

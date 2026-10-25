@@ -75,6 +75,28 @@ pub fn needs_approval(name: &str) -> bool {
     }
 }
 
+/// 审批档（0003 §3）。**磁盘上就这三个字符串**，别再加别名
+pub const APPROVAL_MODES: [&str; 3] = ["ask", "auto", "readonly"];
+
+/// 认不出来一律退回 `ask`。方向是故意的：多问一次是麻烦，少问一次是事故
+/// （和 `needs_approval` 对陌生名字返回 `true` 同一条理由）
+pub fn normalize_approval(raw: &str) -> &'static str {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "auto" => "auto",
+        "readonly" => "readonly",
+        _ => "ask",
+    }
+}
+
+/// 只读档该不该拒掉这一次调用。
+///
+/// 判据**只有一句**：只读档拦的正是 `needs_approval` 为真的那些。前端
+/// `approvalFor` 用的是同一句 —— 两边各自维护一份名单，迟早一边漏一个工具，
+/// 而漏的那一边正好是"不拦"。
+pub fn readonly_blocks(mode: &str, name: &str) -> bool {
+    mode == "readonly" && needs_approval(name)
+}
+
 /// `mcp.<server>.<tool>` 的形状：两段小写名字，各 1..=32 / 1..=48 字。
 ///
 /// 卡这么死的理由是它要当成**工具名**发给模型，而工具名同时是审计日志里的键：
@@ -232,5 +254,50 @@ mod tests {
         assert!(!hands.enabled("everything"));
         assert!(!hands.enabled(""));
         assert!(!hands.none());
+    }
+
+    #[test]
+    fn approval_modes_normalize_loosely() {
+        assert_eq!(normalize_approval("ask"), "ask");
+        assert_eq!(normalize_approval("auto"), "auto");
+        assert_eq!(normalize_approval("readonly"), "readonly");
+        // 大小写与空白都算同一个人写的
+        assert_eq!(normalize_approval(" Auto "), "auto");
+        assert_eq!(normalize_approval("READONLY"), "readonly");
+        assert_eq!(normalize_approval("ReadOnly"), "readonly");
+    }
+
+    #[test]
+    fn a_typo_falls_back_to_asking() {
+        // 退回 `auto` 就是一次静默提权，所以这里的默认值只有一个方向
+        for raw in ["", "  ", "yes", "read-only", "read_only", "off", "no", "1"] {
+            assert_eq!(normalize_approval(raw), "ask", "{raw} should fall back to ask");
+        }
+    }
+
+    #[test]
+    fn only_the_three_modes_exist() {
+        // 三个字面量是磁盘上的值，也是界面上那三个按钮 —— 加第四个要同时改
+        // `runtime/hands.ts` 的 `APPROVAL_MODES` 和面板
+        assert_eq!(APPROVAL_MODES, ["ask", "auto", "readonly"]);
+        for mode in APPROVAL_MODES {
+            assert_eq!(normalize_approval(mode), mode);
+        }
+    }
+
+    #[test]
+    fn readonly_blocks_exactly_the_writes() {
+        // 判据只有一句：只读档拦的正是 `needs_approval` 为真的那些
+        assert!(readonly_blocks("readonly", "file.write"));
+        assert!(readonly_blocks("readonly", "shell.run"));
+        assert!(readonly_blocks("readonly", "input.click"));
+        assert!(readonly_blocks("readonly", "mcp.github.list_issues"));
+        assert!(!readonly_blocks("readonly", "file.read"));
+        assert!(!readonly_blocks("readonly", "web.fetch"));
+        // 另外两档一律不拦 —— `ask` 是"问"，问在执行前，不在 Rust 这层
+        for mode in ["ask", "auto"] {
+            assert!(!readonly_blocks(mode, "file.write"));
+            assert!(!readonly_blocks(mode, "shell.run"));
+        }
     }
 }

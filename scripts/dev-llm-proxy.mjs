@@ -56,6 +56,17 @@ const CHAT_TIMEOUT_MS = 180_000;
 /** 六个开关的名字，顺序和 `HandsSettings` 一致 */
 const HANDS_KEYS = ["files", "shell", "web", "screen", "input", "mcp"];
 
+/** 三档审批，顺序和 `hands_policy::APPROVAL_MODES` 一致 */
+const APPROVAL_MODES = ["ask", "auto", "readonly"];
+
+/** 认不出来一律退回 `ask`：多问一次是麻烦，少问一次是事故 */
+export function normalizeApprovalMode(raw) {
+  const text = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  return APPROVAL_MODES.includes(text) ? text : "ask";
+}
+
 const DEFAULT_TEMPERATURE = 0.6;
 
 /** 预期内的失败。catch 到它就回 400，其余一律 500（那是这个中间件自己的 bug） */
@@ -456,6 +467,7 @@ export function emptyConfig() {
     activeId: "",
     hands: { files: false, shell: false, web: false, screen: false, input: false, mcp: false },
     workspace: "",
+    approvalMode: "ask",
     profiles: [],
   };
 }
@@ -540,6 +552,8 @@ export function normalizeConfig(config) {
   next.hands = {};
   for (const key of HANDS_KEYS) next.hands[key] = hands[key] === true;
   next.workspace = String(next.workspace ?? "").trim();
+  // 审批档：空串 / 拼错一律落成 `ask`（和 `hands_policy::normalize_approval` 同一句）
+  next.approvalMode = normalizeApprovalMode(next.approvalMode);
   return next;
 }
 
@@ -561,6 +575,9 @@ export function parseConfig(text) {
   if (Array.isArray(value.profiles)) {
     config.activeId = String(value.activeId ?? "");
     config.workspace = String(value.workspace ?? "");
+    // 逐个字段搬：漏一个的症状是"刚存下的设置读回来是默认值"。`normalizeConfig`
+    // 只负责归一化，它不会替你把漏掉的字段补成文件里的那份
+    config.approvalMode = value.approvalMode;
     config.profiles = value.profiles;
     config.hands = value.hands;
     config.version = 3;
@@ -663,7 +680,11 @@ export function views(config, env = process.env) {
 }
 
 export function settingsOf(config) {
-  return { ...config.hands, workspace: config.workspace };
+  return {
+    ...config.hands,
+    workspace: config.workspace,
+    approvalMode: normalizeApprovalMode(config.approvalMode),
+  };
 }
 
 function nowMillis() {
@@ -815,6 +836,7 @@ function saveHands(body, env) {
   for (const key of HANDS_KEYS) hands[key] = incoming[key] === true;
   config.hands = hands;
   config.workspace = String(incoming.workspace ?? "").trim();
+  config.approvalMode = normalizeApprovalMode(incoming.approvalMode);
   writeConfig(config, env);
   return settingsOf(config);
 }

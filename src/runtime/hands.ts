@@ -19,6 +19,27 @@ import { t } from "./i18n";
 export const HAND_GROUPS = ["files", "shell", "web", "screen", "input", "mcp"] as const;
 export type HandGroup = (typeof HAND_GROUPS)[number];
 
+/**
+ * 审批档（0003 §3）。三档一句话：
+ *   - `ask`（默认）：会改东西的每一次都点一次头 —— 写文件、跑命令、点键鼠、删组件
+ *   - `auto`：不问，但**不可逆的仍然问**（`DANGEROUS_ACTIONS`，今天只有删除）
+ *   - `readonly`：改东西的工具**连 schema 都不给**，Rust 那边再拒一次
+ *
+ * 它和六个能力组开关是两件事：开关说的是"这只手接不接上"，档说的是
+ * "接上之后要不要点头"。拨着 `ask` 但六组全关，等于一只手动不了。
+ */
+export const APPROVAL_MODES = ["ask", "auto", "readonly"] as const;
+export type ApprovalMode = (typeof APPROVAL_MODES)[number];
+
+/**
+ * 认不出来一律退回 `ask`。**方向是故意的**：多问一次是麻烦，少问一次是事故
+ * （和 `needsApproval` 对陌生名字返回 `true` 同一条理由）
+ */
+export function normalizeApproval(raw: unknown): ApprovalMode {
+  const text = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  return (APPROVAL_MODES as readonly string[]).includes(text) ? (text as ApprovalMode) : "ask";
+}
+
 /** 和 Rust 的 `HandsSettings` 一字不差（`assistant_hands` / `assistant_hands_save`） */
 export interface HandsSettings {
   files: boolean;
@@ -29,6 +50,8 @@ export interface HandsSettings {
   mcp: boolean;
   /** 相对路径与命令默认落脚的目录。**不是围栏**（读可以全盘），只是默认值 */
   workspace: string;
+  /** 审批档。**跟开关同一份载荷走**：它决定工具表、提示词和执行，三处必须同源 */
+  approvalMode: ApprovalMode;
 }
 
 /** 一条手都没开。新装与升级上来的用户都是这个状态 */
@@ -40,6 +63,7 @@ export const HANDS_OFF: HandsSettings = {
   input: false,
   mcp: false,
   workspace: "",
+  approvalMode: "ask",
 };
 
 export function enabledGroups(hands: HandsSettings): HandGroup[] {
@@ -339,12 +363,18 @@ export function handsTools(
   extra: Record<string, ToolSpec> = {},
 ): Record<string, ToolSpec> {
   if (caller === "widget") return {};
+  const readonly = normalizeApproval(hands.approvalMode) === "readonly";
   const out: Record<string, ToolSpec> = {};
   for (const [name, spec] of Object.entries(HAND_SPECS)) {
     if (!hands[spec.group] || !HAND_READY[spec.group]) continue;
+    // 只读档：会改东西的那几只**连 schema 都不给**，理由和关掉一组一样 ——
+    // 递过去它就会反复调一个必定失败的工具，然后开始编"我做到了"。
+    // 裁决只用 `needsApproval` 一处，所以"表里剩下什么"和"提示里说能用什么"同源
+    if (readonly && needsApproval(name)) continue;
     out[name] = { description: spec.description, parameters: spec.parameters };
   }
-  if (hands.mcp && HAND_READY.mcp) {
+  // 外部服务的工具一律要点头（语义我们不知道），所以只读档一只都不给
+  if (hands.mcp && HAND_READY.mcp && !readonly) {
     for (const [name, spec] of Object.entries(extra)) {
       if (!mcpNameOk(name)) continue;
       out[name] = spec;
@@ -382,6 +412,25 @@ export const HAND_LABELS: Record<HandGroup, { label: string; hint: string }> = {
 };
 
 /**
+ * 三档审批在设置面板里那一行。和 `HAND_LABELS` 同一个形状、同一条规矩：
+ * 英文原句是 key，中文在 `runtime/i18n/assistant.ts`
+ */
+export const APPROVAL_LABELS: Record<ApprovalMode, { label: string; hint: string }> = {
+  ask: {
+    label: "Ask",
+    hint: "Writes, commands and clicks wait for you. Reads run straight away.",
+  },
+  auto: {
+    label: "Automatic",
+    hint: "Nothing asks except removing a widget — the one step that cannot be undone.",
+  },
+  readonly: {
+    label: "Read-only",
+    hint: "Writing tools are not even offered. It can look and talk, nothing else.",
+  },
+};
+
+/**
  * 提示词里"你手上有这些工具"那一段。
  *
  * 三条必须写进去，每条都对应一次真会发生的错：
@@ -395,11 +444,34 @@ export function handsPrompt(hands: HandsSettings): string[] {
   const on = readyGroups(hands);
   if (on.length === 0) return [];
   const has = (group: HandGroup) => on.includes(group);
+  const mode = normalizeApproval(hands.approvalMode);
 
+  // 只读档先说清楚"你没有改东西的工具"：`handsTools` 也是按 `needsApproval` 裁的，
+  // 两边同一处裁决，症状才对得上（"它能调，但提示里说它做不到"是反的）
+  if (mode === "readonly") {
+    const reads = Object.keys(HAND_SPECS)
+      .filter((name) => !needsApproval(name))
+      .filter((name) => {
+        const spec = HAND_SPECS[name];
+        return spec && hands[spec.group] && HAND_READY[spec.group];
+      });
+    return [
+      "",
+      "现在是**只读档**：你没有改东西的工具 —— 写文件、跑命令、点键鼠、删改组件都不在表里。",
+      reads.length > 0
+        ? `手上只有读的那几只：${reads.join(" / ")}。`
+        : "这一轮你手上没有任何工具，只能看快照和说话。",
+      "用户要你动手，就告诉他去 Assistant settings 把审批档改成「每次确认」或「自动」—— 那是一个勾选项，不是你绕得过去的限制。",
+    ];
+  }
+
+  const asks = mode === "ask";
   const lines = ["", "你手上有这些工具（只列已经打开的）："];
   if (has("files")) {
     lines.push(
-      "· 文件：file.list / file.read / file.search 随时可用；动手改之前先读一遍。file.write 会替换整个文件，用户要当场点头。",
+      asks
+        ? "· 文件：file.list / file.read / file.search 随时可用；动手改之前先读一遍。file.write 会替换整个文件，用户要当场点头。"
+        : "· 文件：file.list / file.read / file.search 随时可用；动手改之前先读一遍。file.write 会替换整个文件。",
     );
   }
   if (has("shell")) {
@@ -419,16 +491,28 @@ export function handsPrompt(hands: HandsSettings): string[] {
   }
   if (has("input")) {
     lines.push(
-      "· 输入：input.click / input.type / input.key 真的会动用户的鼠标键盘，每次都要点头。点之前先用 screen.windows 确认那个坐标上是什么。",
+      asks
+        ? "· 输入：input.click / input.type / input.key 真的会动用户的鼠标键盘，每次都要点头。点之前先用 screen.windows 确认那个坐标上是什么。"
+        : "· 输入：input.click / input.type / input.key 真的会动用户的鼠标键盘。点之前先用 screen.windows 确认那个坐标上是什么。",
     );
   }
   if (has("mcp")) {
     lines.push(
-      "· 外部服务：mcp.* 是用户自己装的服务器声明的工具，语义以服务器说明为准，每次调用都要点头。",
+      asks
+        ? "· 外部服务：mcp.* 是用户自己装的服务器声明的工具，语义以服务器说明为准，每次调用都要点头。"
+        : "· 外部服务：mcp.* 是用户自己装的服务器声明的工具，语义以服务器说明为准。",
+    );
+  }
+  if (asks) {
+    lines.push(
+      "写作、跑命令、点按都会被用户当场批准或拒绝。**被拒绝（code 为 denied）不是故障** —— 别绕道换一个工具偷偷做，直接问用户想怎么办。",
+    );
+  } else {
+    lines.push(
+      "现在是**自动档**：除了删除组件这类不可逆的动作，不再逐条问用户。所以更要先说清楚你要做什么、做完再说改了什么 —— 用户只能从结果里看出来。",
     );
   }
   lines.push(
-    "写作、跑命令、点按都会被用户当场批准或拒绝。**被拒绝（code 为 denied）不是故障** —— 别绕道换一个工具偷偷做，直接问用户想怎么办。",
     "这些工具跑在用户自己的机器上，你没有任何额外的隔离层。没把握的事先说清楚再动手。",
   );
   return lines;
@@ -463,6 +547,9 @@ export function approvalSummary(name: string, args: Record<string, unknown>): st
     }
     case "input.key":
       return t("Press {key}", { key: clip(text("key"), 40) });
+    case "placement.remove":
+      // 桌面动作里唯一要点头的那个（`auto` 档也问）：删掉 8 秒后就没得撤了
+      return t("Remove the widget {instanceId}", { instanceId: clip(text("instanceId"), 60) });
     default:
       if (name.startsWith("mcp.")) return t("Call {tool}", { tool: name });
       return name;
