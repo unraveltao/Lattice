@@ -27,7 +27,7 @@
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
 | v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的**会话与观察已落地**（`assistant-sessions/<id>.json` 一条会话一个文件，50 份 / 200 条 / 1 MB 三道额度，面板顶部一条能挑回 / 新开 / 删的会话条，提示词里补了组件说明首句与商店那一段），**审批档也落了**（`approvalMode` 三档 `ask` / `auto` / `readonly`，`readonly` 连 schema 都不给、Rust 再拒一次，`auto` 仍然问删除），**B 数据平面也落了**（组件清单加 `agent.tools`：工具名 `widget.<id>.<tool>`、多份实例合成一条、新权限 `agent:tools` 独立授权、答话的是画布那一份实例、回话超 4000 字符拒绝不截断；留了三处缺口，见下面那条） |
-| v0.12 | 技能包与工作区 | 📝 设计稿 | `workspace` 从"相对路径的默认值"变成"免问区"（只对 `file.write`）；技能是说明书不是权限 —— `skills/<id>/SKILL.md` 进提示词、四条命令、`assistant.json` v4；见 [design/0005](./design/0005-skills-and-workspace.md) |
+| v0.12 | 技能包、工作区与全权模式 | 📝 设计稿 | `workspace` 从"相对路径的默认值"变成"免问区"（只对 `file.write`）；技能是说明书不是权限 —— `skills/<id>/SKILL.md` 进提示词、四条命令、`assistant.json` v4；见 [design/0005](./design/0005-skills-and-workspace.md)；**全权**是一次会话级定时授权（六组临时全开、不落盘、红条倒计时、审计 fail-closed），不是第四档审批，见 [design/0006](./design/0006-full-access.md) |
 
 **当前规模**（截至本次改动，2026-10-25）：
 
@@ -374,13 +374,16 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - 验证：`tests/hands.html` **97 条**（P1 建、P5 补、P6 补）、`tests/assistant.html` 122 条、`input_policy.rs` 23 + `screen_policy.rs` 21 + `web_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9 条 `rustc --test`、`mcp_policy.rs` 17 条 `rustc --test`、全量自检 **46 页 / 1 981 条 / 0 failed**。`hands.rs` 那 7 条与 `mcp.rs` 那 8 条只有 `cargo test` 跑得了（本机跑不了）。**真机还没走**：读一个中文路径的文件、`echo 你好`、`Deny` 之后磁盘没变化、Stop 之后子进程真的没了、取一个真页面并跟一次 302、列一次窗口、在一张空白画布上点一下再 `Ctrl+S`；P6 再走一条：`npx -y @modelcontextprotocol/server-filesystem D:\` 存进 `mcp.json`、点 Refresh 看到工具、真调一个（列一次目录）、`Deny` 之后什么都没发生 —— 记在 `AGENTS.md` §8。
 - 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P6 全落了 —— **六只手到这里齐全**；0003 的会话、观察与审批三档随后也落了（会话落盘 + 提示词里的观察段 + `approvalMode`），最后 B 数据平面也落了（组件把能力声明成工具）。接下来的实用缺口：组件工具的三处遗留（小窗那一轮没有组件工具、不唤醒窗口、SDK 还没包一层 `agentTools()`），以及 P6 留下的几条：HTTP 服务的 OAuth / 自定义头、websocket 传输、连接复用（现在一次调用一条连接，`npx` 那类服务首调慢几秒）。
 
-## v0.12 —— 技能包与工作区（设计稿，未开工）
+## v0.12 —— 技能包、工作区与全权模式（设计稿，未开工）
 
 用户的原话是"可以让项目的 agent 支持更高的权限吗，可以导入 skills 什么的处理文本之类的"。结论：**"更高权限"不落在第四档审批上，落在范围上**；技能是流程，不是权限。完整推理在 [`design/0005-skills-and-workspace.md`](./design/0005-skills-and-workspace.md)。
 
+紧接着用户又提了一次："我需要他有较高的权限和自由度，为它设计一个 Full access 功能，让用户选择是否自己开启"。这一条不能靠第四档审批回答（三档已经表达了问 / 不问 / 别改，`auto` 之上只剩"连删除也不问"），真正缺的是**一次有时限的、显式的授权**，推理在 [`design/0006-full-access.md`](./design/0006-full-access.md)。
+
 - [ ] **`workspace` 从"相对路径的默认值"变成"免问区"** —— `ask` 档下 `file.write` 落在里面不问、外面照旧问；**只对 `file.write` 生效**（`shell.run` 一条命令就能写出这棵树，假装它是围栏是自欺）。判定是纯函数 `insideWorkspace`（`/` 与 `\` 归一、`..` 先折叠、盘符不分大小写、空 workspace 一律 false）。
 - [ ] **技能包** —— `skills/<id>/SKILL.md`（front matter 三个字段 `name` / `description` / `tools` + 正文），启用的正文进系统提示（≤4 份 / 每份 ≤4 000 字 / 合计 ≤8 000 字，超了**在启用时拒**，不截断）；`assistant.json` v4 加 `skills.enabled`；四条命令 `assistant_skills` / `assistant_skills_save` / `assistant_skill_import` / `assistant_skill_remove`。**不新增执行通道**：技能里让做的事仍然走那六只手、仍然要审批、仍然进审计。
-- 明确不做：剪贴板读写、浏览器自动化 / 任意 HTTP 方法、多根 workspace —— 三条各自的反对理由写在 0005 §3，不是"以后随便加"。
+- [ ] **全权模式（Full access）** —— 一次会话级的定时授权，不是第四档审批：开启期间**六组手临时全开、审批一律不问**（`placement.remove` 也不问），结束即回到用户存的那一份（开关与档位一个都不改）；内存态**不落盘**（重启即关），可选 15 / 30 / 60 / 120 分钟（默认 30，没有"永久"），面板与小窗顶部一条红条 + 倒计时 + `End now`，切回 `readonly` 立即结束。三条命令 `assistant_full_access` / `assistant_full_access_state` / `assistant_full_access_end`；期间审计行尾加 ` · full`，且**审计写不进去就不执行**（fail-closed）。四条硬线：装 / 卸 / 授权 / 钉钥匙不在工具表里、改平台自身配置（`assistant.json` / `mcp.json` / `state.json` / `skills/**`）永远要问、组件借手那一轮（`caller === "widget"`）拿不到全权、agent 的 HTTP 端点不受影响。**预算不变**：全权是权限，不是预算。
+- 明确不做：剪贴板读写、浏览器自动化 / 任意 HTTP 方法、多根 workspace —— 三条各自的反对理由写在 0005 §3；**持久化的"全权"档**也不做（写进 `assistant.json` 的长期高权限会被忘掉，0006 §2 否掉了 A 方案）。都不是"以后随便加"。
 
 ## 长期要盯的风险
 
