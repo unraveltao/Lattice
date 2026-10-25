@@ -31,6 +31,7 @@ use tauri::{
 
 use crate::desktop::{self, RegionPart, WindowLayer, WindowShape};
 use crate::egress;
+use crate::usage;
 use crate::visibility;
 
 /// 所有组件窗口的 label 前缀，用来把平台窗口和组件窗口区分开
@@ -592,6 +593,8 @@ fn create(app: &AppHandle, spec: &WidgetWindowSpec, runner: &Runner) -> Result<(
     // 组件窗口也会被藏起来（同步时删掉的那批、主窗口收回时），
     // 藏起来之后它自己的心跳就该停 —— 可见性由窗口自己报给它自己的页面
     visibility::watch(&window);
+    // 桌面组件也有焦点事件：用它来判断"这一分钟用没用"（见 usage.rs）
+    usage::watch(&window);
     if let Err(error) = desktop::apply_to(
         &window,
         spec.layer,

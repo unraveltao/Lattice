@@ -48,6 +48,8 @@ pub mod signature_policy;
 pub mod state;
 pub mod store;
 pub mod tray;
+pub mod usage;
+pub mod usage_policy;
 pub mod visibility;
 pub mod wallpaper;
 pub mod watch;
@@ -81,7 +83,7 @@ pub fn run() {
         }
     }
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         // 自动更新：只在用户点了"Check for updates"时跑，不后台轮询。
         // 后台轮询一个只发布几次的项目，等于每台机器每天替你发一次请求
@@ -98,7 +100,11 @@ pub fn run() {
             // 会继续按心跳空转 —— 可见性得从这里发下去（见 visibility.rs）
             if let Some(main) = app.get_webview_window("main") {
                 visibility::watch(&main);
+                // 使用热力图：一分钟里只要有一个 Lattice 窗口在前台，就 +1。
+                // 组件窗口在 runner.rs 的 create() 里各自 watch（见 usage.rs 模块注释）
+                usage::watch(&main);
             }
+            usage::start(app.handle());
             // 托盘失败不该拖垮启动：最坏情况是回到"没有托盘"的旧行为
             if let Err(error) = tray::setup(app.handle()) {
                 eprintln!("[lattice] could not create the tray icon: {error}");
@@ -176,12 +182,23 @@ pub fn run() {
             assistant_window::assistant_window_toggle,
             assistant_window::assistant_window_hide,
             assistant_window::assistant_window_save_pos,
+            usage::usage_read,
+            usage::usage_clear,
             quit_app,
             show_main_window,
             restart_app,
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("failed to start Lattice");
+
+    // 使用记录的最后一道保险：不管从哪条路退出（设置里的 Quit、托盘 Quit、
+    // 更新后的 restart、以后新加的入口），进程真正结束前都把内存里那几分钟补上。
+    // 只在 quit_app 里 flush 是不够的 —— 托盘那条直接 `app.exit(0)`，走不到它。
+    app.run(|_app, event| {
+        if let tauri::RunEvent::Exit = event {
+            usage::flush();
+        }
+    });
 }
 
 /// 桌面上还有组件窗口时，"关掉主窗口"只该是收起来，不是退出
@@ -220,6 +237,8 @@ fn has_widget_windows(app: &tauri::AppHandle) -> bool {
 /// 真的退出：连同桌面上的组件一起收掉
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
+    // 使用记录每 5 分钟才落一次盘，退出前把这几分钟补上（Exit 那层还会兜一次）
+    usage::flush();
     app.exit(0);
 }
 
@@ -236,5 +255,7 @@ fn show_main_window(app: tauri::AppHandle) {
 /// 一个进程，桌面上的组件窗口跟着重建（`restoreOnLaunch` 那条链路）。
 #[tauri::command]
 fn restart_app(app: tauri::AppHandle) {
+    // 重启是"旧进程结束、新进程接过内存里的东西"，那几分钟得先落地
+    usage::flush();
     app.restart();
 }

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>profile test</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0d0d10;
+        color: #e9e8e3;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 14px 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      pre {
+        margin: 0;
+      }
+      #stage {
+        position: fixed;
+        right: 16px;
+        top: 16px;
+        width: 620px;
+        max-height: calc(100vh - 32px);
+        overflow: auto;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        background: #17171d;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <div id="stage"></div>
+    <script type="module" src="/tests/profile.tsx"></script>
+  </body>
+</html>

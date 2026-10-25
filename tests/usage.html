@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>usage test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 使用记录 / 热力图的纯逻辑。
+       *
+       * 这些数字算错了不会报错，只会让某一格画到隔壁一列、或者"连续 7 天"
+       * 变成 6 天。所以边界要钉死：本地日、闰年、未来格子、跨年的连续天数。
+       */
+      import {
+        activeDays,
+        buildHeatmap,
+        currentStreak,
+        dayKey,
+        describeMinutes,
+        isDayKey,
+        levelFor,
+        parseUsage,
+        startOfWeek,
+      } from "/src/runtime/usage.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text}（得到 ${JSON.stringify(actual)}）`,
+        );
+
+      // ---- 1. 日键 ----
+      log(isDayKey("2026-10-25"), "合法日键");
+      log(!isDayKey("2026-2-3"), "两位月份是硬要求");
+      log(!isDayKey("2026-02-30"), "2 月 30 日不合法");
+      log(!isDayKey("2026-13-01"), "13 月不合法");
+      log(!isDayKey(""), "空串不合法");
+      log(isDayKey("2028-02-29"), "闰年 2 月 29 日合法");
+      eq(dayKey(new Date(2026, 9, 5)), "2026-10-05", "日键按本地日期补零");
+
+      // ---- 2. 强度分档 ----
+      eq([0, 1, 14, 15, 44, 45, 119, 120, 999].map(levelFor), [0, 1, 1, 2, 2, 3, 3, 4, 4], "固定阈值分档");
+      eq(levelFor(-5), 0, "负数不成档");
+      eq(levelFor(Number.NaN), 0, "NaN 不成档");
+
+      // ---- 3. 读回来的形状 ----
+      const parsed = parseUsage({
+        days: { "2026-10-24": 30, "2026-10-25": 45, "bad": 9, "2026-10-26": 0, "2026-10-27": -3 },
+        totalMinutes: 999,
+        since: "2026-10-24",
+      });
+      eq(parsed.days, { "2026-10-24": 30, "2026-10-25": 45 }, "坏键、0 和负数被丢掉");
+      eq(parsed.totalMinutes, 75, "总分钟自己重算，不信传进来的值");
+      eq(parsed.since, "2026-10-24", "since 保留");
+
+      const fromArray = parseUsage({ days: [{ date: "2026-10-25", minutes: 12 }, { date: "x", minutes: 5 }] });
+      eq(fromArray.days, { "2026-10-25": 12 }, "数组形状也认");
+      eq(parseUsage(null).days, {}, "空数据不崩");
+
+      // 超过 400 天裁掉最旧的
+      const many = {};
+      const base = new Date(2024, 0, 1);
+      for (let i = 0; i < 450; i += 1) {
+        const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+        many[dayKey(d)] = 1;
+      }
+      const capped = parseUsage({ days: many });
+      eq(Object.keys(capped.days).length, 400, "只留最近 400 天");
+      log(Object.keys(capped.days).sort()[0] > "2024-01-01", "裁掉的是最旧的");
+
+      // ---- 4. 网格 ----
+      const today = new Date(2026, 9, 21); // 2026-10-21，周三
+      const weeks = buildHeatmap({ "2026-10-21": 120, "2026-10-24": 30 }, today);
+      eq(weeks.length, 53, "53 列");
+      log(weeks.every((week) => week.cells.length === 7), "每列 7 行");
+      eq(weeks[52].cells[6].date, "2026-10-25", "最后一格是本周周日");
+      eq(weeks[52].cells[2].date, "2026-10-21", "今天在周三那一行");
+      eq(weeks[52].cells[2].level, 4, "今天的 120 分钟是最高档");
+      eq(weeks[52].cells[3].future, true, "今天之后的格子标成未来");
+      eq(weeks[0].cells[0].date, "2025-10-20", "第一列从 52 周前的周一算起");
+      log(weeks[0].monthStart !== null, "第一列有月份标签");
+      eq(weeks[0].cells[0].future, false, "过去的格子不是未来");
+
+      // 周一为一周的开始
+      eq(dayKey(startOfWeek(new Date(2026, 9, 25))), "2026-10-19", "周日归到本周一");
+
+      // ---- 5. 统计 ----
+      const days = { "2026-10-20": 5, "2026-10-21": 5, "2026-10-23": 5, "2026-10-24": 5 };
+      eq(activeDays(days), 4, "活跃天数");
+      eq(currentStreak(days, new Date(2026, 9, 25)), 2, "今天没记时从昨天往回数");
+      eq(currentStreak({ "2026-10-25": 1 }, new Date(2026, 9, 25)), 1, "今天有记录就是 1");
+      eq(currentStreak({}, new Date(2026, 9, 25)), 0, "空记录是 0");
+      eq(currentStreak({ "2025-12-31": 1, "2026-01-01": 1 }, new Date(2026, 0, 1)), 2, "跨年连续");
+
+      // ---- 6. 说人话 ----
+      eq(describeMinutes(0, "zh"), "0 分钟", "0 分钟");
+      eq(describeMinutes(45, "zh"), "45 分钟", "不足一小时");
+      eq(describeMinutes(120, "en"), "2h", "整小时");
+      eq(describeMinutes(1100, "zh"), "18 小时 20 分", "小时加分钟");
+
+      const out = document.getElementById("out");
+      out.textContent = lines.join("\n");
+      out.className = lines.some((line) => line.startsWith("FAIL")) ? "bad" : "ok";
+    </script>
+  </body>
+</html>

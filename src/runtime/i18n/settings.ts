@@ -88,4 +88,39 @@ export const SETTINGS_ZH: Record<string, string> = {
   Failed: "失败",
   Check: "检查",
   "Ask the release page whether a newer version exists": "去发布页看看有没有更新的版本",
+
+  // —— 设置面板的分区 ——
+  Account: "账户",
+  Desktop: "桌面",
+  About: "关于",
+  Theme: "主题",
+  "Settings sections": "设置分区",
+  "Close settings": "关闭设置",
+  "Applies to this window and every widget on your desktop.": "主窗口和桌面上的每个组件都会跟着变。",
+  "The whole platform switches immediately. Widgets pick it up on their next frame.":
+    "整个平台立即切换；组件在下一帧跟上。",
+  "Widgets install from the library; this only decides where packages come from.":
+    "组件从组件库安装；这里只决定包从哪里来。",
+  "The built-in assistant uses your own OpenAI-compatible endpoint. Its key never reaches a widget.":
+    "内置助手用你自己的 OpenAI 兼容地址；key 不会交给任何组件。",
+
+  // —— 档案页 ——
+  "No profile yet": "还没有本机档案",
+  "Give this computer a name. Nothing leaves it.": "给这台电脑起个名字。它不会离开这台电脑。",
+  "Create local profile": "创建本机档案",
+  "Member since {date}": "自 {date} 起",
+  "Active days": "活跃天数",
+  "Day streak": "连续天数",
+  "Total time": "累计时长",
+  Activity: "使用记录",
+  "Last 12 months": "过去 12 个月",
+  "Daily activity over the last year": "过去一年的每日活跃",
+  Less: "少",
+  More: "多",
+  "No activity yet — the heatmap starts recording from today.": "还没有记录。热力图从今天开始记。",
+  Mon: "一",
+  Wed: "三",
+  Fri: "五",
+  "Clear usage history": "清除使用记录",
+  "Clear the local activity record? Your profile stays.": "清除本机使用记录？档案会保留。",
 };

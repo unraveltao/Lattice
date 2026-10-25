@@ -59,7 +59,9 @@ src/
     HelpContent.tsx       组件的"怎么用"：分节正文 + 可折叠变更记录；属性面板与卡片 `?` 共用这一份
     ReportDialog.tsx      举报与评分对话框（没有服务端，落成一份 JSON 文件）
     InspectorPanel.tsx    属性面板：三段折叠（层级与尺寸 / 外观 / 权限与选项）+ 底部移除区
-    SettingsMenu.tsx      设置浮层：本机档案、外观、网格吸附、目录地址、关于（Ctrl+, 唤出）
+    SettingsMenu.tsx      设置面板：左导航七区（Account / Appearance / Language / Desktop / Widgets / Assistant / About）+ 焦点陷阱（Ctrl+, 唤出）
+    ProfilePanel.tsx      档案页：资料编辑 + 使用热力图（53 周）+ 清除记录 / Sign out（危险区沉底）
+    Avatar.tsx            共用的首字母头像（顶栏齿轮、设置身份块、档案页）
     icons.tsx             16px 图标集（Glyph / ICON / ThemeGlyph / PanelGlyph / WidgetIconMark），顶栏、菜单、面板共用
     desktop.ts            Placement → WidgetWindowSpec，坐标换算，投放/收回命令
     autostart.ts          开机自启的读写与"路径漂移"判定（`Run` 注册表项）
@@ -89,6 +91,7 @@ src/
     widget-text.ts        组件**作者写的**文案：字符串或 `{ zh, en }`、`pickText` 按语言挑（缺一门退另一门）、`textVariants` 给搜索建两门索引、`normalizeLine` 管日期/单位（`tests/widget-text.html` 钉着）
     debug.ts              调试总线：环形缓冲 400 条、攒批镜像到主窗口、过滤 / 统计纯函数
     semver.ts             版本号与范围：解析 / 比较 / `^ ~ >= <= > < =` / 通配 / `||`（纯函数，`tests/semver.html` 钉着）
+    usage.ts              使用记录与热力图：本地日键、固定阈值分档、53 周网格、连续天数、两种读回形状（纯函数，`tests/usage.html` 钉着）
     catalogue.ts          目录解析与安装计划：三道校验、挑版本、权限差集（纯函数，`tests/catalogue.html` 钉着）
 assistant.html            assistant 小窗的宿主页（vite 第三个 input；独立入口 = 小窗不加载平台外壳与 store）
 public/widgets/           官方组件包（未安装前只是"可发现"）
@@ -132,6 +135,8 @@ src-tauri/src/
   visibility.rs           真实可见性：最小化 / 收起 / 被整个盖住，发 lattice:window-visible
   occlusion.rs            遮挡判定（Win32）：九点 WindowFromPoint + DWMWA_CLOAKED，点透窗口跳过
   occlusion_policy.rs     遮挡的纯逻辑：采样点怎么取、几个没命中算挡住（8 条 rustc --test）
+  usage.rs                使用记录：按窗口焦点每分钟 +1，内存累加、每 5 分钟 / 退出落盘（usage.json）
+  usage_policy.rs         上面那道的纯逻辑：日键校验、分钟累加、400 天裁剪（8 条 rustc --test）
   open.rs                 打开外链：把 shell.open 交给系统默认浏览器（协议由 open_policy 卡）
   open_policy.rs          上面那道的纯逻辑：只放 http/https、像地址栏一样补协议头（5 条 rustc --test）
   agent.rs                Agent 端点：只绑 127.0.0.1 的 HTTP、令牌、审计、转发给主窗口（默认关）；小窗要的 `assistant_snapshot` / `assistant_act` 也复用这条转发
@@ -300,12 +305,13 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 | 上一代的组件（回滚用） | `%APPDATA%\com.iron-tom.lattice\widget-backups\<id>\` | `backup.rs`（只留一代，卸载时一起删） |
 | 举报与评分 | `%APPDATA%\com.iron-tom.lattice\reports\<widgetId>-<unix>.json` | `store.rs::store_report`（**不发送**，只是文件） |
 | 下载过的包 | `%APPDATA%\com.iron-tom.lattice\store-cache\<sha256>.lattice` | `store.rs::store_download` |
+| 使用记录（每天多少分钟） | `%APPDATA%\com.iron-tom.lattice\usage.json`（`{version, days}`，内存累加、每 5 分钟 / 退出落盘） | `usage.rs`（窗口焦点 + 分钟滴答；**前端不上报**，桥和权限都不动） |
 | 内置组件 | `public/widgets/<id>/` + 构建期生成的 `index.json` | `scripts/widget-index.mjs` |
 | 内置商店目录 | `public/store/registry.json` + `packages/*.lattice` | `scripts/store-index.mjs`（gitignore，构建期生成） |
 
 `store.ts` 里有一个 `hydrated` 闸门：**水合完成前不许写盘**。读状态是异步的，中间任何一次 set 都会把默认空状态盖到磁盘上。加新的持久化字段时，记得同时改 `partialize`，否则重启就丢。
 
-`profile`（本机档案）不是账号系统：平台没有服务端，登录只是把昵称/邮箱写进同一份 `state.json`，用于界面上的称呼。**不要**把它当成身份或权限依据 —— 组件授权看的是 `grants`，与是否登录无关。真要做多设备同步时，换掉 `store.ts` 里的 `signIn` / `signOut` 即可，`SettingsMenu.tsx` 不用动。
+`profile`（本机档案）不是账号系统：平台没有服务端，登录只是把昵称/邮箱写进同一份 `state.json`，用于界面上的称呼。**不要**把它当成身份或权限依据 —— 组件授权看的是 `grants`，与是否登录无关。真要做多设备同步时，换掉 `store.ts` 里的 `signIn` / `signOut` 即可，`SettingsMenu.tsx` 不用动。使用记录也不归档案：它在 `usage.json`，Sign out 不清它，只有档案页底部的 `Clear usage history` 清。
 
 ---
 
@@ -671,7 +677,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
   #[path = "../src-tauri/src/network_policy.rs"] mod network_policy;
   ```
   `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe`。**这就是"纯逻辑要单独拆成一个文件"的原因 —— 拆出来才测得到**。断言只有一份（`#[cfg(test)] mod tests` 在模块内部），壳子别复制。
-  能这么跑的现在是 136 条（全仓 157 条 `#[test]`，`grep -c` 一下就对得上）：`agent_policy.rs`（26）、`diagnostics.rs`（14）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`occlusion_policy.rs`（8）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`audio_policy.rs`（6）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）、`package.rs`（1，跟着 `package_policy` 一起编）。剩下 21 条（`protocol.rs` 6、`widget_store.rs` 5、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
+  能这么跑的现在是 144 条（全仓 165 条 `#[test]`，`grep -c` 一下就对得上）：`agent_policy.rs`（26）、`diagnostics.rs`（14）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`occlusion_policy.rs`（8）、`usage_policy.rs`（8）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`audio_policy.rs`（6）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）、`package.rs`（1，跟着 `package_policy` 一起编）。剩下 21 条（`protocol.rs` 6、`widget_store.rs` 5、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
   **壳子会过期，过期了要修，不要当它不存在**：`extract-test.rs` 曾经在 `package.rs` 加上验签之后编不过（`extract` 多了第三个参数、还引用了 `signature_policy` 和 `backup`），但 `rustc` 编译失败时旧的 `.exe` 还在，`&&` 串起来的写法会**跑那个旧二进制并显示全绿** —— 那才是最坏的情况。所以：编不过就是红，先看 `rustc` 的退出码，别信后面那行 `test result`。修法是给壳子补 `#[path]` 把 `signature_policy.rs` 编进来，`backup` 依赖 `tauri` 编不进来，就写一个签名对得上的桩（四条用例传的都是 `None`，走不到那条分支）。
   `package.rs` 要用到 `flate2` / `serde_json`，`signature.rs` 要用到 `ed25519_dalek` / `sha2`，壳子得额外指路：`rustc --edition 2024 --test 壳子.rs -L src-tauri/target/debug/deps --extern flate2=<rlib> --extern serde_json=<rlib> -o 壳子.exe`（rlib 从 `target/debug/deps/` 里按 `libflate2-*.rlib` 找）。只给 `--extern` 不给 `-L` 会报 `can't find crate`。`csp.rs` 那个桩的值要抄对（`"lattice-widget"`，不是 `"lattice"`），抄错了单测会红 —— 这次正好被它抓了一下。
   **raw `rustc` 的默认 edition 是 2015**，不带 `--edition` 编出来的 panic 消息不认内联捕获（`assert!(cond, "{index}")` 会报 unused placeholder，断言本身照样成立）。想安静就照着 crate 的 edition 给一个：`rustc --edition 2024 --test src-tauri/src/guide_policy.rs -o 壳子.exe`。
