@@ -3,7 +3,8 @@
  *
  * 这一层不做任何事，只把三个文件重新导出一遍：传输（`./devLlm`：同一个命令在
  * 桌面走 IPC、在浏览器走 dev server 的 `/api/llm`）、IPC 面（`./assistant`：模型
- * 档、key、列模型、跑一轮对话）、手（`./hands`：`assistant_tool` 与六组开关）。
+ * 档、key、列模型、跑一轮对话）、手（`./hands`：`assistant_tool`、六组开关、
+ * MCP 服务表与工具发现）。
  * 谁要用 assistant，import 这一个模块名就够，不必知道底下分成几个文件、更不必
  * 知道现在跑在窗口里还是浏览器里 —— `callCommand` 自己认。
  *
@@ -56,5 +57,13 @@ export type {
   WidgetTurnOutcome,
 } from "./assistant";
 
-export { callHand, cancelHand, readHands, saveHands } from "./hands";
+export {
+  callHand,
+  cancelHand,
+  discoverMcpTools,
+  readHands,
+  readMcpServers,
+  saveHands,
+  saveMcpServers,
+} from "./hands";
 export type { HandsReply } from "./hands";
