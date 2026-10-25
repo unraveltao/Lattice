@@ -22,6 +22,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { nextFreeSlot, useLattice, type Placement, type ThemeMode } from "./store";
 import type { WidgetRecord } from "../runtime/registry";
+import type { WidgetHelp } from "../runtime/help";
 import { pickText } from "../runtime/widget-text";
 
 const EVENT = "lattice:agent";
@@ -77,6 +78,17 @@ export async function setAgentEnabled(enabled: boolean): Promise<AgentStatus> {
 }
 
 /**
+ * 组件说明的首句：第一节第一条（作者写"怎么用"的第一句话）。
+ *
+ * 空串 = 这个组件没写说明。**不编一句**：给模型一句我们拼的说明，它就分不清
+ * 哪句是作者说的、哪句是平台猜的，最后会照着猜的去用组件。
+ */
+function firstAbout(help: WidgetHelp): string {
+  const first = help.sections[0]?.items[0];
+  return first ? pickText(first).trim() : "";
+}
+
+/**
  * 给 agent 看的世界。
  *
  * 刻意**不含**组件存储（`widget-store/<id>.json`）—— 那里是用户的便签和待办，
@@ -102,6 +114,12 @@ export function agentSnapshot(records: WidgetRecord[]) {
       installed: state.installedIds.includes(record.manifest.id),
       permissions: record.manifest.permissions ?? [],
       size: record.manifest.size,
+      /*
+       * 说明首句（0003 §4 的"观察"段）：模型要能回答"天气能设成上海吗"就得知道
+       * 这个组件写没写这件事。只取第一节第一条 —— 整份说明是给人看的六节六条，
+       * 全塞进提示词等于每一轮都为一段手册付 1k token。
+       */
+      about: firstAbout(record.manifest.help),
     })),
     placements: state.placements.map((placement) => ({
       instanceId: placement.instanceId,

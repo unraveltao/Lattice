@@ -19,17 +19,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WidgetRecord } from "../runtime/registry";
 import {
   cancelActiveTurn,
+  deleteSession,
+  listSessions,
+  loadSession,
   localSurface,
   readLlmProfiles,
   remoteSurface,
   runAssistantTurn,
+  saveSession,
   type ApprovalRequest,
   type Approver,
   type AssistantSurface,
   type ProfilesView,
+  type SessionMessage,
+  type SessionSummary,
+  type SessionUsage,
 } from "./assistant";
 import { discoverMcpTools, readHands, readMcpServers, saveHands, saveMcpServers } from "./hands";
-import { allTools, systemPrompt, type ChatMessage, type ToolSpec } from "../runtime/assistant";
+import {
+  allTools,
+  systemPrompt,
+  type CatalogueHint,
+  type ChatMessage,
+  type ToolSpec,
+} from "../runtime/assistant";
 import {
   HAND_GROUPS,
   HAND_LABELS,
@@ -54,6 +67,32 @@ type Entry =
   | { kind: "tool"; detail: string; ok: boolean; error?: string }
   | { kind: "error"; text: string };
 
+/** 存下来的消息 → 面板的对话行。
+ *
+ * **工具那几行不重建**：chip 上那句话是当场按参数拼的（`describeToolCall`），
+ * 文件里只有原始参数 —— 重建出来会是"另一种说法"，用户会以为它换了个做法。
+ * 只还原 user / assistant 的正文，剩下的靠"这条是旧对话"这件事本身交代。 */
+function entriesFromSession(messages: SessionMessage[]): Entry[] {
+  const entries: Entry[] = [];
+  for (const message of messages) {
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const text = typeof message.content === "string" ? message.content.trim() : "";
+    if (!text) continue;
+    entries.push({ kind: message.role, text });
+  }
+  return entries;
+}
+
+/** 会话文件里的消息 → 循环吃的形状。`content` 可能是 null（工具调用那条） */
+function messagesFromSession(messages: SessionMessage[]): ChatMessage[] {
+  return messages
+    .filter((message) => typeof message.role === "string" && message.role)
+    .map((message) => ({
+      ...message,
+      content: typeof message.content === "string" ? message.content : "",
+    })) as ChatMessage[];
+}
+
 export interface AssistantPanelProps {
   open: boolean;
   onClose: () => void;
@@ -63,13 +102,18 @@ export interface AssistantPanelProps {
    * 因为布局的权威在那儿（见 `platform/assistant.ts` 的 `AssistantSurface`）。
    */
   records?: ReadonlyMap<string, WidgetRecord>;
+  /**
+   * 商店里还没装的那些（`{id, name}`）。**目录没加载就不传** —— 没读到目录时
+   * 不提商店，模型就不会凭空推荐一个已经撤下的组件（0003 §4 的第二小段）。
+   */
+  catalogue?: CatalogueHint[];
   /** `window` = 独立小窗：铺满窗口、不要圆角和投影（那些由窗口壳负责） */
   variant?: "drawer" | "window";
 }
 
 /** 鉴权形状的中文/英文标签。三种，和 Rust 的 `normalize_auth` 一一对应 */
 
-export function AssistantPanel({ open, onClose, records, variant = "drawer" }: AssistantPanelProps) {
+export function AssistantPanel({ open, onClose, records, catalogue, variant = "drawer" }: AssistantPanelProps) {
   /** 语言一变就重渲染 —— 面板和小窗共用同一套文案 */
   const t = useT();
   /**
@@ -161,6 +205,27 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
     decide(true);
   }, [approval, decide]);
 
+  // —— 会话（0003 §4）：一份对话一个文件 ——
+  //
+  // 三样东西分得很清楚，混起来就出错：
+  //   - `sessions` 是**列表**（只有摘要）。50 份对话的正文一次读进内存只为画个
+  //     下拉框，那是白花几百毫秒；
+  //   - `currentId` 是"现在这套消息属于哪一份文件"，`null` = 还没存过；
+  //   - `usageTotal` 是**整份会话**的累计花销，和界面上那个"最后一轮"的数是两回事。
+  /** 下拉框里那些对话，按最近改过的排 */
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  /** 界面上那个选中项（ref 是给回调用的一份，state 是给渲染用的一份） */
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const sessionId = useRef<string | null>(null);
+  const usageTotal = useRef<SessionUsage>({ promptTokens: 0, completionTokens: 0 });
+  /** 存不上 / 被截断时贴一行说明。**不是 `error`**：这一轮本身是好的 */
+  const [sessionNote, setSessionNote] = useState<string | null>(null);
+
+  const rememberSession = useCallback((id: string | null) => {
+    sessionId.current = id;
+    setCurrentId(id);
+  }, []);
+
   const active = profiles?.profiles.find((item) => item.id === profiles.activeId) ?? null;
   /** 最后一条还在长 = 字正在出来，这时候不该再显示「Thinking…」 */
   const lastEntry = entries[entries.length - 1];
@@ -205,6 +270,38 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
     };
   }, [open]);
 
+  /**
+   * 打开时读一次会话列表，并把最近那一份接着聊。
+   *
+   * 0003 §5 第一行就是这条要修的东西（"面板重开，前两天聊的没了"）。
+   * **已经聊着的那一轮不许被覆盖**：抽屉关掉再打开时 `messages` 这个 ref 还在，
+   * 那不是"新开一个面板"，把最近的会话盖上去等于把刚说的话吃掉。
+   */
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void listSessions()
+      .then(async (list) => {
+        if (cancelled) return;
+        setSessions(list);
+        if (messages.current.length > 0) return;
+        const latest = list.find((item) => !item.damaged);
+        if (!latest) return;
+        const full = await loadSession(latest.id);
+        if (cancelled) return;
+        rememberSession(full.id);
+        messages.current = messagesFromSession(full.messages);
+        usageTotal.current = full.usage;
+        setEntries(entriesFromSession(full.messages));
+      })
+      .catch(() => {
+        // 浏览器预览里没有这几条命令；坏文件也不该挡住面板打开
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, rememberSession]);
+
   useEffect(() => {
     if (!open) return;
     const timer = setTimeout(() => inputRef.current?.focus(), 30);
@@ -226,6 +323,83 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
+
+  /**
+   * 把这一套消息存回去。**存不上的时候不许把它变成 `error`** —— 那一轮已经
+   * 答完了，丢的只是"下次还能看到"，报成错误会让用户以为请求失败了。
+   */
+  const persistSession = useCallback(
+    async (conversation: ChatMessage[]) => {
+      // 一条 user 都没有的不值得落盘（比如刚打开面板就关掉）
+      if (!conversation.some((message) => message.role === "user")) return;
+      try {
+        const saved = await saveSession({
+          id: sessionId.current ?? undefined,
+          model: active?.model ?? "",
+          profileId: profiles?.activeId || undefined,
+          messages: conversation,
+          usage: usageTotal.current,
+        });
+        rememberSession(saved.id);
+        setSessionNote(
+          saved.dropped > 0
+            ? t("This chat was too long, so its oldest messages were dropped.")
+            : null,
+        );
+        setSessions(await listSessions());
+      } catch (problem) {
+        setSessionNote(String(problem instanceof Error ? problem.message : problem));
+      }
+    },
+    [active?.model, profiles?.activeId, rememberSession, t],
+  );
+
+  const startNewChat = useCallback(() => {
+    if (busy) return;
+    rememberSession(null);
+    messages.current = [];
+    usageTotal.current = { promptTokens: 0, completionTokens: 0 };
+    setUsage(null);
+    setEntries([]);
+    setSessionNote(null);
+    setError(null);
+  }, [busy, rememberSession]);
+
+  const openSession = useCallback(
+    async (id: string) => {
+      if (!id || busy) return;
+      try {
+        const full = await loadSession(id);
+        rememberSession(full.id);
+        messages.current = messagesFromSession(full.messages);
+        usageTotal.current = full.usage;
+        setEntries(entriesFromSession(full.messages));
+        // 界面上那个数是"最后一轮"，不从文件里编一个出来
+        setUsage(null);
+        setSessionNote(
+          full.truncated ? t("This chat was too long, so its oldest messages were dropped.") : null,
+        );
+        setError(null);
+      } catch {
+        setSessionNote(t("That chat could not be opened."));
+      }
+    },
+    [busy, rememberSession, t],
+  );
+
+  /** 删掉现在这一份。**先清界面再删文件**：删失败时用户不该还看着一段"已删"的对话 */
+  const removeCurrentSession = useCallback(async () => {
+    const id = sessionId.current;
+    if (busy) return;
+    startNewChat();
+    if (!id) return;
+    try {
+      await deleteSession(id);
+      setSessions(await listSessions());
+    } catch (problem) {
+      setSessionNote(String(problem instanceof Error ? problem.message : problem));
+    }
+  }, [busy, startNewChat]);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -259,7 +433,7 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
       if (conversation[0]?.role === "system") conversation.shift();
       conversation.unshift({
         role: "system",
-        content: systemPrompt(snapshot, { hands, tools: table }),
+        content: systemPrompt(snapshot, { hands, tools: table, catalogue }),
       });
       conversation.push({ role: "user", content: text });
 
@@ -302,6 +476,11 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
             ]);
           } else {
             setUsage({ prompt: event.promptTokens, completion: event.completionTokens });
+            // 存进文件的是**整份会话**的累计：界面上那个数是"最后一轮"
+            usageTotal.current = {
+              promptTokens: usageTotal.current.promptTokens + event.promptTokens,
+              completionTokens: usageTotal.current.completionTokens + event.completionTokens,
+            };
           }
         },
       });
@@ -314,8 +493,10 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
       if (last?.role === "user" && last.content === text) conversation.pop();
     } finally {
       setBusy(false);
+      // 每一轮都存：用户下一句很可能就在关掉面板之后（0003 §5 第一行）
+      void persistSession(conversation);
     }
-  }, [active?.model, approve, busy, draft, hands]);
+  }, [active?.model, approve, busy, draft, hands, persistSession]);
 
 
   const stop = useCallback(() => {
@@ -635,9 +816,54 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
 
           {error && <p className="lattice-modal-error">{error}</p>}
 
+          {/* 0003 §5 最后一行：会话明文落盘这件事必须在界面上说出来，不能假装没有 */}
+          <p className="lattice-assistant-hint">
+            {t(
+              "Chats are saved on this machine as plain text — anything you paste in lands on disk. “Delete this chat” removes it.",
+            )}
+          </p>
+
         </div>
       ) : (
         <>
+          {/*
+            会话条：一个下拉 + 新建 + 删除。**没做成一个大列表** —— 面板宽度就
+            300 多像素，一列会话会把对话挤到看不见；用户要的是"接着昨天那份聊"，
+            不是管理 50 份文件
+          */}
+          <div className="lattice-assistant-chats">
+            <select
+              className="lattice-assistant-chat-select"
+              aria-label={t("Chats")}
+              value={currentId ?? ""}
+              onChange={(event) => void openSession(event.target.value)}
+              disabled={busy || sessions.length === 0}
+            >
+              <option value="">{t("New chat")}</option>
+              {sessions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.damaged ? t("Damaged chat") : item.title || t("New chat")}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="lattice-btn is-small"
+              onClick={startNewChat}
+              disabled={busy}
+            >
+              {t("New chat")}
+            </button>
+            <button
+              type="button"
+              className="lattice-btn is-small is-danger"
+              onClick={() => void removeCurrentSession()}
+              disabled={busy || !currentId}
+            >
+              {t("Delete this chat")}
+            </button>
+          </div>
+          {sessionNote && <p className="lattice-assistant-hint">{sessionNote}</p>}
           <div className="lattice-assistant-body" ref={bodyRef}>
             {entries.length === 0 && (
               <p className="lattice-assistant-hint">

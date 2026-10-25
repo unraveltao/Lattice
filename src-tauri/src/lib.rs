@@ -11,6 +11,8 @@
 
 pub mod agent;
 pub mod agent_policy;
+pub mod assistant_session;
+pub mod assistant_session_policy;
 pub mod assistant_window;
 pub mod audio;
 pub mod audio_policy;
@@ -189,10 +191,14 @@ pub fn run() {
             llm::llm_chat_cancel,
             llm::assistant_hands,
             llm::assistant_hands_save,
+            assistant_session::assistant_sessions,
+            assistant_session::assistant_session_load,
+            assistant_session::assistant_session_save,
+            assistant_session::assistant_session_delete,
             hands::assistant_tool,
-    mcp::mcp_servers,
-    mcp::mcp_servers_save,
-    mcp::mcp_tools,
+            mcp::mcp_servers,
+            mcp::mcp_servers_save,
+            mcp::mcp_tools,
             hands::hands_cancel,
             agent::agent_status,
             agent::agent_activity,

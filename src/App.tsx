@@ -391,6 +391,21 @@ export default function App() {
     return set;
   }, [widgets, installedIds]);
 
+  /**
+   * 给 assistant 的"商店里还能装这个"那一段（0003 §4）。
+   *
+   * **只给还没装的**：已装的那些在快照里带着说明，再列一遍会让它以为"同一个
+   * 组件还能再装一份"。目录没读到就是空数组 —— 宁可这一段不出现，也不要让它
+   * 推荐一个已经被撤下的组件（`MAX_CATALOGUE_ITEMS` 与"还有 N 个"由
+   * `runtime/assistant.ts` 那一头管，这里不截）。
+   */
+  const shopHints = useMemo(() => {
+    const entries = catalogue?.catalogue?.entries ?? [];
+    return entries
+      .filter((entry) => !installedSet.has(entry.id))
+      .map((entry) => ({ id: entry.id, name: pickText(entry.name) }));
+  }, [catalogue, installedSet]);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
@@ -1209,6 +1224,7 @@ export default function App() {
           open={assistantOpen}
           onClose={() => setAssistantOpen(false)}
           records={records}
+          catalogue={shopHints}
         />
       )}
 

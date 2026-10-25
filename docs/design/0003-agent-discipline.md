@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-25
 code: src/runtime/assistant.ts, src/platform/assistant.ts, src/platform/AssistantPanel.tsx, src-tauri/src/assistant_session.rs, src-tauri/src/assistant_session_policy.rs
 ---
@@ -7,8 +7,12 @@ code: src/runtime/assistant.ts, src/platform/assistant.ts, src/platform/Assistan
 # 0003 —— 让 agent 有纪律：会话、审批、预算、观察
 
 > **0004 推翻了本文第 3 节「不做」里的两条**（"不给截屏 / 读屏"、"手不扩到装组件/写组件"里的
-> 前半句）。审批与预算这两样被 0004 的 P1 吸收并扩展成"按能力组开关 + 写/跑必问"；
-> **会话与观察两段仍然算数**，还没做。看手之前先看 [0004](./0004-agent-hands.md)。
+> 前半句）。审批与预算这两样被 0004 的 P1 吸收并扩展成"按能力组开关 + 写/跑必问"。
+> **会话与观察两段已于 2026-10-25 落地**：四份文件一个目录
+> （`assistant-sessions/<id>.json`，50 份 / 200 条 / 1 MB，超了从最旧丢并说出来）、
+> 面板顶部那条会话条、提示词里组件说明首句（≤120 字 × 8）与商店一段（≤8）。
+> 审批档位那一条（`approvalMode` 三档）**仍然没做** —— 0004 把它做成了"六组开关 +
+> 按工具判"，而 `readonly` / `auto` 这两档还欠着。看手之前先看 [0004](./0004-agent-hands.md)。
 
 ## 1. 问题
 

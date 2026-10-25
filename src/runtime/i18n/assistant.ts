@@ -16,6 +16,17 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Model settings": "模型设置",
   "Assistant settings": "助手设置",
 
+  // —— 会话（0003 §4）：一份对话一个文件，列表按最近改过的排 ——
+  Chats: "对话",
+  "New chat": "新建对话",
+  "Delete this chat": "删除这个对话",
+  "Damaged chat": "损坏的对话",
+  "That chat could not be opened.": "这个对话打不开。",
+  "This chat was too long, so its oldest {count} messages were dropped.":
+    "这个对话太长了，最旧的 {count} 条已经被丢掉。",
+  "Chats are saved on this machine as plain text — anything you paste in lands on disk. “Delete this chat” removes it.":
+    "对话是明文存在这台机器上的——你粘进去的东西会落到盘上。「删除这个对话」会把它删掉。",
+
   // —— 设置态：档列表 + 表单 ——
   "no model yet": "还没有模型",
   "In use": "正在用",

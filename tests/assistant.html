@@ -36,13 +36,17 @@
        *   5. 快照的预算：配置撑爆就整段丢掉，而不是把 token 账单一起撑爆
        */
       import {
+        MAX_ABOUT_CHARS,
+        MAX_ABOUT_ITEMS,
         MAX_ASK_CHARS,
         MAX_ASK_MESSAGES,
+        MAX_CATALOGUE_ITEMS,
         MAX_HISTORY,
         MAX_PERSONA,
         MAX_STEPS,
         TOOL_SPECS,
         WIDGET_DENIED_ACTIONS,
+        aboutLine,
         allTools,
         compactSnapshot,
         describeToolCall,
@@ -249,7 +253,77 @@
       ok(squeezed.length < 2000, "超预算时确实变小了");
       ok(!squeezed.includes('"config"'), "手段是把 config 整段丢掉，而不是砍一半 JSON");
 
-      // ---- 10. 组件借平台的手（`assistant.ask`）----
+      // ---- 10. 观察段（0003 §4）：组件说明首句 + 商店 ----
+
+      // 说明首句：折成一行、按码点截、截断留一个省略号
+      eq(aboutLine("第一行\n第二行\t缩进"), "第一行 第二行 缩进", "说明折成一行（作者写的是分段正文）");
+      eq(aboutLine(undefined), "", "没写说明就是空串，不编一句");
+      const longAbout = aboutLine("鱼".repeat(MAX_ABOUT_CHARS + 50));
+      eq(Array.from(longAbout).length, MAX_ABOUT_CHARS, `说明截到 ${MAX_ABOUT_CHARS} 字`);
+      ok(longAbout.endsWith("…"), "截断了要说出来（省略号）");
+      eq(aboutLine("😀".repeat(MAX_ABOUT_CHARS)), "😀".repeat(MAX_ABOUT_CHARS), "正好到上限时不截");
+      ok(
+        !aboutLine("😀".repeat(MAX_ABOUT_CHARS + 1)).includes("\ufffd"),
+        "按码点截，不把 emoji 切成半个（切开的那个是方框）",
+      );
+
+      // 快照里：已装的带 about，没装的不带；超过 8 个只列 8 个并报总数
+      const manyWidgets = Array.from({ length: MAX_ABOUT_ITEMS + 3 }, (_, i) => ({
+        id: `w${i}`,
+        name: `W${i}`,
+        installed: true,
+        about: `第 ${i} 个组件的说明`,
+      }));
+      const observed = JSON.parse(
+        compactSnapshot({
+          theme: "dark",
+          paused: false,
+          widgets: [{ id: "lattice.clock", name: "Clock", installed: true, about: "点一下开始计时" }],
+          placements: [],
+        }),
+      );
+      eq(observed.installed, [
+        { id: "lattice.clock", name: "Clock", about: "点一下开始计时" },
+      ], "已装的组件带上说明首句（否则模型只能猜它能不能设成上海）");
+
+      const plain = JSON.parse(
+        compactSnapshot({
+          theme: "dark",
+          paused: false,
+          widgets: [{ id: "lattice.pet", name: "Pet", installed: true }],
+          placements: [],
+        }),
+      );
+      eq(plain.installed, [{ id: "lattice.pet", name: "Pet" }], "没写说明的组件不带空的 about 字段");
+
+      const capped = JSON.parse(
+        compactSnapshot({ theme: "dark", paused: false, widgets: manyWidgets, placements: [] }),
+      );
+      eq(capped.installed.length, MAX_ABOUT_ITEMS, `最多带 ${MAX_ABOUT_ITEMS} 个组件的说明`);
+      eq(capped.installedMore, 3, "超出的部分显式报总数（不说它就会以为桌面上就这 8 个）");
+
+      // 商店：目录没加载时一个字都不提；加载了也明说"你装不了"
+      const noShop = systemPrompt('{"x":1}');
+      ok(!noShop.includes("商店里还能装这些"), "目录没加载就不提商店");
+      const hinted = systemPrompt('{"x":1}', {
+        catalogue: [{ id: "lattice.todo", name: "To-do" }],
+      });
+      ok(hinted.includes("lattice.todo"), "商店条目给了 id（用户自己装的时候要照着找）");
+      ok(hinted.includes("你没有安装工具"), "明说它装不了，别回答“已经帮你装好了”");
+      const manyShop = systemPrompt('{"x":1}', {
+        catalogue: Array.from({ length: MAX_CATALOGUE_ITEMS + 2 }, (_, i) => ({
+          id: `lattice.w${i}`,
+          name: `W${i}`,
+        })),
+      });
+      eq(
+        (manyShop.match(/^- lattice\.w\d+ · /gm) ?? []).length,
+        MAX_CATALOGUE_ITEMS,
+        `商店最多列 ${MAX_CATALOGUE_ITEMS} 个`,
+      );
+      ok(manyShop.includes("还有 2 个没列出来"), "多出来的报个数，不假装只有这几个");
+
+      // ---- 11. 组件借平台的手（`assistant.ask`）----
 
       // 工具表按调用方裁剪：组件那一轮没有 placement.remove，其余一个不少
       eq(Object.keys(toolsFor("platform")).sort(), Object.keys(TOOL_SPECS).sort(), "平台自己那一轮还是全部八个");

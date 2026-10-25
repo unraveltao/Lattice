@@ -37,6 +37,35 @@ export const MAX_STEPS = 24;
  */
 export const MAX_HISTORY = 32;
 
+/**
+ * 每个已装组件在提示里最多带多少字说明（`help` 第一节的第一条）。
+ *
+ * 0003 §4 的"观察"段：模型只有一份布局快照，问"帮我把天气设成上海"时它不知道
+ * 装没装、说明里写了什么，于是要么猜、要么去调一个不存在的实例。
+ *
+ * 上限**不是建议**：8 个组件 × 120 字 ≈ 1k token，再长就是每一轮都在为
+ * "它这次根本用不到的那几句"付钱。截断了要在提示里说出来。
+ */
+export const MAX_ABOUT_CHARS = 120;
+/** 最多给几个组件带说明。超出的只留 id / name，并在快照里报个总数 */
+export const MAX_ABOUT_ITEMS = 8;
+/** 商店里"还能装"最多列几个 */
+export const MAX_CATALOGUE_ITEMS = 8;
+
+/**
+ * 说明首句压成一行、截到 `MAX_ABOUT_CHARS`。
+ *
+ * 作者写的是给人看的分段正文（可能带换行、缩进），塞进 JSON 快照之前要先折平；
+ * 按**码点**截，别把 emoji 从中间切开（切开的那个字符在界面上是个方框）。
+ */
+export function aboutLine(raw: string | undefined): string {
+  if (!raw) return "";
+  const folded = raw.replace(/\s+/g, " ").trim();
+  const chars = Array.from(folded);
+  if (chars.length <= MAX_ABOUT_CHARS) return folded;
+  return `${chars.slice(0, MAX_ABOUT_CHARS - 1).join("")}…`;
+}
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
@@ -319,6 +348,25 @@ export interface PromptOptions {
   persona?: { name: string; text: string } | null;
   /** 用户拨开的那几只手。没开就一个字都不提 —— 提了它会去调一个不存在的工具 */
   hands?: HandsSettings | null;
+  /**
+   * 商店里还能装的那些（0003 §4 的第二小段）。
+   *
+   * **目录没加载就传 `null`**：没读到目录时不提商店，模型就不会凭空推荐一个
+   * 不存在（或者已经被撤下）的组件。已装的那些不走这里 —— 它们在快照里。
+   */
+  catalogue?: CatalogueHint[] | null;
+}
+
+/**
+ * 商店里一个可装的组件，**只有 id 与显示名**。
+ *
+ * 为什么不是 `runtime/catalogue.ts` 的 `CatalogueEntry`：那条带着版本、权限、
+ * 发布者、图标、主页十来个字段。提示词里给模型这些，它就会开始讨论版本号和
+ * 发布者，而它既装不了也没法验证 —— 所以这里是"一句提示"，不是"一条目录记录"。
+ */
+export interface CatalogueHint {
+  id: string;
+  name: string;
 }
 
 /**
@@ -366,6 +414,17 @@ export function systemPrompt(snapshot: string, options: PromptOptions = {}): str
   // 手：只提已经打开的那几组。**同一份开关**决定工具表和这段话，
   // 两边不一致的症状是"它能调，但提示里说它做不到"（0004 §5）
   if (options.hands) lines.push(...handsPrompt(options.hands));
+  // 商店（0003 §4 的第二小段）：只给 id 与名字，并且**明说它装不了** ——
+  // 不说这一句，模型会回答"已经帮你装好了"，而实际什么都没发生
+  const catalogue = options.catalogue ?? [];
+  if (catalogue.length > 0) {
+    const shown = catalogue.slice(0, MAX_CATALOGUE_ITEMS);
+    lines.push("", "商店里还能装这些（你没有安装工具，只能建议用户自己去装）：");
+    for (const entry of shown) lines.push(`- ${entry.id} · ${entry.name}`);
+    if (catalogue.length > shown.length) {
+      lines.push(`（还有 ${catalogue.length - shown.length} 个没列出来。）`);
+    }
+  }
   lines.push("", "当前桌面：", snapshot);
   return lines.join("\n");
 }
@@ -509,7 +568,18 @@ export function isDone(reply: AssistantReply): boolean {
 export interface DeskSnapshot {
   theme: string;
   paused: boolean;
-  widgets: Array<{ id: string; name: string; installed: boolean }>;
+  widgets: Array<{
+    id: string;
+    name: string;
+    installed: boolean;
+    /**
+     * `help` 第一节第一条（作者写的"怎么用"），已折成一行。
+     *
+     * 为什么只给第一条：模型要回答的是"这个组件现在能用什么"，不是替它写手册。
+     * 整份说明最多 6 节 × 6 条 × 160 字，全塞进来任一轮都能吃掉半个上下文。
+     */
+    about?: string;
+  }>;
   placements: Array<{
     instanceId: string;
     widgetId: string;
@@ -527,18 +597,26 @@ export interface DeskSnapshot {
 /**
  * 系统提示里那段"桌面现状"。
  *
- * 三条取舍：
+ * 四条取舍：
  * - **只列已安装的组件**：没装的它也用不了（`placement.add` 会被执行器拒），
  *   列出来只会让它推荐一个装不了的组件。
+ * - **已装的带一句说明首句**（`about`）：模型只有布局数字时，问"天气能设成
+ *   上海吗"它只能猜（0003 §4 的"观察"段）。**最多 8 个**，再多的只留 id / name
+ *   并报个总数 —— 一句话 × 15 个组件就是 1800 字，那是每一轮都在付钱。
  * - **配置带上**（`config`）：桌宠的大小、时钟的 12/24 小时制都在这儿，模型
  *   要回答"她怎么这么大"就得看见它。
  * - **超长就把配置整段丢掉**：一个组件配了几十个键时，配置会把快照撑到几千
  *   token，而那些键几乎肯定和这次请求无关。宁可少给，不要每次都为它付钱。
  */
 export function compactSnapshot(snapshot: DeskSnapshot, budget = 6000): string {
-  const installed = snapshot.widgets
-    .filter((widget) => widget.installed)
-    .map((widget) => ({ id: widget.id, name: widget.name }));
+  const installedAll = snapshot.widgets.filter((widget) => widget.installed);
+  const installed = installedAll.slice(0, MAX_ABOUT_ITEMS).map((widget) => {
+    const about = aboutLine(widget.about);
+    // 没写说明的组件不带空字段：`"about": ""` 只会让模型以为那里本该有字
+    return about ? { id: widget.id, name: widget.name, about } : { id: widget.id, name: widget.name };
+  });
+  // "还有 N 个"要显式说出来：不说的话模型会以为桌面上就这 8 个
+  const more = installedAll.length - installed.length;
 
   const placements = snapshot.placements.map((placement) => ({
     instanceId: placement.instanceId,
@@ -557,6 +635,7 @@ export function compactSnapshot(snapshot: DeskSnapshot, budget = 6000): string {
     theme: snapshot.theme,
     paused: snapshot.paused,
     installed,
+    ...(more > 0 ? { installedMore: more } : {}),
     placements,
   };
   const text = JSON.stringify(base, null, 1);

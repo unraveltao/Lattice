@@ -525,3 +525,96 @@ export async function runWidgetTurn(options: {
 
   return { text: text.trim(), actions };
 }
+
+// ---------------------------------------------------------------------------
+// 会话（0003 §4）：四份文件级操作，形状和 `assistant_session.rs` 一一对齐
+// ---------------------------------------------------------------------------
+//
+// 为什么不是"面板自己 `invoke` 一下"：面板有两个宿主（主窗口抽屉、桌面小窗），
+// 而小窗不加载 store、不许自己执行动作。会话读写是**纯文件**，两个宿主都该走
+// 同一条路，而不是各写一遍 `invoke` 拼字符串。
+
+/** 列表里的一行。**没有正文** —— 50 份会话全部读进内存只为画个列表是不划算的 */
+export interface SessionSummary {
+  id: string;
+  /** 坏文件是空串，界面自己说"损坏的会话" */
+  title: string;
+  updatedAt: number;
+  messageCount: number;
+  usage: SessionUsage;
+  /** 文件在、但解析不了：可删不可加载 */
+  damaged: boolean;
+}
+
+export interface SessionUsage {
+  promptTokens: number;
+  completionTokens: number;
+}
+
+export interface SessionMessage {
+  role: string;
+  content: string | null;
+  [key: string]: unknown;
+}
+
+/** 一份完整会话（磁盘上那个文件） */
+export interface AssistantSession {
+  version: number;
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  model: string;
+  profileId: string;
+  messages: SessionMessage[];
+  usage: SessionUsage;
+  /** 上一次保存丢过条目 —— 界面要显示"这条会话被截断" */
+  truncated: boolean;
+}
+
+export interface SessionSaved {
+  id: string;
+  title: string;
+  updatedAt: number;
+  messageCount: number;
+  /** 这次保存丢了几条（0 = 一条没丢） */
+  dropped: number;
+}
+
+/** 按 `updatedAt` 倒序。坏文件也在列表里（`damaged: true`），**不会**让整份列表读崩 */
+export async function listSessions(): Promise<SessionSummary[]> {
+  return await callCommand<SessionSummary[]>("assistant_sessions");
+}
+
+export async function loadSession(id: string): Promise<AssistantSession> {
+  return await callCommand<AssistantSession>("assistant_session_load", { id });
+}
+
+/**
+ * 存一份会话。`id` 给了就是更新那一份，没给就是新建（新 id 由 Rust 造）。
+ *
+ * `messages` 序列化成 **JSON 文本**再递过去，和 `llm_chat` 同一条约定。
+ */
+export async function saveSession(input: {
+  id?: string;
+  title?: string;
+  model: string;
+  profileId?: string;
+  messages: ChatMessage[];
+  usage?: SessionUsage;
+}): Promise<SessionSaved> {
+  return await callCommand<SessionSaved>("assistant_session_save", {
+    id: input.id ?? null,
+    title: input.title ?? null,
+    model: input.model,
+    profileId: input.profileId ?? null,
+    messages: JSON.stringify(input.messages),
+    usage: input.usage ?? null,
+  });
+}
+
+/** 文件本来就不在也算成功 —— 用户点"删除"想要的是"它不在了" */
+export async function deleteSession(id: string): Promise<void> {
+  await callCommand<void>("assistant_session_delete", { id });
+}
+

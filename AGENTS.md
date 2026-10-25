@@ -14,7 +14,7 @@
 
 **棂 / Lattice** —— 可扩展的 Windows 桌面小组件平台。第三方用纯 HTML/CSS/JS 写组件，平台负责把它们安全地放到桌面上。
 
-当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志，`npm run agent -- state` 看它干了什么），数据平面（组件把能力声明成工具）还没做；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，**模型档能存好几条**并存——DeepSeek 和本地 Ollama 各一条，key 只在 Rust 里，**回答是流式的**（SSE 逐字出来，按 Stop 当场断），工具调用走同一套 8 个动作，**外加六组"手"**（读文件 / 跑命令 / 取网页 / 看窗口 / 点键鼠 / MCP —— 默认**全关**，读自动放行、写与命令与点击先问一句，审计只记形状）；组件那侧只有 `llm:chat`，另有一条**借手**的 `assistant.ask` —— 桌宠这类组件说一句话，平台替它跑一整轮（工具表砍掉删除），要 `desktop:control`）。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
+当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志，`npm run agent -- state` 看它干了什么），数据平面（组件把能力声明成工具）还没做；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，**模型档能存好几条**并存——DeepSeek 和本地 Ollama 各一条，key 只在 Rust 里，**回答是流式的**（SSE 逐字出来，按 Stop 当场断），工具调用走同一套 8 个动作，**外加六组"手"**（读文件 / 跑命令 / 取网页 / 看窗口 / 点键鼠 / MCP —— 默认**全关**，读自动放行、写与命令与点击先问一句，审计只记形状）；组件那侧只有 `llm:chat`，另有一条**借手**的 `assistant.ask` —— 桌宠这类组件说一句话，平台替它跑一整轮（工具表砍掉删除），要 `desktop:control`）。**对话在重启之后还在**：一轮一轮落在 `assistant-sessions/<id>.json`（一条会话一个文件），面板顶上那行能挑回来接着聊。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
 
 想先知道"为什么现在是这样"，读 [ROADMAP 的「被推翻的九个决定」](./docs/ROADMAP.md#被推翻的九个决定)——每个决定都写着当初怎么选、被什么撞翻、现在怎么补。
 
@@ -67,9 +67,9 @@ src/
     autostart.ts          开机自启的读写与"路径漂移"判定（`Run` 注册表项）
     catalogue.ts          商店客户端：读目录（内置走 fetch / 远端走 IPC）、下载安装、备份与回滚、写举报
     DebugPanel.tsx        调试面板：桥调用与组件 console 的实时抽屉（Ctrl+Shift+D）
-    assistant.ts          assistant 的 IPC 面：读写模型档（profiles）、列模型（测试连接）、跑一轮对话（工具循环 ≤24 步、审批、预算）；动作交给 surface（主窗口本地跑 / 小窗转给主窗口），新手交给 `platform/hands.ts`（走 Rust）—— `handGroup(name)` 非空就是后者（`AssistantSurface`）
+    assistant.ts          assistant 的 IPC 面：读写模型档（profiles）、列模型（测试连接）、跑一轮对话（工具循环 ≤24 步、审批、预算）、会话的读存删（`listSessions` / `loadSession` / `saveSession` / `deleteSession`，一条会话一个文件）；动作交给 surface（主窗口本地跑 / 小窗转给主窗口），新手交给 `platform/hands.ts`（走 Rust）—— `handGroup(name)` 非空就是后者（`AssistantSurface`）
     hands.ts              assistant 的手的 IPC 面：`assistant_tool` / `hands_cancel` / 开关读写（`assistant_hands*`）；参数序列化成字符串递过去，返回 `AgentReply` 形状
-    AssistantPanel.tsx    assistant 的面板：一列模型档 + 表单 + 六组能力开关 + 审批确认条 + 对话，工具结果一行一个（抽屉与小窗共用这一个组件）
+    AssistantPanel.tsx    assistant 的面板：一列模型档 + 表单 + 六组能力开关 + 审批确认条 + 对话（顶上一行会话列表：挑回 / 新开 / 删），工具结果一行一个（抽屉与小窗共用这一个组件）
     AssistantWindow.tsx   assistant 小窗的壳：一条能拖的标题栏 + 面板；**没有 store**，动作走 `remoteSurface()`
   runtime/
     manifest.ts           清单校验与归一化；Permission 类型与中文标签（唯一真源）
@@ -84,7 +84,7 @@ src/
     screen-fit.ts         纯几何：锚点选屏、夹紧（入参一律物理像素，`tests/screen-fit.html` 钉着）
     close-guard.ts        ✕ 该不该认这一下：指针序列 + 命中测试（纯函数，`tests/close-guard.html` 钉着）
     agent.ts              agent 动作执行器：白名单动作走真 store，回快照（`tests/agent.html` 57 条）
-    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、工具表裁剪（`toolsFor`）与合表（`allTools` = 桌面动作 + 手）、system prompt（含手那一段）、人设片段、历史裁剪（条数 + 字符数两道上限）、线上形状（`parseAskMessages` / `normalizeAskMessages`）、OpenAI 消息形状、快照压缩（`tests/assistant.html` 122 条）
+    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、工具表裁剪（`toolsFor`）与合表（`allTools` = 桌面动作 + 手）、system prompt（含手那一段）、人设片段、历史裁剪（条数 + 字符数两道上限）、线上形状（`parseAskMessages` / `normalizeAskMessages`）、OpenAI 消息形状、快照压缩、商店里还没装的组件那一段（`CatalogueHint` / `aboutLine`，最多 8 条）（`tests/assistant.html` 137 条）
     hands.ts              assistant 的手的纯逻辑（0004）：六个能力组、11 个工具的 JSON Schema、`HAND_READY`（拨得动 ≠ 接好了）、`handGroup` / `needsApproval` / `handsTools` / `handsPrompt` / 确认条那一行、MCP 发现结果合表（`mcpToolSpecs`）与命令行切词、一轮的预算（`tests/hands.html` 97 条）
     llm-models.ts         模型档的纯知识：按模型名前缀查能力（能不能调工具 / 能不能给 temperature / 上下文多大）、历史字符预算、三种鉴权形状（bearer / api-key-header / none）、七个服务商的预置填写（纯函数，`tests/llm-models.html` 26 条）
     align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
@@ -157,6 +157,8 @@ src-tauri/src/
   input_policy.rs         键鼠那道的形状：键名 → 虚拟键码（含 F1–F24 与 OEM 标点）、`Ctrl+S` 解析、文字 → UTF-16 按键序列（中文 / emoji / 换行）、虚拟桌面归一化到 0..65535（23 条 `rustc --test`，**不引 crate**）
   mcp.rs                  assistant 的第六只手（0004 的 P6）：`mcp.<server>.<tool>` 的发现与执行 —— `mcp.json`（`{version, servers: [{id, label, transport, command, args, url}]}`）读写、两种传输（stdio：`cmd /C` 起子进程 + 换行分隔的 JSON-RPC + `CREATE_NO_WINDOW`；http：streamable POST + SSE `data:` 帧 + 回 echo `Mcp-Session-Id`）、`initialize` → `notifications/initialized` 握手、`tools/list` 发现与 `tools/call`、三个命令（mcp_servers / mcp_servers_save / mcp_tools）；**一次调用一条连接，不复用**；`spawn_blocking` 里跑
   mcp_policy.rs          上面那道的纯逻辑：工具名三段形状（`mcp.<server>.<tool>`）、服务 id 的字母表与撞名去重（`_2`）、工具段压成 `[a-z0-9_-]`、`cmd /C` 的命令行拼装与引号、换行分隔 JSON 的切帧、三种请求体（initialize / tools-list / tools-call）（17 条 `rustc --test`，**不引 crate**）
+  assistant_session.rs    assistant 的会话存档：`assistant-sessions/<id>.json` 的读写列删（四条命令 assistant_sessions / assistant_session_load / assistant_session_save / assistant_session_delete），保存时按 200 条 / 1 MB 两道预算裁最老的、`truncated` 写回文件让人知道"它掉过头"；标题取第一句用户的话前 12 个字（算不出来就存空串，界面自己翻）；坏文件不拦列表，标 `damaged: true`
+  assistant_session_policy.rs  上面那道的纯逻辑：id 形状、标题截断（按码点不按字节）、留哪些行的三道筛（坏行丢 / 条数 / 字节）、熵源 → 4 位后缀（15 条 `rustc --test`，**不引 crate**）
   assistant_window.rs     assistant 的桌面小窗：建 / 开关 / 藏、拖完存位置（`assistant-window.json`）；三个命令都是 `async fn`（同步会死锁）
   wallpaper.rs            截壁纸（宿主页底板的第一层）
   metrics.rs              系统指标（sysmon 组件用）：整机 + 逐核 CPU、内存与提交量、磁盘、网络、开机时长 / 进程计数，直接调 Win32 不引 crate
@@ -316,6 +318,7 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 | assistant 的模型档、**API key** 与手的开关 | `%APPDATA%\com.iron-tom.lattice\assistant.json`（v3：`{version: 3, activeId, hands: {files, shell, web, screen, input, mcp}, workspace, profiles: [{id, label, baseUrl, auth, apiKey, model, temperature, models}]}`；v1 的 `{baseUrl, model, temperature, apiKey}` 读到时就地升级成一条档、**手全关**，临时文件 + 原子替换） | `llm.rs`（**只有 Rust 读得到明文 key**，前端只见 `keyHint` 掩码） |
 | assistant 连的 MCP 服务 | `%APPDATA%\com.iron-tom.lattice\mcp.json`（`{version, servers: [{id, label, transport, command, args, url}]}`；临时文件 + 原子替换；坏了当"没有服务"，不让它拦住启动） | `mcp.rs`（**`id` 由 Rust 生成并复用**，界面只读写其余字段 —— id 进了工具名，换一次等于工具换了名字，模型记着的老名字全部失效） |
 | assistant 小窗的位置 | `%APPDATA%\com.iron-tom.lattice\assistant-window.json`（`{x, y}` 屏幕坐标，临时文件 + 原子替换） | `assistant_window.rs`（**拖完才写**，文件坏了退回右下角默认位） |
+| assistant 的对话记录（一条会话一个文件） | `%APPDATA%\com.iron-tom.lattice\assistant-sessions\<id>.json`（**明文**，id 形如 `s-<unix 秒>-<4 位随机>`；临时文件 + 原子替换；每轮保存按 200 条 / 1 MB 两道预算裁最老的，裁过就把 `truncated` 写回文件、界面据此提示"它掉过头了"） | `assistant_session.rs`（标题取第一句用户的话前 12 个字，算不出来就存空串让界面自己翻；坏文件**不拦列表**，标 `damaged: true`） |
 | 用户安装的组件 | `%APPDATA%\com.iron-tom.lattice\widgets\<id>\` | `widgets.rs` |
 | 上一代的组件（回滚用） | `%APPDATA%\com.iron-tom.lattice\widget-backups\<id>\` | `backup.rs`（只留一代，卸载时一起删） |
 | 举报与评分 | `%APPDATA%\com.iron-tom.lattice\reports\<widgetId>-<unix>.json` | `store.rs::store_report`（**不发送**，只是文件） |
@@ -718,7 +721,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
   #[path = "../src-tauri/src/network_policy.rs"] mod network_policy;
   ```
   `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe`。**这就是"纯逻辑要单独拆成一个文件"的原因 —— 拆出来才测得到**。断言只有一份（`#[cfg(test)] mod tests` 在模块内部），壳子别复制。
-  能这么跑的现在是 309 条（全仓 351 条 `#[test]`，`grep -c` 一下就对得上）：`llm_policy.rs`（48，**不引 crate**）、`agent_policy.rs`（26）、`input_policy.rs`（23，**不引 crate**）、`web_policy.rs`（21，**不引 crate**）、`screen_policy.rs`（21，**不引 crate**）、`mcp_policy.rs`（17，**不引 crate**）、`diagnostics.rs`（14）、`fs_policy.rs`（14，**不引 crate**）、`hands_policy.rs`（12，**不引 crate**）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`shell_policy.rs`（9，**不引 crate**）、`occlusion_policy.rs`（8）、`usage_policy.rs`（8）、`audio_policy.rs`（6）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）。剩下 42 条（`protocol.rs` 6、`llm.rs` 6、`widget_store.rs` 5、`hands.rs` 7、`mcp.rs` 8、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
+  能这么跑的现在是 324 条（全仓 366 条 `#[test]`，`grep -c` 一下就对得上）：`llm_policy.rs`（48，**不引 crate**）、`agent_policy.rs`（26）、`input_policy.rs`（23，**不引 crate**）、`web_policy.rs`（21，**不引 crate**）、`screen_policy.rs`（21，**不引 crate**）、`mcp_policy.rs`（17，**不引 crate**）、`diagnostics.rs`（14）、`fs_policy.rs`（14，**不引 crate**）、`hands_policy.rs`（12，**不引 crate**）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`shell_policy.rs`（9，**不引 crate**）、`occlusion_policy.rs`（8）、`usage_policy.rs`（8）、`audio_policy.rs`（6）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）。剩下 42 条（`protocol.rs` 6、`llm.rs` 6、`widget_store.rs` 5、`hands.rs` 7、`mcp.rs` 8、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
   **壳子会过期，过期了要修，不要当它不存在**：`extract-test.rs` 曾经在 `package.rs` 加上验签之后编不过（`extract` 多了第三个参数、还引用了 `signature_policy` 和 `backup`），但 `rustc` 编译失败时旧的 `.exe` 还在，`&&` 串起来的写法会**跑那个旧二进制并显示全绿** —— 那才是最坏的情况。所以：编不过就是红，先看 `rustc` 的退出码，别信后面那行 `test result`。修法是给壳子补 `#[path]` 把 `signature_policy.rs` 编进来，`backup` 依赖 `tauri` 编不进来，就写一个签名对得上的桩（四条用例传的都是 `None`，走不到那条分支）。
   `package.rs` 要用到 `flate2` / `serde_json`，`signature.rs` 要用到 `ed25519_dalek` / `sha2`，壳子得额外指路：`rustc --edition 2024 --test 壳子.rs -L src-tauri/target/debug/deps --extern flate2=<rlib> --extern serde_json=<rlib> -o 壳子.exe`（rlib 从 `target/debug/deps/` 里按 `libflate2-*.rlib` 找）。只给 `--extern` 不给 `-L` 会报 `can't find crate`。`csp.rs` 那个桩的值要抄对（`"lattice-widget"`，不是 `"lattice"`），抄错了单测会红 —— 这次正好被它抓了一下。
   **raw `rustc` 的默认 edition 是 2015**，不带 `--edition` 编出来的 panic 消息不认内联捕获（`assert!(cond, "{index}")` 会报 unused placeholder，断言本身照样成立）。想安静就照着 crate 的 edition 给一个：`rustc --edition 2024 --test src-tauri/src/guide_policy.rs -o 壳子.exe`。
