@@ -44,6 +44,11 @@ public/store/
 # 打包产物（scripts/pack-widget.mjs 的默认输出目录）
 dist-packs/
 
+# winget 的三份清单（scripts/winget-manifest.mjs 的默认输出目录）。
+# 它描述的是"某个版本的某个字节"（直链 + SHA-256），和 .lattice 一样是发布产物：
+# 进仓库的话，下次发版要么忘了改、要么改了但和真正的 exe 不是一份。
+dist-winget/
+
 # 平台自动更新的签名私钥。和组件目录的发布者钥匙不同：那把是**故意公开**的
 # （见上面的注释），这把丢了就没法再给已装的用户推更新，泄露了别人能给你推假更新。
 # 公钥在 tauri.conf.json 里，私钥只在这台机器和 CI 的 Secrets 里。

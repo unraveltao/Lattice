@@ -80,9 +80,9 @@ Get-AuthenticodeSignature .\Lattice_x.y.z_x64-setup.exe | Format-List Status, St
 
 winget 的分发模型里，信任不是挂在证书上的，是挂在**清单审核**上的：往 `microsoft/winget-pkgs` 提一个 manifest，人工 + 自动校验过一遍，用户 `winget install Lattice` 就装上了。关键是**经过 winget 下载的安装包不带 Mark-of-the-Web**，所以那条"从浏览器下载 → SmartScreen 拦"的路径根本不发生。这是目前 Windows 上最接近"免费且真的不弹警告"的路。
 
-代价：清单里要写死版本号、安装包直链（GitHub Releases 的地址可以）和 SHA-256，**每发一版都要更新 manifest 并重新提 PR**。这是纯手工活，一年几次可以接受。
+代价：清单里要写版本号、安装包直链（GitHub Releases 的地址可以）和 SHA-256，**每发一版都要重新提 PR**。这三样已经不用手抄了：`npm run winget:manifest` 从这次真正打出来的 exe 上现算（`release.yml` 打完包会把三份 YAML 挂成 release 附件），动作与四条边界见 [`reference/build.md`](./reference/build.md) 第五节。留下来的人工步骤只有"提 PR 并等审核"。
 
-**Scoop** 更轻：自己仓库里放一个 JSON，用户 `scoop install`。受众偏开发者，但成本几乎为零，可以和 winget 一起做。
+**Scoop** 更轻：自己仓库里放一个 JSON，用户 `scoop install`。受众偏开发者，但成本几乎为零 —— 不过它要再维护一个 bucket，而且 NSIS 的静默参数没在真机上验过，所以先排在 winget 之后（同上那一节末尾）。
 
 ## 四、明确不做
 
@@ -100,5 +100,5 @@ winget 的分发模型里，信任不是挂在证书上的，是挂在**清单�
 | 现在 | README 实话 + release 附 SHA-256 | 0 |
 | 下一次发版前 | 提 SignPath 申请（审核 1–3 天，可以先提交再等） | 0 |
 | 批准后 | `release.yml` 加签名步骤，发一版签过名的，按上面的验证法验一遍 | 0 |
-| 有稳定安装包之后 | 提 winget manifest（顺带 Scoop） | 0 |
+| 有稳定安装包之后 | 提 winget manifest（生成器与 CI 附件已就绪，见 [`reference/build.md`](./reference/build.md) 第五节） | 0 |
 | 永远 | 不买 OV/EV，不用自签名对外分发 | 0 |

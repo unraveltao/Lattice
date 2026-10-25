@@ -39,9 +39,9 @@
 | Rust | 23 229 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、电源读数、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
 | 组件 SDK | 943 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
 | 官方组件 + 示例 | 25 586 行 | 19 个官方包 + 1 个示例（含每个包里的 SDK 副本） |
-| 构建脚本 | 5 047 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
+| 构建脚本 | 5 485 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、winget 清单生成器 + 单测、样式与文档的守门人 |
 | 浏览器断言 | 2 645 条 | 54 个自检页，跑一遍的真实计数（0 failed） |
-| Node 断言 | 61 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + 浏览器预览那条通道 28 条，都不依赖 dev server。**CI 只跑前四条（33 条）**，`test:llm-proxy` 还没进 workflow |
+| Node 断言 | 72 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + winget 清单生成器 11 条 + 浏览器预览那条通道 28 条，都不依赖 dev server。**CI 只跑前五条（44 条）**，`test:llm-proxy` 还没进 workflow |
 | Rust 单测 | 422 条 | 371 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 50 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `power_policy` 6 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 95 个 | |
 | 权限 | 12 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐 |
@@ -260,7 +260,12 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 - [ ] **代码签名** —— 没有证书，用户第一次运行会被 SmartScreen 拦成"未知发布者"，点"仍要运行"才装得上。**2026 年重新算过账：不买证书。** 完整论证在 [CODE_SIGNING.md](./CODE_SIGNING.md)，一句话版：EV 从 2024 起不再跳过 SmartScreen、Azure Artifact Signing 的个人开发者只限美/加、OV 一年一续且私钥必须进硬件 —— 付费唯一买到的是"发布者名字从'未知'变成你的"，而 SignPath Foundation 免费给同样的东西。原先这条写的是"要花钱买 OV/EV 证书"，那句话是错的。
   - [ ] **提 SignPath 申请** —— 免费 OV 级证书。它要求的四条我们全都有了：MIT（`LICENSE`）、公开仓库、`release.yml` 从 `v0.1.0` 起就在 `windows-latest` 上全自动构建、有已发布的 release。审核 1–3 个工作日。批准后 `release.yml` 加一步签名，**必须用 `vars.SIGNPATH_ORGANIZATION_ID != ''` gate 住** —— 没配就照常发未签名的包，别让一次审核卡住整个发布。
   - [ ] **验一次信任链** —— 有个中文博客说它链到私有根 `SignPath Root CA G2`、不在 Windows 默认信任库里，这和微软"OV-level certificate signing"的措辞对不上（另有第三方指南说是 DigiCert 签发）。三种说法都记在 CODE_SIGNING.md，**没证实，别当事实传**。签出第一个包后按文档里的 `Get-AuthenticodeSignature` + 一台干净 Windows 验一遍再定论。
-  - [ ] **winget manifest** —— 不管签名成不成都要做。winget 下载的包不带 Mark-of-the-Web，用户根本不走"浏览器下载 → SmartScreen 拦"这条路，是免费方案里最接近"真的不弹警告"的一条。代价：每发一版都要改版本号 + 安装包直链 + SHA-256，重新提 PR。Scoop 可以顺带做，成本几乎为零。
+  - [x] **winget manifest** —— **清单生成器和 CI 附件都做了；第一次真的提 PR 还没发生**（那要等一个发布出去的安装包）。winget 下载的包不带 Mark-of-the-Web，用户根本不走"浏览器下载 → SmartScreen 拦"这条路，是免费方案里最接近"真的不弹警告"的一条。
+    - **手抄的三样东西改成现算**：版本号 + 安装包直链 + SHA-256，抄错不会在本地红，要等 microsoft/winget-pkgs 的校验器说。现在 `scripts/winget-manifest.mjs` 从**这次真正打出来的那个 exe** 上算（`npm run winget:manifest`），`release.yml` 打完包顺手把三份 YAML 传成 release 附件 —— 发版时只差一次 PR。
+    - **清单不进仓库**：它描述"某个版本的某个字节"，和 `.lattice` 包一样是发布产物（`dist-winget/` 在 `.gitignore` 里）。存一份在仓库里的结局是"哈希和真包不是一份"。
+    - **`InstallerType: nullsoft` + `Scope: user` 是 Tauri 在 Windows 上的真实形状**（NSIS、装进 `%LOCALAPPDATA%`）；`Publisher` 取 `identifier` 的第二段（Tauri 自己的默认规则，这台机器上是 `iron-tom`），和安装器 ARP 里那个名字一字不差 —— 所以没有为此去改 `bundle.publisher`：那会连带换掉卸载信息所在的注册表路径，已装的用户会多一条残留。
+    - **`npm run test:winget` 11 条**钉住生成器的形状（哈希大写、直链与附件名同源、Publisher 的来源、两次生成逐字节相同），`frontend` job 跑它。
+    - **Scoop 仍然没做**：要再维护一个 bucket，而且 NSIS 的静默参数没在真机上验过。先让 winget 这一条真跑通一次，再谈它（理由写在 [`reference/build.md`](./reference/build.md) 第五节末尾）。
   - [x] **release 附 SHA-256** —— 签名回答"谁做的"，哈希回答"有没有被换过"，未签名期间后者是唯一能给的。写在 `release.yml` 末尾，带 `continue-on-error`（编译完再判红太亏）。**下一次打 tag 才第一次真跑**，在那之前它只是写好了。
 - [ ] **发布流程跑通一次** —— 打 tag → Actions 出草稿 release → 人工发布 → 旧版本点 Check for updates 能升上来。本地已经把"构建 → 签名 → 出安装包"跑通了，CI 那一侧也跑通了（`v0.1.0` 就是 Actions 出来的，2.67 MB 的 NSIS 安装包 + `.sig` + `latest.json`）。
   - **踩到一个坑**：`v0.1.0` 发布时勾了 "Set as a pre-release"，更新器于是报"检查你的网络"，而网络完全正常。症状、真实原因、修法在 [`PITFALLS.md`](./PITFALLS.md)「目录、签名与网络」那一组 —— 这条特别值得记，因为它的症状和原因长得完全不像。

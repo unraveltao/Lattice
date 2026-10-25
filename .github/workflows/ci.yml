@@ -1,8 +1,8 @@
 name: ci
 
 # 三件事分开跑，谁红看谁：
-#   frontend —— 类型 + 构建 + 四个 node:test（注入规则、SDK 副本一致性、agent CLI、
-#               三张表的守门人）+ 文档体检
+#   frontend —— 类型 + 构建 + 五个 node:test（注入规则、SDK 副本一致性、agent CLI、
+#               三张表的守门人、winget 清单生成器）+ 文档体检
 #   browser  —— tests/*.html 里的全部断言（以前靠人肉开几十个标签页）
 #   rust     —— cargo test。本机跑不了（安全策略拦 target/debug/deps 下的 exe），
 #               所以那些断言从来没有在任何人的机器上跑过，runner 是唯一的机会
@@ -41,6 +41,9 @@ jobs:
       # test:tokens 钉规则本身（半像素、豁免、font 简写），check:tokens 钉仓库现状。
       - run: npm run test:tokens
       - run: npm run check:tokens
+      # winget 清单生成器的形状（哈希大小写、直链与附件名、Publisher 取哪个名字）。
+      # 它不读安装包，只需要一个假字节串 —— 真清单在 release.yml 那一侧从真 exe 上生成
+      - run: npm run test:winget
       # 文档体检：相对链接是否可达、README 的数字和代码对不对得上。
       # 这两件事过期了不会报错，只能靠一条命令盯着
       - run: npm run check:docs

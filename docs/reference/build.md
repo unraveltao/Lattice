@@ -106,11 +106,33 @@ npm run publish:widget -- public/widgets/lattice.note --key ../lattice-registry/
 4. 下载安装包，在一台干净机器上装一遍
 5. 回 release 页面点 Publish
 6. 旧版本点 Check for updates，确认能升上来
+7. 从那条 release 里拿 winget 的三份清单，提一次 PR（见下）
 ```
 
 **第 3 步别勾 "Set as a pre-release"。** 勾了之后 release 页面正常、产物都在，唯独更新器会去敲的那个地址是 404，而它报出来的话是「检查你的网络」—— 症状和原因长得完全不像。完整的一条在 [`../PITFALLS.md`](../PITFALLS.md)「目录、签名与网络」。
 
 **草稿还没发布之前，打错的 tag 可以重打。** `git push --delete origin v0.x.y`，把 tag 指到修好的那个提交再推一次即可：tauri-action 是**在所有 release 里按 tag 名**找那份草稿（草稿用 `getReleaseByTag` 查不到，只能翻列表），找到就删掉同名产物重传，`### SHA-256` 那一段也先切掉旧的再写。发布之后就**不是**重打了 —— 那时候已经装上的用户手里是另一份二进制，重打等于把一个版本号对应两份东西。
+
+### winget 清单（第 7 步）
+
+winget 那条路下载的包**不带 Mark-of-the-Web**，用户根本不走"浏览器下载 → 未知发布者 → 仍要运行"这条路 —— 这是免费方案里唯一真的不弹 SmartScreen 的（论证在 [`../CODE_SIGNING.md`](../CODE_SIGNING.md) 第三节）。代价是每发一版都要交一份清单，里面有版本号、安装包直链和 SHA-256。
+
+**这三样东西不手抄。** `release.yml` 在打完包之后已经跑过一次 `node scripts/winget-manifest.mjs`，把三份 YAML 传成了那份 release 的附件（`unraveltao.Lattice.yaml` / `.installer.yaml` / `.locale.en-US.yaml`）；本地想重算一遍就：
+
+```
+npm run tauri:build            # 出 NSIS 安装包
+npm run winget:manifest        # 从那个 exe 现算哈希，写 dist-winget/
+npm run test:winget            # 只测生成器的形状，不需要安装包
+```
+
+然后把三份 YAML 放进 [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) 的 `manifests/u/unraveltao/Lattice/<版本>/`，提 PR。提之前先 `winget validate <目录>` 过一遍 —— 字段名、哈希、直链它都会替你核。**哈希和直链必须来自同一次构建**：改了 `version` 又忘了重新出包，是本条最常见的错。
+
+四条别踩回去：
+
+- **清单不进仓库。** 它描述的是"某个版本的某个字节"，和 `.lattice` 包一样是发布产物（`dist-winget/` 在 `.gitignore` 里）。存一份在仓库里，最后一定是"哈希和真包不是一份"。
+- **`InstallerType: nullsoft`、`Scope: user`。** Tauri 的 Windows 产物是 NSIS、默认装进 `%LOCALAPPDATA%`。写 `msi` / `machine` 会让 winget 拿系统级参数去跑一个用户级安装器。
+- **`Publisher` 得等于安装器 ARP 里那个名字。** Tauri 的规则是取 `identifier` 的第二段（这台机器上是 `iron-tom`），清单里的值由脚本从同一个来源算出来。给 `bundle.publisher` 换名字会连带换掉卸载信息所在的注册表路径，已装的用户会多一条残留 —— 为一个显示名不值。
+- **Scoop 还没做。** `scoop install` 只需要仓库里一个 JSON，但它得配一个 bucket（又是一个要人维护的仓库），而且 NSIS 的静默参数没有在真机上验过。先让 winget 那一条真跑通一次，再谈它。
 
 ## 六、密钥与产物速查
 
@@ -130,7 +152,7 @@ npm run publish:widget -- public/widgets/lattice.note --key ../lattice-registry/
 
 | job | 跑什么 | 为什么在这儿 |
 | --- | --- | --- |
-| `frontend` | `typecheck` → `build` → `test:injection` → `test:sdk` → `test:agent` → `test:tokens` → `check:tokens` → `check:docs` | 都不需要 dev server，几秒钟跑完 |
+| `frontend` | `typecheck` → `build` → `test:injection` → `test:sdk` → `test:agent` → `test:tokens` → `check:tokens` → `test:winget` → `check:docs` | 都不需要 dev server，几秒钟跑完 |
 | `browser` | 起 dev server → `test:browser`（全部 `tests/*.html`） | 页面 import 的是 `.ts` / `.tsx`，必须有转译；本机也能跑，只是慢 |
 | `rust` | `cargo test --lib` | **本机跑不了**（安全策略拦 `target/debug/deps` 下的 exe），runner 是唯一的机会 —— 而 `release.yml` **不跑**这一格，所以动过没有壳子的 `#[cfg(test)]` 就先推 `main` 等它绿，再打 tag |
 

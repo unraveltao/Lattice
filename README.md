@@ -343,7 +343,7 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 | Rust | 23 229 lines |
 | SDK | 943 lines |
 | Widgets + example | 25 586 lines |
-| Scripts | 5 047 lines |
+| Scripts | 5 485 lines |
 
 **Read next**
 
