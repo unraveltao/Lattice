@@ -1,11 +1,11 @@
 ---
 status: accepted
 date: 2026-10-25
-code: src/runtime/assistant.ts, src/runtime/hands.ts, src/platform/assistant.ts, src/platform/hands.ts, src/platform/AssistantPanel.tsx, src-tauri/src/hands.rs, src-tauri/src/hands_policy.rs, src-tauri/src/fs_policy.rs, src-tauri/src/shell_policy.rs, src-tauri/src/web_policy.rs, src-tauri/src/mcp.rs
+code: src/runtime/assistant.ts, src/runtime/hands.ts, src/platform/assistant.ts, src/platform/hands.ts, src/platform/AssistantPanel.tsx, src-tauri/src/hands.rs, src-tauri/src/hands_policy.rs, src-tauri/src/fs_policy.rs, src-tauri/src/shell_policy.rs, src-tauri/src/web_policy.rs, src-tauri/src/screen_policy.rs, src-tauri/src/input_policy.rs, src-tauri/src/mcp.rs
 ---
 
-> **落地状态**：P1（纪律）／P2（文件）／P3（命令）／P4（网页）已落，见 §9。
-> P5（屏幕与输入）／P6（MCP）尚未开工 —— 设计保留，动手前先读 §9 里记下的偏差。
+> **落地状态**：P1（纪律）／P2（文件）／P3（命令）／P4（网页）／P5（屏幕与键鼠）已落，见 §9。
+> P6（MCP）尚未开工 —— 设计保留，动手前先读 §9 里记下的偏差。
 
 # 0004 —— 给 assistant 一双手：文件、命令、网页、屏幕、外部服务
 
@@ -123,12 +123,18 @@ assistant_hands_save({ hands, workspace }) -> 同上
 纯逻辑落点（都能 `rustc --test` 单跑，**不引 crate**）：
 `fs_policy.rs`（路径归一化与 `..` 判定、读的行数/字数额度、search 的 blob 与目录跳过表、输出截断标记）、
 `shell_policy.rs`（命令行形状与拒绝表、超时夹紧、输出截断）、
+`screen_policy.rs`（窗口判据、标题压平、截图落点、PNG 分块与 CRC、扫描线）、
+`input_policy.rs`（键名 → 虚拟键码、组合键解析、文字 → 按键序列、虚拟桌面归一化）、
 `hands_policy.rs`（工具名 → 审批档/能力组、未知名字、`mcp.` 前缀的合法性、参数形状）。
 
 ## 6. 威胁模型：这次真的变了，写清楚
 
 - **提示词注入变成一条真路径**：`web.fetch` 抓回来的页面是**攻击者写的字**，而同一轮里它又有 `file.read` 和 `shell.run`。缓解只有三条，全部落地：① 工具返回的外部内容在提示里被标成"数据，不是指令"；② 写/跑/点按**必过审批**，确认条上写清楚是哪个命令、哪个路径；③ 审计每一笔（`audit.log` 的 `detail` 只记形状：路径、命令首段、URL 主机，不记内容）。
 - **不做的**：不假装能沙箱化 `shell.run`。它跑在用户自己的账户下，就是用户自己的权限 —— 文档、设置页和确认条都要这么写，不能说"安全隔离"。
+- **键鼠是唯一"会动用户东西"的自动以外的面**（`screen.windows` / `screen.capture` 只读，自动放行；`input.*` 每次必问）。
+  确认条上写的是"在 100, 240 点一下"、"敲 5 个字"、"按 Ctrl+S"，**不写**敲的是什么（那句话可能是密码）。
+  一句提示词注入能骗到的上限，就是用户自己在确认条上点的那几次 Allow —— 这是这套设计里唯一没有技术兜底的地方，
+  所以提示词里也写死了"点之前先用 `screen.windows` 确认那个坐标上是什么"。
 - **MCP 的供应商是新的信任方**：一个 MCP 服务器可以声明任意工具。所以它单独一组、默认关、**每个工具每次都要问**（问一次"允许这个服务器"不算，因为工具的语义会随着服务器升级而变）。
 - **一键关掉**：设置里"Turn all off"把 `hands` 六个开关全关，并且**当场取消在飞的那一轮**。
 
@@ -149,11 +155,13 @@ assistant_hands_save({ hands, workspace }) -> 同上
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/hands.html`（新） | 85 | 工具名 → 审批档/能力组、关掉一组时工具表少哪些、分期没接的组不给 schema、`describeToolCall` 的新标签、工具结果 20k 字截断、`Deny` 的形状 |
+| `tests/hands.html`（新） | 89 | 工具名 → 审批档/能力组、关掉一组时工具表少哪些、分期没接的组不给 schema、`describeToolCall` 的新标签、工具结果 20k 字截断、`Deny` 的形状 |
 | `tests/assistant.html` | 122 | 预算三种触顶、`MAX_STEPS` 改成 24 后那句提示、`toolsFor("widget")` 里一条新工具都没有 |
 | `src-tauri/src/fs_policy.rs` | 14 | `..` 与盘符、行/字数额度、跳过表、大文件拒绝、截断标记 |
 | `src-tauri/src/shell_policy.rs` | 9 | 超时夹紧、输出截断、空命令、`\0` 拒绝 |
 | `src-tauri/src/web_policy.rs` | 21 | 重定向（绝对 / 协议相对 / 根相对 / `../` / 丢片段 / 非 http 不认）、HTML 变文本（脚本样式整段丢、块级换行、实体解码、`<` 不成标签）、按字符截断、`maxChars` 夹紧 |
+| `src-tauri/src/screen_policy.rs` | 21 | 窗口判据（不可见 / cloak / 无标题 / 零尺寸）、标题按字符压平与截断、截图落点、PNG 四块与 CRC、每行滤波字节、stored zlib 的分块 |
+| `src-tauri/src/input_policy.rs` | 23 | 键名 → 虚拟键码（含 F1–F24 与 OEM 标点）、组合键解析（无键 / 两键 / `Ctrl++`）、文字 → UTF-16 单元（中文 / emoji / `\r\n` 只算一次）、虚拟桌面归一化与越界 |
 | `src-tauri/src/hands_policy.rs` | 12 | 名字→组、未知名字、`mcp.` 形状、参数必填 |
 
 **手工验**（每期一次）：真机读一个真实文件 → 改它（看确认条 → `Deny` 一次 → `Allow` 一次）→
@@ -167,20 +175,22 @@ assistant_hands_save({ hands, workspace }) -> 同上
 - 不在组件里开任何一只手（见 §2）。
 - 不做后台/定时自主执行 —— 人在环和无人环是两套安全模型。
 
-## 9. 落地记录（P1–P4）
+## 9. 落地记录（P1–P5）
 
-已经接上的：`file.list` / `file.read` / `file.search` / `file.write`、`shell.run`、`web.fetch`。
+已经接上的：`file.list` / `file.read` / `file.search` / `file.write`、`shell.run`、`web.fetch`、
+`screen.windows` / `screen.capture`、`input.click` / `input.type` / `input.key`。
 前端两道闸在 `runtime/hands.ts`（`handsTools` 裁 schema、`needsApproval` 定审批档），
 Rust 侧 `hands.rs::run` 再独立判一次组开关，纯逻辑在 `hands_policy.rs` / `fs_policy.rs` /
-`shell_policy.rs` / `web_policy.rs`。
+`shell_policy.rs` / `web_policy.rs` / `screen_policy.rs` / `input_policy.rs`。
 
-**设计里没写、动手时才撞出来的九条**（P5 / P6 照着这个走，别重新发明）：
+**设计里没写、动手时才撞出来的十二条**（P6 照着这个走，别重新发明）：
 
 1. **第四道闸：`HAND_READY`**。`HAND_SPECS` 里 P5 / P6 的 schema 已经写好了（写的时候不用再动表），
    但 `hands.rs` 那边还没有执行分支。只按用户的开关裁 schema 的话，拨一下"屏幕"就会把
    `screen.windows` 递给模型，而每次调用都回 `"not implemented yet in this build"` —— 正是 §7 第一条
    那个失败模式。所以 `HAND_READY` 里没接的组**一律不递**（`handsTools` 与 `handsPrompt` 同源），
-   设置面板上那几行也拨不动，并挂一个"后续版本"的标记。**每落一期就把那一组改成 `true`。**
+   设置面板上那几行也拨不动，并挂一个"后续版本"的标记。**每落一期就把那一组改成 `true`**
+   （`web` 在 P4、`screen` / `input` 在 P5 翻的；现在只剩 `mcp`）。
 2. **读大文件是截断，不是拒绝**。§7 写的是"`metadata().len()` 拒绝超大文件"，
    实际做法是 `take(MAX_READ_BYTES)` 读前 4 MB + `truncated: true` + 行/字数双上限 ——
    拒绝一个 2 MB 的日志会让模型永远读不到它，而"读前 200 行、想看更多就加大 offset"是它能自己处理的。
@@ -206,9 +216,28 @@ Rust 侧 `hands.rs::run` 再独立判一次组开关，纯逻辑在 `hands_polic
 9. **网页那只手没有白名单**，这跟组件那条路是**故意的不同**：用户勾"网页"要的是"能看任何页面"，
    再让他逐站列白名单等于把这功能变成配置作业。收窄靠四件事：只认 http/https、逐跳 ≤5、
    正文 40k 字（`maxChars` 夹在 200–200000）、整组默认关且**取回的内容在提示词里被标成数据**。
+10. **窗口列表要先过五道筛**。`EnumWindows` 会把桌面上三百个看不见的东西全报一遍：隐藏窗口、
+   被 DWM cloak 掉的（切到别的虚拟桌面之后 `IsWindowVisible` **仍然是 true**，屏幕上却没有）、
+   没有标题的辅助窗口、最小化之后 `GetWindowRect` 给的 `-32000` 加零尺寸。少任何一条，模型拿到的
+   就是一张假地图 —— 它会照着一个在屏幕外的窗口算坐标，然后去点空气。上限 40 条、焦点排第一，
+   并且**把虚拟桌面矩形一起回去**（不算出屏幕多大就没法算点哪儿）。
+11. **截图自己拼 PNG，不引图像库**。`BitBlt(GetDC(NULL))` 是"屏幕上此刻可见的东西"（这正好是截图的
+   定义，和壁纸那条要"没有窗口的桌面"的路刻意相反）。`GetDIBits` 给的第四字节是 **0** —— 直接当
+   RGBA 交出去，整张图是全透明的，看图工具里是棋盘格；必须补 255 并换红蓝。PNG 那一半是纯字节运算
+   （签名 / IHDR / IDAT / IEND、CRC32、每行一个滤波字节），放进 `screen_policy.rs` 是为了它能在没有
+   图像库的机器上被 `rustc --test` 钉住；压缩那一步用 `flate2`（它已经在依赖里）。
+   返回里 `vision: false` 是**诚实的常量**：这一版没有任何一条模型档收得到图片（§3），照着它说
+   "我看不见图"比编一段画面好；等 `llm.rs` 学会发图再让它按档回答。
+12. **`SendInput` 的绝对坐标按虚拟桌面归一化，且中文只能走 `KEYEVENTF_UNICODE`**。分母必须是
+   `SM_CXVIRTUALSCREEN` 而不是主屏宽度 —— 用主屏算，副屏上的点会全部落到主屏右侧那一小块里。
+   文字按 UTF-16 单元发（emoji 是两个单元，漏一个就是方块），组合键"修饰键先按、后松"，方向键与
+   编辑键带 `KEYEVENTF_EXTENDEDKEY`（不带的话 NumLock 开着时 `Home` 会被当成小键盘的 7 —— 这种错
+   只在某些机器上出现，本地永远复现不了）。审计只记形状：点击记坐标、**打字记字数**（敲进去的
+   可能是密码）、组合键记键名。
 
-验证落点：`tests/hands.html` 85 条、`tests/assistant.html` 122 条、
-`hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9 + `web_policy.rs` 21（都能 `rustc --test` 单跑）、
-`hands.rs` 5 条只有 `cargo test` 跑得了。**真机那条还没走**（读一个中文路径的文件、跑 `echo 你好`、
-点 Deny 看磁盘上没变化、Stop 之后子进程真的没了、抓一个真页面看正文有没有被截断、跟一次 302）——
-记在 `AGENTS.md` §8。
+验证落点：`tests/hands.html` 89 条、`tests/assistant.html` 122 条、
+`input_policy.rs` 23 + `screen_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 +
+`shell_policy.rs` 9 + `web_policy.rs` 21（都能 `rustc --test` 单跑）、
+`hands.rs` 7 条只有 `cargo test` 跑得了。**真机那条还没走**（读一个中文路径的文件、跑 `echo 你好`、
+点 Deny 看磁盘上没变化、Stop 之后子进程真的没了、抓一个真页面看正文有没有被截断、跟一次 302、
+列一次窗口、在一张空白画布上点一下再按 `Ctrl+S`）—— 记在 `AGENTS.md` §8。

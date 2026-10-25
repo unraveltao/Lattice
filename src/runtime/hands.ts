@@ -50,17 +50,17 @@ export function enabledGroups(hands: HandsSettings): HandGroup[] {
  * 这一版**真的接了几组**（0004 §4 的分期：P1 纪律 → P2 文件 → P3 命令 → P4 网页 →
  * P5 屏幕与输入 → P6 MCP）。
  *
- * 开关拨得动不等于接好了：`screen` / `input` / `mcp` 的 schema 已经在
- * `HAND_SPECS` 里（写它们的时候不用再动表），但 `hands.rs` 那边还没有对应的执行
- * 分支。**没接的组一律不递 schema** —— 递过去模型就会反复调一个必定失败的工具，
+ * 开关拨得动不等于接好了：`mcp` 的 schema 不在 `HAND_SPECS` 里（它的工具由
+ * 服务器在运行时声明），而 `hands.rs` 那边也还没有发现服务器的代码。
+ * **没接的组一律不递 schema** —— 递过去模型就会反复调一个必定失败的工具，
  * 然后开始编"我做到了"（0004 §7 的第一条）。
  */
 export const HAND_READY: Record<HandGroup, boolean> = {
   files: true,
   shell: true,
   web: true,
-  screen: false,
-  input: false,
+  screen: true,
+  input: true,
   mcp: false,
 };
 

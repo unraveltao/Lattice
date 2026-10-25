@@ -1,9 +1,10 @@
-//! assistant 的手 —— **执行**这一半：文件、命令、网页（这一期），屏幕 / 外部服务在后面。
+//! assistant 的手 —— **执行**这一半：文件、命令、网页、屏幕、键鼠（这一期），
+//! 外部服务（MCP）在后面。
 //!
 //! 和 `agent.rs` 的关系：那是"外部 agent 改桌面"的端点，这是"内置 assistant
 //! 干活"的命令。两条路共用审计（`agent::audit`）和"返回 `AgentReply` 形状"这一条
 //! 约定，但**不共用执行器** —— 桌面动作必须走主窗口的 store（不变量 2），
-//! 而这些手只有 Rust 才做得到（渲染进程没有文件系统）。
+//! 而这些手只有 Rust 才做得到（渲染进程没有文件系统、没有 SendInput）。
 //!
 //! # 三条硬规矩
 //!
@@ -11,24 +12,46 @@
 //!    渲染进程的 bug 就能跑命令"。
 //! 2. **审批在前端做**，但这一层要保证"没审批就拿不到结果"是不可能的路径：
 //!    前端只有在用户点了 Allow 之后才发这条命令（`platform/assistant.ts`）。
-//! 3. **审计只记形状**：路径、命令的首段、退出码。不记内容 —— 日志里出现
-//!    用户读的那份文件，等于把审计变成第二份泄露面。
+//! 3. **审计只记形状**：路径、命令的首段、URL 的主机、点击的坐标、敲了多少个字。
+//!    不记内容 —— 日志里出现用户读的那份文件或敲进输入框的那句话，等于把审计
+//!    变成第二份泄露面。
 //!
 //! 形状（成功 / 失败）和 `AgentReply` 一致：`{ok:true,result}` / `{ok:false,code,error}`，
 //! 循环那侧不需要认第二种协议。
 
 use std::collections::HashMap;
-use std::io::{Read};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
 use serde_json::{json, Value};
 use tauri::AppHandle;
+use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT};
+use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+use windows_sys::Win32::Graphics::Gdi::{
+    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
+    ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, SRCCOPY,
+};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
+    KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN,
+    MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT,
+};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetClassNameW, GetForegroundWindow, GetSystemMetrics, GetWindowRect,
+    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+};
 
-use crate::{agent, fs_policy, hands_policy, llm, network, network_policy, shell_policy, web_policy};
+use crate::{
+    agent, fs_policy, hands_policy, input_policy, llm, network, network_policy, screen_policy,
+    shell_policy, web_policy,
+};
 
 fn ok(result: Value) -> String {
     json!({ "ok": true, "result": result }).to_string()
@@ -150,6 +173,26 @@ fn shape_of(name: &str, args: &str, reply: &str) -> String {
         "web.fetch" => network_policy::parse_url(&text("url"))
             .map(|target| target.host)
             .unwrap_or_default(),
+        "screen.windows" => "list".to_string(),
+        // 截图记的是**存到哪个文件**（默认给的是文件夹）
+        "screen.capture" => text("path"),
+        "input.click" => {
+            let number = |key: &str| parsed.get(key).and_then(Value::as_i64);
+            match (number("x"), number("y")) {
+                (Some(x), Some(y)) => format!("at {x}, {y}"),
+                _ => String::new(),
+            }
+        }
+        // **只记字数**。敲进输入框的那句话可能是密码、可能是用户刚写的半封信
+        "input.type" => {
+            let count = text("text").chars().count();
+            format!("{count} chars")
+        }
+        "input.key" => {
+            let chord = text("key");
+            let chord: String = chord.chars().take(24).collect();
+            chord
+        }
         _ => String::new(),
     };
     let ok = serde_json::from_str::<Value>(reply)
@@ -196,6 +239,11 @@ fn run(app: &AppHandle, name: &str, raw_args: &str, cancel: Arc<AtomicBool>) -> 
         "file.write" => file_write(app, &args),
         "shell.run" => shell_run(app, &args, &cancel),
         "web.fetch" => web_fetch(&args),
+        "screen.windows" => screen_windows(),
+        "screen.capture" => screen_capture(app, &args),
+        "input.click" => input_click(&args),
+        "input.type" => input_type(&args),
+        "input.key" => input_key(&args),
         other => fail(
             "unknown_tool",
             format!("\"{other}\" is not implemented yet in this build"),
@@ -762,6 +810,460 @@ fn web_fetch(args: &Value) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 屏幕
+// ---------------------------------------------------------------------------
+
+/// 一块屏幕范围内的候选窗口。字段都是"已经读过 Win32"的原始值，
+/// 判据在 `screen_policy` 里（那边能单测）。
+struct FoundWindow {
+    title: String,
+    class: String,
+    pid: u32,
+    focused: bool,
+    left: i32,
+    top: i32,
+    width: i32,
+    height: i32,
+}
+
+fn is_cloaked(hwnd: HWND) -> bool {
+    let mut cloaked: u32 = 0;
+    let status = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED as u32,
+            &mut cloaked as *mut u32 as *mut core::ffi::c_void,
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    // 非 0 是失败（老系统不认这个属性）—— 失败就当没 cloak
+    status == 0 && cloaked != 0
+}
+
+/// `EnumWindows` 的回调。每条都要自己认领：不可见、被 cloak、没标题、
+/// 零尺寸的一律跳过（`screen_policy::keep_window` 是这条判据的家）。
+unsafe extern "system" fn collect_window(hwnd: HWND, lparam: LPARAM) -> i32 {
+    unsafe {
+        let rows = &mut *(lparam as *mut Vec<FoundWindow>);
+        if rows.len() >= screen_policy::MAX_WINDOWS {
+            return 0; // 停：满了再枚举也没地方放
+        }
+
+        let visible = IsWindowVisible(hwnd) != 0;
+        let cloaked = is_cloaked(hwnd);
+
+        let length = GetWindowTextLengthW(hwnd);
+        if length <= 0 {
+            return 1;
+        }
+        let mut title_buffer = vec![0u16; length as usize + 1];
+        let copied = GetWindowTextW(hwnd, title_buffer.as_mut_ptr(), title_buffer.len() as i32);
+        if copied <= 0 {
+            return 1;
+        }
+        let title = String::from_utf16_lossy(&title_buffer[..copied as usize]);
+
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        if GetWindowRect(hwnd, &mut rect) == 0 {
+            return 1;
+        }
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+        if !screen_policy::keep_window(visible, cloaked, &title, width, height) {
+            return 1;
+        }
+
+        let mut class_buffer = [0u16; 128];
+        let class_length = GetClassNameW(hwnd, class_buffer.as_mut_ptr(), class_buffer.len() as i32);
+        let class = if class_length > 0 {
+            String::from_utf16_lossy(&class_buffer[..class_length as usize])
+        } else {
+            String::new()
+        };
+
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+
+        rows.push(FoundWindow {
+            title: screen_policy::clip_title(&title),
+            class: screen_policy::clip_class(&class),
+            pid,
+            focused: hwnd == GetForegroundWindow(),
+            left: rect.left,
+            top: rect.top,
+            width,
+            height,
+        });
+        1
+    }
+}
+
+/// 虚拟桌面（所有显示器合起来那一块）。**`SendInput` 的绝对坐标按它归一化**，
+/// 也用它判断"这个点还在屏幕里吗"。
+fn virtual_screen() -> (i32, i32, i32, i32) {
+    unsafe {
+        (
+            GetSystemMetrics(SM_XVIRTUALSCREEN),
+            GetSystemMetrics(SM_YVIRTUALSCREEN),
+            GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        )
+    }
+}
+
+fn screen_windows() -> String {
+    let mut rows: Vec<FoundWindow> = Vec::new();
+    let collector = &mut rows as *mut Vec<FoundWindow> as LPARAM;
+    unsafe {
+        EnumWindows(Some(collect_window), collector);
+    }
+
+    // 焦点窗口排第一：模型读列表时第一个就是"用户正在看的那个"
+    rows.sort_by_key(|window| screen_policy::rank(window.focused));
+
+    let (left, top, width, height) = virtual_screen();
+    let payload: Vec<Value> = rows
+        .iter()
+        .map(|window| {
+            json!({
+                "title": window.title,
+                "class": window.class,
+                "pid": window.pid,
+                "focused": window.focused,
+                "rect": {
+                    "x": window.left,
+                    "y": window.top,
+                    "width": window.width,
+                    "height": window.height,
+                },
+            })
+        })
+        .collect();
+
+    ok(json!({
+        "windows": payload,
+        // 屏幕矩形也一并给出去：模型要算"点哪儿"就绕不开它
+        "screen": { "x": left, "y": top, "width": width, "height": height },
+    }))
+}
+
+/// 屏幕像素 → RGBA，行优先、自上而下。
+///
+/// `BitBlt(GetDC(NULL))` 拿的是"屏幕上此刻可见的东西"（这正好是截图的定义，
+/// 和壁纸那条路不同 —— 壁纸要的是"没有窗口的桌面"）。
+fn grab_screen(left: i32, top: i32, width: i32, height: i32) -> Result<Vec<u8>, String> {
+    unsafe {
+        let screen = GetDC(std::ptr::null_mut());
+        if screen.is_null() {
+            return Err("could not get the screen device context".to_string());
+        }
+        let memory = CreateCompatibleDC(screen);
+        let bitmap = CreateCompatibleBitmap(screen, width, height);
+        if memory.is_null() || bitmap.is_null() {
+            if !bitmap.is_null() {
+                DeleteObject(bitmap);
+            }
+            if !memory.is_null() {
+                DeleteDC(memory);
+            }
+            ReleaseDC(std::ptr::null_mut(), screen);
+            return Err("could not create an off-screen bitmap".to_string());
+        }
+
+        let previous = SelectObject(memory, bitmap);
+        // CAPTUREBLT：连分层窗口一起截。不带它的话，带透明/阴影的窗口
+        // 会在图上留下一块块黑洞，看着像截图坏了
+        const CAPTUREBLT: u32 = 0x4000_0000;
+        let copied = BitBlt(
+            memory,
+            0,
+            0,
+            width,
+            height,
+            screen,
+            left,
+            top,
+            SRCCOPY | CAPTUREBLT,
+        );
+
+        let mut info: BITMAPINFO = std::mem::zeroed();
+        info.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+        info.bmiHeader.biWidth = width;
+        // 负高度 = 自上而下，省得每行都翻
+        info.bmiHeader.biHeight = -height;
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+
+        let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
+        let rows = GetDIBits(
+            memory,
+            bitmap,
+            0,
+            height as u32,
+            pixels.as_mut_ptr() as *mut core::ffi::c_void,
+            &mut info,
+            DIB_RGB_COLORS,
+        );
+
+        SelectObject(memory, previous);
+        DeleteObject(bitmap);
+        DeleteDC(memory);
+        ReleaseDC(std::ptr::null_mut(), screen);
+
+        if copied == 0 {
+            return Err("BitBlt could not copy the screen".to_string());
+        }
+        if rows == 0 {
+            return Err("GetDIBits returned no pixels".to_string());
+        }
+
+        // 屏幕 DC 给的第四字节是 0。直接当 RGBA 交出去，整张图是全透明的 ——
+        // 浏览器里看着是白的，看图工具里是棋盘格，都不是截图
+        for pixel in pixels.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+            pixel[3] = 255;
+        }
+        Ok(pixels)
+    }
+}
+
+fn now_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0)
+}
+
+fn screen_capture(app: &AppHandle, args: &Value) -> String {
+    let (left, top, width, height) = virtual_screen();
+    if width <= 0 || height <= 0 {
+        return fail("internal", "could not read the screen size");
+    }
+    if width as u64 * height as u64 > screen_policy::MAX_PIXELS {
+        return fail(
+            "too_large",
+            format!("that screen is {width}×{height} pixels — too big to capture"),
+        );
+    }
+
+    let rgba = match grab_screen(left, top, width, height) {
+        Ok(pixels) => pixels,
+        Err(error) => return fail("internal", error),
+    };
+
+    let lines = screen_policy::scanlines(&rgba, width as u32, height as u32);
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    if let Err(error) = encoder.write_all(&lines) {
+        return fail("internal", format!("could not compress the screenshot: {error}"));
+    }
+    let idat = match encoder.finish() {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return fail("internal", format!("could not compress the screenshot: {error}"))
+        }
+    };
+    let body = screen_policy::png(width as u32, height as u32, &idat);
+
+    let state = llm::hands_state(app);
+    let fallback = if state.workspace.trim().is_empty() {
+        std::env::temp_dir().display().to_string()
+    } else {
+        state.workspace.clone()
+    };
+    let name = screen_policy::screenshot_name(now_ms());
+    let target = screen_policy::screenshot_target(optional_string(args, "path").as_deref(), &fallback, &name);
+
+    let path = PathBuf::from(&target);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(error) = std::fs::write(&path, &body) {
+        return fail("not_found", format!("could not write {target}: {error}"));
+    }
+
+    ok(json!({
+        "path": target,
+        "width": width,
+        "height": height,
+        "bytes": body.len(),
+        // 这一版没有任何一条模型档收得到图片（0004 §3：网关对带图的请求直接
+        // 400），所以这里**诚实地**写 false —— 模型照着这个回答用户
+        // "我看不见图"，而不是编一段截图内容
+        "vision": false,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// 键鼠
+// ---------------------------------------------------------------------------
+
+fn key_input(vk: u16, scan: u16, flags: u32) -> INPUT {
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: scan,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
+fn mouse_input(dx: i32, dy: i32, flags: u32) -> INPUT {
+    INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: INPUT_0 {
+            mi: MOUSEINPUT {
+                dx,
+                dy,
+                mouseData: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
+/// 一口气发完：分几次发，中间就可能被别的窗口抢走焦点。
+fn send_inputs(events: &[INPUT]) -> Result<(), String> {
+    let sent = unsafe {
+        SendInput(
+            events.len() as u32,
+            events.as_ptr(),
+            std::mem::size_of::<INPUT>() as i32,
+        )
+    };
+    if sent as usize == events.len() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Windows took {sent} of {} input events — a window running as administrator can block these",
+            events.len()
+        ))
+    }
+}
+
+fn int_arg(args: &Value, key: &str) -> Result<i32, String> {
+    match args.get(key) {
+        Some(Value::Number(number)) => match number.as_i64() {
+            Some(value) if (-1_000_000..=1_000_000).contains(&value) => Ok(value as i32),
+            _ => Err(format!("\"{key}\" is not a sensible pixel coordinate")),
+        },
+        Some(_) => Err(format!("\"{key}\" must be a number")),
+        None => Err(format!("\"{key}\" is required")),
+    }
+}
+
+fn input_click(args: &Value) -> String {
+    let (x, y) = match (int_arg(args, "x"), int_arg(args, "y")) {
+        (Ok(x), Ok(y)) => (x, y),
+        (Err(error), _) | (_, Err(error)) => return fail("bad_args", error),
+    };
+    let double = args.get("double").and_then(Value::as_bool).unwrap_or(false);
+
+    let (left, top, width, height) = virtual_screen();
+    let Some((ax, ay)) = input_policy::absolute(x, y, left, top, width, height) else {
+        return fail(
+            "bad_args",
+            format!("({x}, {y}) is not on any screen — the desktop is {width}×{height} at ({left}, {top})"),
+        );
+    };
+
+    let mut events = vec![mouse_input(
+        ax,
+        ay,
+        MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
+    )];
+    for _ in 0..if double { 2 } else { 1 } {
+        events.push(mouse_input(0, 0, MOUSEEVENTF_LEFTDOWN));
+        events.push(mouse_input(0, 0, MOUSEEVENTF_LEFTUP));
+    }
+    if let Err(error) = send_inputs(&events) {
+        return fail("internal", error);
+    }
+
+    ok(json!({ "done": true, "x": x, "y": y, "double": double }))
+}
+
+fn input_type(args: &Value) -> String {
+    let text = match string_arg(args, "text") {
+        Ok(text) => text,
+        Err(error) => return fail("bad_args", error),
+    };
+    let plan = match input_policy::type_plan(text) {
+        Ok(plan) => plan,
+        Err(error) => return fail("bad_args", error),
+    };
+
+    let mut events = Vec::with_capacity(plan.len() * 2);
+    for step in plan.iter() {
+        match step {
+            // KEYEVENTF_UNICODE 走的是"这个码点"，不是布局上的那个键：
+            // 中文、emoji 都只能这么发，`wVk` 必须留 0
+            input_policy::Step::Unit(unit) => {
+                events.push(key_input(0, *unit, KEYEVENTF_UNICODE));
+                events.push(key_input(0, *unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP));
+            }
+            input_policy::Step::Virtual(vk) => {
+                let mut flags = 0;
+                if input_policy::needs_extended(*vk) {
+                    flags |= KEYEVENTF_EXTENDEDKEY;
+                }
+                events.push(key_input(*vk, 0, flags));
+                events.push(key_input(*vk, 0, flags | KEYEVENTF_KEYUP));
+            }
+        }
+    }
+    if let Err(error) = send_inputs(&events) {
+        return fail("internal", error);
+    }
+
+    ok(json!({ "done": true, "characters": text.chars().count() }))
+}
+
+fn input_key(args: &Value) -> String {
+    let raw = match string_arg(args, "key") {
+        Ok(raw) => raw,
+        Err(error) => return fail("bad_args", error),
+    };
+    let chord = match input_policy::parse_chord(raw) {
+        Ok(chord) => chord,
+        Err(error) => return fail("bad_args", error),
+    };
+
+    let modifiers = chord.modifiers();
+    let mut events = Vec::with_capacity(modifiers.len() * 2 + 2);
+    for modifier in modifiers.iter() {
+        events.push(key_input(*modifier, 0, 0));
+    }
+    let mut flags = 0;
+    if input_policy::needs_extended(chord.vk) {
+        flags |= KEYEVENTF_EXTENDEDKEY;
+    }
+    events.push(key_input(chord.vk, 0, flags));
+    events.push(key_input(chord.vk, 0, flags | KEYEVENTF_KEYUP));
+    // 修饰键反序松开：`Ctrl+S` 先松 S 再松 Ctrl
+    for modifier in modifiers.iter().rev() {
+        events.push(key_input(*modifier, 0, KEYEVENTF_KEYUP));
+    }
+    if let Err(error) = send_inputs(&events) {
+        return fail("internal", error);
+    }
+
+    ok(json!({ "done": true, "key": raw }))
+}
+
 #[cfg(test)]
 mod tests {
     /*
@@ -804,5 +1306,27 @@ mod tests {
     fn the_audit_line_marks_a_failure() {
         let line = shape_of("file.write", r#"{"path":"x"}"#, r#"{"ok":false,"error":"no"}"#);
         assert!(line.ends_with("failed"));
+    }
+
+    #[test]
+    fn typing_is_audited_as_a_length_not_as_the_text() {
+        // 敲进输入框的那句话可能是密码 —— 审计里只能出现字数
+        let line = shape_of(
+            "input.type",
+            r#"{"text":"hunter2"}"#,
+            r#"{"ok":true,"result":{"done":true}}"#,
+        );
+        assert!(line.contains("7 chars"), "{line}");
+        assert!(!line.contains("hunter2"));
+    }
+
+    #[test]
+    fn a_click_is_audited_as_its_point() {
+        let line = shape_of(
+            "input.click",
+            r#"{"x":10,"y":20}"#,
+            r#"{"ok":true,"result":{"done":true}}"#,
+        );
+        assert!(line.contains("at 10, 20"), "{line}");
     }
 }

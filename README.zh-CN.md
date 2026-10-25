@@ -72,7 +72,7 @@
 
 ## 现在到哪了
 
-当前版本 v0.10。最近三个版本的方向：v0.8 让 agent 能调控桌面（默认关的本地端点、8 个白名单动作、每一次调用都进审计日志）；v0.9 补上"声音看得见、链接出得去"；v0.10 内置 assistant —— **模型你自己带，手仍然归平台**：`Ctrl+K` 叫出一扇小窗，填一次 OpenAI 兼容的 base URL 和 key，key 落在 Rust 掌管的 `assistant.json`，前端只看得到 `sk-1…cdef` 这样的掩码；模型能"做"的，只有 agent 端点本来就有那 8 个白名单动作，组件要 `llm:chat` 只拿得到文字、永远拿不到工具 —— 到这一版末尾，组件也学会**借**这双手了：`desktop:control` 让桌宠能跑一轮 assistant，工具表里没有删除。
+当前版本 v0.10。最近三个版本的方向：v0.8 让 agent 能调控桌面（默认关的本地端点、8 个白名单动作、每一次调用都进审计日志）；v0.9 补上"声音看得见、链接出得去"；v0.10 内置 assistant —— **模型你自己带，手仍然归平台**：`Ctrl+K` 叫出一扇小窗，填一次 OpenAI 兼容的 base URL 和 key，key 落在 Rust 掌管的 `assistant.json`，前端只看得到 `sk-1…cdef` 这样的掩码；模型能"做"的，只有 agent 端点本来就有那 8 个白名单动作；到这一版末尾又多了六组"手"（读文件 / 跑命令 / 取网页 / 看窗口 / 点键鼠 / MCP，最后一组还没接上），默认全关，读自动放行、写与命令与点击先问一句，审计只记形状不记内容。组件要 `llm:chat` 只拿得到文字、永远拿不到工具 —— 到这一版末尾，组件也学会**借**这双手了：`desktop:control` 让桌宠能跑一轮 assistant，工具表里没有删除。
 
 每一版当时怎么想的，在 [ROADMAP](./docs/ROADMAP.md) 里。
 
@@ -96,11 +96,11 @@
 | 官方组件 | 15 个 |
 | 权限 | 11 项 |
 | Tauri 命令 | 71 条 |
-| 浏览器断言 | 46 个页面、1969 条 |
-| Rust 单测 | 280 条 |
+| 浏览器断言 | 46 个页面、1973 条 |
+| Rust 单测 | 326 条 |
 | 记下来的坑 | 75 个 |
 
-每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；280 条 Rust 单测分成 248 条 `rustc --test` 的纯逻辑和 32 条要完整 `cargo test` 的；75 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
+每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；326 条 Rust 单测分成 292 条 `rustc --test` 的纯逻辑和 34 条要完整 `cargo test` 的；75 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
 
 ## 两个宿主，一套桥
 
@@ -288,7 +288,7 @@ npm run test:sdk         # 每份内嵌 SDK 副本都和 packages/sdk 一致
 npm run test:agent       # agent 客户端的请求形状与退出码
 npm run test:tokens      # 三张表（字号 / 圆角 / 间距）的规则本身：半像素、豁免、font 简写
 npm run check:tokens     # 仓库真的遵守了它们：字号、圆角、2px 间距网格
-npm run test:browser     # 46 个页面、1969 条断言，真 Chrome、真 dev server
+npm run test:browser     # 46 个页面、1973 条断言，真 Chrome、真 dev server
 ```
 
 浏览器那套是里面最有意思的。每个 `tests/*.html` 都是一张真的断言页 —— 纯逻辑（semver、config、目录、参考线、关闭守卫、屏幕夹紧）、布局预算、组件行为 —— 由 dev server 伺服，Chrome 驱动。它存在的原因是"我这儿是好的"这句话反复地说错：书签第六行实测 36px，而它的注释写着 30px，就这么被 `overflow: hidden` 静默切掉，直到有人去量。
