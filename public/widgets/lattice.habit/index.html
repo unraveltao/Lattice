@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>习惯</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="habit">
+      <header class="habit-head">
+        <button type="button" class="habit-add" id="add" aria-label="加一个习惯" title="加一个习惯">+</button>
+        <span class="habit-title" id="title">本周</span>
+      </header>
+      <div class="habit-grid" id="weekdays">
+        <span class="habit-spacer"></span>
+      </div>
+      <div class="habit-list" id="list"></div>
+      <p class="habit-status" id="status" role="status" hidden></p>
+    </main>
+    <script src="widget.js"></script>
+  </body>
+</html>

@@ -1,0 +1,127 @@
+{
+  "id": "lattice.habit",
+  "name": { "zh": "习惯", "en": "Habit" },
+  "version": "0.1.0",
+  "description": {
+    "zh": "一行一个习惯，点一格就记下那一天；连续天数自己算",
+    "en": "One habit per row — tap a cell to log the day; the streak counts itself"
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 300, "h": 240, "minW": 264, "minH": 180 },
+  "layer": "top",
+  "permissions": ["storage"],
+  "config": [
+    {
+      "key": "weekStart",
+      "type": "select",
+      "label": { "zh": "一周从哪天开始", "en": "Week starts on" },
+      "default": "monday",
+      "options": [
+        { "value": "monday", "label": { "zh": "周一", "en": "Monday" } },
+        { "value": "sunday", "label": { "zh": "周日", "en": "Sunday" } }
+      ],
+      "help": {
+        "zh": "只决定这一周那七格从哪天起排，已经记下的日期一格都不动。",
+        "en": "Only decides which day the seven cells start on; recorded dates are untouched."
+      }
+    }
+  ],
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "怎么记", "en": "Logging a day" },
+        "items": [
+          {
+            "zh": "点一格就是那天做过了，再点一下取消。今天的格子有一圈细边。",
+            "en": "Tap a cell to mark that day done; tap again to undo. Today's cell has a thin ring."
+          },
+          {
+            "zh": "只能点这一周那七格 —— 往前补记请在本周内点，更早的日子要在卡片里改就太容易点错了。",
+            "en": "Only this week's seven cells are tappable. Backfilling much further would make a stray tap too costly."
+          },
+          {
+            "zh": "记的是本地日期，不是 UTC：过了零点才算新的一天，换时区也不会把昨天挪走。",
+            "en": "Days are local — a new day starts at local midnight, and changing time zones does not move yesterday."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "连续天数", "en": "The streak" },
+        "items": [
+          {
+            "zh": "格子右边那个数字是从今天（今天还没记的话从昨天）往前数的连续天数。",
+            "en": "The number beside the cells counts back from today — or from yesterday if today is not logged yet."
+          },
+          {
+            "zh": "今天还没记不算断：它显示到昨天为止的连续天数，今天补上就接着长。",
+            "en": "An empty today does not break it: the number runs to yesterday, and logging today extends it."
+          },
+          {
+            "zh": "断一天就从 1 重新开始 —— 这里不发明「豁免日」。",
+            "en": "One missed day resets it to 1. There are no invented grace days."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "改名与删除", "en": "Renaming and deleting" },
+        "items": [
+          {
+            "zh": "点名字就地改，回车或点开别处生效，Esc 放弃。",
+            "en": "Click a name to edit it in place. Enter or clicking away commits; Esc cancels."
+          },
+          {
+            "zh": "行尾那颗 × 会把这个习惯连同它记过的日子一起删掉，没有撤销。",
+            "en": "The × at the end of a row deletes the habit and its history, with no undo."
+          },
+          {
+            "zh": "最多六个习惯，第七个会被挡住并说明原因。",
+            "en": "Six habits at most; a seventh is refused and says why."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "几张卡片，一份记录", "en": "One list, several cards" },
+        "items": [
+          {
+            "zh": "每个习惯卡片的每一格都来自同一份数据 —— 它们是同一条记录的几个视图。",
+            "en": "Every Habit card reads the same data — they are views of one record."
+          },
+          {
+            "zh": "在画布上点一格，桌面上的那份会自己刷新；反过来也一样。",
+            "en": "Log a day on the canvas and the desktop copy refreshes itself, and the other way round."
+          },
+          {
+            "zh": "想要第二份互不相干的清单，得换个 id 再装一份。",
+            "en": "A second, independent list means installing a copy under a different id."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "changes": [
+        {
+          "zh": "第一个版本：一行一个习惯、一周七格、连续天数，记的是本地日期。",
+          "en": "First release: one habit per row, seven cells a week, a streak, all keyed on the local date."
+        },
+        {
+          "zh": "点名字就地改名，行尾 × 删除，最多六个习惯。",
+          "en": "Rename in place by clicking the name, delete from the ×, and six habits at most."
+        },
+        {
+          "zh": "一周从周一还是周日开始可以在属性面板里改。",
+          "en": "Whether the week starts on Monday or Sunday is a setting in the inspector."
+        },
+        {
+          "zh": "界面与说明都是中英双语。",
+          "en": "Interface and help are bilingual."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

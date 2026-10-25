@@ -29,7 +29,7 @@ at 2× and placed on a plain wallpaper. Nothing from a real desktop is in the fr
 
 Those windows have no frame, stay out of the taskbar, and do not steal focus from whatever you are typing into. They can be pinned above everything else, or tucked under ordinary windows against the wallpaper. Position is remembered per monitor, so a mix of display scalings will not fling a card off the edge; data lives on disk and everything is back where it was after a restart.
 
-The difference from other desktop toys: **widgets are not built in, they are installed.** The 17 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
+The difference from other desktop toys: **widgets are not built in, they are installed.** The 18 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
 
 **It speaks Chinese and English, all the way down.** The shell switches language in settings, and so do the things you would not expect it to reach: each official widget's name, its options and its how-to text in the inspector come out of the manifest in the language you picked, and the words drawn *inside* the cards (weekdays, "2 left", Start/Pause) follow through one `language` push to every open window. No restart, no reload.
 
@@ -67,7 +67,7 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 
 The important part is that a widget *becomes a window* while never touching Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are twelve permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
 
-**The platform ships empty.** The 17 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
+**The platform ships empty.** The 18 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
 
 So is the absence of a server. The catalogue is a static `registry.json`, the packages are signed files, the hosting is GitHub Pages, and updates are a release asset. When a design starts to need a backend, the design is wrong — that constraint is argued out in [docs/ROADMAP.md](./docs/ROADMAP.md), not assumed.
 
@@ -110,10 +110,10 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 
 | Metric | Value |
 | --- | --- |
-| Official widgets | 17 |
+| Official widgets | 18 |
 | Permissions | 12 |
 | Tauri commands | 92 |
-| Browser assertions | 2 450 over 52 pages |
+| Browser assertions | 2 521 over 53 pages |
 | Rust tests | 415 |
 | Documented pitfalls | 84 |
 
@@ -173,7 +173,7 @@ Every capability is a permission, and every permission is a gate in `runtime/bri
 | Permission | What it unlocks | Asked for by |
 | --- | --- | --- |
 | `clock` | The system clock, as an absolute instant | Clock, Countdown |
-| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 12 of the 17 |
+| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 13 of the 18 |
 | `clipboard:write` | Put text on the clipboard | Calculator |
 | `network` | HTTP requests to the hosts listed in the manifest | Weather |
 | `system:monitor` | CPU, memory, disk, network, uptime | System monitor |
@@ -324,7 +324,7 @@ Release: push a `v*` tag. Actions builds on `windows-latest`, signs the updater 
 ```
 src/                 React shell, canvas, inspector, settings, store
   runtime/           manifest · config · bridge · schedule · catalogue · agent · guides (pure logic)
-public/widgets/      the 17 official packages
+public/widgets/      the 18 official packages
 public/store/        the bundled catalogue (generated, not committed)
 packages/sdk/        @lattice/sdk — the single source of truth for the widget API
 examples/counter/    a drag-and-drop sample widget
@@ -342,7 +342,7 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 | CSS | 6 103 lines |
 | Rust | 22 854 lines |
 | SDK | 943 lines |
-| Widgets + example | 23 890 lines |
+| Widgets + example | 24 866 lines |
 | Scripts | 4 958 lines |
 
 **Read next**

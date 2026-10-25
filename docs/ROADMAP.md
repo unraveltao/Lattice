@@ -38,9 +38,9 @@
 | 样式 CSS | 6 103 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css` + `assistant-window.css`） |
 | Rust | 22 854 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
 | 组件 SDK | 943 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
-| 官方组件 + 示例 | 23 890 行 | 16 个官方包 + 1 个示例（含每个包里的 SDK 副本；未跟踪的桌宠不计） |
+| 官方组件 + 示例 | 24 866 行 | 18 个官方包 + 1 个示例（含每个包里的 SDK 副本） |
 | 构建脚本 | 4 958 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
-| 浏览器断言 | 2 450 条 | 52 个自检页，跑一遍的真实计数（0 failed） |
+| 浏览器断言 | 2 521 条 | 53 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 59 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + 浏览器预览那条通道 26 条，都不依赖 dev server。**CI 只跑前四条（33 条）**，`test:llm-proxy` 还没进 workflow |
 | Rust 单测 | 415 条 | 364 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 92 个 | |
@@ -235,7 +235,13 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **agent 给语义、组件排版**：模型不擅长坐标，给它"三个服务、A→B→C"，位置由确定性的分层算法算（有环时退回按输入顺序分列）。
     - **参数只能传标量**（§3.6），所以 agent 写的是几行文本（`Web -> Api -> Db`、`Cache:circle`），不是一组对象。这条是动笔时才发现的，不是设计时想到的。
     - **一次调用一步撤销**：`draw` 先清空再画，清空前那份在撤销栈里，`Ctrl+Z` 整体退回 —— 否则 agent 画错一张，用户得按几十次。
-  - **本地目录和公开目录还差三个**：本地 17 个官方包，`unraveltao/lattice-registry` 上是 14 个 —— 少 `lattice.anki`、`lattice.diagram`、`lattice.pet`（三个都是后来加的）。发上去就走 `npm run publish:widget -- public/widgets/<id> --key <私钥>` 再提 PR，流程与判据在 [`reference/build.md`](./reference/build.md) 第四节。
+  - [x] **习惯（`lattice.habit`，18 个官方组件）** —— 一行一个习惯、点一下记今天、连续天数自己算；权限只有 `storage`，配置只有一项「一周从周几开始」（`monday` / `sunday`，和 `lattice.calendar` 同一套词）；默认 300×240，最小 264×180；`tests/habit.html` 71 条。
+    - **存日期键，不存计数器**：和 `lattice.focus` 同一条理由 —— 窗口不可见时整条时间轴停摆，「每天加一」必然漏拍；`days: ["2026-10-26", …]` 在卡片再打开时按今天重算才对。日键一律用本地日期拼，不用 `toISOString()`（那是 UTC，东八区晚上八点之后会记成明天）。
+    - **只画当前这一周**：往前补打卡（「上周三其实练了」）在七格条上太容易点错一天；历史不另存，连续天数是从日期键现算的。
+    - **连续天数从今天或昨天起算，没有宽限日**：今天还没记就从昨天数（一天还没过完），昨天也没记就是 0。给它「上周五还算数」这种宽容，只会让用户以为自己在坚持。
+    - **上限写在常量里**：6 个习惯、每个留 400 天、名字 ≤40 码点。删掉没有撤销 —— 列表短，重新输一个名字比每次删都弹一次确认便宜。
+    - **一份列表，多个视图**：数据按 `widgetId` 存，桌面上摆两份卡片是同一张清单的两个视图（日历 / 待办 / 课程表都是这个形状）；`store-changed` 到了先比 `revision`，正在改名时不重载，否则编辑框会被远端那次写入清掉。
+  - **本地目录和公开目录还差四个**：本地 18 个官方包，`unraveltao/lattice-registry` 上是 14 个 —— 少 `lattice.anki`、`lattice.diagram`、`lattice.pet`、`lattice.habit`（四个都是后加的）。发上去就走 `npm run publish:widget -- public/widgets/<id> --key <私钥>` 再提 PR，流程与判据在 [`reference/build.md`](./reference/build.md) 第四节。
 
 **明确不做**：账号、云端评分、下载计数、组件市场首页。这些全都要服务端，而 v0.5 的整个前提是"没有服务端"。评分和举报继续落本地文件（`reports/*.json`），作者自己收 —— 假装有云端比没有更糟。
 

@@ -1,0 +1,234 @@
+:root {
+  --bg: transparent;
+  --fg: #ecebe6;
+  --muted: #97978f;
+  --accent: #5dcaa5;
+  --border: rgba(255, 255, 255, 0.12);
+  --radius: 10px;
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  overflow: hidden;
+}
+
+.habit {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 8px 10px 6px;
+  gap: 4px;
+}
+
+/*
+ * 顶上这条 24px 给窗饰让位：桌面窗口右上角那排按钮浮在 6px 处、约 120×28，
+ * 指针一进窗口就现身。`+` 放在左边，右边 120px 只留给窗饰，不放任何能点的东西。
+ */
+.habit-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding-right: 120px;
+}
+
+.habit-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.habit-add {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.habit-add:hover,
+.habit-add:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+
+/*
+ * 表头与每一行共用同一套列宽 —— 只改一处就够了，两处各写一遍必然错位。
+ * 76 名字 / 7×18 格 / 剩余给连续天数 / 16 删除。
+ */
+.habit-grid,
+.habit-row {
+  display: grid;
+  grid-template-columns: 76px repeat(7, 18px) minmax(18px, 1fr) 16px;
+  column-gap: 3px;
+  align-items: center;
+}
+
+.habit-grid {
+  flex: none;
+  padding-bottom: 2px;
+}
+
+.habit-weekday {
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--muted);
+}
+
+.habit-weekday.is-today {
+  color: var(--accent);
+}
+
+.habit-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.habit-empty {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.habit-name {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.habit-name:hover {
+  color: var(--accent);
+}
+
+.habit-input {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.habit-cell {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.habit-cell:hover {
+  border-color: var(--accent);
+}
+
+/* 今天：细边不动、底色给一点，让"该点哪一格"一眼看得见 */
+.habit-cell.is-today {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* 做过：整格填上强调色。格子里没有字，所以不必再挑一种对比色 */
+.habit-cell.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.habit-streak {
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.habit-streak.is-live {
+  color: var(--accent);
+}
+
+.habit-remove {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.habit-remove:hover,
+.habit-remove:focus-visible {
+  color: #e2725b;
+  outline: none;
+}
+
+.habit-status {
+  flex: none;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.habit-status.is-error {
+  color: #e2725b;
+}
