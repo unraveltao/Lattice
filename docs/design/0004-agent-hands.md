@@ -1,11 +1,11 @@
 ---
 status: accepted
 date: 2026-10-25
-code: src/runtime/assistant.ts, src/runtime/hands.ts, src/platform/assistant.ts, src/platform/AssistantPanel.tsx, src-tauri/src/hands.rs, src-tauri/src/hands_policy.rs, src-tauri/src/fs_policy.rs, src-tauri/src/shell_policy.rs, src-tauri/src/mcp.rs
+code: src/runtime/assistant.ts, src/runtime/hands.ts, src/platform/assistant.ts, src/platform/hands.ts, src/platform/AssistantPanel.tsx, src-tauri/src/hands.rs, src-tauri/src/hands_policy.rs, src-tauri/src/fs_policy.rs, src-tauri/src/shell_policy.rs, src-tauri/src/web_policy.rs, src-tauri/src/mcp.rs
 ---
 
-> **落地状态**：P1（纪律）／P2（文件）／P3（命令）已落，见 §9。
-> P4（网页）／P5（屏幕）／P6（MCP）尚未开工 —— 设计保留，动手前先读 §9 里记下的偏差。
+> **落地状态**：P1（纪律）／P2（文件）／P3（命令）／P4（网页）已落，见 §9。
+> P5（屏幕与输入）／P6（MCP）尚未开工 —— 设计保留，动手前先读 §9 里记下的偏差。
 
 # 0004 —— 给 assistant 一双手：文件、命令、网页、屏幕、外部服务
 
@@ -149,10 +149,11 @@ assistant_hands_save({ hands, workspace }) -> 同上
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/hands.html`（新） | 80 | 工具名 → 审批档/能力组、关掉一组时工具表少哪些、分期没接的组不给 schema、`describeToolCall` 的新标签、工具结果 20k 字截断、`Deny` 的形状 |
+| `tests/hands.html`（新） | 85 | 工具名 → 审批档/能力组、关掉一组时工具表少哪些、分期没接的组不给 schema、`describeToolCall` 的新标签、工具结果 20k 字截断、`Deny` 的形状 |
 | `tests/assistant.html` | 122 | 预算三种触顶、`MAX_STEPS` 改成 24 后那句提示、`toolsFor("widget")` 里一条新工具都没有 |
 | `src-tauri/src/fs_policy.rs` | 14 | `..` 与盘符、行/字数额度、跳过表、大文件拒绝、截断标记 |
 | `src-tauri/src/shell_policy.rs` | 9 | 超时夹紧、输出截断、空命令、`\0` 拒绝 |
+| `src-tauri/src/web_policy.rs` | 21 | 重定向（绝对 / 协议相对 / 根相对 / `../` / 丢片段 / 非 http 不认）、HTML 变文本（脚本样式整段丢、块级换行、实体解码、`<` 不成标签）、按字符截断、`maxChars` 夹紧 |
 | `src-tauri/src/hands_policy.rs` | 12 | 名字→组、未知名字、`mcp.` 形状、参数必填 |
 
 **手工验**（每期一次）：真机读一个真实文件 → 改它（看确认条 → `Deny` 一次 → `Allow` 一次）→
@@ -166,17 +167,18 @@ assistant_hands_save({ hands, workspace }) -> 同上
 - 不在组件里开任何一只手（见 §2）。
 - 不做后台/定时自主执行 —— 人在环和无人环是两套安全模型。
 
-## 9. 落地记录（P1–P3）
+## 9. 落地记录（P1–P4）
 
-已经接上的：`file.list` / `file.read` / `file.search` / `file.write` 与 `shell.run`。
+已经接上的：`file.list` / `file.read` / `file.search` / `file.write`、`shell.run`、`web.fetch`。
 前端两道闸在 `runtime/hands.ts`（`handsTools` 裁 schema、`needsApproval` 定审批档），
-Rust 侧 `hands.rs::run` 再独立判一次组开关，纯逻辑在 `hands_policy.rs` / `fs_policy.rs` / `shell_policy.rs`。
+Rust 侧 `hands.rs::run` 再独立判一次组开关，纯逻辑在 `hands_policy.rs` / `fs_policy.rs` /
+`shell_policy.rs` / `web_policy.rs`。
 
-**设计里没写、动手时才撞出来的六条**（P4 之后照着这个走，别重新发明）：
+**设计里没写、动手时才撞出来的九条**（P5 / P6 照着这个走，别重新发明）：
 
-1. **第四道闸：`HAND_READY`**。`HAND_SPECS` 里 P4–P6 的 schema 已经写好了（写的时候不用再动表），
-   但 `hands.rs` 那边还没有执行分支。只按用户的开关裁 schema 的话，拨一下"网页"就会把
-   `web.fetch` 递给模型，而每次调用都回 `"not implemented yet in this build"` —— 正是 §7 第一条
+1. **第四道闸：`HAND_READY`**。`HAND_SPECS` 里 P5 / P6 的 schema 已经写好了（写的时候不用再动表），
+   但 `hands.rs` 那边还没有执行分支。只按用户的开关裁 schema 的话，拨一下"屏幕"就会把
+   `screen.windows` 递给模型，而每次调用都回 `"not implemented yet in this build"` —— 正是 §7 第一条
    那个失败模式。所以 `HAND_READY` 里没接的组**一律不递**（`handsTools` 与 `handsPrompt` 同源），
    设置面板上那几行也拨不动，并挂一个"后续版本"的标记。**每落一期就把那一组改成 `true`。**
 2. **读大文件是截断，不是拒绝**。§7 写的是"`metadata().len()` 拒绝超大文件"，
@@ -193,8 +195,20 @@ Rust 侧 `hands.rs::run` 再独立判一次组开关，纯逻辑在 `hands_polic
    GUI 进程的 PATH 和用户在终端里的那份不一定一样。
 6. **取消与超时都真的 `kill()`**：25ms 轮询 + `child.wait()`，输出由两条 `drain()` 线程按 4×字符上限收，
    不读干净的话子进程写满管道就卡死在那儿，`try_wait` 永远等不到退出。
+7. **重定向必须自己跟**。`network.rs` 为了组件白名单把 WinHTTP 的自动跟随关了
+   （`WINHTTP_OPTION_REDIRECT_POLICY_NEVER`），所以 3xx 会原样回来 —— `web.fetch` 在
+   `web_policy::resolve` 里逐跳解 `Location`（绝对 / 协议相对 / 根相对 / `../` / 只换 query），
+   最多 5 跳。**相对地址按字符串拼会静默拼错一级**，症状是"取回来的是别人的 404 页面"。
+8. **HTML 变文本有两条暗坑**：`<script>` / `<style>` 整段必须丢（它们的字往往比正文长，且是
+   提示词注入最好的藏身处）；`<` 后面不是字母 / `/` / `!` / `?` 时**不能当标签**，否则从那个
+   `<` 到下一个 `>` 之间的正文会被整段吃掉。实体只认常见的十几个，认不出来就原样留着 ——
+   猜错了是把一句正常的话改坏。
+9. **网页那只手没有白名单**，这跟组件那条路是**故意的不同**：用户勾"网页"要的是"能看任何页面"，
+   再让他逐站列白名单等于把这功能变成配置作业。收窄靠四件事：只认 http/https、逐跳 ≤5、
+   正文 40k 字（`maxChars` 夹在 200–200000）、整组默认关且**取回的内容在提示词里被标成数据**。
 
-验证落点：`tests/hands.html` 80 条、`tests/assistant.html` 122 条、
-`hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9（都能 `rustc --test` 单跑）、
+验证落点：`tests/hands.html` 85 条、`tests/assistant.html` 122 条、
+`hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9 + `web_policy.rs` 21（都能 `rustc --test` 单跑）、
 `hands.rs` 5 条只有 `cargo test` 跑得了。**真机那条还没走**（读一个中文路径的文件、跑 `echo 你好`、
-点 Deny 看磁盘上没变化、Stop 之后子进程真的没了）—— 记在 `AGENTS.md` §8。
+点 Deny 看磁盘上没变化、Stop 之后子进程真的没了、抓一个真页面看正文有没有被截断、跟一次 302）——
+记在 `AGENTS.md` §8。

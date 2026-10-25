@@ -104,11 +104,11 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | Official widgets | 15 |
 | Permissions | 11 |
 | Tauri commands | 71 |
-| Browser assertions | 1 964 over 46 pages |
-| Rust tests | 259 |
+| Browser assertions | 1 969 over 46 pages |
+| Rust tests | 280 |
 | Documented pitfalls | 75 |
 
-Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 227 `rustc --test` pure-logic cases plus 32 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
+Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 248 `rustc --test` pure-logic cases plus 32 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
 ## Two hosts, one bridge
 
@@ -296,7 +296,7 @@ npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
 npm run test:tokens      # the three scales' rules themselves (half-pixels, exemptions, font shorthand)
 npm run check:tokens     # the repo actually obeys them: sizes, radii, 2 px spacing grid
-npm run test:browser     # 1 964 assertions over 46 pages, real Chrome, real dev server
+npm run test:browser     # 1 969 assertions over 46 pages, real Chrome, real dev server
 ```
 
 The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.

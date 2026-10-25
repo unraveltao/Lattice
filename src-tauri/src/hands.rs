@@ -1,4 +1,4 @@
-//! assistant 的手 —— **执行**这一半：文件、命令（这一期），网页 / 屏幕 / 外部服务在后面。
+//! assistant 的手 —— **执行**这一半：文件、命令、网页（这一期），屏幕 / 外部服务在后面。
 //!
 //! 和 `agent.rs` 的关系：那是"外部 agent 改桌面"的端点，这是"内置 assistant
 //! 干活"的命令。两条路共用审计（`agent::audit`）和"返回 `AgentReply` 形状"这一条
@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
-use crate::{agent, fs_policy, hands_policy, llm, shell_policy};
+use crate::{agent, fs_policy, hands_policy, llm, network, network_policy, shell_policy, web_policy};
 
 fn ok(result: Value) -> String {
     json!({ "ok": true, "result": result }).to_string()
@@ -146,6 +146,10 @@ fn shape_of(name: &str, args: &str, reply: &str) -> String {
             let head: String = head.chars().take(60).collect();
             format!("{head}")
         }
+        // 审计只记**哪一台主机**：完整 URL 里的 query 可能就是用户在找的东西
+        "web.fetch" => network_policy::parse_url(&text("url"))
+            .map(|target| target.host)
+            .unwrap_or_default(),
         _ => String::new(),
     };
     let ok = serde_json::from_str::<Value>(reply)
@@ -191,6 +195,7 @@ fn run(app: &AppHandle, name: &str, raw_args: &str, cancel: Arc<AtomicBool>) -> 
         "file.search" => file_search(app, &args),
         "file.write" => file_write(app, &args),
         "shell.run" => shell_run(app, &args, &cancel),
+        "web.fetch" => web_fetch(&args),
         other => fail(
             "unknown_tool",
             format!("\"{other}\" is not implemented yet in this build"),
@@ -669,12 +674,100 @@ fn join_bytes(handle: std::thread::JoinHandle<Vec<u8>>) -> Vec<u8> {
     handle.join().unwrap_or_default()
 }
 
+/// `web.fetch`：取一个页面，把 HTML 折成正文。
+///
+/// 出网这道闸和组件那条路不一样：**没有白名单**（用户只勾了一个"网页"开关，
+/// 他要的就是"能看任何页面"，再让他逐站列白名单等于把这功能变成配置作业）。
+/// 真正收窄它的是三件事：只认 http/https、逐跳最多 5 次、正文 40k 字。
+///
+/// 重定向自己跟**是必须的**：`network.rs` 把 WinHTTP 的自动跟随关了（那是给
+/// 组件白名单用的），所以 3xx 会原样回来 —— 这里决定跟不跟，并且每一跳都重新
+/// 解析一遍协议（`javascript:` / `file:` 这类永远进不来）。
+fn web_fetch(args: &Value) -> String {
+    let raw = match string_arg(args, "url") {
+        Ok(raw) => raw.trim(),
+        Err(error) => return fail("bad_args", error),
+    };
+    if let Err(error) = network_policy::parse_url(raw) {
+        return fail("bad_args", error);
+    }
+    let limit = web_policy::charset_limit(optional_usize(args, "maxChars"));
+
+    let headers = vec![
+        (
+            "Accept".to_string(),
+            "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5".to_string(),
+        ),
+        ("Accept-Language".to_string(), "en,zh;q=0.8".to_string()),
+    ];
+
+    let mut url = raw.to_string();
+    let mut hops = 0;
+    loop {
+        let target = match network_policy::parse_url(&url) {
+            Ok(target) => target,
+            Err(error) => return fail("bad_args", error),
+        };
+        let response = match network::send(
+            &target,
+            "GET",
+            &headers,
+            None,
+            web_policy::MAX_BODY_BYTES,
+        ) {
+            Ok(response) => response,
+            Err(error) => return fail("network", error),
+        };
+
+        if web_policy::is_redirect(response.status) {
+            let location = response.headers.get("location").cloned().unwrap_or_default();
+            let next = match web_policy::resolve(&url, &location) {
+                Some(next) => next,
+                None => {
+                    return fail(
+                        "bad_redirect",
+                        format!(
+                            "{} redirected (HTTP {}) to an address I cannot follow: {location}",
+                            url, response.status
+                        ),
+                    )
+                }
+            };
+            if hops >= web_policy::MAX_REDIRECTS {
+                return fail(
+                    "too_many_redirects",
+                    format!("{raw} redirected {hops} times — I stopped there"),
+                );
+            }
+            hops += 1;
+            url = next;
+            continue;
+        }
+
+        let content_type = response
+            .headers
+            .get("content-type")
+            .cloned()
+            .unwrap_or_default();
+        let text = web_policy::text_of(&content_type, &String::from_utf8_lossy(&response.body));
+        let (text, cut) = web_policy::take_chars(&text, limit);
+
+        return ok(json!({
+            "url": url,
+            "status": response.status,
+            "contentType": content_type,
+            "text": text,
+            "truncated": cut || response.truncated,
+        }));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     /*
      * 这一份只钉**形状**：`status_of` / `shape_of` 是纯函数。
      * 真正碰磁盘与进程的东西在真机上验（0004 §8 的手工验收），
-     * 能在这里跑的是 `hands_policy.rs` / `fs_policy.rs` / `shell_policy.rs` 那三份纯逻辑。
+     * 能在这里跑的是 `hands_policy.rs` / `fs_policy.rs` / `shell_policy.rs` / `web_policy.rs` 那四份纯逻辑。
      */
     use super::*;
 

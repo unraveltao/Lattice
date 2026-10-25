@@ -58,6 +58,7 @@ pub mod visibility;
 pub mod wallpaper;
 pub mod watch;
 pub mod watch_policy;
+pub mod web_policy;
 pub mod widget_store;
 pub mod widgets;
 
