@@ -297,6 +297,14 @@ interface LatticeState {
    */
   sources: CatalogueSource[];
   /**
+   * 库面板顶部那张首次引导卡，用户按过 `Got it` 没有（0011）。
+   *
+   * **只记这一件事**："我看过了，别再问"。要不要显示不是只看它 —— 判据是
+   * `runtime/onboarding.ts::firstRunVisible()`（还要"一件组件都没装"）。只看这个
+   * 布尔的话，这台装了一堆组件的老机器升级上来会被问一次"要开始吗"。
+   */
+  onboarded: boolean;
+  /**
    * 每个组件第一次安装时记下的发布者公钥。
    *
    * 这是签名信任链的第三环（见 `runtime/catalogue.ts`）：目录可以被改，
@@ -357,6 +365,8 @@ interface LatticeState {
   removeCatalogueSource: (id: string) => void;
   /** 调顺序（-1 上移 / 1 下移）。顺序决定同 id 冲突谁赢 */
   moveCatalogueSource: (id: string, delta: -1 | 1) => void;
+  /** 首次引导卡上那句 `Got it`：记下来，之后不再出现 */
+  dismissOnboarding: () => void;
   /** 记住这个组件的发布者公钥（第一次装、或者用户确认了换人之后） */
   trustKey: (widgetId: string, key: string) => void;
   /** 拉黑一把发布者公钥：之后任何由它签的包都不装（不管版本、不管装没装过） */
@@ -384,6 +394,10 @@ export function snap(value: number, enabled: boolean): number {
  *    不迁的话，这个改动只对新装的机器生效 —— 已经用过的人会一直停在演示目录上。
  * 2：目录源从单值 `catalogueSource` 变成列表 `sources`（0010）。
  *    单值那份迁成一条源，id 照同一套规则算（官方那条固定 `official`）。
+ *
+ * **加字段不必抬手。** `onboarded`（0011）是一个"缺了就当 false"的布尔：旧文件里没有它，
+ * 读出来就是没按过引导；旧版本读到新文件会忽略它，代价只是"引导回来一次"。抬版本是为了
+ * **改已有字段的含义**（那种才需要迁移），不是为了多一个键。
  */
 const STATE_VERSION = 2;
 
@@ -438,6 +452,7 @@ export const useLattice = create<LatticeState>()(
       lastClosed: null,
       paused: false,
       sources: [{ ...OFFICIAL_CATALOGUE_SOURCE }],
+      onboarded: false,
       trustedKeys: {},
       blockedKeys: [],
       ratings: {},
@@ -668,6 +683,9 @@ export const useLattice = create<LatticeState>()(
           return { sources: next };
         }),
 
+      dismissOnboarding: () =>
+        set((state) => (state.onboarded ? state : { onboarded: true })),
+
       trustKey: (widgetId, key) =>
         set((state) =>
           state.trustedKeys[widgetId] === key
@@ -748,6 +766,7 @@ export const useLattice = create<LatticeState>()(
         libraryOpen: state.libraryOpen,
         inspectorOpen: state.inspectorOpen,
         sources: state.sources,
+        onboarded: state.onboarded,
         trustedKeys: state.trustedKeys,
         blockedKeys: state.blockedKeys,
         ratings: state.ratings,

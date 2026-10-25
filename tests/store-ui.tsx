@@ -236,6 +236,14 @@ function render(
     onRollback: (item: WidgetRecord) => calls.push(`rollback:${item.manifest.id}`),
     onRate: (item: WidgetRecord, stars: number) => calls.push(`rate:${item.manifest.id}:${stars}`),
     onReport: (item: WidgetRecord) => calls.push(`report:${item.manifest.id}`),
+    /*
+     * 首次引导（0011）默认按"按过知道了"渲染：这一页大部分断言验的是商店那几段，
+     * 一进来顶上多一张三步卡只会让下面每一处的位置都变。要验引导本身的两条
+     * 断言自己把它翻过来（`onboarded: false` + 清空 `installedIds`）。
+     */
+    onboarded: true,
+    onDismissOnboarding: () => calls.push("dismiss-onboarding"),
+    onAddSource: () => calls.push("add-source"),
     open: true,
     onToggle: () => {},
     ...overrides,
@@ -707,6 +715,91 @@ async function main() {
       (rail.textContent ?? "").includes("Widgets") &&
       rail.getBoundingClientRect().height > 100,
     "收起后整条竖条就是那颗按钮（命中区是 40px × 面板高，不是一个 16px 的箭头）",
+  );
+
+  /*
+   * ---- 11. 首次引导卡（0011）----
+   *
+   * 判据本身在 `tests/onboarding.html` 钉着；这里只验接线：什么时候画出来、
+   * 卡里有什么、两颗按钮真的调到了那两件事。
+   */
+  const guide = () => document.querySelector<HTMLElement>(".lattice-firstrun");
+
+  render({ installedIds: new Set(), onboarded: false });
+  await sleep(60);
+
+  /*
+   * 上一节（第 7 段）在搜索框里留了"media"，而 `render()` 复用同一个挂载点 ——
+   * 组件状态不会跟着 props 重置。引导卡在搜索中**本来就不该出现**，先白拿这一条，
+   * 再把搜索清掉验它该出现。
+   */
+  log(guide() === null, "搜索中不铺引导卡（那时候“装一个”连对象都没有）");
+  const searchInput = document.querySelector<HTMLInputElement>(".lattice-lib-search-input");
+  if (searchInput) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    act(() => {
+      setter?.call(searchInput, "");
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await sleep(60);
+  }
+
+  log(guide() !== null, "空机器上库面板顶部有引导卡");
+  eq(document.querySelectorAll(".lattice-firstrun-steps li").length, 3, "三步，一步不多");
+  const guideButtons = [...(guide()?.querySelectorAll("button") ?? [])].map((node) =>
+    (node.textContent ?? "").trim(),
+  );
+  log(guideButtons.includes("Add another source"), "卡里有“加一个别的源”");
+  log(guideButtons.includes("Got it"), "卡里有“知道了”（不装也能收掉它）");
+  log(
+    !text(".lattice-lib-note-title").includes("The platform is empty"),
+    "引导出现时那段“平台还是空的”不再铺（同一句话不说两遍）",
+  );
+
+  // 点两颗按钮，验它真的叫到了 callback 上
+  const byLabel = (label: string) =>
+    [...(guide()?.querySelectorAll("button") ?? [])].find(
+      (node) => (node.textContent ?? "").trim() === label,
+    );
+  const addSource = byLabel("Add another source");
+  const gotIt = byLabel("Got it");
+  if (addSource) {
+    act(() => addSource.click());
+  }
+  if (gotIt) {
+    act(() => gotIt.click());
+  }
+  log(calls.includes("add-source"), "点“加一个别的源”调到了送你去源列表的那个回调");
+  log(calls.includes("dismiss-onboarding"), "点“知道了”调到了记下这件事的那个回调");
+
+  // 装过就不出现；按过也不出现 —— 两个条件任缺一个都不该铺这张卡
+  render({ installedIds: new Set(["lattice.clock"]), onboarded: false });
+  await sleep(60);
+  log(guide() === null, "装了一件之后卡自己退场");
+  render({ installedIds: new Set(), onboarded: true });
+  await sleep(60);
+  log(guide() === null, "按过“知道了”之后不再出现");
+
+  /*
+   * 目录区见底时那一句：源里一条都没有 → 说"这个目录是空的"，并给一颗
+   * "加一个来源"。判据在 `runtime/onboarding.ts`，这里验它真的铺出来了、按钮接上了。
+   */
+  render({
+    installedIds: new Set(),
+    onboarded: true,
+    store: { ...store, snapshot: { ...store.snapshot!, catalogue: { ...catalogue, entries: [] } } },
+  });
+  await sleep(60);
+  const emptyNote = [...document.querySelectorAll<HTMLElement>(".lattice-lib-note.is-more")].find(
+    (node) => (node.textContent ?? "").includes("This catalogue is empty."),
+  );
+  log(emptyNote !== undefined, "源里一条都没有 → 目录区底下说“这个目录是空的”");
+  log(
+    emptyNote !== undefined &&
+      [...emptyNote.querySelectorAll("button")].some(
+        (node) => (node.textContent ?? "").trim() === "Add a source",
+      ),
+    "那句话旁边就是“加一个来源”，不是只让人自己去翻设置",
   );
 
   document.getElementById("out")!.innerHTML = lines

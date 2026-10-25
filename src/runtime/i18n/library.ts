@@ -85,6 +85,21 @@ export const LIBRARY_ZH: Record<string, string> = {
   "{count} of them have {notes}.": "其中 {count} 个：{notes}。",
   "They are listed under Installed above.": "它们列在上面的“已安装”里。",
 
+  // —— 首次引导（0011）：一张三步卡 + 目录区见底时那一句 ——
+  "Three things, then you are set": "三件事，之后就看你的了",
+  "Install one from the list below — the official pack is already unpacked.":
+    "从下面挑一个装上 —— 官方包已经解好了，点一下就行。",
+  "Click a card to put it on the canvas. The arrow sends a copy to your desktop.":
+    "点一张卡片它就落在画布上；卡片上那颗箭头会把它复制一份放到真实桌面。",
+  "More widgets come from catalogue sources: the official one is here, and anyone can publish another.":
+    "更多组件来自目录源：官方那份已经在这儿了，别人的源谁都能发一份。",
+  "Add another source": "加一个别的源",
+  "Hide this and do not show it again": "收起来，别再问了",
+  "Got it": "知道了",
+  "That is everything your sources offer right now.": "你现在订的源里就这些了。",
+  "Anybody can publish a catalogue. Paste its address and its widgets show up here, side by side with these.":
+    "谁都能发一份目录。把地址粘进来，那份里的组件就会和这些并排出现在这儿。",
+
   // —— 商店卡片 ——
   Blocked: "已拉黑",
   Signed: "已签名",

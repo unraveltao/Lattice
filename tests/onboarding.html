@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>onboarding test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 首次引导（0011）的纯逻辑。
+       *
+       * 这一页钉的是"什么时候出现" —— 全部是**错了不会报错、只会让人烦**的东西：
+       *
+       *   1. 老机器升级上来不许被问一次"要开始吗"（`onboarded` 缺省就是 false）
+       *   2. 装过再卸光要让引导回来（界面此刻真的又空了）
+       *   3. "没得装"的两种空要给不同的字：源里没东西 / 全都装过了
+       *   4. 搜索不到东西时不许再插一句"去加个源"（答非所问）
+       */
+      import {
+        FIRST_RUN_STEPS,
+        catalogueDeadEnd,
+        firstRunVisible,
+      } from "../src/runtime/onboarding.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text} — ${JSON.stringify(actual)}`,
+        );
+      const ok = (value, text) => log(!!value, text);
+
+      // ---- 引导卡：出现不出现 ----
+
+      eq(firstRunVisible({ onboarded: false, installedCount: 0 }), true, "没按过、一件没装 → 出现");
+      eq(firstRunVisible({ onboarded: true, installedCount: 0 }), false, "按过 Got it → 不再出现");
+      eq(firstRunVisible({ onboarded: false, installedCount: 1 }), false, "装了一件就不出现");
+      eq(
+        firstRunVisible({ onboarded: false, installedCount: 14 }),
+        false,
+        "老机器升级上来不许被问一次（`onboarded` 缺省就是 false）",
+      );
+      eq(firstRunVisible({ onboarded: true, installedCount: 14 }), false, "按过且装过 → 不出现");
+      eq(
+        firstRunVisible({ onboarded: false, installedCount: -3 }),
+        true,
+        "坏值是负数也当空：判据用 <= 0，不是 === 0",
+      );
+
+      // ---- 目录区：没得装时说哪一种 ----
+
+      eq(
+        catalogueDeadEnd({ rows: 0, shown: 0, filtering: false }),
+        "empty",
+        "源里一条都没有 → 说「这个目录是空的」",
+      );
+      eq(
+        catalogueDeadEnd({ rows: 0, shown: 0, filtering: true }),
+        "none",
+        "搜索不到东西时闭嘴（那句「没有匹配」已经说了）",
+      );
+      eq(
+        catalogueDeadEnd({ rows: 5, shown: 5, filtering: false }),
+        "none",
+        "还有得装 → 不说话",
+      );
+      eq(
+        catalogueDeadEnd({ rows: 5, shown: 0, filtering: false }),
+        "all-installed",
+        "全都装过了 → 说「这就是全部」并指向加源",
+      );
+      eq(
+        catalogueDeadEnd({ rows: 5, shown: 0, filtering: true }),
+        "all-installed",
+        "搜索命中的那几条全装过了，也还是这一句",
+      );
+      eq(
+        catalogueDeadEnd({ rows: 1, shown: 1, filtering: true }),
+        "none",
+        "搜到了能装的 → 不说话",
+      );
+      eq(catalogueDeadEnd({ rows: 3, shown: 1, filtering: false }), "none", "只装了一部分 → 不说话");
+
+      /*
+       * 十二种组合一次过：判据只有那两条支路，任何一格对不上都说明有人在函数里
+       * 又加了一条没人知道的规则。
+       */
+      const wrong = [];
+      for (const rows of [0, 1, 2]) {
+        for (const shown of [0, 1, 2]) {
+          for (const filtering of [false, true]) {
+            const expected =
+              rows === 0
+                ? filtering
+                  ? "none"
+                  : "empty"
+                : shown === 0
+                  ? "all-installed"
+                  : "none";
+            const actual = catalogueDeadEnd({ rows, shown, filtering });
+            if (actual !== expected) wrong.push(`${rows}/${shown}/${filtering}=${actual}`);
+          }
+        }
+      }
+      eq(wrong, [], "3 × 3 × 2 十二种组合都对得上");
+
+      // ---- 三步 ----
+
+      eq(FIRST_RUN_STEPS.length, 3, "三步，不是四步（面板里放得下的那个数）");
+      eq(FIRST_RUN_STEPS.join(","), "install,place,extend", "顺序：装一个 → 摆上去 → 加源");
+      eq(new Set(FIRST_RUN_STEPS).size, 3, "三步不许重名（重名 = 少一步）");
+      ok(
+        FIRST_RUN_STEPS.every((step) => typeof step === "string" && step.length > 0),
+        "每一步都有名字（界面拿它去查文案）",
+      );
+      eq(FIRST_RUN_STEPS[0], "install", "第一步一定是装一个：不装无从谈摆");
+      ok(
+        FIRST_RUN_STEPS.indexOf("place") < FIRST_RUN_STEPS.indexOf("extend"),
+        "先摆上去再谈加源 —— 加源是「还有更多」，不是前置条件",
+      );
+      ok(
+        FIRST_RUN_STEPS.includes("extend"),
+        "加源那一步必须在三步里：它就是这一版要补的那句话",
+      );
+      eq(
+        FIRST_RUN_STEPS[FIRST_RUN_STEPS.length - 1],
+        "extend",
+        "加源收尾（它是「然后呢」，不是「首先」）",
+      );
+
+      // ---- 输出 ----
+
+      const pass = lines.filter((line) => line.startsWith("PASS")).length;
+      const fail = lines.length - pass;
+      document.getElementById("out").innerHTML =
+        lines.map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`).join("\n") +
+        `\n\n${pass} passed, ${fail} failed`;
+      document.title = fail === 0 ? `onboarding ${pass}/${lines.length}` : `onboarding FAIL ${fail}`;
+    </script>
+  </body>
+</html>

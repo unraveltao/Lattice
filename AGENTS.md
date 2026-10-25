@@ -94,6 +94,7 @@ src/
     llm-models.ts         模型档的纯知识：按模型名前缀查能力（能不能调工具 / 能不能给 temperature / 上下文多大）、历史字符预算、三种鉴权形状（bearer / api-key-header / none）、七个服务商的预置填写（纯函数，`tests/llm-models.html` 26 条）
     align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 单包命中判定（纯函数，`tests/library-search.html` 钉着）
+    onboarding.ts         首次引导的纯逻辑（0011）：`firstRunVisible`（只在"没按过 `Got it` **且**一件都没装"时出卡 —— 少了后一条，老机器升级上来会被问一次"要开始吗"）、`catalogueDeadEnd`（源里没东西 / 全都装过早，两种"没得装"各说各的；搜索中闭嘴）（纯函数，`tests/onboarding.html` 22 条）
     i18n.ts               界面文案的中英切换：**key 就是英文原句**、缺翻译退化成英文、`useT()`（组件）/ `t()`（模块）/ `setLanguage()` / `languagePayload()`（给组件看的"现在是哪一门"，`tests/i18n.html` 钉着）
     i18n/*.ts             中文表按域分片（common / shell / library / panels / settings / assistant / misc）；**纯数据，一个 import 都不许有**
     widget-text.ts        组件**作者写的**文案：字符串或 `{ zh, en }`、`pickText` 按语言挑（缺一门退另一门）、`textVariants` 给搜索建两门索引、`normalizeLine` 管日期/单位（`tests/widget-text.html` 钉着）

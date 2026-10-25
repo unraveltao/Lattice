@@ -32,6 +32,7 @@ import {
 } from "../runtime/catalogue";
 import { PERMISSION_LABELS, permissionLabel, type Permission } from "../runtime/manifest";
 import { useLang, useT } from "../runtime/i18n";
+import { catalogueDeadEnd } from "../runtime/onboarding";
 import { textVariants, useText } from "../runtime/widget-text";
 import type { CatalogueSnapshot } from "./catalogue";
 import type { PermissionReview } from "./store";
@@ -80,6 +81,13 @@ interface CatalogueSectionProps {
   installedIds: Set<string>;
   /** 正在搜索 —— 无视折叠状态，直接摊开 */
   forceOpen?: boolean;
+  /**
+   * 把设置打开到 Widgets（源列表）那一页（0011）。
+   *
+   * "没得装"的时候要说"从哪儿还能拿"，而源列表只有一个家（`SettingsMenu.tsx`）——
+   * 这里只给入口，不再画一份编辑器。
+   */
+  onAddSource: () => void;
 }
 
 function matches(entry: CatalogueEntry, tokens: string[]): boolean {
@@ -115,6 +123,7 @@ export function CatalogueSection({
   tokens,
   installedIds,
   forceOpen = false,
+  onAddSource,
 }: CatalogueSectionProps) {
   const t = useT();
   const text = useText();
@@ -210,6 +219,19 @@ export function CatalogueSection({
    */
   const quiet = rows.filter((row) => row.installed && row.versionPlan.kind !== "update");
   const visible = rows.filter((row) => !quiet.includes(row));
+
+  /*
+   * "没得装"的两种情形（0011）：源里一条都没有、或者全都有了。
+   *
+   * 判据在 `runtime/onboarding.ts`（断言页钉着）。这里只负责一件事：**哪一种都
+   * 不能让人觉得"这软件里没有别的组件了"** —— 用户看到的应该是"我这几份源到底了，
+   * 还能加一份"。
+   */
+  const deadEnd = catalogueDeadEnd({
+    rows: rows.length,
+    shown: visible.length,
+    filtering: tokens.length > 0,
+  });
 
   /*
    * 剩下的再分两堆：有按钮要按的排前面，装不了的单独一层。
@@ -323,12 +345,8 @@ export function CatalogueSection({
         </ul>
       )}
 
-      {rows.length === 0 && (
-        <p className="lattice-hint">
-          {tokens.length > 0
-            ? t("Nothing in the catalogue matches your search.")
-            : t("This catalogue is empty.")}
-        </p>
+      {tokens.length > 0 && rows.length === 0 && (
+        <p className="lattice-hint">{t("Nothing in the catalogue matches your search.")}</p>
       )}
 
       {actionable.length > 0 && (
@@ -410,6 +428,26 @@ export function CatalogueSection({
             />
           ))}
         </LibSection>
+      )}
+
+      {/*
+        0011：这一段见底的时候，唯一有用的下一句话是"还能加一个源"。
+        它不覆盖上面那行统计 —— 统计说的是"你装过什么"，这句说的是"还能从哪儿拿"。
+      */}
+      {deadEnd !== "none" && (
+        <div className="lattice-lib-note is-more">
+          <p className="lattice-lib-note-title">
+            {deadEnd === "empty"
+              ? t("This catalogue is empty.")
+              : t("That is everything your sources offer right now.")}
+          </p>
+          <p className="lattice-hint">
+            {t("Anybody can publish a catalogue. Paste its address and its widgets show up here, side by side with these.")}
+          </p>
+          <button type="button" className="lattice-btn is-small" onClick={onAddSource}>
+            {t("Add a source")}
+          </button>
+        </div>
       )}
     </LibSection>
   );

@@ -41,7 +41,8 @@ import { ProfilePanel } from "./ProfilePanel";
 import { openRepo, REPO, REPO_URL } from "./repo";
 import { DocsPanel } from "./DocsPanel";
 
-type Section =
+/** 设置面板的九个分区。外面（首次引导）要能"打开到某一页"，所以这一类得导出去 */
+export type SettingsSection =
   | "account"
   | "models"
   | "appearance"
@@ -51,6 +52,8 @@ type Section =
   | "assistant"
   | "about"
   | "help";
+
+type Section = SettingsSection;
 
 const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
   { id: "account", label: "Account", icon: ICON.user },
@@ -112,6 +115,13 @@ interface SettingsMenuProps {
   onQuit: () => void;
   /** 打开 assistant 抽屉（设置里那一条） */
   onOpenAssistant: () => void;
+  /**
+   * 外面要求"打开设置并停在这一页"（首次引导那颗 `Add a source`）。
+   *
+   * 带 `nonce` 是因为"点一次、关掉、再点一次"这**两次**都要生效，而 `setSection`
+   * 收到同一个值什么都不会发生 —— 只在 nonce 变了的时候开。
+   */
+  openAt?: { section: SettingsSection; nonce: number } | null;
 }
 
 export function SettingsMenu({
@@ -123,6 +133,7 @@ export function SettingsMenu({
   onRefresh,
   onQuit,
   onOpenAssistant,
+  openAt = null,
 }: SettingsMenuProps) {
   const profile = useLattice((state) => state.profile);
   const signIn = useLattice((state) => state.signIn);
@@ -201,6 +212,24 @@ export function SettingsMenu({
     setCatalogueOpen(false);
     setOpen(true);
   }, []);
+
+  /**
+   * 外面要求"打开设置并停在这一页"（首次引导那颗 `Add a source`）。
+   *
+   * 只认 `nonce` 变了 —— 父组件重渲染一次不该把用户刚切走的页抢回来；
+   * 而"点一次、关掉、再点一次"是两次不同的 nonce，两次都要开。
+   *
+   * 落在 Widgets 时**顺手把目录源那一块摊开**：用户点的是"加一个源"，
+   * 停在一行收起来的 `Widget catalogue` 上等于还要再点一次 —— 那正是
+   * 这一版想省掉的那一步。
+   */
+  const lastOpenAt = useRef(0);
+  useEffect(() => {
+    if (!openAt || openAt.nonce === lastOpenAt.current) return;
+    lastOpenAt.current = openAt.nonce;
+    openPanel(openAt.section);
+    if (openAt.section === "widgets") setCatalogueOpen(true);
+  }, [openAt, openPanel]);
 
   useEffect(() => {
     void appVersion().then(setVersion);

@@ -42,7 +42,7 @@ import {
 } from "./runtime/catalogue";
 import { buildSpecs, closeDesktop, minimizeMain, syncDesktop } from "./platform/desktop";
 import { Glyph, ICON, ThemeGlyph } from "./platform/icons";
-import { SettingsMenu } from "./platform/SettingsMenu";
+import { SettingsMenu, type SettingsSection } from "./platform/SettingsMenu";
 import { nextFreeSlot, useLattice, type ThemeMode } from "./platform/store";
 import { permissionLabel } from "./runtime/manifest";
 import { isTauri, loadRegistry, type WidgetLoadError, type WidgetRecord } from "./runtime/registry";
@@ -262,6 +262,19 @@ export default function App() {
       });
   }, []);
 
+  /**
+   * 把设置打开到"Widgets"那一页 —— 首次引导里"加一个源"的那颗按钮。
+   *
+   * 源列表只有一个家（`SettingsMenu.tsx`），所以这里不复制一份编辑器，只做"送去"。
+   * `nonce` 每次自增：点一次、关掉、再点一次，两次都得把面板重新打开。
+   */
+  const [settingsAt, setSettingsAt] = useState<{ section: SettingsSection; nonce: number } | null>(
+    null,
+  );
+  const openSourceList = useCallback(() => {
+    setSettingsAt((prev) => ({ section: "widgets", nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
+
   /*
    * 组件目录（商店）。
    *
@@ -270,6 +283,9 @@ export default function App() {
    * 用户配置（从哪儿读）落在 store 里。
    */
   const sources = useLattice((state) => state.sources);
+  /* 首次引导卡上那句 `Got it` 记住了没有（0011）。判据在 `runtime/onboarding.ts` */
+  const onboarded = useLattice((state) => state.onboarded);
+  const dismissOnboarding = useLattice((state) => state.dismissOnboarding);
   const trustedKeys = useLattice((state) => state.trustedKeys);
   const trustKey = useLattice((state) => state.trustKey);
   const blockedKeys = useLattice((state) => state.blockedKeys);
@@ -1184,6 +1200,7 @@ export default function App() {
               if (isTauri()) void invoke("quit_app");
             }}
             onOpenAssistant={toggleAssistant}
+            openAt={settingsAt}
           />
         </div>
       </header>
@@ -1217,6 +1234,9 @@ export default function App() {
           onReport={(record) =>
             setReportTarget({ record, stars: ratings[record.manifest.id]?.stars ?? 0 })
           }
+          onAddSource={openSourceList}
+          onboarded={onboarded}
+          onDismissOnboarding={dismissOnboarding}
           open={libraryOpen}
           onToggle={() => setPanelOpen("library", !libraryOpen)}
         />

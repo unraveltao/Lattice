@@ -25,6 +25,7 @@
 import { useMemo, useState } from "react";
 import type { WidgetLoadError, WidgetRecord } from "../runtime/registry";
 import { matchesWidget, tokenize } from "../runtime/library-search";
+import { firstRunVisible } from "../runtime/onboarding";
 import { permissionLabel, isPermissionReady } from "../runtime/manifest";
 import { useT } from "../runtime/i18n";
 import { useText } from "../runtime/widget-text";
@@ -63,6 +64,21 @@ interface LibraryPanelProps {
   onRollback: (record: WidgetRecord) => void;
   onRate: (record: WidgetRecord, stars: number) => void;
   onReport: (record: WidgetRecord) => void;
+  /**
+   * 首次引导卡上那句 `Got it` 按过没有（0011）。
+   *
+   * `installedCount` 不从 store 再取一次：面板本来就知道自己画了几个已安装的
+   * 卡片，判据要的正是"用户看见的那个数"。
+   */
+  onboarded: boolean;
+  onDismissOnboarding: () => void;
+  /**
+   * 把设置打开到 Widgets（源列表）那一页。
+   *
+   * 首次引导卡与目录段底部共用这一个回调 —— 两处说的都是"另一个源从哪儿加"，
+   * 而源列表的家在 `SettingsMenu.tsx`，这里只是"送去"。
+   */
+  onAddSource: () => void;
   /** 面板是否展开；收起后退成一条竖条，只留开合按钮 */
   open: boolean;
   onToggle: () => void;
@@ -86,6 +102,9 @@ export function LibraryPanel({
   onRollback,
   onRate,
   onReport,
+  onboarded,
+  onDismissOnboarding,
+  onAddSource,
   open,
   onToggle,
 }: LibraryPanelProps) {
@@ -117,6 +136,22 @@ export function LibraryPanel({
     (record) => !installedIds.has(record.manifest.id) && !catalogueIds.has(record.manifest.id),
   );
   const officialPack = available.filter((record) => record.source === "bundled");
+
+  /*
+   * 首次引导卡（0011）。
+   *
+   * 判据的前一半（"没按过知道了、且一件都没装"）在 `runtime/onboarding.ts` 里，
+   * 由断言页钉着；后一半是**这一屏**自己的事：正在扫盘、正在搜索、一个包都发现
+   * 不到的时候它不该出现（那时候"装一个"这句话连对象都没有）。
+   *
+   * 它出现时顶掉下面那段 "The platform is empty" —— 两段都在讲"先装一个"，
+   * 同一颗安装按钮在一屏里出两次就是两个说法。
+   */
+  const showFirstRun =
+    !loading &&
+    !filtering &&
+    widgets.length > 0 &&
+    firstRunVisible({ onboarded, installedCount: installed.length });
 
   const matches = (record: WidgetRecord) => matchesWidget(record, tokens);
 
@@ -442,6 +477,49 @@ export function LibraryPanel({
       <div className="lattice-panel-body">
         {loading && <p className="lattice-hint">{t("Scanning widgets…")}</p>}
 
+        {/*
+          首次引导（0011）：三步各一行，三颗按钮。它不是模态 —— 第一次打开时
+          最想做的事是"装一个看看"，把它挡在一屏"下一步"后面只会让人先关掉它。
+        */}
+        {showFirstRun && (
+          <div className="lattice-firstrun">
+            <p className="lattice-firstrun-title">{t("Three things, then you are set")}</p>
+            <ol className="lattice-firstrun-steps">
+              <li>
+                {t("Install one from the list below — the official pack is already unpacked.")}
+              </li>
+              <li>
+                {t("Click a card to put it on the canvas. The arrow sends a copy to your desktop.")}
+              </li>
+              <li>
+                {t("More widgets come from catalogue sources: the official one is here, and anyone can publish another.")}
+              </li>
+            </ol>
+            <div className="lattice-firstrun-actions">
+              {officialPack.length > 0 && (
+                <button
+                  type="button"
+                  className="lattice-btn is-small is-primary"
+                  onClick={() => onInstallPack(officialPack)}
+                >
+                  {t("Install the official pack ({count})", { count: officialPack.length })}
+                </button>
+              )}
+              <button type="button" className="lattice-btn is-small" onClick={onAddSource}>
+                {t("Add another source")}
+              </button>
+              <button
+                type="button"
+                className="lattice-btn is-small"
+                onClick={onDismissOnboarding}
+                title={t("Hide this and do not show it again")}
+              >
+                {t("Got it")}
+              </button>
+            </div>
+          </div>
+        )}
+
         {!loading && widgets.length === 0 && (
           <div className="lattice-lib-note">
             <p className="lattice-lib-note-title">{t("No widgets at all")}</p>
@@ -452,7 +530,7 @@ export function LibraryPanel({
           </div>
         )}
 
-        {!loading && !filtering && widgets.length > 0 && installed.length === 0 && (
+        {!showFirstRun && !loading && !filtering && widgets.length > 0 && installed.length === 0 && (
           <div className="lattice-lib-note">
             <p className="lattice-lib-note-title">{t("The platform is empty")}</p>
             <p className="lattice-hint">
@@ -528,6 +606,7 @@ export function LibraryPanel({
           tokens={tokens}
           installedIds={installedIds}
           forceOpen={filtering}
+          onAddSource={onAddSource}
         />
 
         {errors.length > 0 && (

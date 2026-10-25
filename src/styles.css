@@ -1075,6 +1075,52 @@ button {
 }
 
 /*
+ * 首次引导（0011）：库面板顶上那张三步卡。
+ *
+ * 实线 + 强调色，和下面那些虚线框（`.lattice-lib-note`，意思是"这里还空着"）分开 ——
+ * 它不是"空"，是"照着这三步来"。三步各一行，不展开解释：第一次打开的人最想干的事
+ * 就是装一个，卡每多两行，第一个组件卡片就往下挪两行。
+ */
+.lattice-firstrun {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--lattice-accent);
+  border-radius: 14px;
+  background: var(--lattice-accent-soft);
+}
+
+.lattice-firstrun-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lattice-text);
+}
+
+.lattice-firstrun-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 序号用强调色：它是"第几步"，不是装饰 */
+.lattice-firstrun-steps li::marker {
+  color: var(--lattice-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.lattice-firstrun-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/*
  * 组件库头部：标题 + 计数贴左，右边的图标按钮成组靠右。
  * 以前是靠给计数加 margin-right:auto 把按钮顶过去，现在右侧是两个按钮
  * 一组（打开目录 + 收起），交给 .lattice-panel-actions 统一顶。

@@ -113,7 +113,7 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | Official widgets | 17 |
 | Permissions | 12 |
 | Tauri commands | 92 |
-| Browser assertions | 2 408 over 51 pages |
+| Browser assertions | 2 442 over 52 pages |
 | Rust tests | 415 |
 | Documented pitfalls | 84 |
 
@@ -312,7 +312,7 @@ npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
 npm run test:tokens      # the three scales' rules themselves (half-pixels, exemptions, font shorthand)
 npm run check:tokens     # the repo actually obeys them: sizes, radii, 2 px spacing grid
-npm run test:browser     # 2 408 assertions over 51 pages, real Chrome, real dev server
+npm run test:browser     # 2 442 assertions over 52 pages, real Chrome, real dev server
 ```
 
 The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.
@@ -338,8 +338,8 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 22 786 lines |
-| CSS | 6 057 lines |
+| TypeScript | 23 030 lines |
+| CSS | 6 103 lines |
 | Rust | 22 854 lines |
 | SDK | 801 lines |
 | Widgets + example | 23 770 lines |
