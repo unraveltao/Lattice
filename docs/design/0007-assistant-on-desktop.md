@@ -84,9 +84,8 @@ tint 三档（auto / dark / light）+ 浓度 + 模糊，和属性面板的语义
 ```json
 {
   "version": 2,
-  "mode": "floating",              // floating | desktop
-  "x": 1200, "y": 700,             // 逻辑像素
-  "width": 400, "height": 580,
+  "mode": "floating",                        // floating | desktop
+  "rect": { "x": 1200, "y": 700, "width": 400, "height": 580 },   // 逻辑像素
   "appearance": { "tint": "auto", "alpha": 1, "blur": 0 },
   "locked": false
 }
@@ -102,10 +101,10 @@ assistant_window_state()                  → AssistantWindowState（v2 全量�
 assistant_window_mode(mode)               → AssistantWindowState（切换 + 应用层级 + 存盘）
 assistant_window_appearance(appearance)   → AssistantWindowState（归一化后存盘，非法值退回出厂）
 assistant_window_locked(locked)           → AssistantWindowState
-assistant_window_save_rect(x, y, w, h)    → （松手时存；夹紧在 Rust 侧再判一次）
+assistant_window_save_rect(rect)          → AssistantWindowState（`{x, y, width, height}`，松手时存；夹紧在 Rust 侧再判一次）
 ```
 
-`assistant_window_toggle` / `_hide` 保持原样。**Rust 是唯一真源**：前端每次改完都拿返回值覆盖本地状态，
+`assistant_window_save_pos` 保留原名（页面已经在用它），但它现在存的是**位置与尺寸**。`assistant_window_toggle` / `_hide` 保持原样。**Rust 是唯一真源**：前端每次改完都拿返回值覆盖本地状态，
 不在两处各攒一份（和 `assistant_hands*` 同一条）。前端纯逻辑放 `runtime/assistant-window.ts`：
 `DEFAULT_ASSISTANT_WINDOW`、`MIN_W` / `MIN_H`、`clampRect(rect, work)`、`migrateAssistantWindow(raw)`
 （v1 → v2、坏值逐项退回）—— 纯函数，`tests/assistant-window.html` 钉着。

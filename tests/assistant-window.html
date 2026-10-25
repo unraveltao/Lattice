@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>assistant window test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * assistant 窗口（0007）的纯逻辑。
+       *
+       * 这一页钉的是"窗口会出现在哪、能不能找回来、底板是不是出厂"——
+       * 全部是**看不见就会静默错**的东西：
+       *
+       *   1. 坏值不许把窗口变成"看不见也点不到"（0 宽 / NaN / 屏外）
+       *   2. v1 的 `{x, y}` 要就地升级，**不是**当成"没有记录"（老用户的位置是调过的）
+       *   3. 模式认不出来退回浮窗，不是退回桌面（沉在底下的窗口"看起来消失了"）
+       *   4. 出厂外观**一个令牌都不改**（默认样子一像素不差，不变量 6）
+       */
+      import {
+        ASSISTANT_WINDOW_MODES,
+        DEFAULT_ASSISTANT_H,
+        DEFAULT_ASSISTANT_W,
+        MIN_ASSISTANT_H,
+        MIN_ASSISTANT_W,
+        clampAssistantRect,
+        clampAssistantSize,
+        defaultAssistantRect,
+        migrateAssistantWindow,
+        normalizeAssistantMode,
+      } from "../src/runtime/assistant-window.ts";
+      import {
+        APPEARANCE_TOKENS,
+        DEFAULT_APPEARANCE,
+        appearanceTokenValues,
+        isPlainAppearance,
+      } from "../src/runtime/appearance.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text} — ${JSON.stringify(actual)}`,
+        );
+      const ok = (value, text) => log(!!value, text);
+
+      const SCREEN = { left: 0, top: 0, width: 1920, height: 1080 };
+
+      // ---- 模式 ----
+
+      eq(ASSISTANT_WINDOW_MODES.join(","), "floating,desktop", "只有两个模式");
+      eq(normalizeAssistantMode("desktop"), "desktop", "认得出桌面");
+      eq(normalizeAssistantMode(" Desktop "), "desktop", "大小写与空白算同一个人写的");
+      eq(normalizeAssistantMode("desk"), "floating", "认不出来退回浮窗（沉在底下会像丢了）");
+      eq(normalizeAssistantMode(undefined), "floating", "没写也是浮窗");
+      eq(normalizeAssistantMode("topmost"), "floating", "没有第三个模式");
+
+      // ---- 尺寸 ----
+
+      eq(clampAssistantSize(900, 700), [900, 700], "正常尺寸原样放行");
+      eq(
+        clampAssistantSize(100, 100),
+        [MIN_ASSISTANT_W, MIN_ASSISTANT_H],
+        "太小就抬到最小值（再小输入框和最后一条回答会叠在一起）",
+      );
+      eq(
+        clampAssistantSize(0, 0),
+        [DEFAULT_ASSISTANT_W, DEFAULT_ASSISTANT_H],
+        "0 落回出厂（0 宽 = 看不见也点不到）",
+      );
+      eq(
+        clampAssistantSize(Number.NaN, -4),
+        [DEFAULT_ASSISTANT_W, DEFAULT_ASSISTANT_H],
+        "坏值落回出厂",
+      );
+
+      // ---- 位置 ----
+
+      eq(
+        clampAssistantRect({ x: 100, y: 120, width: 400, height: 580 }, SCREEN),
+        { x: 100, y: 120, width: 400, height: 580 },
+        "屏内的位置不动",
+      );
+      eq(
+        clampAssistantRect({ x: 1900, y: 1000, width: 400, height: 580 }, SCREEN),
+        { x: 1520, y: 500, width: 400, height: 580 },
+        "右边 / 下边溢出 → 拉到贴边",
+      );
+      eq(
+        clampAssistantRect({ x: -40, y: -60, width: 400, height: 580 }, SCREEN),
+        { x: 0, y: 0, width: 400, height: 580 },
+        "左边 / 上边溢出 → 拉到 0",
+      );
+      eq(
+        clampAssistantRect({ x: 600, y: 600, width: 2400, height: 1600 }, SCREEN),
+        { x: 0, y: 0, width: 2400, height: 1600 },
+        "比屏幕还大就贴左上角（跑到屏外 = 找不回来）",
+      );
+
+      const home = defaultAssistantRect(SCREEN);
+      eq(home.x, 1920 - 400 - 28, "默认落点贴右边，留一个余量");
+      eq(home.y, 1080 - 580 - 56, "下边留两份（一份给任务栏）");
+      ok(home.width >= MIN_ASSISTANT_W && home.height >= MIN_ASSISTANT_H, "默认尺寸不小于最小值");
+
+      // ---- 迁移：v1 / v2 / 坏文件 ----
+
+      const fresh = migrateAssistantWindow(undefined, SCREEN);
+      ok(
+        fresh.version === 2 &&
+          fresh.mode === "floating" &&
+          fresh.locked === false &&
+          isPlainAppearance(fresh.appearance),
+        "没有记录 → 出厂的浮窗，底板不动令牌",
+      );
+      const legacy = migrateAssistantWindow({ x: 240, y: 320 }, SCREEN);
+      ok(
+        legacy.mode === "floating" && legacy.rect.x === 240 && legacy.rect.y === 320,
+        "v1 的 {x, y} 就地升级：位置照用",
+      );
+      eq(
+        [legacy.rect.width, legacy.rect.height],
+        [DEFAULT_ASSISTANT_W, DEFAULT_ASSISTANT_H],
+        "v1 没有尺寸 → 取出厂",
+      );
+      const saved = migrateAssistantWindow(
+        {
+          version: 2,
+          mode: "desktop",
+          rect: { x: 80, y: 90, width: 720, height: 560 },
+          appearance: { tint: "#abc", alpha: 2, blur: 99 },
+          locked: true,
+        },
+        SCREEN,
+      );
+      ok(saved.mode === "desktop" && saved.locked === true, "v2 的模式与锁照读");
+      eq(saved.appearance, { tint: "#aabbcc", alpha: 1, blur: 40 }, "底板逐项夹紧（三位色摊六位）");
+      eq(saved.rect, { x: 80, y: 90, width: 720, height: 560 }, "v2 的位置尺寸照读");
+      eq(
+        migrateAssistantWindow({ version: 2, mode: "weird", rect: { x: 10, y: 10 } }, SCREEN).mode,
+        "floating",
+        "坏模式退回浮窗",
+      );
+      const broken = migrateAssistantWindow({ version: 2, rect: "nope" }, SCREEN);
+      ok(broken.rect.width >= MIN_ASSISTANT_W, "坏 rect 也给出一个能用的窗口，而不是 0 宽");
+
+      // ---- 底板：令牌表是共用的，出厂外观不许改它 ----
+
+      eq(APPEARANCE_TOKENS.length, 8, "八个令牌要一起翻");
+      ok(APPEARANCE_TOKENS.includes("--lattice-surface-2"), "surface-2 在表里（只删不写）");
+      ok(isPlainAppearance(DEFAULT_APPEARANCE), "出厂外观 = 跟随主题 + 实心 + 不磨砂");
+      ok(!isPlainAppearance({ tint: "auto", alpha: 0.6, blur: 0 }), "调过浓度就不算出厂");
+      const values = appearanceTokenValues([20, 20, 24], false);
+      eq(values["--lattice-surface"], "#141418", "合成色进 surface");
+      ok(!("--lattice-surface-2" in values), "surface-2 不给近似值（差得明显，宁可退回主题）");
+      eq(Object.keys(values).length, 7, "写 7 个、删 8 个（surface-2 只删）");
+      eq(
+        appearanceTokenValues([240, 240, 236], true)["--lattice-text"],
+        "#141418",
+        "浅底板上字色压深",
+      );
+
+      // ---- 输出 ----
+
+      const pass = lines.filter((line) => line.startsWith("PASS")).length;
+      const fail = lines.length - pass;
+      document.getElementById("out").innerHTML =
+        lines.map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`).join("\n") +
+        `\n\n${pass} passed, ${fail} failed`;
+      document.title = fail === 0 ? `assistant-window ${pass}/${lines.length}` : `assistant-window FAIL ${fail}`;
+    </script>
+  </body>
+</html>

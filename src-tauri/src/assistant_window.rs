@@ -1,4 +1,4 @@
-//! assistant 的桌面小窗。
+//! assistant 的桌面窗口（`0002` / `0007`）。
 //!
 //! # 为什么是独立窗口，不是主窗口里的抽屉
 //!
@@ -12,38 +12,137 @@
 //! 转给主窗口跑），**不碰组件桥**。组件那侧只有 `llm:chat`（一张嘴，没有手）；
 //! 这里是有手的：因为改桌面的是平台自己，不是某段第三方代码。
 //!
-//! # 三条窗口上的规矩
+//! # 两种模式（0007）
 //!
-//! 1. **不置顶**。置顶好找，但会压在浏览器上面挡视线；`Ctrl+K` 唤出这一下
-//!    已经把它提到最前了，够用。
+//! - **浮窗**（默认）：普通窗口，不置顶。`Ctrl+K` 唤出这一下已经把它提到最前了。
+//! - **桌面**：`desktop::apply_to(Desktop, interactive: true)` —— `HWND_BOTTOM` 的
+//!   普通窗口 + 底层守卫。**不挂 WorkerW**：那是桌面的子窗口，WebView2 拿不到键盘
+//!   焦点，聊天框等于废了（`desktop.rs` 开头写着这条）。要的是"贴着桌面、被应用
+//!   盖住，但点它就能打字"。
+//!
+//! 两种层级都是**事后可改**的窗口属性，所以切换模式**不重建窗口** —— 对话留在
+//! 它自己的内存里，一行都不会丢。谁要是把它改成"重建"，先读 `0007 §5` 最后一行。
+//!
+//! # 三条窗口上的老规矩
+//!
+//! 1. **不置顶**。置顶好找，但会压在浏览器上面挡视线。
 //! 2. **关窗口 = 藏起来**，不是销毁。对话在内存里（`messages` ref），销毁 webview
 //!    等于把刚聊到一半的过程扔掉 —— 而"哪一句让它动了什么"正是这个功能的价值。
-//! 3. **位置记在磁盘上**（`assistant-window.json`）。拖动结束存一次，下次开在
-//!    原处；没有记录时落在主屏右下角。
+//! 3. **位置、尺寸、底板、锁都记在磁盘上**（`assistant-window.json` v2）。
 //!
 //! 圆角走 `desktop::clip_rounded`（和卡片同一个 `CORNER_RADIUS`），不引透明窗口：
-//! 它自己会画满一块不透明的面板，逐像素透明只是多绕 DWM 一圈。
+//! 它自己会画满一块面板，逐像素透明只是多绕 DWM 一圈。
 
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use tauri::{
-    AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
+
+use crate::desktop::{self, WindowLayer, WindowShape};
+
+/*
+ * 纯逻辑那一半**以子模块的形式挂在这里**，而不是在 `lib.rs` 里加一行 `mod`：
+ * 这个功能分两步落地，第一步不该去动 `lib.rs`（那一刻它正归另一个会话）。
+ * 文件仍然是独立的一份，`rustc --test assistant_window_policy.rs` 照样能单跑。
+ */
+#[path = "assistant_window_policy.rs"]
+mod policy;
 
 /// 窗口标签。**和 `main` / `widget-*` 都不一样**，别撞上
 pub const LABEL: &str = "assistant";
 
-/// 逻辑像素。宽度和主窗口里的抽屉一致（380 + 两侧内边距），高度够放六七轮对话
-const WIDTH: f64 = 400.0;
-const HEIGHT: f64 = 580.0;
+/// 现在的窗口形态（`0007`）。磁盘上就 `floating` / `desktop` 两个字符串
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    Floating,
+    Desktop,
+}
 
-/// 默认位置的边距：贴着右下角，但不贴边
-const MARGIN: f64 = 28.0;
+impl Mode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Mode::Floating => "floating",
+            Mode::Desktop => "desktop",
+        }
+    }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct Pos {
+    fn from_str(raw: &str) -> Mode {
+        match policy::normalize_mode(raw) {
+            "desktop" => Mode::Desktop,
+            _ => Mode::Floating,
+        }
+    }
+}
+
+/// 逻辑像素。**和组件那边一样**：位置尺寸存逻辑像素，用的时候再按 DPI 放缩
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// 底板（`0007` §3）。语义与组件的 `Appearance` 一字不差：
+/// `tint` 是 `"auto"` 或 `#rrggbb`，`alpha` 是底色浓度 0..1，`blur` 是磨砂半径 0..40
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Appearance {
+    pub tint: String,
+    pub alpha: f64,
+    pub blur: f64,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self {
+            tint: "auto".to_string(),
+            alpha: 1.0,
+            blur: 0.0,
+        }
+    }
+}
+
+/// `assistant-window.json` v2 的全量形状。**一次读、一次写**，
+/// 前端拿到的就是这一份（别在两边各攒一份状态）
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowState {
+    pub version: u32,
+    pub mode: Mode,
+    pub rect: Rect,
+    pub appearance: Appearance,
+    pub locked: bool,
+}
+
+impl WindowState {
+    /// 出厂状态：浮窗、400×580、右下角、底板出厂、不锁
+    fn fresh(work: (f64, f64, f64, f64)) -> Self {
+        let (width, height) = (policy::DEFAULT_W, policy::DEFAULT_H);
+        let (x, y) = policy::default_position(width, height, work);
+        Self {
+            version: 2,
+            mode: Mode::Floating,
+            rect: Rect {
+                x,
+                y,
+                width,
+                height,
+            },
+            appearance: Appearance::default(),
+            locked: false,
+        }
+    }
+}
+
+/// v1 的形状：只有 `{x, y}`。**只用来读**，写出去永远是 v2
+#[derive(Debug, Deserialize)]
+struct LegacyPos {
     x: f64,
     y: f64,
 }
@@ -52,43 +151,145 @@ fn config_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_config_dir().ok()
 }
 
-fn pos_path(app: &AppHandle) -> Option<PathBuf> {
+fn state_path(app: &AppHandle) -> Option<PathBuf> {
     Some(config_dir(app)?.join("assistant-window.json"))
 }
 
-fn load_pos(app: &AppHandle) -> Option<Pos> {
-    let text = std::fs::read_to_string(pos_path(app)?).ok()?;
-    serde_json::from_str(&text).ok()
+/// 当前屏（逻辑像素）：`(left, top, width, height)`。
+///
+/// 取"窗口现在所在的那块屏"，窗口还没建时退回主屏 —— 拖到副屏再重启，
+/// 它应该还在副屏上。
+fn screen_area(app: &AppHandle) -> (f64, f64, f64, f64) {
+    let monitor = app
+        .get_webview_window(LABEL)
+        .and_then(|window| window.current_monitor().ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        // 连屏幕都问不到：给一个不至于把窗口卡在负坐标的兜底
+        return (0.0, 0.0, 1280.0, 800.0);
+    };
+    let scale = monitor.scale_factor();
+    let origin = monitor.position().to_logical::<f64>(scale);
+    let size = monitor.size().to_logical::<f64>(scale);
+    (origin.x, origin.y, size.width, size.height)
 }
 
-fn save_pos(app: &AppHandle, pos: Pos) {
-    let Some(path) = pos_path(app) else { return };
-    let Ok(text) = serde_json::to_string_pretty(&pos) else {
+/// 把一份状态夹进现在的屏幕与上下限。
+///
+/// **读和写都要过这一道**：文件可能是手改的、可能来自另一块屏、可能是
+/// 一个已经缩到 0 的旧版本 —— 一次都不该变成"窗口看不见"
+fn normalize_state(state: &mut WindowState, work: (f64, f64, f64, f64)) {
+    state.version = 2;
+    state.mode = Mode::from_str(state.mode.as_str());
+    let (width, height) = policy::clamp_size(state.rect.width, state.rect.height);
+    let (x, y) = policy::clamp_position(state.rect.x, state.rect.y, width, height, work);
+    state.rect = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+    state.appearance = Appearance {
+        tint: policy::normalize_tint(&state.appearance.tint),
+        alpha: policy::clamp_alpha(state.appearance.alpha),
+        blur: policy::clamp_blur(state.appearance.blur),
+    };
+}
+
+fn load_state(app: &AppHandle) -> WindowState {
+    let work = screen_area(app);
+    let mut state = WindowState::fresh(work);
+    let Some(path) = state_path(app) else {
+        return state;
+    };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return state;
+    };
+
+    if let Ok(parsed) = serde_json::from_str::<WindowState>(&text) {
+        state = parsed;
+    } else if let Ok(legacy) = serde_json::from_str::<LegacyPos>(&text) {
+        // v1 就地升级：位置照用，其余落出厂（尺寸取默认、底板出厂、不锁）
+        state.rect.x = legacy.x;
+        state.rect.y = legacy.y;
+    } else {
+        // 坏文件当"没有记录"：落右下角。**绝不拦住窗口** ——
+        // 用户拿到的是一个能用的面板，而不是"它打不开了"
+        return WindowState::fresh(work);
+    }
+
+    normalize_state(&mut state, work);
+    state
+}
+
+fn save_state(app: &AppHandle, state: &WindowState) {
+    let Some(path) = state_path(app) else { return };
+    let Ok(text) = serde_json::to_string_pretty(state) else {
         return;
     };
     /* 临时文件 + 原子替换：和 `state.json` / `assistant.json` 同一条规矩，
-     * 半截文件会让下次启动"没有位置"，落回默认角落 —— 那不是灾难，但也没必要 */
+     * 半截文件会让下次启动"没有记录"，落回默认角落 —— 那不是灾难，但也没必要 */
     let temp = path.with_extension("json.tmp");
     if std::fs::write(&temp, text.as_bytes()).is_ok() {
         let _ = std::fs::rename(&temp, &path);
     }
 }
 
-/// 没有记录时的落点：主屏右下角。
-///
-/// 用工作区而不是整块屏幕 —— 任务栏高度得让出来，否则底下那截输入框永远在
-/// 任务栏底下。
-fn default_pos(app: &AppHandle) -> Pos {
-    let Ok(Some(monitor)) = app.primary_monitor() else {
-        return Pos { x: 120.0, y: 120.0 };
-    };
-    let scale = monitor.scale_factor();
-    let size = monitor.size().to_logical::<f64>(scale);
-    let origin = monitor.position().to_logical::<f64>(scale);
-    Pos {
-        x: origin.x + size.width - WIDTH - MARGIN,
-        y: origin.y + size.height - HEIGHT - MARGIN * 2.0,
+/// 把层级落到窗口上。两条路都是**事后可改**的，所以切模式不用重建窗口
+fn apply_mode(window: &tauri::WebviewWindow, mode: Mode) -> Result<(), String> {
+    match mode {
+        // 能打字的那条路：不挂 WorkerW，`HWND_BOTTOM` + 底层守卫
+        Mode::Desktop => {
+            desktop::apply_to(window, WindowLayer::Desktop, false, true, WindowShape::Rect)
+        }
+        Mode::Floating => {
+            if let Ok(handle) = window.window_handle() {
+                if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+                    // 摘掉"永远待在底层"的守卫，否则点了它也升不到前面
+                    desktop::set_sink(win32.hwnd.get() as isize, false);
+                }
+            }
+            window
+                .set_always_on_top(false)
+                .map_err(|error| format!("could not reset the window layer: {error}"))?;
+            let _ = window.show();
+            let _ = window.set_focus();
+            Ok(())
+        }
     }
+}
+
+/// 把位置与尺寸落到窗口上（物理像素换算 + 跟着重裁圆角）
+fn apply_rect(app: &AppHandle, state: &WindowState) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(LABEL) else {
+        // 窗口还没建 / 已经藏起来：只存盘，下次 `create` 会按这一份建
+        return Ok(());
+    };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let width = (state.rect.width * scale).round().max(1.0) as u32;
+    let height = (state.rect.height * scale).round().max(1.0) as u32;
+    window
+        .set_size(PhysicalSize::new(width, height))
+        .map_err(|error| format!("could not resize the assistant window: {error}"))?;
+    window
+        .set_position(PhysicalPosition::new(
+            (state.rect.x * scale).round() as i32,
+            (state.rect.y * scale).round() as i32,
+        ))
+        .map_err(|error| format!("could not move the assistant window: {error}"))?;
+    /* 圆角按新尺寸重裁：不重裁的话右下角会露出两块直角 ——
+     * 系统记着的还是建窗口时那个尺寸的区域 */
+    if let Ok(handle) = window.window_handle() {
+        if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+            let _ = desktop::clip_rounded(
+                win32.hwnd.get() as isize,
+                width,
+                height,
+                desktop::CORNER_RADIUS * scale,
+            );
+        }
+    }
+    Ok(())
 }
 
 /// 关窗口只藏起来：对话还在内存里，下次 `Ctrl+K` 接着聊
@@ -103,31 +304,36 @@ fn guard_close(window: &tauri::WebviewWindow) {
 }
 
 fn create(app: &AppHandle) -> Result<(), String> {
-    let pos = load_pos(app).unwrap_or_else(|| default_pos(app));
+    let state = load_state(app);
 
     let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("assistant.html".into()))
         .title("Lattice Assistant")
-        .inner_size(WIDTH, HEIGHT)
-        // 固定尺寸：面板是为这个宽度排的，拉宽只会让每行变长、读起来更累
+        .inner_size(state.rect.width, state.rect.height)
+        .position(state.rect.x, state.rect.y)
+        // 尺寸由页面自绘的手柄管（和组件宿主页同一套做法），窗口本身不开可调整，
+        // 避免系统边框和自绘手柄打架
         .resizable(false)
         .decorations(false)
         .skip_taskbar(true)
         // 不置顶（见模块注释第 1 条）。`Ctrl+K` 会 `set_focus()` 把它提到前面
         .always_on_top(false)
-        .focused(true)
+        // 桌面模式的窗口一出生就该是沉的，别抢焦点
+        .focused(state.mode == Mode::Floating)
         .visible(false)
-        .position(pos.x, pos.y)
         .build()
         .map_err(|error| format!("could not create the assistant window: {error}"))?;
 
+    apply_mode(&window, state.mode)?;
+
+    // 圆角：浮窗模式下 `apply_mode` 不走 `apply_to`，所以这里补一次
     if let Ok(handle) = window.window_handle() {
         if let RawWindowHandle::Win32(win32) = handle.as_raw() {
             let scale = window.scale_factor().unwrap_or(1.0);
-            let _ = crate::desktop::clip_rounded(
+            let _ = desktop::clip_rounded(
                 win32.hwnd.get() as isize,
-                (WIDTH * scale).round() as u32,
-                (HEIGHT * scale).round() as u32,
-                crate::desktop::CORNER_RADIUS * scale,
+                (state.rect.width * scale).round() as u32,
+                (state.rect.height * scale).round() as u32,
+                desktop::CORNER_RADIUS * scale,
             );
         }
     }
@@ -136,9 +342,11 @@ fn create(app: &AppHandle) -> Result<(), String> {
     window
         .show()
         .map_err(|error| format!("could not show the assistant window: {error}"))?;
-    window
-        .set_focus()
-        .map_err(|error| format!("could not focus the assistant window: {error}"))?;
+    if state.mode == Mode::Floating {
+        window
+            .set_focus()
+            .map_err(|error| format!("could not focus the assistant window: {error}"))?;
+    }
     Ok(())
 }
 
@@ -151,7 +359,7 @@ pub fn toggle(app: &AppHandle) -> Result<bool, String> {
     if let Some(window) = app.get_webview_window(LABEL) {
         let visible = window.is_visible().unwrap_or(false);
         if visible && window.is_focused().unwrap_or(false) {
-            let _ = save_current_pos(app, &window);
+            let _ = save_current_rect(app, &window);
             window
                 .hide()
                 .map_err(|error| format!("could not hide the assistant window: {error}"))?;
@@ -169,7 +377,7 @@ pub fn toggle(app: &AppHandle) -> Result<bool, String> {
 
 pub fn hide(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(LABEL) {
-        let _ = save_current_pos(app, &window);
+        let _ = save_current_rect(app, &window);
         let _ = window.hide();
     }
 }
@@ -180,19 +388,26 @@ pub fn is_open(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-/// 当前落点换算成逻辑像素存起来（多屏、不同缩放都用这一份）
-fn save_current_pos(app: &AppHandle, window: &tauri::WebviewWindow) -> Result<(), String> {
+/// 当前落点与尺寸换算成逻辑像素存起来（多屏、不同缩放都用这一份）
+fn save_current_rect(app: &AppHandle, window: &tauri::WebviewWindow) -> Result<(), String> {
     let scale = window.scale_factor().unwrap_or(1.0);
     let PhysicalPosition { x, y } = window
         .outer_position()
         .map_err(|error| format!("could not read the window position: {error}"))?;
-    save_pos(
-        app,
-        Pos {
-            x: x as f64 / scale,
-            y: y as f64 / scale,
-        },
-    );
+    let PhysicalSize { width, height } = window
+        .inner_size()
+        .map_err(|error| format!("could not read the window size: {error}"))?;
+
+    let mut state = load_state(app);
+    state.rect = Rect {
+        x: x as f64 / scale,
+        y: y as f64 / scale,
+        width: width as f64 / scale,
+        height: height as f64 / scale,
+    };
+    // 拖到屏幕边缘的情况要夹一次，否则下次启动它可能有一半在屏外
+    normalize_state(&mut state, screen_area(app));
+    save_state(app, &state);
     Ok(())
 }
 
@@ -200,11 +415,15 @@ fn save_current_pos(app: &AppHandle, window: &tauri::WebviewWindow) -> Result<()
 // 命令
 // ---------------------------------------------------------------------------
 //
-// **三个都是 `async fn`**，理由是踩出来的：`WebviewWindowBuilder::build()` 要把
-// 建窗口的活儿投递回主线程再等结果，而同步命令**就占着主线程** —— 命令等自己，
-// 界面当场冻住（`sync_widget_windows` 那条也是这么定下来的，见 lib.rs §5）。
-// `hide` / `save_pos` 本身不建窗口，但一起做成 async，免得下次有人在这里加一句
-// `build()` 又踩一遍。
+// **`toggle` / `hide` / `save_pos` 是 `async fn`**，理由是踩出来的：
+// `WebviewWindowBuilder::build()` 要把建窗口的活儿投递回主线程再等结果，而同步
+// 命令**就占着主线程** —— 命令等自己，界面当场冻住（`sync_widget_windows` 那条
+// 也是这么定下来的，见 lib.rs §5）。`hide` / `save_pos` 本身不建窗口，但一起做成
+// async，免得下次有人在这里加一句 `build()` 又踩一遍。
+//
+// 0007 的五条（state / mode / appearance / locked / save_rect）**还没接线**：
+// 它们要进 `lib.rs` 的 `invoke_handler`，而那个文件此刻在另一个会话手里。
+// 挂命令宏与注册放在同一个提交里做，所以这里先只有函数体。
 
 #[tauri::command]
 pub async fn assistant_window_toggle(app: AppHandle) -> Result<bool, String> {
@@ -218,12 +437,63 @@ pub async fn assistant_window_hide(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 拖完标题栏存一次位置。由页面在 `startDragging()` 之后调用 ——
-/// 拖动过程中系统会连发几十个 Moved，在那里存盘等于每次拖都写几十遍文件
+/// 拖完标题栏 / 拉完手柄存一次。由页面在松手时调用 —— 拖动过程中系统会连发
+/// 几十个 Moved，在那里存盘等于每次拖都写几十遍文件
 #[tauri::command]
 pub async fn assistant_window_save_pos(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(LABEL) {
-        return save_current_pos(&app, &window);
+        return save_current_rect(&app, &window);
     }
     Ok(())
+}
+
+/// 现在这一份状态（模式、位置尺寸、底板、锁）。面板开局读一次，
+/// 之后每次改都拿返回值覆盖 —— **别在页面里另攒一份权威**
+#[allow(dead_code)] // 接线在下一步：挂命令宏、在 `lib.rs` 注册
+pub fn assistant_window_state(app: AppHandle) -> WindowState {
+    load_state(&app)
+}
+
+/// 换模式。窗口已经开着的话**就地改层级**（不重建 = 对话不丢）
+#[allow(dead_code)]
+pub fn assistant_window_mode(app: AppHandle, mode: String) -> Result<WindowState, String> {
+    let mut state = load_state(&app);
+    state.mode = Mode::from_str(&mode);
+    if let Some(window) = app.get_webview_window(LABEL) {
+        apply_mode(&window, state.mode)?;
+    }
+    save_state(&app, &state);
+    Ok(state)
+}
+
+/// 改底板。**归一化在这里做**（非法值退回出厂），前端只负责把滑杆的值送上来
+#[allow(dead_code)]
+pub fn assistant_window_appearance(app: AppHandle, appearance: Appearance) -> WindowState {
+    let mut state = load_state(&app);
+    state.appearance = appearance;
+    normalize_state(&mut state, screen_area(&app));
+    save_state(&app, &state);
+    state
+}
+
+/// 锁 / 解锁。锁的是**位置与尺寸**，不锁内容（和组件的 `locked` 同一句话）
+#[allow(dead_code)]
+pub fn assistant_window_locked(app: AppHandle, locked: bool) -> WindowState {
+    let mut state = load_state(&app);
+    state.locked = locked;
+    save_state(&app, &state);
+    state
+}
+
+/// 缩放结束：夹一次、落到窗口上、存盘。
+/// 前端已经夹过一遍，这里再判一次 —— **Rust 是唯一真源**，渲染进程的 bug
+/// 不该让窗口变成"0 宽"或者跑到屏外
+#[allow(dead_code)] // 接线在下一步
+pub fn assistant_window_save_rect(app: AppHandle, rect: Rect) -> Result<WindowState, String> {
+    let mut state = load_state(&app);
+    state.rect = rect;
+    normalize_state(&mut state, screen_area(&app));
+    apply_rect(&app, &state)?;
+    save_state(&app, &state);
+    Ok(state)
 }

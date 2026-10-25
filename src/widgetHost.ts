@@ -23,9 +23,10 @@ import {
 import "./styles.css";
 import "./widgetHost.css";
 import {
+  APPEARANCE_TOKENS,
   DEFAULT_APPEARANCE,
   MAX_BLUR,
-  hexFromRgb,
+  appearanceTokenValues,
   isPlainAppearance,
   luminance,
   normalizeAppearance,
@@ -359,43 +360,13 @@ function applyAppearance(next: Appearance) {
      * 覆盖值只是"近似"主题（比如描边更重一点、surface-2 差得多一档），
      * 没道理为了一个没人调过的底板把默认样子换掉。
      */
-    for (const token of [
-      "--lattice-surface",
-      "--lattice-surface-2",
-      "--lattice-text",
-      "--lattice-text-muted",
-      "--lattice-border",
-      "--lattice-accent",
-      "--lattice-chrome",
-      "--lattice-chrome-fg",
-    ]) {
+    for (const token of APPEARANCE_TOKENS) {
       root.style.removeProperty(token);
     }
   } else {
-    root.style.setProperty("--lattice-surface", hexFromRgb(...composite));
-    root.style.setProperty("--lattice-text", light ? "#141418" : "#ecebe6");
-    root.style.setProperty("--lattice-text-muted", light ? "#5b5b55" : "#97978f");
-    root.style.setProperty(
-      "--lattice-border",
-      light ? "rgba(0,0,0,0.14)" : "rgba(255,255,255,0.12)",
-    );
-    /*
-     * 强调色也得跟着翻。组件里的状态字（便签的 "Saved"、待办的计数）用的就是
-     * 它：深色主题那支薄荷绿压在浅色底板上几乎看不见，反过来同理。
-     * 两支都是主题里现成的值，不另造色。
-     */
-    root.style.setProperty("--lattice-accent", light ? "#0f6e56" : "#5dcaa5");
-
-    /*
-     * 窗饰那排按钮浮在底板上面，颜色不能跟着底板算。
-     *
-     * 底板是"底色盖在**壁纸平均色**上"，而按钮底下压着的是**那一小块**壁纸 ——
-     * 绿底板上摆一枚按全局平均色算出来的橄榄色按钮，看着就像没对准。窗饰是
-     * 平台的界面，不是用户调的底板，所以给它一对固定的中性色：卡片浅就白，
-     * 卡片深就炭，图标永远压得住。
-     */
-    root.style.setProperty("--lattice-chrome", light ? "#f7f6f3" : "#23232a");
-    root.style.setProperty("--lattice-chrome-fg", light ? "#141418" : "#ecebe6");
+    for (const [token, value] of Object.entries(appearanceTokenValues(composite, light))) {
+      root.style.setProperty(token, value);
+    }
   }
 
   // 卡片本体（body 的底色）读的就是 --lattice-surface，上面已经改成合成色了。

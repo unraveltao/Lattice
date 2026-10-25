@@ -1,42 +1,103 @@
 /**
- * assistant 桌面小窗：一条标题栏 + 那个面板。
+ * assistant 桌面窗口的壳（`0002` / `0007`）：一条标题栏 + 那块面板 + 底板。
  *
- * 这里**没有画布、没有 store**。它只做三件事：给面板一块地方、让窗口能拖、
- * 把主题对齐主窗口。
+ * 这里**没有画布、没有 store**。它只做五件事：给面板一块地方、让窗口能拖、
+ * 把主题与底板对齐、拖边缩放、把模式/锁/尺寸落到 Rust 上一次。
  *
  * 为什么没有 store 很重要：布局的权威在主窗口那份 `useLattice` 里，小窗再
- * 水合一份就成了"两套真相"（改文件的人和改内存的人各说各话）。所以工具调用
- * 走 `remoteSurface()` 转给主窗口，`state.json` 只有一个写手。
+ * 水合一份就成了"两套真相"。所以工具调用走 `remoteSurface()` 转给主窗口，
+ * `state.json` 只有一个写手。**窗口自己的状态走另一份文件**
+ * （`assistant-window.json` v2），Rust 是它的唯一真源：每次改都拿返回值覆盖
+ * 本地那份，不在页面里另攒一个权威。
+ *
+ * # 底板为什么和组件走同一条代码路径
+ *
+ * 用户要的是"背景跟其他组件一样可以调节"。所以这里**不另写一套**：三层
+ * （canvas 壁纸 / veil 底色 / 内容）、令牌表、合成色与明暗判定全部来自
+ * `runtime/appearance.ts`，和 `widgetHost.ts` 是同一份。出厂外观
+ * （`auto / 1 / 0`）下一个令牌都不改 —— 默认样子必须一像素不差（不变量 6）。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { AssistantPanel } from "./AssistantPanel";
 import { isTauri } from "../runtime/registry";
 import { setLanguage, useT } from "../runtime/i18n";
+import {
+  APPEARANCE_TOKENS,
+  MAX_BLUR,
+  appearanceTokenValues,
+  isPlainAppearance,
+  luminance,
+  normalizeAppearance,
+  themeSurfaceRgb,
+  tintRgb,
+  type Appearance,
+} from "../runtime/appearance";
+import {
+  MIN_ASSISTANT_H,
+  MIN_ASSISTANT_W,
+  clampAssistantRect,
+  migrateAssistantWindow,
+  type AssistantRect,
+  type AssistantWindowMode,
+  type AssistantWindowState,
+  type AssistantWorkArea,
+} from "../runtime/assistant-window";
+
+/** 磨砂要按 `2 × 半径` 外扩截图，和宿主页同一个值 */
+const WALLPAPER_PAD = MAX_BLUR * 2;
+
+/** 底板的三个色板。深/浅两支就是主题里那两个 surface，不是新造的色 */
+const TINT_CHOICES: Array<{ id: string; label: string }> = [
+  { id: "auto", label: "Follow theme" },
+  { id: "dark", label: "Dark" },
+  { id: "light", label: "Light" },
+];
+const TINT_DARK = "#17171d";
+const TINT_LIGHT = "#fbfaf8";
+
+/** 当前屏（逻辑像素）。窗口还没跟 Rust 对上时先用这一份算默认落点 */
+function screenWorkArea(): AssistantWorkArea {
+  return {
+    left: 0,
+    top: 0,
+    width: window.screen?.availWidth || window.innerWidth || 1280,
+    height: window.screen?.availHeight || window.innerHeight || 800,
+  };
+}
 
 export function AssistantWindow() {
   const t = useT();
   const [ready, setReady] = useState(false);
+  const [state, setState] = useState<AssistantWindowState>(() =>
+    migrateAssistantWindow(undefined, screenWorkArea()),
+  );
+  const [boardOpen, setBoardOpen] = useState(false);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const veilRef = useRef<HTMLDivElement | null>(null);
+  /** 壁纸平均色。没有它就是"还没截到"，此时 veil 不显示（宁可露出主题底色） */
+  const [wallpaperAvg, setWallpaperAvg] = useState<[number, number, number] | null>(null);
+  const captureSeq = useRef(0);
+
   const close = useCallback(() => {
     void invoke("assistant_window_hide");
   }, []);
 
-  /* 主题跟主窗口：`state.json` 里那一份是唯一真源，小窗开局读一次就够了 ——
-   * 用户在小窗开着的时候改主题，往往是它自己改的（那就该一起变） */
+  /* 主题跟主窗口：`state.json` 里那一份是唯一真源，小窗开局读一次就够了 */
   useEffect(() => {
     void invoke<string | null>("state_read")
       .then((raw) => {
         if (!raw) return;
-        const state = JSON.parse(raw) as { theme?: string; language?: string };
-        /* 语言同理：小窗不加载 store，这档偏好只能从磁盘上这一份拿；
-         * 之后的变化走 `lattice:language` 广播（见下面那个 effect） */
-        setLanguage(state.language === "zh" || state.language === "en" ? state.language : "system");
-        const theme = state.theme;
+        const disk = JSON.parse(raw) as { theme?: string; language?: string };
+        setLanguage(disk.language === "zh" || disk.language === "en" ? disk.language : "system");
+        const theme = disk.theme;
         if (theme === "light" || theme === "dark") {
           document.documentElement.dataset.theme = theme;
         } else if (theme === "system") {
@@ -48,6 +109,16 @@ export function AssistantWindow() {
         /* 读不出来就用默认深色，不至于因为这个开不了面板 */
       })
       .finally(() => setReady(true));
+  }, []);
+
+  /* 窗口自己的状态：Rust 是唯一真源。**读不到就退回出厂**（命令还没接线时
+   * 也会走到这里）—— 面板必须能开，不能不响 */
+  useEffect(() => {
+    void invoke<AssistantWindowState>("assistant_window_state")
+      .then((disk) => setState(migrateAssistantWindow(disk, screenWorkArea())))
+      .catch(() => {
+        /* 未接线 / 文件读不到：留在出厂状态，标题栏照常能用 */
+      });
   }, []);
 
   /* 主窗口切了语言：和 `lattice:theme` 同一套广播，小窗不加载 store 只能这样收到 */
@@ -73,21 +144,256 @@ export function AssistantWindow() {
     };
   }, []);
 
+  /* 主题一变（设置里切明暗），合成色与令牌要重算 —— 底板跟着明暗翻。
+   * 用一个 tick 而不是把 theme 塞进 state：主题的权威在 `data-theme` 上，
+   * 这里只是"它变了，重算一遍" */
+  const [themeTick, bumpTheme] = useState(0);
+  useEffect(() => {
+    const observer = new MutationObserver(() => bumpTheme((n) => n + 1));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  const appearance = state.appearance;
+
+  /* 壁纸：只有真的要磨砂 / 要透出底色时才截（出厂外观一次都不截） */
+  const capture = useCallback(async () => {
+    if (!canvasRef.current) return;
+    if (isPlainAppearance(appearance)) return;
+    const token = ++captureSeq.current;
+    try {
+      const buffer = await invoke<ArrayBuffer>("widget_wallpaper", { pad: WALLPAPER_PAD });
+      if (token !== captureSeq.current) return;
+      const view = new DataView(buffer);
+      const width = view.getUint32(0, true);
+      const height = view.getUint32(4, true);
+      const pixels = new Uint8ClampedArray(buffer, 8, width * height * 4);
+      const canvas = canvasRef.current;
+      const context = canvas.getContext("2d");
+      if (!context || width === 0 || height === 0) return;
+      canvas.width = width;
+      canvas.height = height;
+      context.putImageData(new ImageData(pixels, width, height), 0, 0);
+      captureSeq.current = token;
+
+      // 平均色：每隔一段取一个像素就够（只要"大概是什么颜色"）
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let count = 0;
+      const step = Math.max(4, Math.floor((width * height) / 4000) * 4);
+      for (let index = 0; index + 3 < pixels.length; index += step) {
+        r += pixels[index];
+        g += pixels[index + 1];
+        b += pixels[index + 2];
+        count += 1;
+      }
+      if (count > 0) setWallpaperAvg([r / count, g / count, b / count]);
+    } catch {
+      /* 截不到就当没有壁纸：veil 不显示，退回主题底色 */
+      setWallpaperAvg(null);
+    }
+  }, [appearance]);
+
+  useEffect(() => {
+    void capture();
+  }, [capture]);
+
+  /* 三层：canvas（壁纸）→ veil（底色）→ 内容。令牌一起重算 */
+  useEffect(() => {
+    const root = document.documentElement;
+    const plain = isPlainAppearance(appearance);
+    const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    const tint = normalizedTintRgb(appearance.tint, theme);
+    const behind = wallpaperAvg ?? themeSurfaceRgb();
+    const composite: [number, number, number] = [
+      tint[0] * appearance.alpha + behind[0] * (1 - appearance.alpha),
+      tint[1] * appearance.alpha + behind[1] * (1 - appearance.alpha),
+      tint[2] * appearance.alpha + behind[2] * (1 - appearance.alpha),
+    ];
+    const light = luminance(composite) > 0.55;
+
+    if (plain) {
+      for (const token of APPEARANCE_TOKENS) root.style.removeProperty(token);
+    } else {
+      for (const [token, value] of Object.entries(appearanceTokenValues(composite, light))) {
+        root.style.setProperty(token, value);
+      }
+    }
+
+    const veil = veilRef.current;
+    const canvas = canvasRef.current;
+    const ready = wallpaperAvg !== null && !plain;
+    if (veil) {
+      veil.style.display = ready ? "block" : "none";
+      veil.style.background = `rgba(${Math.round(tint[0])}, ${Math.round(tint[1])}, ${Math.round(
+        tint[2],
+      )}, ${appearance.alpha})`;
+    }
+    if (canvas) {
+      canvas.style.display = plain ? "none" : "block";
+      canvas.style.filter = `blur(${appearance.blur}px)`;
+      canvas.style.opacity = ready ? "1" : "0";
+      /* 截图比窗口大一圈（`2 × 半径` 的外扩），所以整张图往左上挪一个 pad，
+       * 再按 CSS 像素铺开 —— 和宿主页同一套尺寸算法，别另算一套 */
+      canvas.style.width = `${window.innerWidth + WALLPAPER_PAD * 2}px`;
+      canvas.style.height = `${window.innerHeight + WALLPAPER_PAD * 2}px`;
+      canvas.style.left = `${-WALLPAPER_PAD}px`;
+      canvas.style.top = `${-WALLPAPER_PAD}px`;
+    }
+  }, [appearance, wallpaperAvg, themeTick]);
+
   /* 拖标题栏。`startDragging` 会一直占着直到松手，所以位置在那之后存一次 */
   const startDrag = useCallback(() => {
+    if (state.locked) return;
     void getCurrentWindow()
       .startDragging()
       .then(() => invoke("assistant_window_save_pos"))
       .catch(() => {
-        /* 拖不动不影响用，窗口还能用 Ctrl+K 唤回来 */
+        /* 拖不动不影响用，窗口还能 Ctrl+K 唤回来 */
       });
+  }, [state.locked]);
+
+  const patch = useCallback((next: Partial<AssistantWindowState>) => {
+    setState((before) => ({ ...before, ...next }));
   }, []);
 
+  /** 改底板：先存 Rust（它归一化），拿返回值覆盖本地 */
+  const saveAppearance = useCallback(
+    (next: Appearance) => {
+      const normalized = normalizeAppearance(next);
+      patch({ appearance: normalized });
+      void invoke<AssistantWindowState>("assistant_window_appearance", { appearance: normalized })
+        .then((disk) => setState((before) => ({ ...before, ...disk })))
+        .catch(() => {
+          /* 未接线：本地照常生效，下一次打开会回到出厂 */
+        });
+    },
+    [patch],
+  );
+
+  const toggleLocked = useCallback(() => {
+    const next = !state.locked;
+    patch({ locked: next });
+    void invoke<AssistantWindowState>("assistant_window_locked", { locked: next })
+      .then((disk) => setState((before) => ({ ...before, ...disk })))
+      .catch(() => {
+        /* 未接线：本地生效 */
+      });
+  }, [patch, state.locked]);
+
+  const switchMode = useCallback(
+    (mode: AssistantWindowMode) => {
+      if (mode === state.mode) return;
+      void invoke<AssistantWindowState>("assistant_window_mode", { mode })
+        .then((disk) => setState((before) => ({ ...before, ...disk })))
+        .catch(() => {
+          /* 未接线：切不了，别把界面画成一个假的"已切换" */
+        });
+    },
+    [state.mode],
+  );
+
+  /* 拖边缩放。三个手柄（右 / 下 / 右下）：够用，也不至于把手柄画得到处都是 */
+  const startResize = useCallback(
+    (axis: "x" | "y" | "xy") => (event: React.PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (state.locked) return;
+      const startX = event.screenX;
+      const startY = event.screenY;
+      const startW = window.innerWidth;
+      const startH = window.innerHeight;
+      let last: AssistantRect | null = null;
+
+      const move = (next: PointerEvent) => {
+        const width = Math.max(MIN_ASSISTANT_W, axis === "y" ? startW : startW + (next.screenX - startX));
+        const height = Math.max(MIN_ASSISTANT_H, axis === "x" ? startH : startH + (next.screenY - startY));
+        void getCurrentWindow()
+          .setSize(new LogicalSize(Math.round(width), Math.round(height)))
+          .catch(() => {});
+        last = { x: 0, y: 0, width: Math.round(width), height: Math.round(height) };
+      };
+
+      const finish = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", finish);
+        /* 松手才存盘：拖动过程中系统会连发几十个事件，那儿存盘等于每次拖都写几十遍 */
+        void invoke("assistant_window_save_pos").catch(() => {});
+        if (last) {
+          const work = screenWorkArea();
+          const clamped = clampAssistantRect(
+            { x: 0, y: 0, width: last.width, height: last.height },
+            work,
+          );
+          patch({ rect: { ...state.rect, width: clamped.width, height: clamped.height } });
+        }
+        // 尺寸变了，壁纸要重新截一张（否则右下角会露出一块旧的）
+        void capture();
+      };
+
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", finish);
+    },
+    [capture, patch, state.locked, state.rect],
+  );
+
+  const modeLabel = useMemo(
+    () => (state.mode === "desktop" ? t("On the desktop") : t("Floating window")),
+    [state.mode, t],
+  );
+
   return (
-    <div className="lattice-assistant-window">
-      <header className="lattice-assistant-bar" onPointerDown={startDrag}>
+    <div className="lattice-assistant-window" data-mode={state.mode} data-locked={state.locked ? "1" : "0"}>
+      {/* 底板三层的前两层。出厂外观下两张都不显示（不变量 6） */}
+      <canvas ref={canvasRef} className="lattice-assistant-canvas" aria-hidden="true" />
+      <div ref={veilRef} className="lattice-assistant-veil" aria-hidden="true" />
+
+      <header
+        className="lattice-assistant-bar"
+        onPointerDown={startDrag}
+        title={state.locked ? t("Unlock to move") : t("Drag to move")}
+      >
         <span className="lattice-assistant-bar-dot" aria-hidden="true" />
         <span className="lattice-assistant-bar-title">{t("Assistant")}</span>
+        <span className="lattice-assistant-bar-mode">{modeLabel}</span>
+
+        <button
+          type="button"
+          className="lattice-assistant-bar-btn"
+          data-on={boardOpen ? "1" : "0"}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => setBoardOpen((open) => !open)}
+          title={t("Backdrop")}
+          aria-label={t("Backdrop")}
+        >
+          ◐
+        </button>
+        <button
+          type="button"
+          className="lattice-assistant-bar-btn"
+          data-on={state.locked ? "1" : "0"}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={toggleLocked}
+          title={state.locked ? t("Unlock") : t("Lock position and size")}
+          aria-label={state.locked ? t("Unlock") : t("Lock position and size")}
+        >
+          {state.locked ? "🔒" : "🔓"}
+        </button>
+        <button
+          type="button"
+          className="lattice-assistant-bar-btn"
+          data-on={state.mode === "desktop" ? "1" : "0"}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => switchMode(state.mode === "desktop" ? "floating" : "desktop")}
+          title={modeLabel}
+          aria-label={modeLabel}
+        >
+          {state.mode === "desktop" ? "▤" : "▢"}
+        </button>
         <button
           type="button"
           className="lattice-assistant-bar-btn"
@@ -99,7 +405,81 @@ export function AssistantWindow() {
           ×
         </button>
       </header>
+
+      {boardOpen && (
+        <div className="lattice-assistant-board" onPointerDown={(event) => event.stopPropagation()}>
+          <div className="lattice-assistant-board-row">
+            <span className="lattice-assistant-board-label">{t("Tint")}</span>
+            {TINT_CHOICES.map((choice) => (
+              <button
+                key={choice.id}
+                type="button"
+                className="lattice-assistant-chip"
+                data-on={tintId(appearance.tint) === choice.id ? "1" : "0"}
+                onClick={() =>
+                  saveAppearance({
+                    ...appearance,
+                    tint:
+                      choice.id === "auto"
+                        ? "auto"
+                        : choice.id === "dark"
+                          ? TINT_DARK
+                          : TINT_LIGHT,
+                  })
+                }
+              >
+                {t(choice.label)}
+              </button>
+            ))}
+          </div>
+          <label className="lattice-assistant-board-row">
+            <span className="lattice-assistant-board-label">{t("Dim")}</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={appearance.alpha}
+              onChange={(event) => saveAppearance({ ...appearance, alpha: Number(event.target.value) })}
+            />
+          </label>
+          <label className="lattice-assistant-board-row">
+            <span className="lattice-assistant-board-label">{t("Blur")}</span>
+            <input
+              type="range"
+              min={0}
+              max={MAX_BLUR}
+              step={1}
+              value={appearance.blur}
+              onChange={(event) => saveAppearance({ ...appearance, blur: Number(event.target.value) })}
+            />
+          </label>
+        </div>
+      )}
+
       {ready && <AssistantPanel open onClose={close} variant="window" />}
+
+      {/* 自绘手柄：锁上时一个都不挂处理器（锁是**一处判据**，不是两处） */}
+      {!state.locked && (
+        <>
+          <div className="lattice-assistant-grip" data-axis="x" onPointerDown={startResize("x")} />
+          <div className="lattice-assistant-grip" data-axis="y" onPointerDown={startResize("y")} />
+          <div className="lattice-assistant-grip" data-axis="xy" onPointerDown={startResize("xy")} />
+        </>
+      )}
     </div>
   );
+}
+
+/** `#rrggbb` → 色板 id；认不出来算 `auto` */
+function tintId(tint: string): string {
+  if (tint === TINT_DARK) return "dark";
+  if (tint === TINT_LIGHT) return "light";
+  return "auto";
+}
+
+/** `auto` = 当前主题的那个 surface（和组件宿主页同一条） */
+function normalizedTintRgb(tint: string, theme: string): [number, number, number] {
+  if (tint === "auto") return themeSurfaceRgb();
+  return tintRgb(tint) ?? (theme === "light" ? [251, 250, 248] : [23, 23, 29]);
 }

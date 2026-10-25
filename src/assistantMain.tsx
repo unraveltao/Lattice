@@ -10,6 +10,12 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import "./styles.css";
+/*
+ * 这个窗口独有的一层样式（底板三层、标题栏按钮、缩放手柄）。
+ * 单独一份而不是塞进 styles.css：`styles.css` 是平台外壳的样式层，
+ * 而这里的每一条都只在这个窗口里有意义。
+ */
+import "./assistant-window.css";
 import { AssistantWindow } from "./platform/AssistantWindow";
 
 const root = document.getElementById("root");

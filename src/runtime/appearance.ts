@@ -123,3 +123,48 @@ export function themeSurfaceRgb(): [number, number, number] {
   if (match) return [Number(match[1]), Number(match[2]), Number(match[3])];
   return [255, 255, 255];
 }
+
+/**
+ * 底板一改就要重算的那几个令牌。
+ *
+ * **两个宿主页共用这一张表**（组件窗口的 `widgetHost.ts` 与 assistant 窗口的
+ * `AssistantWindow.tsx`）。各抄一份的后果不是报错，而是"组件那张卡片跟着翻、
+ * assistant 那张没翻" —— 这种不一致没人会写进断言，只会被用户看见。
+ */
+export const APPEARANCE_TOKENS = [
+  "--lattice-surface",
+  "--lattice-surface-2",
+  "--lattice-text",
+  "--lattice-text-muted",
+  "--lattice-border",
+  "--lattice-accent",
+  "--lattice-chrome",
+  "--lattice-chrome-fg",
+] as const;
+
+/**
+ * 非出厂外观要写的令牌值。`composite` 是"底色盖在背后那一层之后"看到的颜色，
+ * 字色与边框都按它翻；`--lattice-surface-2` 只删不写（近似值差得明显，
+ * 宁可退回主题那一份，见 `widgetHost.ts` 里那段注释）。
+ *
+ * **出厂外观不要调它**：`isPlainAppearance` 为真时一个令牌都不许改，
+ * 默认样子必须跟没有这个功能时一像素不差（不变量 6）。
+ */
+export function appearanceTokenValues(
+  composite: [number, number, number],
+  light: boolean,
+): Record<string, string> {
+  return {
+    "--lattice-surface": hexFromRgb(...composite),
+    "--lattice-text": light ? "#141418" : "#ecebe6",
+    "--lattice-text-muted": light ? "#5b5b55" : "#97978f",
+    "--lattice-border": light ? "rgba(0,0,0,0.14)" : "rgba(255,255,255,0.12)",
+    /* 强调色也得跟着翻：深色主题那支薄荷绿压在浅色底板上几乎看不见，反过来同理。
+     * 两支都是主题里现成的值，不另造色 */
+    "--lattice-accent": light ? "#0f6e56" : "#5dcaa5",
+    /* 窗饰按钮浮在底板上面，颜色不能跟着底板算：底板是"底色盖在壁纸**平均色**上"，
+     * 而按钮底下压着的是那一小块壁纸。给它一对固定的中性色，图标永远压得住 */
+    "--lattice-chrome": light ? "#f7f6f3" : "#23232a",
+    "--lattice-chrome-fg": light ? "#141418" : "#ecebe6",
+  };
+}

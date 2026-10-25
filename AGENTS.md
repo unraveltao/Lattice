@@ -74,7 +74,7 @@ src/
     agent.ts              agent 动作执行器：白名单动作走真 store，回快照（带每个组件的说明首句 `about`，没写说明就是空串）（`tests/agent.html` 59 条）
     widget-tools.ts       数据平面的执行面：画布实例的登记表（一个 instanceId 一个「能答话的 iframe」）+ `callWidgetTool`（8 秒超时、回话归一化、`not-running`）；纯逻辑在 runtime/widget-tools.ts
     AssistantPanel.tsx    assistant 的面板：一列模型档 + 表单 + 六组能力开关 + **审批档三选一**（Ask / Automatic / Read-only，`APPROVAL_LABELS`）+ 审批确认条 + 对话（顶上一行会话列表：挑回 / 新开 / 删），工具结果一行一个（抽屉与小窗共用这一个组件）
-    AssistantWindow.tsx   assistant 小窗的壳：一条能拖的标题栏 + 面板；**没有 store**，动作走 `remoteSurface()`
+    AssistantWindow.tsx   assistant 小窗的壳：标题栏（底板 / 锁 / 浮窗↔桌面 / 藏）+ 面板 + 底板三层（canvas 壁纸 / veil 底色 / 内容）+ 三个缩放手柄；**没有 store**，动作走 `remoteSurface()`，窗口自己的状态走 `assistant-window.json` v2（0007）
   runtime/
     manifest.ts           清单校验与归一化；Permission 类型与中文标签（唯一真源）；`agent.tools`（组件声明的工具，规则在 runtime/widget-tools.ts）
     config.ts             每实例配置：清单 schema（5 类字段）、归一化、值合并
@@ -95,6 +95,7 @@ src/
     i18n.ts               界面文案的中英切换：**key 就是英文原句**、缺翻译退化成英文、`useT()`（组件）/ `t()`（模块）/ `setLanguage()` / `languagePayload()`（给组件看的"现在是哪一门"，`tests/i18n.html` 钉着）
     i18n/*.ts             中文表按域分片（common / shell / library / panels / settings / assistant / misc）；**纯数据，一个 import 都不许有**
     widget-text.ts        组件**作者写的**文案：字符串或 `{ zh, en }`、`pickText` 按语言挑（缺一门退另一门）、`textVariants` 给搜索建两门索引、`normalizeLine` 管日期/单位（`tests/widget-text.html` 钉着）
+    assistant-window.ts   assistant 窗口的**纯逻辑**（0007）：两个模式、尺寸上下限、`clampAssistantRect`、`defaultAssistantRect`、`migrateAssistantWindow`（v1 → v2、坏值逐项退回、坏文件坏 rect 都给一个能用的窗口）（`tests/assistant-window.html` 33 条）
     widget-tools.ts       数据平面的**纯逻辑**：清单 `agent.tools` 的归一化（坏条目逐条丢、最多 8 条 / 每条 6 个参数）、工具名 `widget.<组件 id>.<工具名>` 的拼与拆（**从右边切**）、给模型的 schema（同一组件的多份实例合成一条，`instanceId` 只在多于一份时必填）、谁能进表的唯一判据 `widgetToolSources`（装上了 + 授了 `agent:tools` + 真声明了）、回话归一化（超 4000 字符**拒绝不截断**）（`tests/widget-tools.html` 48 条）
     debug.ts              调试总线：环形缓冲 400 条、攒批镜像到主窗口、过滤 / 统计纯函数
     semver.ts             版本号与范围：解析 / 比较 / `^ ~ >= <= > < =` / 通配 / `||`（纯函数，`tests/semver.html` 钉着）
@@ -163,7 +164,7 @@ src-tauri/src/
   mcp_policy.rs          上面那道的纯逻辑：工具名三段形状（`mcp.<server>.<tool>`）、服务 id 的字母表与撞名去重（`_2`）、工具段压成 `[a-z0-9_-]`、`cmd /C` 的命令行拼装与引号、换行分隔 JSON 的切帧、三种请求体（initialize / tools-list / tools-call）（17 条 `rustc --test`，**不引 crate**）
   assistant_session.rs    assistant 的会话存档：`assistant-sessions/<id>.json` 的读写列删（四条命令 assistant_sessions / assistant_session_load / assistant_session_save / assistant_session_delete），保存时按 200 条 / 1 MB 两道预算裁最老的、`truncated` 写回文件让人知道"它掉过头"；标题取第一句用户的话前 12 个字（算不出来就存空串，界面自己翻）；坏文件不拦列表，标 `damaged: true`
   assistant_session_policy.rs  上面那道的纯逻辑：id 形状、标题截断（按码点不按字节）、留哪些行的三道筛（坏行丢 / 条数 / 字节）、熵源 → 4 位后缀（15 条 `rustc --test`，**不引 crate**）
-  assistant_window.rs     assistant 的桌面小窗：建 / 开关 / 藏、拖完存位置（`assistant-window.json`）；三个命令都是 `async fn`（同步会死锁）
+  assistant_window.rs     assistant 的桌面小窗（0002 / 0007）：建 / 开关 / 藏、两种模式（浮窗 / 桌面，「桌面」走 `interactive` 那条路而**不是** WorkerW —— 挂了就拿不到键盘焦点）、底板、锁、缩放；状态 `assistant-window.json` v2（v1 的 `{x, y}` 就地升级）；已有的三条命令是 `async fn`（同步会死锁），0007 的五条还没接线
   wallpaper.rs            截壁纸（宿主页底板的第一层）
   metrics.rs              系统指标（sysmon 组件用）：整机 + 逐核 CPU、内存与提交量、磁盘、网络、开机时长 / 进程计数，直接调 Win32 不引 crate
   metrics_policy.rs       上面那道的纯逻辑：累计计数 → 占用率、核数变了返回空而不是错位（5 条 rustc --test）
@@ -321,7 +322,7 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 | 组件私有数据 | `%APPDATA%\com.iron-tom.lattice\widget-data\<widgetId>.json` | `bridge.ts` → `widget_store_write` |
 | assistant 的模型档、**API key** 与手的开关 | `%APPDATA%\com.iron-tom.lattice\assistant.json`（v3：`{version: 3, activeId, hands: {files, shell, web, screen, input, mcp}, approvalMode, workspace, profiles: [{id, label, baseUrl, auth, apiKey, model, temperature, models}]}`；**`approvalMode` 是三档审批（`ask` / `auto` / `readonly`，坏值与旧文件一律落回 `ask`）**；v1 的 `{baseUrl, model, temperature, apiKey}` 读到时就地升级成一条档、**手全关**、档位落回 `ask`，临时文件 + 原子替换） | `llm.rs`（**只有 Rust 读得到明文 key**，前端只见 `keyHint` 掩码） |
 | assistant 连的 MCP 服务 | `%APPDATA%\com.iron-tom.lattice\mcp.json`（`{version, servers: [{id, label, transport, command, args, url}]}`；临时文件 + 原子替换；坏了当"没有服务"，不让它拦住启动） | `mcp.rs`（**`id` 由 Rust 生成并复用**，界面只读写其余字段 —— id 进了工具名，换一次等于工具换了名字，模型记着的老名字全部失效） |
-| assistant 小窗的位置 | `%APPDATA%\com.iron-tom.lattice\assistant-window.json`（`{x, y}` 屏幕坐标，临时文件 + 原子替换） | `assistant_window.rs`（**拖完才写**，文件坏了退回右下角默认位） |
+| assistant 小窗的位置 / 尺寸 / 模式 / 底板 / 锁 | `%APPDATA%\com.iron-tom.lattice\assistant-window.json`（**v2**：`{version, mode, rect: {x, y, width, height}, appearance: {tint, alpha, blur}, locked}`，逻辑像素；v1 的 `{x, y}` 读到时就地升级；临时文件 + 原子替换） | `assistant_window.rs`（**松手才写**，文件坏了退回右下角默认位；读与写都夹进当前屏，坏值不许把窗口变成看不见） |
 | assistant 的对话记录（一条会话一个文件） | `%APPDATA%\com.iron-tom.lattice\assistant-sessions\<id>.json`（**明文**，id 形如 `s-<unix 秒>-<4 位随机>`；临时文件 + 原子替换；每轮保存按 200 条 / 1 MB 两道预算裁最老的，裁过就把 `truncated` 写回文件、界面据此提示"它掉过头了"） | `assistant_session.rs`（标题取第一句用户的话前 12 个字，算不出来就存空串让界面自己翻；坏文件**不拦列表**，标 `damaged: true`） |
 | 用户安装的组件 | `%APPDATA%\com.iron-tom.lattice\widgets\<id>\` | `widgets.rs` |
 | 上一代的组件（回滚用） | `%APPDATA%\com.iron-tom.lattice\widget-backups\<id>\` | `backup.rs`（只留一代，卸载时一起删） |
