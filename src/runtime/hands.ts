@@ -70,6 +70,108 @@ export function enabledGroups(hands: HandsSettings): HandGroup[] {
   return HAND_GROUPS.filter((group) => hands[group]);
 }
 
+// ---------------------------------------------------------------------------
+// 全权模式（0006）—— 一次会话级的定时授权
+// ---------------------------------------------------------------------------
+//
+// 它**不是第四档审批**。档说的是"平时要不要点头"，全权说的是"接下来这半小时
+// 别问"；所以这里只管两件事：开关怎么算、还剩多久。要不要点头仍然是
+// `approvalFor`（多一个 `fullAccess` 入参）。
+//
+// 两条方向性决定写在这一处，别在下游各写一份：
+//   - 坏时长一律**往短里夹**（`clampFullMinutes`）—— 和 `normalizeApproval`
+//     对陌生值落回 `ask` 同一条理由：坏值不许放大权限
+//   - 全权**不改**用户存的那一份（`effectiveHands` 返回新对象）：结束之后
+//     开关与档位原样回来，用户不需要"再关一遍"
+
+/** 时长档位（分钟）。**没有"永久"** —— 高权限的价值是"这段时间别烦我" */
+export const FULL_ACCESS_MINUTES = [15, 30, 60, 120] as const;
+export const FULL_ACCESS_DEFAULT_MINUTES = 30;
+export const FULL_ACCESS_MAX_MINUTES = 120;
+
+/**
+ * 把用户给的分钟夹进 `1..=120`；0 / 负数 / NaN 落回默认 30。
+ *
+ * 不夹的两个后果都很具体：`0` 是"看着开了、其实立刻到期"，而手滑多打一位数的
+ * `3000` 是 50 小时的全权 —— 一个**忘了关也不会停**的高权限，正是这个设计
+ * 最想避免的东西。
+ */
+export function clampFullMinutes(raw: unknown): number {
+  const minutes = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(minutes) || minutes <= 0) return FULL_ACCESS_DEFAULT_MINUTES;
+  return Math.min(Math.floor(minutes), FULL_ACCESS_MAX_MINUTES);
+}
+
+/**
+ * 全权期间六组一起开。**返回新对象**。
+ *
+ * 这是"全权比 `auto` 多什么"的答案：`auto` 只有"不问"，它不管开关 ——
+ * 六组全关的人拨到 `auto` 仍然什么都干不了。`workspace` 与 `approvalMode`
+ * 原样带过去：它们各有各的判定，不在这儿被顺手改掉。
+ */
+export function effectiveHands(hands: HandsSettings, fullAccess: boolean): HandsSettings {
+  if (!fullAccess) return hands;
+  return { ...hands, files: true, shell: true, web: true, screen: true, input: true, mcp: true };
+}
+
+/**
+ * 全权还剩几毫秒。没开过（`untilMs === 0`）与已过期都是 `0`。
+ *
+ * **判定只认这一个数**：前端不自己攒 `setInterval` 倒数，Rust 那边每次调用
+ * 也现算 —— 两处都以"到期时刻"为准，面板重挂载之后不会显示一个假的时间。
+ */
+export function fullAccessRemaining(nowMs: number, untilMs: number): number {
+  const left = untilMs - nowMs;
+  return Number.isFinite(left) && left > 0 ? Math.floor(left) : 0;
+}
+
+/** 倒计时给人看：`28:41` / `1:59:30`。面板、小窗、确认框共用这一处格式 */
+export function fullAccessClock(remainingMs: number): string {
+  const total = Math.max(0, Math.floor(remainingMs / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const mm = hours ? String(minutes).padStart(2, "0") : String(minutes);
+  return `${hours ? `${hours}:` : ""}${mm}:${String(seconds).padStart(2, "0")}`;
+}
+
+/**
+ * 平台自己的配置。全权期间**写这些路径仍然要问**（0006 §3）。
+ *
+ * 理由不是"小心一点"，而是"能改自己权限文件的助手等于没有权限系统"：
+ * 一份能被模型改写的 `assistant.json` 会把上面所有档位、开关、免问区
+ * 一起变成"它说自己有就有"。
+ */
+export const SELF_CONFIG_FILES = ["assistant.json", "mcp.json", "state.json"] as const;
+export const SELF_CONFIG_DIRS = ["skills", "assistant-sessions"] as const;
+
+/**
+ * 这个路径是不是"平台自己的配置"。
+ *
+ * 按归一化后的**段**判（`\` 与 `/` 同视、`.` 丢掉、`..` 先折叠），不按子串：
+ * `.../my-assistant.json.bak` 与 `.../skills-draft/x` 都不算 —— 子串判定会连
+ * "名字里带 assistant.json"的普通文件一起拦住，而那种拦截会让用户看到一条
+ * 无法理解的确认条。
+ *
+ * 空串一律 `false`（宁可漏判一次，也要让这个函数可预测：它只是"要不要多问
+ * 一句"的输入，不是围栏）。**它拦不住 `shell.run`**：一条命令就能改这些文件，
+ * 所以全权不是沙箱这件事写在 0006 §3，不靠这个函数假装。
+ */
+export function isSelfConfigPath(path: string): boolean {
+  const parts: string[] = [];
+  for (const part of path.replace(/\\/g, "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  if (!parts.length) return false;
+  const last = parts[parts.length - 1].toLowerCase();
+  if ((SELF_CONFIG_FILES as readonly string[]).includes(last)) return true;
+  return parts
+    .slice(0, -1)
+    .some((part) => (SELF_CONFIG_DIRS as readonly string[]).includes(part.toLowerCase()));
+}
+
 /**
  * 这一版**真的接了几组**（0004 §4 的分期：P1 纪律 → P2 文件 → P3 命令 → P4 网页 →
  * P5 屏幕与输入 → P6 MCP）。

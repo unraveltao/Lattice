@@ -23,14 +23,14 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
 use windows_sys::Win32::Graphics::Gdi::{
@@ -104,6 +104,102 @@ pub fn hands_cancel(request_id: String) -> bool {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 全权模式（0006）—— 一次会话级的定时授权
+// ---------------------------------------------------------------------------
+//
+// 它是**内存里的一个到期时刻**，不是 `assistant.json` 的一个字段 —— 所以重启
+// 之后天然是关的。持久化的高权限会被忘掉，而"全权"买的是一段时间。
+//
+// 三条命令在下面。`lib.rs` 里 `.manage(FullAccess::default())` 并注册它们之后
+// 才接得上；在那之前 `try_state` 拿不到状态，等于"没开"—— 优雅降级，不 panic。
+
+/// 到期时刻（unix 毫秒）。**`0` = 没开**，也是每次启动的初值
+#[derive(Default)]
+pub struct FullAccess(AtomicU64);
+
+impl FullAccess {
+    fn until(&self) -> u64 {
+        self.0.load(Ordering::SeqCst)
+    }
+
+    /// 从现在起 `minutes` 分钟，返回到期时刻。
+    ///
+    /// **已有的一次授权是被替换，不是叠加**：用户点"再来 30 分"的意思是
+    /// "从现在算 30 分钟"，而不是把两次相加变成一个自己也说不清的时长。
+    fn arm(&self, minutes: u64) -> u64 {
+        let until = now_ms() as u64 + hands_policy::clamp_full_minutes(minutes) * 60_000;
+        self.0.store(until, Ordering::SeqCst);
+        until
+    }
+
+    fn disarm(&self) {
+        self.0.store(0, Ordering::SeqCst);
+    }
+}
+
+/// 会话态现在是什么样：`(active, remaining_ms)`。
+///
+/// **每次现算**，判定读的是"到期时刻"而不是一个布尔 —— 用定时器把状态改掉
+/// 的做法，在进程被挂起或系统时间被调之后会留下一个"假的开着"。
+pub fn full_access_view(app: &AppHandle) -> (bool, u64) {
+    let until = app
+        .try_state::<FullAccess>()
+        .map(|state| state.until())
+        .unwrap_or(0);
+    let now = now_ms() as u64;
+    (
+        hands_policy::full_access_active(now, until),
+        hands_policy::full_access_remaining(now, until),
+    )
+}
+
+/// 全权开着**且**当前档位允许它盖过（`readonly` 优先，见 `hands_policy`）
+pub fn full_access_now(app: &AppHandle) -> bool {
+    let approval = llm::hands_state(app).approval;
+    hands_policy::full_access_overrides(approval, full_access_view(app).0)
+}
+
+/// 三条命令的返回值。`remainingMs` 是面板画倒计时的唯一依据 ——
+/// 本地计时器只负责"每秒钟重画一次"，时间本身以这里为准
+#[derive(serde::Serialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct FullAccessReply {
+    pub active: bool,
+    pub remaining_ms: u64,
+}
+
+/// 开一次全权
+#[allow(dead_code)] // 接线在下一步：挂命令宏、在 `lib.rs` 注册 + `.manage`
+pub fn assistant_full_access(grant: tauri::State<'_, FullAccess>, minutes: u64) -> FullAccessReply {
+    let until = grant.arm(minutes);
+    let now = now_ms() as u64;
+    FullAccessReply {
+        active: true,
+        remaining_ms: hands_policy::full_access_remaining(now, until),
+    }
+}
+
+/// 现在开着吗、还剩多久。面板与小窗每次挂载都问一次，不信自己的缓存
+#[allow(dead_code)]
+pub fn assistant_full_access_state(app: AppHandle) -> FullAccessReply {
+    let (active, remaining_ms) = full_access_view(&app);
+    FullAccessReply {
+        active,
+        remaining_ms,
+    }
+}
+
+/// 立即结束
+#[allow(dead_code)]
+pub fn assistant_full_access_end(grant: tauri::State<'_, FullAccess>) -> FullAccessReply {
+    grant.disarm();
+    FullAccessReply {
+        active: false,
+        remaining_ms: 0,
+    }
+}
+
 /// 跑一只手。返回 `AgentReply` 形状的 JSON。
 #[tauri::command]
 pub async fn assistant_tool(
@@ -112,6 +208,15 @@ pub async fn assistant_tool(
     name: String,
     args: String,
 ) -> String {
+    // 全权下审计是**唯一剩下的那道痕迹**，所以它从"记录"变成了"闸门"：
+    // 写不进去就不动手。别的档位不受影响 —— 审计不该成为普通路径的故障点
+    let full = full_access_now(&app);
+    if full && !agent::can_audit(&app) {
+        return fail(
+            "audit",
+            "full access needs a writable audit log, and the log cannot be written right now — end full access or fix the folder permission",
+        );
+    }
     let (flag, _guard) = register_cancel(&request_id);
     let task_app = app.clone();
     let task_name = name.clone();
@@ -120,10 +225,11 @@ pub async fn assistant_tool(
         let reply = run(&task_app, &task_name, &args, flag);
         // 审计：成功 / 拒绝各一条。`detail` 只写形状（见 `shape_of`）
         let status = status_of(&reply);
+        let detail = hands_policy::mark_full(&shape_of(&task_name, &args, &reply), full);
         agent::audit(
             &task_app,
             "assistant.tool",
-            &shape_of(&task_name, &args, &reply),
+            &detail,
             status,
             started.elapsed().as_millis(),
         );
@@ -145,7 +251,7 @@ fn status_of(reply: &str) -> u16 {
         return 200;
     }
     match value.get("code").and_then(Value::as_str).unwrap_or("") {
-        "disabled" | "denied" | "readonly" => 403,
+        "disabled" | "denied" | "readonly" | "audit" => 403,
         "" => 500,
         _ => 400,
     }
@@ -214,7 +320,12 @@ fn run(app: &AppHandle, name: &str, raw_args: &str, cancel: Arc<AtomicBool>) -> 
         );
     };
     let state = llm::hands_state(app);
-    if !state.hands.enabled(group) {
+    // 全权期间**六组临时全开**（用户存的那一份不动），`readonly` 优先 ——
+    // 界面会把开关锁成"由全权强制打开"，但这里才是那条真正的判定：
+    // 一次渲染进程的 bug 不该变成"全权开着但我没拨开关，所以照跑"
+    let full = hands_policy::full_access_overrides(state.approval, full_access_view(app).0);
+    let hands = hands_policy::effective_hands(state.hands, full);
+    if !hands.enabled(group) {
         return fail(
             "disabled",
             format!(

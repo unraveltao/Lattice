@@ -97,6 +97,79 @@ pub fn readonly_blocks(mode: &str, name: &str) -> bool {
     mode == "readonly" && needs_approval(name)
 }
 
+// ---------------------------------------------------------------------------
+// 全权模式（0006）—— 一次会话级的定时授权
+// ---------------------------------------------------------------------------
+//
+// 它**不是第四档审批**，所以 `APPROVAL_MODES` 一直是那三个字面量。这里只有
+// 三个纯函数：时长夹紧、到期判定、开关合并 —— 会话态本身在 `full_access.rs`
+// 的 `AtomicU64` 里（那一位只能在这一份文件之外，因为它是进程状态）。
+
+/// 时长档位（分钟）。**没有"永久"**：高权限的价值是"这段时间别烦我"，不是
+/// "以后永远别烦我" —— 需要更久就再点一次延长
+pub const FULL_ACCESS_MINUTES: [u64; 4] = [15, 30, 60, 120];
+/// 面板默认选中的那一档
+pub const FULL_ACCESS_DEFAULT_MINUTES: u64 = 30;
+/// 一次授权最多多久。夹的是"手滑多打一位数"，不是"用户不能用得久"
+pub const FULL_ACCESS_MAX_MINUTES: u64 = 120;
+
+/// 把用户给的分钟夹进 `1..=120`；`0`（没传 / 解析失败）落回默认 30。
+///
+/// 方向是故意的：**坏值不许放大权限**，和 `normalize_approval` 对陌生值落回
+/// `ask` 同一条理由。不夹的话，一个 `3000` 就是 50 小时的全权。
+pub fn clamp_full_minutes(raw: u64) -> u64 {
+    match raw {
+        0 => FULL_ACCESS_DEFAULT_MINUTES,
+        minutes => minutes.min(FULL_ACCESS_MAX_MINUTES),
+    }
+}
+
+/// 全权还剩几毫秒。`until == 0`（从没开过）与已过期都是 `0`。
+///
+/// 判定只认这一个数：`full_access_active` 就是它 > 0，所以"过期"只有一种解释。
+pub fn full_access_remaining(now_ms: u64, until_ms: u64) -> u64 {
+    until_ms.saturating_sub(now_ms)
+}
+
+/// 全权现在开着吗。**每次调用现算**，不靠一个定时器把状态改掉 ——
+/// 面板重挂载、进程被挂起、系统时间被调，都不会留下一个"假的开着"
+pub fn full_access_active(now_ms: u64, until_ms: u64) -> bool {
+    full_access_remaining(now_ms, until_ms) > 0
+}
+
+/// 全权期间的开关：六组临时全开。**返回新值，不改入参** ——
+/// 用户存的那一份要能在结束之后原样回来
+pub fn effective_hands(hands: Hands, full: bool) -> Hands {
+    if !full {
+        return hands;
+    }
+    Hands {
+        files: true,
+        shell: true,
+        web: true,
+        screen: true,
+        input: true,
+        mcp: true,
+    }
+}
+
+/// 全权能不能盖过这一档。`readonly` **优先**：用户说"别改"之后，
+/// 一个还没到期的授权也不许把东西改掉（结束全权是界面的事，这里是兜底）。
+/// `mode` 已经是 `normalize_approval` 给过的三个字面量之一
+pub fn full_access_overrides(mode: &str, full: bool) -> bool {
+    full && mode != "readonly"
+}
+
+/// 审计那一栏的"这一笔是在全权下做的"标记。**加在最后**：
+/// 目标是 `shell.run · npm test`，标记是 `… · full`，别插到中间去
+pub fn mark_full(detail: &str, full: bool) -> String {
+    if full {
+        format!("{detail} · full")
+    } else {
+        detail.to_string()
+    }
+}
+
 /// `mcp.<server>.<tool>` 的形状：两段小写名字，各 1..=32 / 1..=48 字。
 ///
 /// 卡这么死的理由是它要当成**工具名**发给模型，而工具名同时是审计日志里的键：
@@ -299,5 +372,76 @@ mod tests {
             assert!(!readonly_blocks(mode, "file.write"));
             assert!(!readonly_blocks(mode, "shell.run"));
         }
+    }
+
+    // ---- 全权（0006）----
+
+    #[test]
+    fn full_access_minutes_are_clamped_short() {
+        // 坏值一律往短里夹：`0` 是"看着开了其实立刻到期"，`3000` 是 50 小时
+        assert_eq!(clamp_full_minutes(0), FULL_ACCESS_DEFAULT_MINUTES);
+        assert_eq!(clamp_full_minutes(1), 1);
+        assert_eq!(clamp_full_minutes(15), 15);
+        assert_eq!(clamp_full_minutes(120), 120);
+        assert_eq!(clamp_full_minutes(121), FULL_ACCESS_MAX_MINUTES);
+        assert_eq!(clamp_full_minutes(3000), FULL_ACCESS_MAX_MINUTES);
+        // 默认值自己必须在档位表里，否则界面会显示一个选不中的时长
+        assert!(FULL_ACCESS_MINUTES.contains(&FULL_ACCESS_DEFAULT_MINUTES));
+        assert_eq!(FULL_ACCESS_MAX_MINUTES, *FULL_ACCESS_MINUTES.iter().max().unwrap());
+    }
+
+    #[test]
+    fn an_expired_grant_is_the_same_as_not_started() {
+        // 「没开过」（0）与「过期了」必须落到同一个答案：否则界面会出现
+        // 一个"开着、但剩余时间是 0"的状态，用户没法判断要不要点结束
+        assert_eq!(full_access_remaining(1_000, 0), 0);
+        assert_eq!(full_access_remaining(1_000, 1_000), 0);
+        assert_eq!(full_access_remaining(1_000, 999), 0);
+        assert!(!full_access_active(1_000, 0));
+        assert!(!full_access_active(1_000, 1_000));
+        assert!(!full_access_active(1_000, 1));
+    }
+
+    #[test]
+    fn a_running_grant_counts_down() {
+        assert_eq!(full_access_remaining(1_000, 61_000), 60_000);
+        assert!(full_access_active(1_000, 1_001));
+        assert!(full_access_active(0, 1));
+    }
+
+    #[test]
+    fn full_access_turns_every_switch_on_without_touching_the_input() {
+        let stored = Hands::default();
+        let forced = effective_hands(stored, true);
+        for group in GROUPS {
+            assert!(forced.enabled(group), "full access should open every group");
+        }
+        // 入参一动不动：结束之后用户存的那一份必须原样回来
+        assert!(stored.none());
+        // 没开全权时原样返回（同一个值，不是复制一份）
+        let untouched = effective_hands(stored, false);
+        assert_eq!(untouched.files, stored.files);
+        assert!(untouched.none());
+    }
+
+    #[test]
+    fn readonly_wins_over_a_grant() {
+        // 用户说"别改"之后，一个还没到期的授权不许把东西改掉
+        assert!(full_access_overrides("ask", true));
+        assert!(full_access_overrides("auto", true));
+        assert!(!full_access_overrides("readonly", true));
+        // 没开全权时它什么都不盖过 —— 平时的裁决还是 `approvalFor` 那一份
+        for mode in APPROVAL_MODES {
+            assert!(!full_access_overrides(mode, false));
+        }
+    }
+
+    #[test]
+    fn the_audit_marker_goes_last() {
+        // 目标是 `shell.run · npm test`，标记加在最后；插到中间会让人以为
+        // "full" 是命令的一部分
+        assert_eq!(mark_full("shell.run · npm test", true), "shell.run · npm test · full");
+        assert_eq!(mark_full("shell.run · npm test", false), "shell.run · npm test");
+        assert_eq!(mark_full("", true), " · full");
     }
 }

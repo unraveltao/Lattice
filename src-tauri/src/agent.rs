@@ -154,9 +154,9 @@ fn clear_endpoint(app: &AppHandle) {
 
 /// 一行一条 JSON。**不做轮转**：一天点几十次也就几十 KB，而轮转代码本身
 /// 是个没人会去读的角落。
-pub(crate) fn audit(app: &AppHandle, op: &str, detail: &str, status: u16, ms: u128) {
+pub(crate) fn audit(app: &AppHandle, op: &str, detail: &str, status: u16, ms: u128) -> bool {
     let Ok(dir) = agent_dir(app) else {
-        return;
+        return false;
     };
     let at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -169,8 +169,25 @@ pub(crate) fn audit(app: &AppHandle, op: &str, detail: &str, status: u16, ms: u1
         .append(true)
         .open(dir.join("audit.log"))
     {
-        let _ = writeln!(file, "{line}");
+        return writeln!(file, "{line}").is_ok();
     }
+    false
+}
+
+/// 审计文件现在写得进去吗。
+///
+/// 唯一的使用者是全权模式（0006 §3）：那边审计从"记录"变成了"闸门" ——
+/// 全权期间没有别的痕迹，写不进去就不该动手。**别在普通路径里拿它当护栏**：
+/// 别的档位里审计写失败只该是一行日志丢失，不该让工具调用失败。
+pub(crate) fn can_audit(app: &AppHandle) -> bool {
+    let Ok(dir) = agent_dir(app) else {
+        return false;
+    };
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("audit.log"))
+        .is_ok()
 }
 
 // ---------------------------------------------------------------------------
