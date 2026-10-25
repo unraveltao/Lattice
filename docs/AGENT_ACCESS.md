@@ -414,6 +414,22 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 鉴权、错误翻译、`assistant.json` 的 v3 形状）。改一边要改另一边 —— `npm run test:llm-proxy`
 （23 条）用 Rust 测试里的同一组样例钉住它，这是唯一的提醒。
 
+### 4.9 六只手在真机上的样子 [已实现，2026-10-25 验过]
+
+把 `callHand` 直接接到 `assistant_tool` 上逐只点名跑了一遍。四件事和"想当然"不一样，写在这里：
+
+- **`workspace` 是默认位置，不是牢笼。** `fs_policy::path_is_under` 有 4 条断言，但
+  `hands.rs` 一次都没调用它：`file.read` 读得了任意绝对路径（`..\..` 出去也行），
+  `file.write` 只要目标目录存在就能写到外面。挡住它的是**审批条**（上面印着完整路径），
+  不是路径校验。别在文档里把它写成沙箱；真要收，先回答"读要不要一起收"—— 读是自动放行的。
+- **读自动放行，写 / 跑命令 / 点键鼠必问。** `file.list` / `file.read` / `file.search`
+  不弹确认；其余走 `approve`，拒绝时回给模型的是那句 `the user declined this action —
+  do not retry it; ask what they want instead`，模型于是会说"我没有改动任何东西"。
+- **截图模型看不见。** `screen.capture` 回 `vision: false` 加宽高，模型拿不到像素 ——
+  提示词里就是这么写的，别指望它"看一眼屏幕"。
+- **增量是攒批的。** 一轮真网关的回答通常只来 1–2 个 `delta` 事件（Rust 按 60ms / 24 字
+  攒批），短回答会并成一块；字仍然边出边显示，只是块更粗。
+
 ## 5. 明确不做（v1）
 
 **后台自主调控。** 比如"每天按天气自动换主题"——那需要一个常驻订阅，而人在环（用户说
@@ -432,4 +448,6 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 | `llm.rs` + 工具循环 + 组件那条路 | **2026-10-25 实机验过**：先起一个假的 OpenAI 兼容服务（`.scratch/fake-llm.mjs`），真点开、真打字 —— 卡片从 (32,40) 挪到 (300,120)，气泡里出现"✓ 移动 lattice.pet#demo01"和回复；两个 pet iframe 的 `llm.chat` 都回到 `{ok:true,text:"…"}`；把 key 换成错的之后 `listModels` 报"the provider rejected the API key (HTTP 401)"。**之后换成了真厂商**（天枢 Dubhe 网关，OpenAI 兼容根是 `…/v1/8686/v1`）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受 |
 | `assistant_ask` + 组件那条路（借手） | **2026-10-25 实机验过**：先在属性面板给 `lattice.pet` 勾上「替我调整桌面」（`grants` 变成 `["llm:chat","desktop:control"]`，卡片当场按新权限重载），再从主窗口 `invoke("assistant_ask", { widgetId: "lattice.pet", messages: JSON.stringify([{ role: "user", content: "把 lattice.pet#49898d37 这只挪到 700, 240，然后置顶" }]), persona: "你是一只桌宠…" })` —— 真网关回"挪到 700, 240 了，也置顶了…"，`actions` 两条都 `ok`，那只从 `(24,460)` 到 `(700,240)`；审计是 `widget.ask · lattice.pet · 71 chars`，加每一步的 `assistant.chat`（`tools: placement.move, placement.front`）。**删除真被挡住**：问"把 lattice.pet#demo01 删掉"，回的是"我删不了自己呀，手里没有删除工具。你在画布上点一下那个 ✕ 就行。"，`actions: []`，`placements` 一个字没动。**组件自己那条路也走通了**：画布里的桌宠点开气泡打"把 lattice.pet#9c90cc09 挪到 900, 100" → 气泡里出现回话加一行"· 移动 lattice.pet#9c90cc09"，盘上那只真的到了 `900,100`。中途踩的坑（`messages` 在线上是 JSON 文本）见 ROADMAP 那条 |
 | `platform/llm.ts`（前端唯一的门）与 dev server 那条 `/api/llm` | **2026-10-25 验过**（`npx vite --port 1431`）：页面里 `await import("/src/platform/llm.ts")` 拿到 19 个值导出，`readLlmProfiles()` 回 `keyHint: "sk-d…1-hA"`（明文没出来）、`readHands()` 六组开关齐全、`listModels()` 列 4 个模型、`callCommand("llm_chat_stream")` 对真网关回 `"ok"`（`usage 38 → 24`）。三道闸（回环地址 / 回环 `Origin` / POST 必须 `application/json`）由 `npm run test:llm-proxy` 的 23 条钉着 |
-| agent 端点的 CLI 往返 | **没验过** —— 要起 `tauri:dev` 并在端点开着的时候正好敲命令。起之前先确认没有残留的 `lattice.exe`（孤儿进程会用内存里那份盖掉 `state.json`） |
+| agent 端点的真机往返 | **2026-10-25 验过**：`agent_set_enabled` 从窗口里打开 → `%APPDATA%\…\agent\endpoint.json` 落成 `{port: 52276, token}`；`npm run agent -- ping / state / say` 三条都成（`state` 回 16 个组件的快照，`say` 回 `{ok:true}`）；`theme.set light` 经端点在真 store 上生效再还原成 dark；不带令牌回 401 `missing or wrong bearer token`；关掉之后 `endpoint.json` 消失、端口 0 个监听、CLI 退出 1 并说清"Lattice 没在跑，或者 Agent access 关着"。curl 8.21 用同一条 `POST /rpc` 也通（PowerShell 那次 `timed out reading the request` 是它自己把 JSON 里的引号吃了，不是端点的事） |
+| 六只手（`assistant_tool`） | **2026-10-25 真机逐只跑过**：文件（中文目录 `中文 目录/hello.txt` 读出 `第一行：你好，世界`；二进制回 `binary`；`file.search` 命中中文；`file.write` 落 40 字节 UTF-8 无 BOM，`parents: true` 建出两层新目录）、`shell.run`（`Write-Output '你好，世界 😀'` 原样回、`exit 3` 回 `code: 3`、stderr 有内容、cwd 是 workspace；按 Stop 1517ms 后回 `cancelled` 且子进程没了；`timeoutMs: 2000` 跑 20 秒的睡眠 → 2013ms 回 `timedOut: true`、没留孤儿）、`web.fetch`（example.com 折成正文；`http://github.com` 跟到 `https://github.com/` 并报新地址；`ftp://` 回 `bad_args`）、屏幕（`screen.windows` 22 个窗口、焦点窗口排第一、认得出 `Tauri Window` 那份；`screen.capture` 落 3456×1081 PNG，签名与 IHDR 都对）、MCP（自建 stdio 探针：起 `node` 进程 → `initialize` → `tools/list` → `mcp.probe.echo` → `tools/call` 回 `probe echo: 你好 MCP`，第二次发现走缓存 3ms）、键鼠（`input.click` 落在算好的点、`input.type` 打出 `你好 😀!`、`input.key` 的 `Enter` 进到 contenteditable） |
+| 一轮完整对话（Deny / Allow） | **2026-10-25 真机**：真网关、真 `runAssistantTurn`。让它写文件并 `approve → false`：确认条请求是 `Write 12 characters to …\denied-写.txt`，工具结果 `the user declined this action…`，模型回"你拒绝了这次写入，所以我没有改动任何东西"，**磁盘上确实没有那个文件**；换成 `approve → true`：写文件 + `shell.run Get-Date` 两条都 `ok`，落盘 19 字节 UTF-8、内容 `probe-write-允许`。读（`file.list` / `file.read`）不弹确认，和 `needsApproval` 一致 |
