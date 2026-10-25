@@ -50,6 +50,7 @@
         describeHand,
         effectiveHands,
         enabledGroups,
+        grantAllHands,
         handGroup,
         handsPrompt,
         handsTools,
@@ -393,6 +394,20 @@
       eq(enabledGroups(HANDS_OFF), [], "调用之后用户存的那一份没被改");
       ok(effectiveHands(ALL_ON, "internal") === ALL_ON, "内部模式原样返回（同一个对象，不是复制）");
       eq(effectiveHands(HANDS_OFF, "internal"), HANDS_OFF, "内部模式六组照用户存的");
+
+      // ---- 「给 agent 权力」（0009）：拨的是开关，不是切模式 ----
+      const ASKED = { ...HANDS_OFF, workspace: "D:\\work", approvalMode: "readonly" };
+      const granted = grantAllHands(ASKED);
+      eq(enabledGroups(granted), HAND_GROUPS.slice(), "一次六组全开");
+      eq(granted.approvalMode, "readonly", "审批档原样留着（只读档照旧压着 —— 给权力不等于不问）");
+      eq(granted.workspace, "D:\\work", "工作目录原样留着");
+      ok(granted !== ASKED, "返回新对象（面板要能靠引用变化重渲染）");
+      eq(enabledGroups(ASKED), [], "入参那一份没被就地改掉");
+      eq(
+        enabledGroups(effectiveHands(granted, "internal")),
+        HAND_GROUPS.slice(),
+        "给完之后内部模式真的给得出来（它不是「全部」，六组是一组一组真开的）",
+      );
 
       eq(SELF_CONFIG_FILES.length, 3, "三份自身配置");
       eq(SELF_CONFIG_DIRS.join(","), "skills,assistant-sessions", "两个自身目录");

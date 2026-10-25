@@ -73,7 +73,7 @@ src/
     hands.ts              assistant 的手的 IPC 面：`assistant_tool` / `hands_cancel` / 开关读写（`assistant_hands*`）/ 模式（`assistant_mode*`）/ 技能包四条；参数序列化成字符串递过去，返回 `AgentReply` 形状
     agent.ts              agent 动作执行器：白名单动作走真 store，回快照（带每个组件的说明首句 `about`，没写说明就是空串）（`tests/agent.html` 59 条）
     widget-tools.ts       数据平面的执行面：画布实例的登记表（一个 instanceId 一个「能答话的 iframe」）+ `callWidgetTool`（8 秒超时、回话归一化、`not-running`）；纯逻辑在 runtime/widget-tools.ts
-    AssistantPanel.tsx    assistant 的面板：一列模型档 + 表单 + **常驻模式条**（内部 / 全部，0009）+ 六组能力开关 + **审批档三选一**（Ask / Automatic / Read-only，`APPROVAL_LABELS`）+ 审批确认条 + 对话（顶上一行会话列表：挑回 / 新开 / 删），工具结果一行一个（抽屉与小窗共用这一个组件）
+    AssistantPanel.tsx    assistant 的面板：一列模型档 + 表单 + **常驻模式条**（内部 / 全部，0009）+ 六组能力开关（内部模式下头上一颗「给 agent 权力」= 一次全开，只写开关）+ **审批档三选一**（Ask / Automatic / Read-only，`APPROVAL_LABELS`）+ 审批确认条 + 对话（顶上一行会话列表：挑回 / 新开 / 删），工具结果一行一个（抽屉与小窗共用这一个组件）
     AssistantWindow.tsx   assistant 小窗的壳：标题栏（底板 / 锁 / 浮窗↔桌面 / 藏）+ 面板 + 底板三层（canvas 壁纸 / veil 底色 / 内容）+ 三个缩放手柄；**没有 store**，动作走 `remoteSurface()`，窗口自己的状态走 `assistant-window.json` v2（0007）
   runtime/
     manifest.ts           清单校验与归一化；Permission 类型与中文标签（唯一真源）；`agent.tools`（组件声明的工具，规则在 runtime/widget-tools.ts）
@@ -89,7 +89,7 @@ src/
     close-guard.ts        ✕ 该不该认这一下：指针序列 + 命中测试（纯函数，`tests/close-guard.html` 钉着）
     assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、工具表裁剪（`toolsFor`）与合表（`allTools` = 桌面动作 + 手 + MCP + **组件声明的工具**，四路都从这一个口进）、**三档审批的唯一判据 `approvalFor(name, mode)`**（`allow` / `ask` / `deny`，只读档连桌面表一起剪空）、system prompt（含手那一段、组件工具那一段与只读档的开口）、人设片段、历史裁剪（条数 + 字符数两道上限）、线上形状（`parseAskMessages` / `normalizeAskMessages`）、OpenAI 消息形状、快照压缩、商店里还没装的组件那一段（`CatalogueHint` / `aboutLine`，最多 8 条）（`tests/assistant.html` 180 条）
     skills.ts             assistant 的技能包（0005）的纯逻辑：`charCount`（按码点）、`normalizeTools` / `missingGroups`（"这个技能要用 Files，而它关着"）、`checkBudget`（4 份 / 4 000 / 8 000，返回原因与数字，话由界面说）、`promptsOf`（只挑启用了且没坏的）、`skillsPrompt`（"先照它，再照你自己的习惯" + 每份一节）（`tests/skills.html` 55 条）
-    hands.ts              assistant 的手的纯逻辑（0004）：六个能力组、11 个工具的 JSON Schema、`HAND_READY`（拨得动 ≠ 接好了）、`handGroup` / `needsApproval` / `handsTools` / `handsPrompt` / 确认条那一行、MCP 发现结果合表（`mcpToolSpecs`）与命令行切词、一轮的预算（`tests/hands.html` 97 条）
+    hands.ts              assistant 的手的纯逻辑（0004）：六个能力组、11 个工具的 JSON Schema、**两个模式的判据 `effectiveHands` / `modeIgnoresSwitches`**（0009：内部照存的开关、全部临时全开、不写盘）与「给 agent 权力」的 `grantAllHands`（**只写那六个开关**，模式 / 审批档 / 工作目录一概不动 —— 和"模式忽略开关"是两件事，别并成一个）、`HAND_READY`（拨得动 ≠ 接好了）、`handGroup` / `needsApproval` / `handsTools` / `handsPrompt` / 确认条那一行、MCP 发现结果合表（`mcpToolSpecs`）与命令行切词、一轮的预算（`tests/hands.html` 103 条）
     llm-models.ts         模型档的纯知识：按模型名前缀查能力（能不能调工具 / 能不能给 temperature / 上下文多大）、历史字符预算、三种鉴权形状（bearer / api-key-header / none）、七个服务商的预置填写（纯函数，`tests/llm-models.html` 26 条）
     align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 单包命中判定（纯函数，`tests/library-search.html` 钉着）

@@ -27,7 +27,7 @@
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
 | v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的**会话与观察已落地**（`assistant-sessions/<id>.json` 一条会话一个文件，50 份 / 200 条 / 1 MB 三道额度，面板顶部一条能挑回 / 新开 / 删的会话条，提示词里补了组件说明首句与商店那一段），**审批档也落了**（`approvalMode` 三档 `ask` / `auto` / `readonly`，`readonly` 连 schema 都不给、Rust 再拒一次，`auto` 仍然问删除），**B 数据平面也落了**（组件清单加 `agent.tools`：工具名 `widget.<id>.<tool>`、多份实例合成一条、新权限 `agent:tools` 独立授权、答话的是画布那一份实例、回话超 4000 字符拒绝不截断；留了三处缺口，见下面那条） |
-| v0.12 | 技能包、工作区与两个模式 | ✅ 完成 | `workspace` 从"相对路径的默认值"变成"免问区"（只对 `file.write`）；技能是说明书不是权限 —— `skills/<id>/SKILL.md` 进提示词、四条命令、`assistant.json` v4 的 `skills.enabled`，见 [design/0005](./design/0005-skills-and-workspace.md)；**两个模式**（内部 / 全部）是一个存盘的开关：内部只给桌面动作与组件工具、审批照档，全部再加六组手、审批不问、审计 fail-closed；不是第四档审批，见 [design/0009](./design/0009-assistant-modes.md)（0006 的定时授权已被它推翻） |
+| v0.12 | 技能包、工作区与两个模式 | ✅ 完成 | `workspace` 从"相对路径的默认值"变成"免问区"（只对 `file.write`）；技能是说明书不是权限 —— `skills/<id>/SKILL.md` 进提示词、四条命令、`assistant.json` v4 的 `skills.enabled`，见 [design/0005](./design/0005-skills-and-workspace.md)；**两个模式**（内部 / 全部）是一个存盘的开关：内部 = 桌面动作 + 组件工具 + **你拨开的那几组手**（默认六组全关，面板上一条「给 agent 权力」可一次全开）、审批照档；全部再加六组手、审批不问、审计 fail-closed；不是第四档审批，见 [design/0009](./design/0009-assistant-modes.md)（0006 的定时授权已被它推翻） |
 | v0.13 | assistant 上桌面 | 📝 设计稿 | 两种窗口模式（浮窗 / 桌面，同一窗口不重建）：桌面模式走 `interactive` 那条路（不挂 WorkerW —— 挂了就拿不到键盘焦点，聊天框等于废了）；底板复用组件那套 appearance（tint / alpha / blur，出厂值一像素不改）；可锁、可拖边缩放（320×420 起，夹进工作区）；状态在 `assistant-window.json` v2，见 [design/0007](./design/0007-assistant-on-desktop.md) |
 
 **当前规模**（截至本次改动，2026-10-25）：
@@ -40,12 +40,12 @@
 | 组件 SDK | 713 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
 | 官方组件 + 示例 | 19 574 行 | 16 个官方包 + 1 个示例（含每个包里的 SDK 副本；未跟踪的桌宠不计） |
 | 构建脚本 | 2 629 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
-| 浏览器断言 | 2 319 条 | 50 个自检页，跑一遍的真实计数（0 failed） |
+| 浏览器断言 | 2 325 条 | 50 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 33 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条，都不依赖 dev server |
 | Rust 单测 | 413 条 | 342 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `shell_policy` 9），71 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 86 个 | |
 | 权限 | 12 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐 |
-| 踩过的坑 | 76 条 | [`PITFALLS.md`](./PITFALLS.md) |
+| 踩过的坑 | 79 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
 ---
 
@@ -380,7 +380,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - 验证：`tests/hands.html` **97 条**（P1 建、P5 补、P6 补）、`tests/assistant.html` 122 条、`input_policy.rs` 23 + `screen_policy.rs` 21 + `web_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9 条 `rustc --test`、`mcp_policy.rs` 17 条 `rustc --test`、全量自检 **46 页 / 1 981 条 / 0 failed**。`hands.rs` 那 7 条与 `mcp.rs` 那 8 条只有 `cargo test` 跑得了（本机跑不了）。**真机还没走**：读一个中文路径的文件、`echo 你好`、`Deny` 之后磁盘没变化、Stop 之后子进程真的没了、取一个真页面并跟一次 302、列一次窗口、在一张空白画布上点一下再 `Ctrl+S`；P6 再走一条：`npx -y @modelcontextprotocol/server-filesystem D:\` 存进 `mcp.json`、点 Refresh 看到工具、真调一个（列一次目录）、`Deny` 之后什么都没发生 —— 记在 `AGENTS.md` §8。
 - 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P6 全落了 —— **六只手到这里齐全**；0003 的会话、观察与审批三档随后也落了（会话落盘 + 提示词里的观察段 + `approvalMode`），最后 B 数据平面也落了（组件把能力声明成工具）。接下来的实用缺口：组件工具的三处遗留（小窗那一轮没有组件工具、不唤醒窗口、SDK 还没包一层 `agentTools()`），以及 P6 留下的几条：HTTP 服务的 OAuth / 自定义头、websocket 传输、连接复用（现在一次调用一条连接，`npx` 那类服务首调慢几秒）。
 
-## v0.12 —— 技能包、工作区与全权模式（已落地）
+## v0.12 —— 技能包、工作区与两个模式（已落地）
 
 用户的原话是"可以让项目的 agent 支持更高的权限吗，可以导入 skills 什么的处理文本之类的"。结论：**"更高权限"不落在第四档审批上，落在范围上**；技能是流程，不是权限。完整推理在 [`design/0005-skills-and-workspace.md`](./design/0005-skills-and-workspace.md)。
 
@@ -388,8 +388,8 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 
 - [x] **`workspace` 从"相对路径的默认值"变成"免问区"**（**已落地**：`insideWorkspace` 在 `runtime/hands.ts`，审批那一条在 `approvalFor` 的 `ctx.path` / `ctx.workspace`，`platform/assistant.ts` 把这次调用的 `path` 与当前 `workspace` 一起递过去） —— `ask` 档下 `file.write` 落在里面不问、外面照旧问；**只对 `file.write` 生效**（`shell.run` 一条命令就能写出这棵树，假装它是围栏是自欺）。判定是纯函数 `insideWorkspace`（`/` 与 `\` 归一、`..` 先折叠、盘符不分大小写、相对路径算在里面、空 workspace 与盘根一律 false —— 盘根不算"一棵树"，那和全开没区别）。
 - [x] **技能包**（**已落地**：`skills/<id>/SKILL.md` 的扫描与四条命令在 `skills.rs`、解析与三道上限在 `skills_policy.rs`、提示词那一段在 `runtime/skills.ts`、面板一段在 `AssistantPanel.tsx`） —— front matter 三个字段 `name` / `description` / `tools` + 正文，启用的正文进系统提示（≤4 份 / 每份 ≤4 000 字 / 合计 ≤8 000 字，**按码点**算，超了**在启用时拒**，不截断）；`assistant.json` v4 加 `skills.enabled`；四条命令 `assistant_skills` / `assistant_skills_save` / `assistant_skill_import` / `assistant_skill_remove`。**不新增执行通道**：技能里让做的事仍然走那六只手、仍然要审批、仍然进审计；**导入不启用**（和"新权限不自动授予"同一条规矩），坏掉的一份标 `damaged`、不进提示词、不拦列表。
-- [x] **两个模式：内部 / 全部**（**已落地**：`assistant.json` v4 的 `mode`、`assistant_mode` / `assistant_mode_set` 两条命令、面板常驻模式条 + 切过去那一次确认 + 启动提示；真机上 internal ↔ everything 来回切过，`assistant.json` 跟着变、审计有 `assistant.mode` 一条） —— 一个存盘的开关（`assistant.json` v4 的 `mode`），不是第四档审批、也不是 0006 那种定时授权（[0009](./design/0009-assistant-modes.md) 推翻了 [0006](./design/0006-full-access.md)）：**内部**（默认）= 8 个桌面动作 + 组件声明的工具，六只手一只都不给，审批照档；**全部** = 再加六组手、临时全开、审批不问（问就不叫全部了），切过去弹一次确认、之后靠**常驻模式条**而不是靠打断；四条硬线照旧（装卸授权不在表里、改平台自身配置永远问、组件借手拿不到、agent 端点不受影响），审计行尾 ` · everything` 且写不进去就不执行，`readonly` 仍然优先，**预算不变**。
-- 验证：`tests/skills.html` **55 条**（front matter、id 与撞名、三道上限、提示词渲染、`insideWorkspace` 的整张路径表、`approvalFor` 的免问区四条）、`skills_policy.rs` **19 条** `rustc --test`、`hands_policy.rs` 21 条、全量自检 **50 页 / 2 319 条 / 0 failed**。**真机还没走**：导入一个真实技能目录 → 启用 → 问"按那个流程做" → 落在 workspace 内的写没有确认条、落在 `D:\GitDev\lattice` 的有 → 关掉技能它回到默认做法（记在 `AGENTS.md` §8）。
+- [x] **两个模式：内部 / 全部**（**已落地**：`assistant.json` v4 的 `mode`、`assistant_mode` / `assistant_mode_set` 两条命令、面板常驻模式条 + 切过去那一次确认 + 启动提示；真机上 internal ↔ everything 来回切过，`assistant.json` 跟着变、审计有 `assistant.mode` 一条；内部模式下那颗「给 agent 权力」走 `grantAllHands`，一次六组全开） —— 一个存盘的开关（`assistant.json` v4 的 `mode`），不是第四档审批、也不是 0006 那种定时授权（[0009](./design/0009-assistant-modes.md) 推翻了 [0006](./design/0006-full-access.md)）：**内部**（默认）= 8 个桌面动作 + 组件声明的工具 + **你拨开的那几组手**（默认六组全关；不想一组一组拨就按「给 agent 权力」，它**只写那六个开关** —— 模式 / 审批档 / 工作目录一概不动，按完还能逐组拨回去），审批照档；**全部** = 再加六组手、临时全开（不写盘，那六个值照旧）、审批不问（问就不叫全部了），切过去弹一次确认、之后靠**常驻模式条**而不是靠打断；四条硬线照旧（装卸授权不在表里、改平台自身配置永远问、组件借手拿不到、agent 端点不受影响），审计行尾 ` · everything` 且写不进去就不执行，`readonly` 仍然优先，**预算不变**。
+- 验证：`tests/skills.html` **55 条**（front matter、id 与撞名、三道上限、提示词渲染、`insideWorkspace` 的整张路径表、`approvalFor` 的免问区四条）、`tests/hands.html` **103 条**（`effectiveHands` 内部照开关、`grantAllHands` 只动那六个值）、`skills_policy.rs` **19 条** `rustc --test`、`hands_policy.rs` 21 条、全量自检 **50 页 / 2 325 条 / 0 failed**。**真机还没走**：导入一个真实技能目录 → 启用 → 问"按那个流程做" → 落在 workspace 内的写没有确认条、落在 `D:\GitDev\lattice` 的有 → 关掉技能它回到默认做法（记在 `AGENTS.md` §8）。
 - 明确不做：剪贴板读写、浏览器自动化 / 任意 HTTP 方法、多根 workspace —— 三条各自的反对理由写在 0005 §3；**第四档审批**也不做（把"全权"写成 `approvalMode` 的第四个值，等于让"要不要问"这一个设置兼职表达"能碰什么"）；用户要的是**一个开关**，所以走的是 0009 的模式（存盘、常驻可见、切过去确认一次），代价"会被忘掉"由那条模式条和启动时的一次提示兜。都不是"以后随便加"。
 
 ## v0.13 —— assistant 上桌面（设计稿，未开工）

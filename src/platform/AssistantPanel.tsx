@@ -64,6 +64,7 @@ import {
   DEFAULT_ASSISTANT_MODE,
   HANDS_OFF,
   effectiveHands,
+  grantAllHands,
   modeIgnoresSwitches,
   mcpToolSpecs,
   normalizeApproval,
@@ -750,6 +751,26 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     }
   }, [hands.workspace, hands.approvalMode]);
 
+  /**
+   * 「给 agent 权力」：六只手一次全开，其余一概不碰。
+   *
+   * **它写的是开关，不是模式**（0009）：模式管"要不要问"，开关管"能不能"。
+   * 所以这一下既不改 `mode`、也不改 `approvalMode`（`readonly` 仍然优先）、
+   * 更不动 `workspace` —— 用户按完还能逐组拨回去，面板上看得见自己开了什么。
+   * 别图省事改走 `saveMode("everything")`：那等于顺手把"还问不问"也一起替他决定了。
+   */
+  const grantAll = useCallback(async () => {
+    const next = grantAllHands(hands);
+    setHands(next);
+    try {
+      const saved = await saveHands(next);
+      setHands(saved);
+    } catch (problem) {
+      setHands(hands);
+      setError(String(problem instanceof Error ? problem.message : problem));
+    }
+  }, [hands]);
+
   const setWorkspace = useCallback(
     async (value: string) => {
       const next = { ...hands, workspace: value };
@@ -979,11 +1000,13 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         className="lattice-assistant-mode"
         data-on={modeIgnoresSwitches(mode) ? "1" : "0"}
         data-held={modeIgnoresSwitches(mode) && !modeEffective ? "1" : "0"}
-        /* 内部模式下那段解释不占地方，改挂在这里：悬停能读到，但不用天天看 */
+        /* 内部模式下那段解释不占地方，改挂在这里：悬停能读到，但不用天天看。
+           **这里必须说实话**（0009）：内部模式不是"六只手一只都不给"，
+           而是"你拨了哪几组就有哪几组"，问不问另由审批档管 */
         title={
           modeIgnoresSwitches(mode)
             ? undefined
-            : t("Only manages Lattice: the desktop and widget tools. The six hands stay off.")
+            : t("Manages Lattice, plus whichever hands you switch on. Approvals follow the mode you picked.")
         }
       >
         <span className="lattice-assistant-mode-name">
@@ -1055,9 +1078,20 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
           <section className="lattice-hands">
             <header className="lattice-hands-head">
               <span>{t("What it may do")}</span>
-              <button type="button" className="lattice-btn is-small" onClick={() => void turnAllOff()}>
-                {t("Turn all off")}
-              </button>
+              {/* 一颗「给 agent 权力」+ 一颗「全关」。前者只在内部模式出现：
+                  全部模式本来就六组全开，按钮在那儿点了也不会改变任何事。
+                  **它拨的是开关**，审批档与工作目录一概不动 —— 用户按完还能
+                  一组一组拨回去，面板上看得见自己开了什么（0009） */}
+              <span className="lattice-assistant-actions">
+                {!modeIgnoresSwitches(mode) && HAND_GROUPS.some((group) => !hands[group]) && (
+                  <button type="button" className="lattice-btn is-small is-primary" onClick={() => void grantAll()}>
+                    {t("Give the agent power")}
+                  </button>
+                )}
+                <button type="button" className="lattice-btn is-small" onClick={() => void turnAllOff()}>
+                  {t("Turn all off")}
+                </button>
+              </span>
             </header>
             {/*
               审批档放在组开关**上面**：它说的是"接上之后要不要点头"，
@@ -1084,6 +1118,12 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
             </p>
             <p className="lattice-assistant-hint">
               {t("Nothing is on by default. A group has to be turned on before its tools exist at all.")}
+            </p>
+            {/* 模式和开关各管一件事（0009）：模式管"要不要问"，开关管"能不能"。
+                这句必须写死在这儿 —— 内部模式曾经被描述成"一只都不给"，
+                而代码一直是"照开关"，用户于是以为内部不能用工具 */}
+            <p className="lattice-assistant-hint">
+              {t("Internal mode gives the agent exactly the groups you switch on here. Everything mode switches them all on and stops asking.")}
             </p>
             {HAND_GROUPS.map((group) => (
               <label

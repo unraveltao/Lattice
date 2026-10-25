@@ -258,8 +258,13 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Files, commands, the web, the screen, input and MCP servers. Approvals are not asked.":
     "文件、命令、网页、屏幕、键鼠和 MCP 服务。一律不问。",
   "Held back by read-only mode — nothing can be changed.": "被只读档压住 —— 什么都不能改。",
-  "Only manages Lattice: the desktop and widget tools. The six hands stay off.":
-    "只管棂自己：桌面动作与组件工具。六只手一只都不开。",
+  // 内部模式不是"一只都不给"：它照的是那六组开关（0009）。这句曾经写成
+  // "六只手一只都不开"，和代码对不上，用户于是以为内部模式不能用工具
+  "Manages Lattice, plus whichever hands you switch on. Approvals follow the mode you picked.":
+    "管棂自己，加上你拨开的那几组手。要不要问由审批档决定。",
+  "Internal mode gives the agent exactly the groups you switch on here. Everything mode switches them all on and stops asking.":
+    "内部模式给它的正是你在这里拨开的那几组；全部模式六组全开，并且一律不问。",
+  "Give the agent power": "给 agent 权力",
   "Switch to internal": "切回内部",
   "Switch to everything": "切到全部",
   "Switch to everything?": "切到「全部」？",

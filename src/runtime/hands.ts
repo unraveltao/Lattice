@@ -111,13 +111,32 @@ export function modeIgnoresSwitches(mode: AssistantMode): boolean {
 }
 
 /**
- * 这一轮真的能用的手。**返回新对象**。
+ * 这一轮真的能用的手。内部模式**原样返回 `hands` 本身**（不复制），全部模式
+ * 返回一个新对象。
  *
- * 内部 = 六组全关（桌面动作与组件声明的工具照常给，那些不属于手）；
- * 全部 = 六组全开。这是"全部比内部多什么"的唯一判据。
+ * 内部 = **照用户存的开关**（默认六组全关；想给权力就一组一组打开，或者点
+ * 面板上那颗「给 agent 权力」一次全开）；全部 = 六组全开。这是"全部比内部
+ * 多什么"的唯一判据。
+ *
+ * 第一版这里写的是"内部一只都不给"，代码却一直是"照存的开关" —— 文档、面板
+ * 上那句提示和实现对不上，用户于是以为内部模式不能用工具。**手是用户一组一组
+ * 授权的，模式不该绕过它**（一个设置不该顺手改另一个）：模式回答"要不要问"，
+ * 开关回答"能不能"。
  */
 export function effectiveHands(hands: HandsSettings, mode: AssistantMode): HandsSettings {
   if (!modeIgnoresSwitches(mode)) return hands;
+  return { ...hands, files: true, shell: true, web: true, screen: true, input: true, mcp: true };
+}
+
+/**
+ * 一次把六组都打开（面板上那颗「给 agent 权力」）。**只动手**：
+ * `approvalMode` 与 `workspace` 原样保留。
+ *
+ * 和 `effectiveHands(hands, "everything")` 值一样、意思不一样：那个是"这一轮
+ * 不看开关"，这个是"把开关真的拨过去"，要落盘、要看得见、要能一组一组改回来。
+ * 别为了省三行把两者并成一个 —— 用户分不清哪些是他开的、哪些是模式替他开的。
+ */
+export function grantAllHands(hands: HandsSettings): HandsSettings {
   return { ...hands, files: true, shell: true, web: true, screen: true, input: true, mcp: true };
 }
 
