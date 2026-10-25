@@ -247,22 +247,9 @@ docs/                     架构、组件规范、路线图与踩坑、代码签
 
 ## 5. 一次组件渲染，链路上有谁
 
-```
-App.tsx  placements ──► buildSpecs() ──► invoke("sync_widget_windows", { specs })
-                                              │
-                                    runner.rs create()
-                                              │ 先登记 HostConfig，再 build()，再 show()，最后 apply_to()
-                                              ▼
-                            WebviewWindow(label="widget-<instanceId>", url=widget-host.html)
-                                              │
-                                   widgetHost.ts boot() → invoke("widget_host_config")
-                                              │
-                                       套一层 <iframe sandbox="allow-scripts allow-forms">
-                                              │
-                                     组件 postMessage 请求 ──► handleBridgeRequest()
-                                              │
-                                     defineMethod 的 handler（先查权限）
-```
+![渲染链路五跳：布局数据 → 建窗口 → 宿主页（设计态 WidgetFrame / 运行态 widget-host）→ 沙箱组件 → 桥（先查权限再执行）](./docs/render-chain.svg)
+
+五跳在代码里的落点：`buildSpecs()` → `sync_widget_windows` → `runner.rs::create` → `widgetHost.ts::boot` → `handleBridgeRequest()` → `defineMethod` 的 handler。
 
 几个容易搞错的地方：
 

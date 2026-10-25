@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="428" viewBox="0 0 680 428" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif">
+  <title>Lattice 的模块架构与能力全景</title>
+  <desc>左侧四层自上而下：主窗口（React 19）、组件运行时、两个宿主、沙箱组件；右侧是 Rust 侧。组件运行时经 Tauri 命令、宿主经 Win32 与 Rust 双向通信。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <rect width="680" height="428" fill="#FFFFFF"/>
+
+  <rect x="470" y="40" width="170" height="368" rx="12" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+  <text x="490" y="66" font-size="13" font-weight="500" fill="#042C53" dominant-baseline="central">Rust 侧</text>
+  <text x="490" y="86" font-size="11" fill="#185FA5" dominant-baseline="central">只有它碰得到系统</text>
+  <text x="490" y="124" font-size="11.5" font-weight="500" fill="#0C447C" dominant-baseline="central">窗口</text>
+  <text x="490" y="142" font-size="11" fill="#185FA5" dominant-baseline="central">裁形 · 挂桌面 · 层级</text>
+  <text x="490" y="184" font-size="11.5" font-weight="500" fill="#0C447C" dominant-baseline="central">文件</text>
+  <text x="490" y="202" font-size="11" fill="#185FA5" dominant-baseline="central">原子替换，留上一版</text>
+  <text x="490" y="244" font-size="11.5" font-weight="500" fill="#0C447C" dominant-baseline="central">出网</text>
+  <text x="490" y="262" font-size="11" fill="#185FA5" dominant-baseline="central">白名单，不跟随重定向</text>
+  <text x="490" y="304" font-size="11.5" font-weight="500" fill="#0C447C" dominant-baseline="central">音频</text>
+  <text x="490" y="322" font-size="11" fill="#185FA5" dominant-baseline="central">电平</text>
+  <text x="490" y="364" font-size="11.5" font-weight="500" fill="#0C447C" dominant-baseline="central">状态</text>
+  <text x="490" y="382" font-size="11" fill="#185FA5" dominant-baseline="central">落盘</text>
+
+  <rect x="40" y="40" width="360" height="84" rx="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+  <text x="60" y="64" font-size="13" font-weight="500" fill="#26215C" dominant-baseline="central">主窗口（React 19）</text>
+  <rect x="60" y="78" width="72" height="24" rx="6" fill="#FFFFFF" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="96" y="90" font-size="11" fill="#3C3489" text-anchor="middle" dominant-baseline="central">组件库</text>
+  <rect x="142" y="78" width="72" height="24" rx="6" fill="#FFFFFF" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="178" y="90" font-size="11" fill="#3C3489" text-anchor="middle" dominant-baseline="central">画布</text>
+  <rect x="224" y="78" width="72" height="24" rx="6" fill="#FFFFFF" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="260" y="90" font-size="11" fill="#3C3489" text-anchor="middle" dominant-baseline="central">属性面板</text>
+  <rect x="306" y="78" width="72" height="24" rx="6" fill="#FFFFFF" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="342" y="90" font-size="11" fill="#3C3489" text-anchor="middle" dominant-baseline="central">商店</text>
+
+  <rect x="40" y="140" width="360" height="84" rx="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+  <text x="60" y="164" font-size="13" font-weight="500" fill="#26215C" dominant-baseline="central">组件运行时</text>
+  <rect x="60" y="178" width="72" height="24" rx="6" fill="#FFFFFF" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="96" y="190" font-size="11" fill="#3C3489" text-anchor="middle" dominant-baseline="central">清单校验</text>
+  <rect x="142" y="178" width="72" height="24" rx="6" fill="#FFFFFF" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="178" y="190" font-size="11" fill="#3C3489" text-anchor="middle" dominant-baseline="central">目录</text>
+  <rect x="224" y="178" width="72" height="24" rx="6" fill="#FFFFFF" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="260" y="190" font-size="11" fill="#3C3489" text-anchor="middle" dominant-baseline="central">桥 · 权限</text>
+  <rect x="306" y="178" width="72" height="24" rx="6" fill="#FFFFFF" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="342" y="190" font-size="11" fill="#3C3489" text-anchor="middle" dominant-baseline="central">调度</text>
+
+  <rect x="40" y="240" width="360" height="88" rx="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+  <text x="60" y="264" font-size="13" font-weight="500" fill="#26215C" dominant-baseline="central">两个宿主</text>
+  <rect x="60" y="278" width="155" height="40" rx="8" fill="#FFFFFF" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="137" y="298" font-size="11.5" font-weight="500" fill="#3C3489" text-anchor="middle" dominant-baseline="central">设计态</text>
+  <rect x="225" y="278" width="155" height="40" rx="8" fill="#FFFFFF" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="302" y="298" font-size="11.5" font-weight="500" fill="#3C3489" text-anchor="middle" dominant-baseline="central">运行态</text>
+
+  <rect x="40" y="344" width="360" height="64" rx="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5" stroke-dasharray="5 4"/>
+  <text x="60" y="370" font-size="13" font-weight="500" fill="#26215C" dominant-baseline="central">沙箱组件</text>
+  <text x="60" y="392" font-size="11" fill="#534AB7" dominant-baseline="central">iframe，源不透明 —— 第三方 HTML / CSS / JS</text>
+
+  <line x1="220" y1="124" x2="220" y2="140" stroke="#7F77DD" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="232" y="132" font-size="11" fill="#534AB7" dominant-baseline="central">布局 / 授权</text>
+  <line x1="220" y1="224" x2="220" y2="240" stroke="#7F77DD" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="232" y="232" font-size="11" fill="#534AB7" dominant-baseline="central">建窗口</text>
+  <line x1="220" y1="328" x2="220" y2="344" stroke="#7F77DD" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="232" y="336" font-size="11" fill="#534AB7" dominant-baseline="central">桥</text>
+
+  <line x1="400" y1="182" x2="470" y2="182" stroke="#534AB7" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="435" y="172" font-size="11" fill="#534AB7" text-anchor="middle" dominant-baseline="central">Tauri 命令</text>
+  <line x1="400" y1="284" x2="470" y2="284" stroke="#534AB7" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="435" y="274" font-size="11" fill="#534AB7" text-anchor="middle" dominant-baseline="central">Win32</text>
+</svg>
