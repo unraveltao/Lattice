@@ -26,22 +26,23 @@
 | v0.8 | Agent 接入 | 🟡 进行中 | 默认关的回环端点：只绑 127.0.0.1、令牌、审计日志、8 个白名单动作（读日志用 `npm run agent -- state`）；还差一次 CLI 往返的真机验收 |
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
-| v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v2（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 纪律（会话 / 审批 / 预算 / 观察）还没做 |
+| v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P3**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run`），P4 网页 / P5 屏幕 / P6 MCP 只有设计；0003 的会话与观察还没做 |
 
 **当前规模**（截至本次改动，2026-10-25）：
 
 | 指标 | 数值 | 备注 |
 | --- | --- | --- |
-| 前端 TS/TSX | 14 471 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 中英文案表 + 作者文案的双语归一化 |
-| 样式 CSS | 3 746 行 | 纯手写，无 UI 库 |
-| Rust | 13 145 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗 |
-| 组件 SDK | 724 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
-| 官方组件 + 示例 | 13 758 行 | 14 个官方包 + 1 个示例（示例里那份 SDK 副本也算在内；未跟踪的桌宠不计） |
-| 构建脚本 | 2 397 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试 |
-| 浏览器断言 | 1880 条 | 45 个自检页，跑一遍的真实计数（0 failed） |
-| Node 断言 | 25 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条，都不依赖 dev server |
-| Rust 单测 | 196 条 | 169 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 25 条、`usage_policy` 的 8 条），27 条要 `cargo test`（本机跑不了），见 AGENTS §11 |
-| Tauri 命令 | 65 个 | |
+| 前端 TS/TSX | 15 741 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
+| 样式 CSS | 4 191 行 | 纯手写，无 UI 库 |
+| Rust | 15 101 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件与命令） |
+| 组件 SDK | 713 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
+| 官方组件 + 示例 | 13 338 行 | 14 个官方包 + 1 个示例（示例里那份 SDK 副本也算在内；未跟踪的桌宠不计） |
+| 构建脚本 | 2 629 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
+| 浏览器断言 | 1 964 条 | 46 个自检页，跑一遍的真实计数（0 failed） |
+| Node 断言 | 33 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条，都不依赖 dev server |
+| Rust 单测 | 259 条 | 227 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`hands_policy` 12 + `fs_policy` 14 + `shell_policy` 9），32 条要 `cargo test`（含 `hands.rs` 那 5 条，本机跑不了），见 AGENTS §11 |
+| Tauri 命令 | 71 个 | |
+| 权限 | 11 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐 |
 | 权限 | 11 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐 |
 | 踩过的坑 | 75 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
@@ -350,8 +351,16 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **增量只用来画**：`lattice:llm-delta` 带 `requestId`（广播，不变量 9），前端只在气泡里滚字；权威结果是命令的返回值，最后覆盖整条气泡。所以"拼增量拼错了"最多闪一下，不会留下一句错话。
   - **工具参数按 `index` 累加**，拼完整才解析；用户按停止时**不再执行任何工具** —— 半截参数要么解析失败，要么更糟：解析成功但少一个字段，模型会拿错的值去改桌面。
   - 代价照旧：分片节奏只有真机算数（`cargo test` 在本机跑不了），所以纯逻辑先在 `llm_policy.rs` 钉住 23 条（半包 / 多字节 / `[DONE]` / 坏帧 / 多档位累加），传输层靠真机验一次。
-- [ ] **agent 加纪律，手不扩**（[`design/0003-agent-discipline.md`](./design/0003-agent-discipline.md)）—— 会话落 `assistant-sessions/`（关掉应用还能接着聊）、审批默认 `ask` 只拦不可逆动作、每轮 token / 墙钟上限、提示词补一段"装了哪些组件、它们怎么用"。**装组件、卸组件、授权、写存储仍然不进工具表**：那等于让一段提示词替用户点"信任这把新钥匙"（不变量 15 / 8）。
-- 顺序：0002 两半都落了，接下来是 0003。审批和会话都挂在 `AssistantSurface` 与工具循环上，配置的地基不稳，先做那两样会返工。
+- [ ] **agent 加纪律，手不扩**（[`design/0003-agent-discipline.md`](./design/0003-agent-discipline.md)）—— 会话落 `assistant-sessions/`（关掉应用还能接着聊）、审批默认 `ask` 只拦不可逆动作、每轮 token / 墙钟上限、提示词补一段"装了哪些组件、它们怎么用"。**装组件、卸组件、授权、写存储仍然不进工具表**：那等于让一段提示词替用户点"信任这把新钥匙"（不变量 15 / 8）。**这一版只落了一半**：审批档与三道预算被下面 0004 的 P1 吸收并扩成"按能力组开关 + 写/跑必问"；**会话与观察两段还没做**，文档留在 `draft`。
+- [x] **给 assistant 一双手，先落 P1–P3**（[`design/0004-agent-hands.md`](./design/0004-agent-hands.md)）—— 用户要的是"和其他 agent 一样：读文件、跑代码、上网、调外部服务、动屏幕"。这一版只交付前三期（纪律 / 文件 / 命令），P4–P6 的设计留档、不接线：
+  - **两条执行器通道，永不合并**：桌面动作仍是 `AGENT_ACTIONS` + `runAgentAction`（8 个别名），新的手走 `runtime/hands.ts` → Rust `assistant_tool`；`handGroup(name)` 非空就是后者。`toolsFor("widget")` 里一条新手都没有 —— 组件那侧的手不扩。
+  - **能力组默认全关**，`assistant.json` 升 v3（`{version: 3, activeId, hands, workspace, profiles[]}`），v1 就地升级成一条档、**手落成全关**。开一组 = 把那一组的 schema 递给模型，同时 Rust 独立再判一次（前端开关不是安全边界）。
+  - **第四道闸 `HAND_READY`**（动手时才发现的）：`web` / `screen` / `input` / `mcp` 的 schema 已经写好，但 `hands.rs` 没有执行分支 —— 只按用户开关裁的话，拨一下就把一个必定失败的工具递给模型，它会绕着一句 "not implemented" 打转。所以没接的组**一律不递**，设置里那四行也拨不动，挂"后续版本"标记；每落一期把那一组改成 `true`。
+  - **审批在 `assistant_tool` 之前 await**，读自动、`file.write` / `shell.run` / `input.*` / `mcp.*` 必问，未知名字默认问；`Deny` 回 `{ok:false, code:"denied"}` 让模型改主意，不是把整轮弄崩；`Always this turn` 按工具名记、`send()` 里清掉。
+  - **取消两条通道**（`llm_chat_cancel` / `hands_cancel`），`shell.run` 25ms 轮询、超时与取消都真的 `kill()`；代价写明：只杀得掉直接子进程，`node` / `cargo` 这类孙进程可能留下。
+  - 额度与形状：`file.read` 200 行 / 40k 字（**大文件截断而不是拒绝**：`take(4 MB)` + `truncated:true`）、`file.search` 100 条 / 5000 文件 / 跳过 `.git` `node_modules` `target` `dist`、`file.write` 临时文件 + 换名、`shell.run` 默认 60s 上限 300s、输出各 16k 字按行切、UTF-8 前置（不加 Windows PowerShell 5.1 就是问号）。
+  - 验证：`tests/hands.html` **80 条**（新）、`tests/assistant.html` 122 条、`hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9 条 `rustc --test`、全量自检 **46 页 / 1964 条 / 0 failed**。`hands.rs` 那 5 条只有 `cargo test` 跑得了（本机跑不了）。**真机还没走**：读一个中文路径的文件、`echo 你好`、`Deny` 之后磁盘没变化、Stop 之后子进程真的没了 —— 记在 `AGENTS.md` §8。
+- 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P3 都落了。接下来按 0004 的期次走：**P4 `web.fetch`**（照 §9 的六条偏差走，落完把 `HAND_READY.web` 改成 `true`）→ P5 屏幕 → P6 MCP；0003 剩下的会话与观察等手稳定了再做。
 
 ## 长期要盯的风险
 

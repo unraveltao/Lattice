@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>hands test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 手（0004）的纯逻辑。
+       *
+       * 这一页钉的是"给模型什么工具、什么时候问用户、确认条上写什么"——
+       * 全部是**看不见就会静默错**的东西：
+       *
+       *   1. 开关关着的组**不能**出现在工具表里（只藏执行、不藏 schema 的话，
+       *      模型会反复调一个永远失败的工具，然后开始编"我做到了"）
+       *   2. 组件那条路（caller === "widget"）一只新手都不给 —— 这条是硬规矩，
+       *      写在这里而不是靠调用方记得传什么
+       *   3. 审批档：读自动、写/执行/点按必问；**认不出来的名字默认要问**
+       *   4. 确认条上那一行必须让人看懂要发生什么（命令只留首行、路径写全）
+       *   5. 预算三种触顶分得清（时间 / token），因为用户接下来的动作不一样
+       */
+      import {
+        HAND_GROUPS,
+        HAND_READY,
+        HAND_SPECS,
+        HANDS_OFF,
+        MAX_TURN_MS,
+        MAX_TURN_TOKENS,
+        approvalSummary,
+        describeHand,
+        enabledGroups,
+        handGroup,
+        handsPrompt,
+        handsTools,
+        mcpNameOk,
+        needsApproval,
+        overBudget,
+        readyGroups,
+      } from "../src/runtime/hands.ts";
+      import { allTools, systemPrompt, TOOL_SPECS, toolsFor } from "../src/runtime/assistant.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text} — ${JSON.stringify(actual)}`,
+        );
+      const ok = (value, text) => log(!!value, text);
+
+      const ALL_ON = {
+        files: true,
+        shell: true,
+        web: true,
+        screen: true,
+        input: true,
+        mcp: true,
+        workspace: "D:\\work",
+      };
+
+      // ---- 组与工具 ----
+
+      eq(HAND_GROUPS.length, 6, "六个能力组");
+      for (const group of HAND_GROUPS) {
+        if (group === "mcp") continue; // 它的工具是服务器声明的，静态表里本来就没有
+        ok(
+          Object.values(HAND_SPECS).some((spec) => spec.group === group),
+          `「${group}」这一组至少有一个工具（否则界面上会出现拨了没用的开关）`,
+        );
+      }
+      ok(
+        Object.values(HAND_SPECS).every((spec) => spec.group !== "mcp"),
+        "mcp 的工具只能来自运行时发现，不能出现在静态表里",
+      );
+      eq(enabledGroups(HANDS_OFF), [], "默认一组都不开");
+      eq(enabledGroups(ALL_ON), [...HAND_GROUPS], "全开时六组都在");
+
+      // ---- 分期：拨得动 ≠ 接好了 ----
+
+      eq(
+        readyGroups(ALL_ON),
+        ["files", "shell"],
+        "这一版真接好的只有文件与命令（P4 网页 / P5 屏幕与输入 / P6 MCP 还没写）",
+      );
+      for (const group of HAND_GROUPS) {
+        const spec = Object.values(HAND_SPECS).find((item) => item.group === group);
+        if (!spec) continue; // mcp 的 schema 来自服务器，静态表里没有
+        eq(
+          group in HAND_READY ? HAND_READY[group] : false,
+          Object.keys(handsTools({ ...HANDS_OFF, [group]: true })).length > 0,
+          `「${group}」拨开之后到底给不给 schema，和 HAND_READY 说的一致`,
+        );
+      }
+      eq(
+        handsTools({ ...HANDS_OFF, web: true, screen: true, input: true }),
+        {},
+        "拨开还没接的组：一只 schema 都不给（给了模型就会反复调一个必定失败的工具）",
+      );
+
+      // ---- 工具表按开关裁剪 ----
+
+      eq(handsTools(HANDS_OFF), {}, "全关时一只新手都不给");
+      eq(
+        Object.keys(handsTools({ ...HANDS_OFF, files: true })).sort(),
+        ["file.list", "file.read", "file.search", "file.write"],
+        "只开文件时给的就是那四个",
+      );
+      ok(
+        !("shell.run" in handsTools({ ...HANDS_OFF, files: true })),
+        "开着文件也不给 shell.run",
+      );
+      eq(
+        handsTools(ALL_ON, "widget"),
+        {},
+        "组件借平台的手时，新手一只都不给（这条是硬规矩，不靠调用方记得）",
+      );
+      eq(
+        Object.keys(handsTools({ ...HANDS_OFF, mcp: true }, "platform", {
+          "mcp.github.list": { description: "x", parameters: { type: "object", properties: {} } },
+          "not-a-server": { description: "y", parameters: { type: "object", properties: {} } },
+        })),
+        [],
+        "MCP 那条路还要等 P6：拨开也不递（递了就是一组永远失败的调用）",
+      );
+
+      // ---- 桌面表与手表的合流 ----
+
+      const platformTable = allTools("platform", { ...HANDS_OFF, files: true });
+      ok("placement.move" in platformTable, "手开着时桌面动作仍在");
+      ok("file.read" in platformTable, "手开着时文件工具也在");
+      eq(
+        Object.keys(allTools("widget", ALL_ON)).sort(),
+        Object.keys(toolsFor("widget")).sort(),
+        "组件那张表一个新手都没有",
+      );
+      for (const name of Object.keys(HAND_SPECS)) {
+        ok(!(name in TOOL_SPECS), `${name} 不混进桌面动作表（两张表不合并）`);
+      }
+
+      // ---- 名字 → 组 ----
+
+      eq(handGroup("file.read"), "files", "file.read 属于文件");
+      eq(handGroup("shell.run"), "shell", "shell.run 属于命令");
+      eq(handGroup("web.fetch"), "web", "web.fetch 属于网页");
+      eq(handGroup("screen.capture"), "screen", "screen.capture 属于屏幕");
+      eq(handGroup("input.key"), "input", "input.key 属于输入");
+      eq(handGroup("mcp.github.list"), "mcp", "mcp.* 属于外部服务");
+      eq(handGroup("placement.move"), null, "桌面动作不是手");
+      eq(handGroup("file.reed"), null, "拼错的名字不是手");
+
+      // ---- 审批档 ----
+
+      ok(!needsApproval("file.read"), "读文件不问");
+      ok(!needsApproval("file.search"), "搜文件不问");
+      ok(!needsApproval("web.fetch"), "抓网页不问");
+      ok(!needsApproval("screen.windows"), "列窗口不问");
+      ok(needsApproval("file.write"), "写文件要问");
+      ok(needsApproval("shell.run"), "跑命令要问");
+      ok(needsApproval("input.click"), "点击要问");
+      ok(needsApproval("mcp.github.list"), "MCP 工具要问");
+      ok(needsApproval("file.delete"), "认不出来的名字默认要问（安全默认）");
+
+      // ---- mcp 名字形状（和 Rust 的 hands_policy::mcp_ok 同一条规则）----
+
+      ok(mcpNameOk("mcp.github.list_issues"), "两段小写名字合法");
+      ok(!mcpNameOk("mcp.a.b.c"), "三段不合法");
+      ok(!mcpNameOk("mcp..tool"), "空服务器名不合法");
+      ok(!mcpNameOk("mcp.Server.Tool"), "大写不合法（审计里不该出现两个名字）");
+      ok(!mcpNameOk("mcp.a/b.c"), "斜杠不合法");
+
+      // ---- 提示词：开哪组说哪组 ----
+
+      eq(handsPrompt(HANDS_OFF), [], "全关时提示词里一个字都不提");
+      eq(
+        handsPrompt({ ...HANDS_OFF, web: true }),
+        [],
+        "只拨了还没接的那几组时，提示词里也不提（和工具表同源）",
+      );
+      const shellOnly = handsPrompt({ ...HANDS_OFF, shell: true }).join("\n");
+      ok(shellOnly.includes("没有沙箱"), "开命令时要写明没有沙箱");
+      ok(!shellOnly.includes("file.read"), "没开文件就不提文件工具");
+      ok(
+        handsPrompt(ALL_ON).join("\n").includes("不是故障"),
+        "全开时要写明「被拒绝不是故障」（否则模型会绕道换工具）",
+      );
+      ok(
+        !handsPrompt(ALL_ON).join("\n").includes("web.fetch"),
+        "没接的网页工具一句都不进提示词",
+      );
+
+      // ---- 系统提示：手与工具表同源 ----
+
+      const withFiles = systemPrompt("{}", { hands: { ...HANDS_OFF, files: true } });
+      ok(withFiles.includes("file.list"), "系统提示里写了文件工具");
+      const withoutHands = systemPrompt("{}");
+      ok(!withoutHands.includes("file.list"), "不传手时系统提示不提文件");
+      ok(!withoutHands.includes("没有沙箱"), "不传手时也不会出现沙箱那句");
+
+      // ---- 确认条：用户点 Allow 之前必须看得懂 ----
+
+      eq(
+        approvalSummary("file.write", { path: "C:\\work\\a.txt", text: "12345" }),
+        "Write 5 characters to C:\\work\\a.txt",
+        "写文件：字数与完整路径",
+      );
+      eq(
+        approvalSummary("shell.run", { command: "npm test\nrm -rf /", cwd: "C:\\work" }),
+        "Run: npm test",
+        "跑命令：只显示首行（多行脚本不能把关键命令藏在第二行）",
+      );
+      eq(
+        approvalSummary("input.click", { x: 100, y: 240 }),
+        "Click at 100, 240",
+        "点击：坐标",
+      );
+      eq(
+        approvalSummary("input.click", { x: 1, y: 2, double: true }),
+        "Double-click at 1, 2",
+        "双击说清楚是双击",
+      );
+      ok(
+        approvalSummary("input.type", { text: "x".repeat(400) }).endsWith("…"),
+        "打字太长时截断并带省略号",
+      );
+      eq(
+        approvalSummary("mcp.github.list", {}),
+        "Call mcp.github.list",
+        "MCP 调用：显示工具名",
+      );
+
+      // ---- 对话里的小标签 ----
+
+      eq(describeHand("file.read", { path: "C:\\work\\src\\main.rs" }), "Read main.rs", "读文件只显示文件名");
+      eq(describeHand("file.search", { query: "login" }), "Search for “login”", "搜索显示关键词");
+      eq(describeHand("input.type", { text: "hello" }), "Type 5 characters", "打字显示字符数");
+      eq(describeHand("screen.capture", {}), "Take a screenshot", "截图那一行");
+
+      // ---- 预算 ----
+
+      eq(overBudget({ elapsedMs: 0, tokens: 0 }), null, "刚开局没超");
+      eq(overBudget({ elapsedMs: MAX_TURN_MS, tokens: 0 }), "time", "到时间了");
+      eq(overBudget({ elapsedMs: 0, tokens: MAX_TURN_TOKENS }), "tokens", "到 token 上限了");
+      ok(MAX_TURN_TOKENS > 100_000, "token 预算够跑一轮真活");
+
+      // ---- 输出 ----
+
+      const pass = lines.filter((line) => line.startsWith("PASS")).length;
+      const fail = lines.length - pass;
+      document.getElementById("out").innerHTML =
+        lines.map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`).join("\n") +
+        `\n\n${pass} passed, ${fail} failed`;
+      document.title = fail === 0 ? `hands ${pass}/${lines.length}` : `hands FAIL ${fail}`;
+    </script>
+  </body>
+</html>

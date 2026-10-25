@@ -28,11 +28,22 @@ import {
   runAssistantTurn,
   saveLlmKey,
   saveLlmProfile,
+  type ApprovalRequest,
+  type Approver,
   type AssistantSurface,
   type ProfileView,
   type ProfilesView,
 } from "./assistant";
-import { systemPrompt, type ChatMessage } from "../runtime/assistant";
+import { readHands, saveHands } from "./hands";
+import { allTools, systemPrompt, type ChatMessage } from "../runtime/assistant";
+import {
+  HAND_GROUPS,
+  HAND_LABELS,
+  HAND_READY,
+  HANDS_OFF,
+  type HandGroup,
+  type HandsSettings,
+} from "../runtime/hands";
 import {
   AUTH_SHAPES,
   PRESETS,
@@ -105,6 +116,20 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
+  /** 用户拨开的那几只手。读一次、拨一次存一次（和模型档同一份 JSON） */
+  const [hands, setHands] = useState<HandsSettings>(HANDS_OFF);
+  /**
+   * 正在等用户点头的那一下。**不做成 toast**：它阻塞这一轮，
+   * 用户不管它，模型就一直等着 —— 所以确认条必须贴在输入框上面，
+   * 不能是一个会自己消失的提示
+   */
+  const [approval, setApproval] = useState<{ name: string; detail: string; group: HandGroup } | null>(
+    null,
+  );
+  const approvalResolve = useRef<((allowed: boolean) => void) | null>(null);
+  /** 「本轮都允许」——寿命只有一轮，`send` 开始时清空 */
+  const alwaysThisTurn = useRef<Set<string>>(new Set());
+
   const surface = useMemo<AssistantSurface>(
     () => (records ? localSurface([...records.values()]) : remoteSurface()),
     [records],
@@ -113,6 +138,38 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
   // 收进 ref：`send` 的依赖里不放 surface，否则每次清单变化都会重建回调
   const surfaceRef = useRef(surface);
   surfaceRef.current = surface;
+
+  /**
+   * 审批回调：把"要问什么"变成界面上的一条确认条，等用户点。
+   *
+   * 三条要点：
+   *   - **返回 Promise**：循环在 `await` 上停住，模型不会再往前走一步。
+   *     这里如果"先执行再问"，就等于把危险动作变成事后通知
+   *   - 「本轮都允许」按**工具名**记（不是按参数）：同一个 `shell.run` 允许一次
+   *     之后，这一轮后续的目录读取、跑测试都不再打断用户；名字之外的粒度
+   *     用户没法预测自己同意了什么
+   *   - 停止 / 关面板也要 resolve(false)：不然 `busy` 会一直亮着
+   */
+  const approve = useCallback<Approver>((request: ApprovalRequest) => {
+    if (alwaysThisTurn.current.has(request.name)) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      approvalResolve.current = (allowed) => {
+        approvalResolve.current = null;
+        setApproval(null);
+        resolve(allowed);
+      };
+      setApproval({ name: request.name, detail: request.detail, group: request.group });
+    });
+  }, []);
+
+  const decide = useCallback((allowed: boolean) => {
+    approvalResolve.current?.(allowed);
+  }, []);
+
+  const decideAlways = useCallback(() => {
+    if (approval) alwaysThisTurn.current.add(approval.name);
+    decide(true);
+  }, [approval, decide]);
 
   const active = profiles?.profiles.find((item) => item.id === profiles.activeId) ?? null;
   const editingProfile = profiles?.profiles.find((item) => item.id === editing) ?? null;
@@ -166,6 +223,15 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
       .catch((problem) => {
         if (!cancelled) setError(String(problem));
       });
+    // 手是另一份配置（同一个文件，另一个命令）。读失败不该挡住对话 ——
+    // 最坏情况是"这一轮没有手"，那本来就是默认状态
+    void readHands()
+      .then((next) => {
+        if (!cancelled) setHands(next);
+      })
+      .catch(() => {
+        // 保持全关
+      });
     return () => {
       cancelled = true;
     };
@@ -205,12 +271,18 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
     const host = surfaceRef.current;
     setBusy(true);
     stopFlag.current = false;
+    // 「本轮都允许」的寿命只有一轮
+    alwaysThisTurn.current.clear();
+    const table = allTools("platform", hands);
     try {
       // 第一条永远是 system：桌面现状每次现拍，模型不该记着"上次的桌面"。
       // 快照可能是 IPC 往返（独立小窗那条路），所以先 await 再拼
       const snapshot = await host.snapshot();
       if (conversation[0]?.role === "system") conversation.shift();
-      conversation.unshift({ role: "system", content: systemPrompt(snapshot) });
+      conversation.unshift({
+        role: "system",
+        content: systemPrompt(snapshot, { hands, tools: table }),
+      });
       conversation.push({ role: "user", content: text });
 
       await runAssistantTurn({
@@ -219,6 +291,11 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
         shouldStop: () => stopFlag.current,
         // 上下文小的模型带不动 60k 字的历史；超了不是慢，是 400
         maxChars: historyChars(knownModel(active?.model ?? "")),
+        // 工具表、提示词、执行器三处用**同一份** hands：少一处就是"它调了一个
+        // 提示里说它做不到的工具"那种鬼故事
+        tools: table,
+        hands,
+        approve,
         onEvent: (event) => {
           if (event.type === "delta") {
             // 正在长的那一条：同一轮里后续的增量都往它后面接。
@@ -260,7 +337,7 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
     } finally {
       setBusy(false);
     }
-  }, [active?.model, busy, draft]);
+  }, [active?.model, approve, busy, draft, hands]);
 
   const persist = useCallback(async () => {
     setSaving(true);
@@ -369,9 +446,58 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
 
   const stop = useCallback(() => {
     stopFlag.current = true;
-    // 光设标志只能打断"步与步之间"；字正在冒的时候得让 Rust 那头的读循环收手
+    // 光设标志只能打断"步与步之间"；字正在冒的时候得让 Rust 那头的读循环收手，
+    // 命令正在跑的时候得把那个进程杀掉
     void cancelActiveTurn();
+    // 正卡在确认条上：按停止等于拒绝，否则这一轮永远不结束
+    approvalResolve.current?.(false);
   }, []);
+
+  /** 拨一个开关并落盘。**先落盘再更新界面**：存失败时界面不该显示"已经开了" */
+  const toggleHand = useCallback(
+    async (group: HandGroup, on: boolean) => {
+      const next = { ...hands, [group]: on };
+      setHands(next);
+      try {
+        const saved = await saveHands(next);
+        setHands(saved);
+      } catch (problem) {
+        setHands(hands);
+        setError(String(problem instanceof Error ? problem.message : problem));
+      }
+    },
+    [hands],
+  );
+
+  const turnAllOff = useCallback(async () => {
+    // 「一键关掉」== 关掉并且当场叫停这一轮：用户按下它的时候，
+    // 大概率正是看见某条命令不对
+    const next = { ...HANDS_OFF, workspace: hands.workspace };
+    setHands(next);
+    stopFlag.current = true;
+    void cancelActiveTurn();
+    approvalResolve.current?.(false);
+    try {
+      const saved = await saveHands(next);
+      setHands(saved);
+    } catch (problem) {
+      setError(String(problem instanceof Error ? problem.message : problem));
+    }
+  }, [hands.workspace]);
+
+  const setWorkspace = useCallback(
+    async (value: string) => {
+      const next = { ...hands, workspace: value };
+      setHands(next);
+      try {
+        const saved = await saveHands(next);
+        setHands(saved);
+      } catch (problem) {
+        setError(String(problem instanceof Error ? problem.message : problem));
+      }
+    },
+    [hands],
+  );
 
   const header = useMemo(() => {
     if (!active) return t("Assistant · Not configured");
@@ -546,6 +672,54 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
           )}
 
           {sourceNote && <p className="lattice-assistant-hint">{sourceNote}</p>}
+
+          {/* 手：默认全关。打开一组等于允许它做一类事（0004 §5） */}
+          <section className="lattice-hands">
+            <header className="lattice-hands-head">
+              <span>{t("What it may do")}</span>
+              <button type="button" className="lattice-btn is-small" onClick={() => void turnAllOff()}>
+                {t("Turn all off")}
+              </button>
+            </header>
+            <p className="lattice-assistant-hint">
+              {t("Nothing is on by default. Reading files and fetching pages run without asking; writing, commands and clicks always ask you first.")}
+            </p>
+            {HAND_GROUPS.map((group) => (
+              <label
+                key={group}
+                className={`lattice-hand-row${HAND_READY[group] ? "" : " is-soon"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={hands[group]}
+                  disabled={!HAND_READY[group]}
+                  onChange={(event) => void toggleHand(group, event.target.checked)}
+                />
+                <span className="lattice-hand-copy">
+                  <span className="lattice-hand-name">
+                    {t(HAND_LABELS[group].label)}
+                    {!HAND_READY[group] && (
+                      <span className="lattice-hand-soon">{t("Coming in a later update")}</span>
+                    )}
+                  </span>
+                  <span className="lattice-hand-hint">{t(HAND_LABELS[group].hint)}</span>
+                </span>
+              </label>
+            ))}
+            <label className="lattice-textfield">
+              <span>{t("Workspace folder")}</span>
+              <input
+                value={hands.workspace}
+                onChange={(event) => void setWorkspace(event.target.value)}
+                placeholder="D:\\GitDev\\lattice"
+                spellCheck={false}
+              />
+            </label>
+            <p className="lattice-assistant-hint">
+              {t("Relative paths and commands start here. Reading is not limited to this folder — only writing asks, and the prompt shows the full path.")}
+            </p>
+          </section>
+
           {error && <p className="lattice-modal-error">{error}</p>}
           {setupNote && <p className="lattice-assistant-hint">{setupNote}</p>}
 
@@ -622,6 +796,23 @@ export function AssistantPanel({ open, onClose, records, variant = "drawer" }: A
             })}
             {busy && !streaming && <p className="lattice-assistant-hint">{t("Thinking…")}</p>}
           </div>
+
+          {approval && (
+            <div className="lattice-assistant-approval" role="group" aria-label={t("Approve this action")}>
+              <p className="lattice-assistant-approval-text">{approval.detail}</p>
+              <div className="lattice-assistant-approval-buttons">
+                <button type="button" className="lattice-btn is-small is-primary" onClick={() => decide(true)}>
+                  {t("Allow")}
+                </button>
+                <button type="button" className="lattice-btn is-small" onClick={decideAlways}>
+                  {t("Always this turn")}
+                </button>
+                <button type="button" className="lattice-btn is-small is-danger" onClick={() => decide(false)}>
+                  {t("Deny")}
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="lattice-assistant-composer">
             <textarea

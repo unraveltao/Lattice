@@ -24,9 +24,12 @@ pub mod csp;
 pub mod desktop;
 pub mod diagnostics;
 pub mod egress;
+pub mod fs_policy;
 pub mod guide_policy;
 pub mod guides;
 pub mod guides_overlay;
+pub mod hands;
+pub mod hands_policy;
 pub mod instance;
 pub mod llm;
 pub mod llm_policy;
@@ -45,6 +48,7 @@ pub mod protocol;
 pub mod runner;
 pub mod signature;
 pub mod signature_policy;
+pub mod shell_policy;
 pub mod state;
 pub mod store;
 pub mod tray;
@@ -176,6 +180,10 @@ pub fn run() {
             llm::llm_chat,
             llm::llm_chat_stream,
             llm::llm_chat_cancel,
+            llm::assistant_hands,
+            llm::assistant_hands_save,
+            hands::assistant_tool,
+            hands::hands_cancel,
             agent::agent_status,
             agent::agent_activity,
             agent::agent_set_enabled,

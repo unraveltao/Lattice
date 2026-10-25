@@ -119,4 +119,62 @@ export const ASSISTANT_ZH: Record<string, string> = {
   // 行首那个 kind 标签（`KIND_LABEL` 的值，渲染时才 t()）
   bridge: "桥调用",
   console: "console",
+
+  // —— 手：设置面板里的六组开关（0004）——
+  "What it may do": "它能做什么",
+  "Turn all off": "全部关掉",
+  "Nothing is on by default. Reading files and fetching pages run without asking; writing, commands and clicks always ask you first.":
+    "默认全关。读文件和抓网页不问；写文件、跑命令、点按一定会先问你。",
+  Files: "文件",
+  "Read, list and search files anywhere; writing needs your approval.":
+    "随便读、列、搜；要写就得你点头。",
+  Commands: "命令",
+  "Run PowerShell as you. No sandbox — every command asks first.":
+    "用你的身份跑 PowerShell，没有沙箱 —— 每条命令都先问。",
+  "Web pages": "网页",
+  "Fetch a URL and read its text. No search engine.": "给个网址抓正文；没有搜索引擎。",
+  Screen: "屏幕",
+  "List windows and save screenshots. Text models cannot see the picture.":
+    "列窗口、存截图；纯文本模型看不到图。",
+  "Mouse and keyboard": "鼠标键盘",
+  "Real clicks and keystrokes into whatever window has focus. Always asks.":
+    "真的点、真的打字，落到当前焦点窗口；每次都问。",
+  "External services (MCP)": "外部服务（MCP）",
+  "Tools declared by MCP servers you add. Every call asks.":
+    "你自己加的 MCP 服务器声明的工具；每次调用都问。",
+  "Workspace folder": "工作目录",
+  "Relative paths and commands start here. Reading is not limited to this folder — only writing asks, and the prompt shows the full path.":
+    "相对路径和命令从这里起算。读**不**限于这个目录 —— 只有写才问，而且确认条上写的是完整路径。",
+  "Coming in a later update": "后续版本",
+
+  // —— 审批确认条 ——
+  "Approve this action": "批准这个动作",
+  Allow: "允许",
+  "Always this turn": "本轮都允许",
+  Deny: "拒绝",
+  "Write {bytes} characters to {path}": "写 {bytes} 个字符到 {path}",
+  "Run: {command}": "执行：{command}",
+  "Click at {x}, {y}": "点击 {x}, {y}",
+  "Double-click at {x}, {y}": "双击 {x}, {y}",
+  "Type: {text}": "打字：{text}",
+  "Press {key}": "按键 {key}",
+  "Call {tool}": "调用 {tool}",
+
+  // —— 对话里那一行小标签 ——
+  "List {folder}": "列出 {folder}",
+  "Read {file}": "读 {file}",
+  "Search for “{query}”": "搜索“{query}”",
+  "Write {file}": "写 {file}",
+  "Run {command}": "跑 {command}",
+  "Fetch {url}": "抓取 {url}",
+  "List windows": "列出窗口",
+  "Take a screenshot": "截图",
+  "Type {count} characters": "输入 {count} 个字符",
+
+  // —— 预算触顶与"这一组关着" ——
+  "The {group} capability is switched off in Assistant settings.":
+    "「{group}」这组能力在助手设置里是关的。",
+  "I stopped here: this turn has been running for {minutes} minutes.":
+    "我停在这里了：这一轮已经跑了 {minutes} 分钟。",
+  "I stopped here: this turn has used {tokens} tokens.": "我停在这里了：这一轮已经用了 {tokens} token。",
 };

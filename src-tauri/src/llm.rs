@@ -35,6 +35,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::hands_policy;
 use crate::llm_policy;
 use crate::network;
 use crate::network_policy::parse_url;
@@ -90,9 +91,122 @@ struct AssistantConfig {
     active_id: String,
     #[serde(default)]
     profiles: Vec<Profile>,
+    /// 六只手的开关。**默认全关**：v1/v2 升级上来的用户一条手都没开（0004 §5）
+    #[serde(default)]
+    hands: HandsFile,
+    /// 相对路径与命令默认落脚的目录。**不是围栏** —— 读可以全盘（用户选的），
+    /// 这里只是"没给绝对路径时去哪儿"
+    #[serde(default)]
+    workspace: String,
 }
 
-/// v1 的形状：四个平铺字段。**只用来读**，写出去永远是 v2
+/// 磁盘上的六个开关。和 `hands_policy::Hands` 分开：那份不引 serde
+/// （它要能 `rustc --test` 单跑）
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HandsFile {
+    #[serde(default)]
+    files: bool,
+    #[serde(default)]
+    shell: bool,
+    #[serde(default)]
+    web: bool,
+    #[serde(default)]
+    screen: bool,
+    #[serde(default)]
+    input: bool,
+    #[serde(default)]
+    mcp: bool,
+}
+
+impl HandsFile {
+    fn to_policy(self) -> hands_policy::Hands {
+        hands_policy::Hands {
+            files: self.files,
+            shell: self.shell,
+            web: self.web,
+            screen: self.screen,
+            input: self.input,
+            mcp: self.mcp,
+        }
+    }
+
+    fn from_settings(settings: &HandsSettings) -> Self {
+        Self {
+            files: settings.files,
+            shell: settings.shell,
+            web: settings.web,
+            screen: settings.screen,
+            input: settings.input,
+            mcp: settings.mcp,
+        }
+    }
+}
+
+/// 前端看到的那一份（`assistant_hands` / `assistant_hands_save` 的载荷）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HandsSettings {
+    #[serde(default)]
+    pub files: bool,
+    #[serde(default)]
+    pub shell: bool,
+    #[serde(default)]
+    pub web: bool,
+    #[serde(default)]
+    pub screen: bool,
+    #[serde(default)]
+    pub input: bool,
+    #[serde(default)]
+    pub mcp: bool,
+    #[serde(default)]
+    pub workspace: String,
+}
+
+/// 命令执行侧要的那一份：能力组 + 工作目录
+pub(crate) struct HandsState {
+    pub hands: hands_policy::Hands,
+    pub workspace: String,
+}
+
+fn settings_of(config: &AssistantConfig) -> HandsSettings {
+    HandsSettings {
+        files: config.hands.files,
+        shell: config.hands.shell,
+        web: config.hands.web,
+        screen: config.hands.screen,
+        input: config.hands.input,
+        mcp: config.hands.mcp,
+        workspace: config.workspace.clone(),
+    }
+}
+
+/// 这只手能不能动、落在哪个目录。**Rust 侧也要查一遍** —— 只靠前端等于
+/// "一次渲染进程的 bug 就能跑命令"（`hands.rs` 的 `run` 是调用方）
+pub(crate) fn hands_state(app: &AppHandle) -> HandsState {
+    let config = read_config(app);
+    HandsState {
+        hands: config.hands.to_policy(),
+        workspace: config.workspace.clone(),
+    }
+}
+
+#[tauri::command]
+pub fn assistant_hands(app: AppHandle) -> HandsSettings {
+    settings_of(&read_config(&app))
+}
+
+#[tauri::command]
+pub fn assistant_hands_save(app: AppHandle, hands: HandsSettings) -> Result<HandsSettings, String> {
+    let mut config = read_config(&app);
+    config.hands = HandsFile::from_settings(&hands);
+    config.workspace = hands.workspace.trim().to_string();
+    normalize(&mut config);
+    write_config(&app, &config)?;
+    Ok(settings_of(&config))
+}
+
+/// v1 的形状：四个平铺字段。**只用来读**，写出去永远是 v3
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LegacyConfig {
@@ -256,7 +370,7 @@ fn write_config(app: &AppHandle, config: &AssistantConfig) -> Result<(), String>
     Ok(())
 }
 
-/// 把磁盘上的文本读成配置。**纯函数**（有单测）：v2 直接用，v1 就地迁移。
+/// 把磁盘上的文本读成配置。**纯函数**（有单测）：v2/v3 直接用，v1 就地迁移。
 ///
 /// 读失败 / 坏档一律"当它没有"，但**不写回**：只有用户下一次保存才落盘。
 /// 顺手写一次空配置的后果是"一次解析失败永久丢 key"，而 key 换不了。
@@ -273,7 +387,7 @@ fn parse_config(text: &str) -> AssistantConfig {
     config
 }
 
-/// v1 → v2：包成一条档。地址不合法（比如以前存进去的明文 http 远程地址）就当没配。
+/// v1 → v3：包成一条档。地址不合法（比如以前存进去的明文 http 远程地址）就当没配。
 fn migrate_legacy(value: &serde_json::Value) -> AssistantConfig {
     let Ok(old) = serde_json::from_value::<LegacyConfig>(value.clone()) else {
         return AssistantConfig::default();
@@ -299,15 +413,17 @@ fn migrate_legacy(value: &serde_json::Value) -> AssistantConfig {
         models: Vec::new(),
     };
     AssistantConfig {
-        version: 2,
+        version: 3,
         active_id: profile.id.clone(),
         profiles: vec![profile],
+        // 迁移出来的配置一条手都不开：老用户没同意过"它能跑命令"
+        ..AssistantConfig::default()
     }
 }
 
 /// 归一化：坏档逐条丢、名字补上、active 不能悬空。**原地改，不写盘**。
 fn normalize(config: &mut AssistantConfig) {
-    config.version = 2;
+    config.version = 3;
 
     let mut seen: Vec<String> = Vec::new();
     config.profiles.retain_mut(|profile| {
@@ -337,6 +453,10 @@ fn normalize(config: &mut AssistantConfig) {
     } else if !config.profiles.iter().any(|profile| profile.id == config.active_id) {
         config.active_id = config.profiles[0].id.clone();
     }
+
+    // 工作目录只是"相对路径往哪儿落"。多余的空格会让 `PathBuf::join` 拼出一个
+    // 带尾随空格、找不到的目录
+    config.workspace = config.workspace.trim().to_string();
 }
 
 /// 环境变量覆盖（CI 与临时试验）。**只作用于 active 那一档** —— 否则"我设了

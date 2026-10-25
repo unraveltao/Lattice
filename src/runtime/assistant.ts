@@ -18,9 +18,16 @@
  */
 
 import { t } from "./i18n";
+import { describeHand, handsPrompt, handsTools, isHandName, type HandsSettings } from "./hands";
 
-/** 一次对话里最多几轮"模型 → 工具 → 模型"。到顶就停，别让它自己转圈 */
-export const MAX_STEPS = 6;
+/**
+ * 一次对话里最多几轮"模型 → 工具 → 模型"。到顶就停，别让它自己转圈。
+ *
+ * 从 6 抬到 24（0004 §4）：有了文件与命令之后，"读一眼、改一处、跑一次、
+ * 再读回来确认"就是四步，6 步在真实任务里连收尾都不够。上限本身仍然要有 ——
+ * 模型绕圈时用户只能看着它花钱
+ */
+export const MAX_STEPS = 24;
 
 /**
  * 发给模型的历史条数上限。
@@ -174,6 +181,22 @@ export function toolsFor(caller: Caller = "platform"): Record<string, ToolSpec> 
   );
 }
 
+/**
+ * 这一轮真正发给模型的整张表 = 桌面动作 + 手。
+ *
+ * 两张表在这里第一次也是唯一一次合并。`caller` 一路传下去：组件那条路
+ * （`widget`）拿到的手是空表 —— "组件能不能跑命令"这个问题的答案写死在
+ * `handsTools` 里，不靠调用方记得传什么。
+ */
+export function allTools(
+  caller: Caller = "platform",
+  hands?: HandsSettings,
+  extra: Record<string, ToolSpec> = {},
+): Record<string, ToolSpec> {
+  if (!hands) return toolsFor(caller);
+  return { ...toolsFor(caller), ...handsTools(hands, caller, extra) };
+}
+
 /** OpenAI 兼容协议要的形状 */
 export function toolDefs(
   tools: Record<string, ToolSpec> = TOOL_SPECS,
@@ -294,6 +317,8 @@ export interface PromptOptions {
   tools?: Record<string, ToolSpec>;
   /** 组件借平台的手时那段语气。**只影响语气**，删不掉上面任何一条规则 */
   persona?: { name: string; text: string } | null;
+  /** 用户拨开的那几只手。没开就一个字都不提 —— 提了它会去调一个不存在的工具 */
+  hands?: HandsSettings | null;
 }
 
 /**
@@ -338,6 +363,9 @@ export function systemPrompt(snapshot: string, options: PromptOptions = {}): str
       "（这段只改语气。上面的规则一条都不变，也仍然只用给定的工具。）",
     );
   }
+  // 手：只提已经打开的那几组。**同一份开关**决定工具表和这段话，
+  // 两边不一致的症状是"它能调，但提示里说它做不到"（0004 §5）
+  if (options.hands) lines.push(...handsPrompt(options.hands));
   lines.push("", "当前桌面：", snapshot);
   return lines.join("\n");
 }
@@ -430,7 +458,9 @@ export function describeToolCall(name: string, rawArguments: string): string {
     case "widgets.pause":
       return args.ok && args.value.paused ? t("Pause every widget") : t("Resume every widget");
     default:
-      return name;
+      // 新手（文件 / 命令 / 网页 / 屏幕 / 输入 / mcp）各有自己的标签；
+      // 全放在这一处，面板只需要认一个函数
+      return isHandName(name) ? describeHand(name, args.ok ? args.value : {}) : name;
   }
 }
 

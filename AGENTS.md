@@ -14,7 +14,7 @@
 
 **棂 / Lattice** —— 可扩展的 Windows 桌面小组件平台。第三方用纯 HTML/CSS/JS 写组件，平台负责把它们安全地放到桌面上。
 
-当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志，`npm run agent -- state` 看它干了什么），数据平面（组件把能力声明成工具）还没做；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，**模型档能存好几条**并存——DeepSeek 和本地 Ollama 各一条，key 只在 Rust 里，**回答是流式的**（SSE 逐字出来，按 Stop 当场断），工具调用只走同一套 8 个动作；组件那侧只有 `llm:chat`，另有一条**借手**的 `assistant.ask` —— 桌宠这类组件说一句话，平台替它跑一整轮（工具表砍掉删除），要 `desktop:control`）。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
+当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志，`npm run agent -- state` 看它干了什么），数据平面（组件把能力声明成工具）还没做；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，**模型档能存好几条**并存——DeepSeek 和本地 Ollama 各一条，key 只在 Rust 里，**回答是流式的**（SSE 逐字出来，按 Stop 当场断），工具调用走同一套 8 个动作，**外加六组"手"**（读文件 / 跑命令 / 取网页 / 看窗口 / 点键鼠 / MCP —— 默认**全关**，读自动放行、写与命令与点击先问一句，审计只记形状）；组件那侧只有 `llm:chat`，另有一条**借手**的 `assistant.ask` —— 桌宠这类组件说一句话，平台替它跑一整轮（工具表砍掉删除），要 `desktop:control`）。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
 
 想先知道"为什么现在是这样"，读 [ROADMAP 的「被推翻的九个决定」](./docs/ROADMAP.md#被推翻的九个决定)——每个决定都写着当初怎么选、被什么撞翻、现在怎么补。
 
@@ -67,8 +67,9 @@ src/
     autostart.ts          开机自启的读写与"路径漂移"判定（`Run` 注册表项）
     catalogue.ts          商店客户端：读目录（内置走 fetch / 远端走 IPC）、下载安装、备份与回滚、写举报
     DebugPanel.tsx        调试面板：桥调用与组件 console 的实时抽屉（Ctrl+Shift+D）
-    assistant.ts          assistant 的 IPC 面：读写模型档（profiles）、列模型（测试连接）、跑一轮对话（工具循环 ≤6 步）；动作交给 surface —— 主窗口本地跑，小窗转给主窗口（`AssistantSurface`）
-    AssistantPanel.tsx    assistant 的面板：一列模型档 + 表单 + 对话，工具结果一行一个（抽屉与小窗共用这一个组件）
+    assistant.ts          assistant 的 IPC 面：读写模型档（profiles）、列模型（测试连接）、跑一轮对话（工具循环 ≤24 步、审批、预算）；动作交给 surface（主窗口本地跑 / 小窗转给主窗口），新手交给 `platform/hands.ts`（走 Rust）—— `handGroup(name)` 非空就是后者（`AssistantSurface`）
+    hands.ts              assistant 的手的 IPC 面：`assistant_tool` / `hands_cancel` / 开关读写（`assistant_hands*`）；参数序列化成字符串递过去，返回 `AgentReply` 形状
+    AssistantPanel.tsx    assistant 的面板：一列模型档 + 表单 + 六组能力开关 + 审批确认条 + 对话，工具结果一行一个（抽屉与小窗共用这一个组件）
     AssistantWindow.tsx   assistant 小窗的壳：一条能拖的标题栏 + 面板；**没有 store**，动作走 `remoteSurface()`
   runtime/
     manifest.ts           清单校验与归一化；Permission 类型与中文标签（唯一真源）
@@ -83,7 +84,8 @@ src/
     screen-fit.ts         纯几何：锚点选屏、夹紧（入参一律物理像素，`tests/screen-fit.html` 钉着）
     close-guard.ts        ✕ 该不该认这一下：指针序列 + 命中测试（纯函数，`tests/close-guard.html` 钉着）
     agent.ts              agent 动作执行器：白名单动作走真 store，回快照（`tests/agent.html` 57 条）
-    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、工具表裁剪（`toolsFor`）、system prompt、人设片段、历史裁剪（条数 + 字符数两道上限）、线上形状（`parseAskMessages` / `normalizeAskMessages`）、OpenAI 消息形状、快照压缩（`tests/assistant.html` 118 条）
+    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、工具表裁剪（`toolsFor`）与合表（`allTools` = 桌面动作 + 手）、system prompt（含手那一段）、人设片段、历史裁剪（条数 + 字符数两道上限）、线上形状（`parseAskMessages` / `normalizeAskMessages`）、OpenAI 消息形状、快照压缩（`tests/assistant.html` 122 条）
+    hands.ts              assistant 的手的纯逻辑（0004）：六个能力组、11 个工具的 JSON Schema、`handGroup` / `needsApproval` / `handsTools` / `handsPrompt` / 确认条那一行、一轮的预算（`tests/hands.html` 80 条）
     llm-models.ts         模型档的纯知识：按模型名前缀查能力（能不能调工具 / 能不能给 temperature / 上下文多大）、历史字符预算、三种鉴权形状（bearer / api-key-header / none）、七个服务商的预置填写（纯函数，`tests/llm-models.html` 26 条）
     align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 单包命中判定（纯函数，`tests/library-search.html` 钉着）
@@ -144,8 +146,12 @@ src-tauri/src/
   open_policy.rs          上面那道的纯逻辑：只放 http/https、像地址栏一样补协议头（5 条 rustc --test）
   agent.rs                Agent 端点：只绑 127.0.0.1 的 HTTP、令牌、审计、转发给主窗口（默认关）；小窗要的 `assistant_snapshot` / `assistant_act` 也复用这条转发
   agent_policy.rs         上面那道的纯逻辑：HTTP 三态解析、Bearer 常量时间比对、动作白名单、`say` 的单行化与超长拒绝（26 条 rustc --test）
-  llm.rs                  内置 assistant 的模型面：`assistant.json`（v2：`{version, activeId, profiles[]}`）读写与 v1 就地升级、环境变量覆盖、九个命令（llm_profiles / llm_profile_save / llm_profile_remove / llm_profile_activate / llm_set_key / llm_models / llm_chat / llm_chat_stream / llm_chat_cancel）、出网走 `network::send` 或 `network::stream`、审计只记模型与字数
+  llm.rs                  内置 assistant 的模型面：`assistant.json`（v3：`{version, activeId, hands, workspace, profiles[]}`）读写与 v1 就地升级、环境变量覆盖、十三个命令（llm_profiles / llm_profile_save / llm_profile_remove / llm_profile_activate / llm_set_key / llm_models / llm_chat / llm_chat_stream / llm_chat_cancel / assistant_hands / assistant_hands_save）、出网走 `network::send` 或 `network::stream`、审计只记模型与字数
   llm_policy.rs           上面那道的纯逻辑：base URL 归一化与回环判定、三种鉴权形状的请求头、档位 id 与显示名、请求体拼装（stream 只是多一个字段）、消息与工具校验、`/chat/completions` 与 `/models` 的应答解析、SSE 切帧与增量累加、401/404/429 的给人看的话（48 条 `rustc --test`，**不引 crate**）
+  hands.rs                assistant 的手（0004）：`assistant_tool` 分发与 `hands_cancel`，文件（list/read/search/write）、命令（shell.run：PowerShell 子进程、25ms 轮询、超时/取消都真的 `kill()`）、审计只记形状；`spawn_blocking` 里跑，别占异步运行时
+  hands_policy.rs         上面那道的纯逻辑：工具名 → 能力组 / 审批档、`mcp.<server>.<tool>` 的形状、六个开关（12 条 `rustc --test`，**不引 crate**）
+  fs_policy.rs            文件那几只手的额度：路径归一化、二进制判定、行/字数上限、搜索跳过表、子树判定（14 条 `rustc --test`，**不引 crate**）
+  shell_policy.rs         命令那道的形状：超时夹紧、空命令/NUL/`\r` 拒绝、输出按行截断（9 条 `rustc --test`，**不引 crate**）
   assistant_window.rs     assistant 的桌面小窗：建 / 开关 / 藏、拖完存位置（`assistant-window.json`）；三个命令都是 `async fn`（同步会死锁）
   wallpaper.rs            截壁纸（宿主页底板的第一层）
   metrics.rs              系统指标（sysmon 组件用）：整机 + 逐核 CPU、内存与提交量、磁盘、网络、开机时长 / 进程计数，直接调 Win32 不引 crate
@@ -302,7 +308,7 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 | --- | --- | --- |
 | 摆放、已安装、授权、主题、网格吸附、本机档案、桌面矩形、目录地址、钉住的发布者钥匙、评分、待复核的权限 | `%APPDATA%\com.iron-tom.lattice\state.json` | `store.ts` → `state_write` |
 | 组件私有数据 | `%APPDATA%\com.iron-tom.lattice\widget-data\<widgetId>.json` | `bridge.ts` → `widget_store_write` |
-| assistant 的模型档与 **API key** | `%APPDATA%\com.iron-tom.lattice\assistant.json`（v2：`{version: 2, activeId, profiles: [{id, label, baseUrl, auth, apiKey, model, temperature, models}]}`；v1 的 `{baseUrl, model, temperature, apiKey}` 读到时就地升级成一条档，临时文件 + 原子替换） | `llm.rs`（**只有 Rust 读得到明文 key**，前端只见 `keyHint` 掩码） |
+| assistant 的模型档、**API key** 与手的开关 | `%APPDATA%\com.iron-tom.lattice\assistant.json`（v3：`{version: 3, activeId, hands: {files, shell, web, screen, input, mcp}, workspace, profiles: [{id, label, baseUrl, auth, apiKey, model, temperature, models}]}`；v1 的 `{baseUrl, model, temperature, apiKey}` 读到时就地升级成一条档、**手全关**，临时文件 + 原子替换） | `llm.rs`（**只有 Rust 读得到明文 key**，前端只见 `keyHint` 掩码） |
 | assistant 小窗的位置 | `%APPDATA%\com.iron-tom.lattice\assistant-window.json`（`{x, y}` 屏幕坐标，临时文件 + 原子替换） | `assistant_window.rs`（**拖完才写**，文件坏了退回右下角默认位） |
 | 用户安装的组件 | `%APPDATA%\com.iron-tom.lattice\widgets\<id>\` | `widgets.rs` |
 | 上一代的组件（回滚用） | `%APPDATA%\com.iron-tom.lattice\widget-backups\<id>\` | `backup.rs`（只留一代，卸载时一起删） |
@@ -383,16 +389,16 @@ if (data.type === "language") { lang = data.payload.lang; repaint(); }
 
 ### 改内置 assistant / 加一项 AI 能力
 
-一句话的形状：**key 只在 Rust 里，模型只认 OpenAI 兼容的 `/chat/completions`，手仍然是那八个动作。**
+一句话的形状：**key 只在 Rust 里，模型只认 OpenAI 兼容的 `/chat/completions`，桌面动作仍然是那八个；想要"自己动手"的能力走 `runtime/hands.ts` + Rust 的 `assistant_tool`，不进 `AGENT_ACTIONS`。**
 
-1. **模型档与 key 落在 `assistant.json`，不落 `state.json`**。`llm.rs` 独占读写（临时文件 + 原子替换）。文件是 v2 的多档形状：`{version: 2, activeId, profiles[]}`，每条档自带 `baseUrl` / `auth` / `apiKey` / `model` / `temperature`，所以在一台机器上同时留 DeepSeek 和本地 Ollama 是正常用法（**一条档一个端点**，同一端点存两条只会让用户自己分不清）。v1 的扁平 `{baseUrl, model, …}` 读到时就地升级成一条档，**key 跟着搬过去**，不要重输。前端拿到的是 `ProfilesView`：每条档一个 `keyHint`（`sk-1…cdef` 这种掩码），**任何命令都不回明文 key**。为什么不放 `state.json`：那份是前端整体回写的，两个入口（面板、组件宿主）会互相盖；而且把 key 交给渲染进程，等于任何一个组件 XSS 都直接拿到它。环境变量 `LATTICE_LLM_KEY` / `_BASE_URL` / `_MODEL` 只盖**当前那条档**（`keySource: "env"`），CI 与临时试验用这条路。
+1. **模型档与 key 落在 `assistant.json`，不落 `state.json`**。`llm.rs` 独占读写（临时文件 + 原子替换）。文件是 **v3** 的形状：`{version: 3, activeId, hands: {files, shell, web, screen, input, mcp}, workspace, profiles[]}`，每条档自带 `baseUrl` / `auth` / `apiKey` / `model` / `temperature`，所以在一台机器上同时留 DeepSeek 和本地 Ollama 是正常用法（**一条档一个端点**，同一端点存两条只会让用户自己分不清）。v1 的扁平 `{baseUrl, model, …}` 读到时就地升级成一条档，**key 跟着搬过去**，不要重输；**手一律落成"全关"**（升级不能替用户开一扇他自己没开过的门），`workspace` 落空串。加新字段时照着 `..AssistantConfig::default()` 补，别手写字面量 —— 以后再加字段就不会漏。前端拿到的是 `ProfilesView`：每条档一个 `keyHint`（`sk-1…cdef` 这种掩码），**任何命令都不回明文 key**。为什么不放 `state.json`：那份是前端整体回写的，两个入口（面板、组件宿主）会互相盖；而且把 key 交给渲染进程，等于任何一个组件 XSS 都直接拿到它。环境变量 `LATTICE_LLM_KEY` / `_BASE_URL` / `_MODEL` 只盖**当前那条档**（`keySource: "env"`），CI 与临时试验用这条路。
 2. **协议只认 OpenAI 兼容形状，归一化只有一处**。`llm_policy::normalize_base` 补 `https://`、去尾斜杠、剥掉用户顺手粘进来的 `/chat/completions` `/completions` `/models`；`http://` **只放回环**（`127.0.0.1` / `localhost` / `[::1]`，IPv6 要走 `host_of` 拆括号，别用 `split(':')`）。鉴权只有三种形状（`llm_policy::normalize_auth` + 前端的 `runtime/llm-models.ts`），**两边必须认同一组别名**：`bearer`（`Authorization: Bearer …`，默认）、`api-key-header`（`api-key: …`，Azure 那类）、`none`（本地 Ollama / LM Studio，没 key 也算配好了）。别在 `AssistantPanel.tsx` 里再补一套——两套规则迟早不一致，症状是"设置里能测通、一发消息就 404"。
 3. **模型能力按名字前缀查，不按用户填的服务商查**。`runtime/llm-models.ts` 的 `knownModel()` 取最长前缀：`deepseek-reasoner` 不能调工具也不能给 temperature、`o1` / `o3` 同理、`gpt-4o` 上下文 128k，**认不出来的一律从宽**（`{tools: true, temperature: true, context: 32_000}`）。所以界面上"这个模型不能调工具"是一条**警告**，不是禁用——猜错的代价是不许用户用，那比多试一次 API 更糟。`historyChars()` 把上下文折成字符预算（1 token ≈ 1 字符，上限 60k），`trimHistory` 的 `maxChars` 就吃它。
 4. **加一个工具要改两处，且必须相等**：`runtime/agent.ts` 的 `AGENT_ACTIONS`（真执行器）+ `runtime/assistant.ts` 的 `TOOL_SPECS`（名字、参数名、类型、required）。`tests/assistant.html` 会比对两边——名字集合相等、每个动作的参数键与执行器的 `EXECUTOR_KEYS` 对得上、`required` 是子集。**别在 `AGENT_ACTIONS` 之外新写一个"给模型用的"执行器**：那等于给模型开一条不受审计、不走 store 的旁路。
-5. **工具循环只在 `platform/assistant.ts`**：≤6 步（`MAX_STEPS`）、每步把执行器返回的 JSON 字符串当 `tool` 消息回填、`shouldStop` 让"停止"立刻断掉。Rust 侧另有两道闸：`MAX_TOOL_STEPS = 8`、请求间 300ms（`MIN_GAP`，在 `spawn_blocking` 里 sleep）。
+5. **工具循环只在 `platform/assistant.ts`**：≤24 步（`MAX_STEPS`）、每步把执行器返回的 JSON 字符串当 `tool` 消息回填、`shouldStop` 让"停止"立刻断掉；一轮还带两道预算 —— 300 秒（`MAX_TURN_MS`）与 20 万字符（`MAX_TURN_TOKENS`），`overBudget()` 返回 `"time" | "tokens" | null`，到点了就把这一轮收尾而不是继续调工具。步数从 6 抬到 24 是因为"读三个文件再改一个"这种正经任务在 6 步里做不完。Rust 侧另有两道闸：`MAX_TOOL_STEPS = 8`（单条请求里模型一口气要调几个工具）、请求间 300ms（`MIN_GAP`，在 `spawn_blocking` 里 sleep）。
 6. **工具只借不送**。`llm.chat` 永远 `tools: null`（模型真要调工具就抛 `internal`，"widgets cannot use tools"）；组件想要手，只有 `assistant.ask` 这一条（权限 `desktop:control`，标签 "Rearrange my desktop"）。它是**借**：整轮循环仍然只在主窗口里跑，桥那边只是一次转发，工具表用 `toolsFor("widget")` 砍掉 `placement.remove`（用户能自己按 ✕，"让桌宠替我删组件"不行），系统提示里另加一句告诉模型这件事。三条别拆：① 组件宿主里不许跑执行器 —— 桌面窗口连 store 都没有，跑了就是拿旧快照往回写（和下面第 11 条小窗那个坑同源）；② 同一窗口上一轮没回来时新的直接拒，不排队；③ 它慢，180 秒（`ASK_TIMEOUT`）不是 8 秒，SDK 那侧也单独给了 185 秒。这条是不变量 2 的延伸：**能改变桌面的是平台，不是组件**，否则"你信不信任这段代码"就变成"你敢不敢让它动你的布局"。
 7. **错误话要分得清是谁的错**。`describe_status` 把 401/403 说成"provider 拒了这把 key（HTTP 401）—— 去 Assistant settings 换一把"、404 提 `/v1`、429 说配额。别统一成"网络问题"——那条教训是拿更新器换来的（见不变量 16）。
-8. **审计只记形状不记内容**：`assistant.chat` 记模型名与字符数，`assistant.models` 记主机。`agent.rs::audit` 已改成 `pub(crate)`，只此一处复用。
+8. **审计只记形状不记内容**：`assistant.chat` 记模型名与字符数，`assistant.models` 记主机，`assistant.tool` 记工具名 + 那次调用的形状（路径 / 命令第一行 / 成不成），**不记文件内容、不记命令输出**。`agent.rs::audit` 已改成 `pub(crate)`，三条都只此一处复用。
 9. **`llm_policy.rs` 必须保持不引 crate**。它要能在写不了 `target/debug/deps` 的机器上用 `rustc --test` 单独跑（把文件 `#[path]` 进一个壳子即可）——所以 JSON 读取是手写的（深度上限 32），`llm.rs` 才引 `serde_json` 拼返回值。往 `llm_policy.rs` 里加 `use serde::…` 会让那 48 条测试整批失去可运行性。
 10. **一个面板，两块画布**。`AssistantPanel.tsx` 是唯一实现（两态：对话 / 设置），主窗口拿它当右下角抽屉（`variant="drawer"`，浏览器里也走这条），桌面小窗拿它当整块内容（`variant="window"`，壳是 `AssistantWindow.tsx` + 独立入口 `assistant.html` / `src/assistantMain.tsx`）。Ctrl+K 在 `App.tsx` 里只做一件事：Tauri 下 `invoke("assistant_window_toggle")`，浏览器下落回抽屉。样式只追加 `.lattice-assistant*`（`.is-window` 修饰类给窗内布局）。设置里"测试连接"打的是 `llm_models`，它同时是唯一一处验证 key 的地方；它既能打已存的档（传 `profileId`，缺的字段回退到文件里那份），也能打正在编辑的草稿（传 `baseUrl` / `auth` / `key`）——**没有 `profileId` 时才去信草稿**，否则等于让一次拼错的请求把已存的档盖掉。
 11. **编辑一条档不等于切到它**。列表行点击 = 打开编辑，`Use` 按钮才改 `activeId`。合成一个动作的后果是"我只是想改个名字，结果整套对话换了模型"。
@@ -403,6 +409,15 @@ if (data.type === "language") { lang = data.payload.lang; repaint(); }
     - **增量的载荷必须带 `requestId`**（不变量 9：`emit` 是广播），前端按 id 过滤 —— 否则抽屉和桌面小窗同时各跑一轮时，两句话会串台。
     - **增量只用来画，不参与拼装**。前端最后拿命令的返回值**整条覆盖**气泡。这样拼增量这一步写错最多闪一下，不会留下一句错话 —— 而"用增量拼最终消息"是这类实现最常见的错法。
     - **工具参数不进事件、按 `index` 累加**，拼完整才解析；用户按停止后**不再执行任何工具**（半截参数可能解析成功但少一个字段，模型会拿错的值去改桌面）。
+14. **给 assistant 加一只手（文件 / 命令 / 网页 / 屏幕 / 输入 / MCP）**。设计在 [docs/design/0004-agent-hands.md](./docs/design/0004-agent-hands.md)，落地分两处：前端的 **schema 与审批**（`runtime/hands.ts` + `platform/assistant.ts`），Rust 的 **执行与开关**（`hands.rs`）。要动的文件就这六个：`runtime/hands.ts` 的 `HAND_SPECS`（名字 + JSON Schema）和 `HAND_LABELS`（界面上那一行字）、`runtime/hands.ts` 的 `handGroup` / `needsApproval`、`runtime/i18n/assistant.ts` 的中文、`hands.rs` 的 `run()` 加一个分支、`hands_policy.rs` 的 `group_of`（工具名 → 能力组），再补 `tests/hands.html` 一条断言。八条别踩回去：
+    - **能力组默认全关，而且两边都要判**。前端 `handsTools()` 只把"开着的组"的 schema 递给模型，Rust `run()` 再查一次 `Hands::enabled` —— 少了前者的后果是模型一直调一个永远被拒的工具、白烧步数；少了后者的后果是把安全边界交给一个前端 bug。**永远不要为了"少写一处"让 Rust 只信前端送来的组名。**
+    - **读自动放行，写 / 命令 / 点击 / MCP 都要问**。`needsApproval` 的兜底是 `true`：**没列进白名单的名字一律要问**（新增工具忘了归类，代价是多一次确认；反过来忘了就要了一次静默提权）。只有 `file.list/read/search`、`web.fetch`、`screen.windows`、`screen.capture` 是只读的。
+    - **审批必须在 `assistant_tool` 之前 `await` 完**。`platform/assistant.ts` 的 `approve()` 返回一个 Promise，用户按 Allow / Always this turn / Deny 才 resolve；**Deny 不抛异常**，回 `{ok:false, code:"denied"}` 的 tool 消息 —— 模型要能从"我不干"里继续，而不是整轮崩掉。`Always this turn` 的键是**工具名**，`send()` 里清空（跨轮记住等于用户以为关掉的一扇门还开着）。
+    - **`requestId` 每个手调用都要带，并且真的能取消**。不变量 9：`emit` 是广播。`hands_cancel{requestId}` 和 `llm_chat_cancel` 是两条独立通道（一轮里可能同时有流式回答和一条跑着的命令），`cancelActiveTurn()` 两条都发。`shell.run` 每 25ms 查一次标志，取消/超时都**真的 `kill()`**，不是"忽略结果"。
+    - **额度写在 `*_policy.rs` 里，不写进 `hands.rs` 的分支里**。文件是 `fs_policy.rs`（4MB 读 / 2MB 写 / 一次 200 行 ~ 4000 行硬上限、二进制判定、搜索跳过 12 个目录）、命令是 `shell_policy.rs`（60 秒默认 / 1–300 秒夹紧 / 输出 16k 字符按行截断）。它们**不引 crate**，就是为了能在本机用 `rustc --test` 跑 —— 数值散进执行代码里等于这批断言从此测不到。
+    - **`spawn_blocking` 里跑，别占异步运行时**。文件系统和 `Child::wait` 都是阻塞的；一条 `shell.run` 跑满 60 秒会把整个 IPC 拖着不动，界面上表现出来是"assistant 小窗卡死"。
+    - **审计只记形状**：`agent::audit(app, "assistant.tool", <工具名> + 路径 / 命令首行, status, ms)`。**文件内容、命令输出一个字符都不许进审计日志** —— 那是用户的数据，而审计日志会在 `%APPDATA%` 里躺很久。
+    - **手永远不给组件**。`handsTools(hands, "widget")` 直接回 `{}`：`assistant.ask` 那条借手路径只借桌面动作，不借文件系统和命令。桌面窗口连 store 都没有，更不该有 `C:\Users`。
 
 ### 改三栏布局
 
@@ -490,7 +505,7 @@ public/widgets/<id>/
 | --- | --- | --- |
 | **agent 端点：只差一次 CLI 往返** | 真机已经确认到的：端点只在开关打开时才 bind（关着时 `agent/` 目录下连 `endpoint.json` 都没有）、绑定的是回环地址加系统分配端口、退出时打 `agent endpoint on 127.0.0.1:<port> stopped` 并擦掉 `endpoint.json`、组件库那块看板当时每 2 秒一次 `agent.activity`、在调试面板里稳定往返（看板在 v0.10 连包删了，桥还在）。**没验的**：从 CLI 真发一条 `state` / `act` / `say`（那需要端点开着的时候正好在跑命令），以及"关掉之后端口释放"的实测 | 起一次 `tauri:dev`，设置里打开 → `npm run agent -- say "hello"` → `state` → `act theme.set` → 关掉再 `state`（应该报端点文件没了）。**起之前先确认没有残留的 `lattice.exe`** —— 孤儿进程会用内存里那份盖掉 `state.json` |
 | **`shell.open` 只过了单测** | `open_policy.rs` 的 5 条 `rustc --test` 全过、`cargo check` 干净、`tests/bookmarks.html` 44 条全过 —— 但那全是"规则对不对"和"组件答得对不对"。**没验的**是最后一步：`ShellExecuteW` 到底有没有把浏览器叫起来，以及撤掉 `shell:open` 之后点一行是不是只出提示、什么都不打开 | 起一次桌面应用 → 装 Bookmarks（属性面板里勾上 Open links）→ 点一行看默认浏览器是否起来（`shell.open` 成功只代表"交给系统了"，浏览器起不来它也不会知道）→ 撤掉 Open links 再点一次，卡片应显示 "It needs the Open links permission"，任务管理器里不该多出浏览器进程。**跑之前先确认没有残留的 `lattice.exe`**，孤儿进程会用内存里那份盖掉 `state.json` |
-| **流式只在单测和类型检查里过了一遍** | `llm_chat_stream` / `llm_chat_cancel` 已经接上（`network::stream` 的读循环、`SseBuffer` 的字节分帧、1 秒读超时 + `AtomicBool` 取消、`requestId` 过滤、增量只画不拼），`llm_policy.rs` 里那 23 条纯逻辑测试全过。**没验的**是真机那一整条：字符是不是真的一点点冒出来、按 Stop 是不是当场断、工具调用那一轮参数拼完整了没有、以及"provider 忽略 `stream: true`"时那句兜底的 `parse_chat` 有没有真被走到 | 起一次 `tauri:dev`：DeepSeek 直连问一句长问题看逐字；中途按 Stop（应当立刻停，且**不再执行任何工具**）；再让它调一次工具（"把主题换成浅色"）看参数是否完整；最后指一个老接口（不接受 `stream` 的）确认整段回答仍然出现。`cargo test` 本机跑不了，`llm.rs` 那 6 条只有 CI 的 `windows-latest` 覆盖 |
+| **六只手（0004 的 P1–P3）只在单测和类型检查里过了一遍** | 文件四只（`file.list` / `file.read` / `file.search` / `file.write`）与 `shell.run` 已经接上：前端两道闸（`handsTools` 只把打开的那几组的 schema 递过去、`needsApproval` 决定要不要先问）都在 `tests/hands.html` 的 80 条里，Rust 侧再独立判一次组开关（`hands_policy`，`disabled` 就是它给的），额度在 `fs_policy` / `shell_policy`（14 + 9 条 `rustc --test`），`cargo check` 干净。**没验的**是真机那一整条：`assistant_tool` 到底有没有从 WebView2 走通、Windows 上 UTF-8 前置那段是不是让中文路径与中文输出都正常、按 Deny 是不是真的什么都没干、`shell.run` 取消/超时之后子进程是不是真没了、写文件之后磁盘上那份对不对。`hands.rs` 那 5 条 `cargo test` 本机跑不了 | 起一次 `tauri:dev` → 设置里把 Files 打开 → "读一下 C:\… 这个文件"（中文路径各试一次）→ 让它写一个小文件并核对内容 → 打开 Shell 再让它跑 `echo 你好`（看中文输出有没有乱码）→ 跑一个死循环命令再按 Stop（任务管理器里那个进程应当消失）→ 再来一次同样的写入并点 Deny（磁盘上不该出现文件）→ 撤掉 Files 开关后再让它读（应当是"那只手没开"，不是报错崩溃）。**跑之前先确认没有残留的 `lattice.exe`** |
 | **Rust 直接生成的那几句还是英文** | 界面文案都走 `t()`，但有几条给人看的字是在 Rust 里拼出来、跨 IPC 才到界面的：`llm.rs` 的设置读写错误、`llm_policy::describe_status` 的 401/403/404/429（"去 Assistant settings 换一把 key"这种）。中文环境里它们仍然显示英文 | 两条路：在 Rust 里只回**错误码**、由前端翻（干净，但要改 llm 那九个命令的返回形状）；或者把这几个 key 也收进中文表、在 Rust 里 `t()`（要先把表导进 Rust，等于第二份真源）。没做之前别在 `i18n/*` 里加"看起来该翻"的半条 —— 表里有的句子前端才取得到 |
 | **"跟随系统"只在一台英文系统上验过** | 这台机器的 WebView2 报 `en-US`，所以三档里"跟随系统"落回英文是对的，但"系统是中文时点跟随系统"和"应用开着的时候改系统语言"只走了代码（`watchSystemLanguage`），没在中文系统上真点过 | 换一台中文 Windows（或临时改显示语言）看两件事：新装第一次启动应该是中文；应用开着时切系统语言，界面应当当场跟着换。`resolveLang` 的纯逻辑已被 `tests/i18n.html` 钉住，要补的是真机那一段 |
 | **安装包没有代码签名** | 第一次运行被 SmartScreen 拦成"未知发布者"，点"仍要运行"才装得上。用户流失基本都发生在这一步 | 买 OV/EV 证书（EV 能立刻建立信誉，OV 要攒），或走 winget / Microsoft Store 分发绕开 |
@@ -644,7 +659,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 
 - `npm run typecheck` —— 必跑，当前是干净的
 - **`npm run check:tokens`** —— 三张表（字号 / 圆角 / 间距）的守门人，扫 `src/**/*.css`，越界就红并指出行号；`npm run test:tokens` 钉规则本身（半像素、`font` 简写、豁免、以及"仓库现状是干净的"）。改样式前后各跑一次，比肉眼数 `10.5px` 靠谱。真要写规矩外的值，行尾加 `/* token-ok 理由 */`，理由不写会被报。
-- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（45 页 / 1880 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。
+- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（46 页 / 1964 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。
 - **断言页别等 iframe**。`--virtual-time-budget` 会让虚拟时钟一路快进到 9 秒，而 iframe 的 `load` 走真实网络 —— 谁先到看运气，快进赢了就 dump 到一个空的 `<pre>`，`test:browser` 报"0 条 —— 一条断言都没跑完"。那个症状和"页面没有断言"一模一样，别去调 budget（调大只是让赌局更偏一点，还是赌）。正确做法是**同步加载**：组件把纯逻辑挂在 `window.__latticeXxx` 上，普通 `<script src>` 引进来就能断言；拿不到那个对象时也要先 `log(false, …)` 再 `flush()`，否则页面永远吐 0 条。
 - 改了组件 UI：`npm run dev` 后在浏览器里看；要截固定尺寸的图，用 Edge headless：
   ```bash
@@ -690,7 +705,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
   #[path = "../src-tauri/src/network_policy.rs"] mod network_policy;
   ```
   `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe`。**这就是"纯逻辑要单独拆成一个文件"的原因 —— 拆出来才测得到**。断言只有一份（`#[cfg(test)] mod tests` 在模块内部），壳子别复制。
-  能这么跑的现在是 192 条（全仓 219 条 `#[test]`，`grep -c` 一下就对得上）：`llm_policy.rs`（48，**不引 crate**）、`agent_policy.rs`（26）、`diagnostics.rs`（14）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`occlusion_policy.rs`（8）、`usage_policy.rs`（8）、`audio_policy.rs`（6）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）。剩下 27 条（`protocol.rs` 6、`llm.rs` 6、`widget_store.rs` 5、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
+  能这么跑的现在是 227 条（全仓 259 条 `#[test]`，`grep -c` 一下就对得上）：`llm_policy.rs`（48，**不引 crate**）、`agent_policy.rs`（26）、`diagnostics.rs`（14）、`fs_policy.rs`（14，**不引 crate**）、`hands_policy.rs`（12，**不引 crate**）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`shell_policy.rs`（9，**不引 crate**）、`occlusion_policy.rs`（8）、`usage_policy.rs`（8）、`audio_policy.rs`（6）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）。剩下 32 条（`protocol.rs` 6、`llm.rs` 6、`widget_store.rs` 5、`hands.rs` 5、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
   **壳子会过期，过期了要修，不要当它不存在**：`extract-test.rs` 曾经在 `package.rs` 加上验签之后编不过（`extract` 多了第三个参数、还引用了 `signature_policy` 和 `backup`），但 `rustc` 编译失败时旧的 `.exe` 还在，`&&` 串起来的写法会**跑那个旧二进制并显示全绿** —— 那才是最坏的情况。所以：编不过就是红，先看 `rustc` 的退出码，别信后面那行 `test result`。修法是给壳子补 `#[path]` 把 `signature_policy.rs` 编进来，`backup` 依赖 `tauri` 编不进来，就写一个签名对得上的桩（四条用例传的都是 `None`，走不到那条分支）。
   `package.rs` 要用到 `flate2` / `serde_json`，`signature.rs` 要用到 `ed25519_dalek` / `sha2`，壳子得额外指路：`rustc --edition 2024 --test 壳子.rs -L src-tauri/target/debug/deps --extern flate2=<rlib> --extern serde_json=<rlib> -o 壳子.exe`（rlib 从 `target/debug/deps/` 里按 `libflate2-*.rlib` 找）。只给 `--extern` 不给 `-L` 会报 `can't find crate`。`csp.rs` 那个桩的值要抄对（`"lattice-widget"`，不是 `"lattice"`），抄错了单测会红 —— 这次正好被它抓了一下。
   **raw `rustc` 的默认 edition 是 2015**，不带 `--edition` 编出来的 panic 消息不认内联捕获（`assert!(cond, "{index}")` 会报 unused placeholder，断言本身照样成立）。想安静就照着 crate 的 edition 给一个：`rustc --edition 2024 --test src-tauri/src/guide_policy.rs -o 壳子.exe`。

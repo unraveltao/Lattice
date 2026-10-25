@@ -7,7 +7,10 @@
  *
  * 层次约定（改样式前先看这个）：
  *   1. 三层表面：bg（画布） < surface（面板） < surface-2 / surface-3（卡片、控件）。
- *      相邻两层至少差一档明度，否则整屏会糊成一片。
+ *      相邻两层至少差一档明度，否则整屏会糊成一片。**"一档"有个下限：1.3:1**。
+ *      这条是量出来的，不是感觉 —— surface-3 曾经贴着 surface-2 只有 1.15:1，
+ *      于是分段控件的选中态、热力图的空格子、hover 的卡片全等于没变，
+ *      而每一处单独看都"好像有一点"。改了底色才想起来去算。
  *   2. 圆角只有六档：0 / 2 / 6 / 10 / 12 / 14 / 999（外加 50% 表示正圆）。
  *      2 是微型块专用（热力图格子、气泡尾巴），再小就没有形状了。
  *      12 不是漏网的：桌面窗口在 Rust 里被 clip 成 12（`desktop::CORNER_RADIUS`），
@@ -31,7 +34,7 @@
   --lattice-bg: #e8e6e0;
   --lattice-surface: #fbfaf8;
   --lattice-surface-2: #f4f2ec;
-  --lattice-surface-3: #eae7df;
+  --lattice-surface-3: #dcd8cd;
   --lattice-text: #1c1c1a;
   --lattice-text-muted: #6a6a63;
   --lattice-text-faint: #6f6f68;
@@ -82,7 +85,7 @@
   --lattice-bg: #0d0d10;
   --lattice-surface: #17171d;
   --lattice-surface-2: #1f1f26;
-  --lattice-surface-3: #2a2a33;
+  --lattice-surface-3: #33333e;
   --lattice-text: #e9e8e3;
   --lattice-text-muted: #9a9a92;
   --lattice-text-faint: #8a8a83;
@@ -3667,6 +3670,101 @@ button.lattice-chip[aria-pressed="true"] {
   font-family: var(--lattice-mono);
   font-size: 11px;
   color: var(--lattice-text-faint);
+}
+
+/* 审批确认条：贴在输入框上面，**不会自己消失** —— 它阻塞着这一轮 */
+.lattice-assistant-approval {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin: 0 12px 8px;
+  background: var(--lattice-warn-soft, var(--lattice-surface-2));
+  border: 1px solid var(--lattice-border);
+  border-radius: 12px;
+}
+
+.lattice-assistant-approval-text {
+  margin: 0;
+  font-family: var(--lattice-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lattice-text);
+  overflow-wrap: anywhere;
+}
+
+.lattice-assistant-approval-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 手：一行一个开关，名字 + 一句解释 */
+.lattice-hands {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--lattice-surface-2);
+  border: 1px solid var(--lattice-border);
+  border-radius: 12px;
+}
+
+.lattice-hands-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lattice-text);
+}
+
+.lattice-hand-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.lattice-hand-row input[type="checkbox"] {
+  margin: 2px 0 0;
+  accent-color: var(--lattice-accent);
+}
+
+.lattice-hand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lattice-hand-name {
+  font-size: 12px;
+  color: var(--lattice-text);
+}
+
+/* 这一版还没接的那几组：拨不动，也不能让用户以为拨了有用 */
+.lattice-hand-row.is-soon {
+  cursor: default;
+}
+
+.lattice-hand-row.is-soon .lattice-hand-copy {
+  opacity: 0.55;
+}
+
+.lattice-hand-soon {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--lattice-border);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-hand-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted);
 }
 
 /* --------------------------------------------------------------------------

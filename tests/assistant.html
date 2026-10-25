@@ -40,8 +40,10 @@
         MAX_ASK_MESSAGES,
         MAX_HISTORY,
         MAX_PERSONA,
+        MAX_STEPS,
         TOOL_SPECS,
         WIDGET_DENIED_ACTIONS,
+        allTools,
         compactSnapshot,
         describeToolCall,
         normalizeAskMessages,
@@ -378,6 +380,24 @@
       ok(
         normalizeAskMessages(parseAskMessages(JSON.stringify([{ role: "user", content: "挪一下" }]))).ok,
         "解析之后再 normalize 才是能跑的路径（这一条钉的正是真机那个坑）",
+      );
+
+      // ---- 0004：手与循环的上限 ----
+
+      eq(MAX_STEPS, 24, "一轮的步数上限抬到 24（读→改→跑→再读，6 步收不了尾）");
+      eq(
+        Object.keys(allTools("platform")).sort(),
+        Object.keys(TOOL_SPECS).sort(),
+        "不传手时，整张表就是桌面那张（老路径一字不差）",
+      );
+      eq(
+        Object.keys(allTools("widget")).sort(),
+        Object.keys(toolsFor("widget")).sort(),
+        "组件那张表不传手时和以前一样",
+      );
+      ok(
+        !systemPrompt("{}", {}).includes("file.read"),
+        "没开手时系统提示里没有任何工具名（否则模型会调一个它没被给的工具）",
       );
 
       // ---- 输出 ----

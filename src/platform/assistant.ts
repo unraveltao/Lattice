@@ -27,10 +27,22 @@ import {
   type DeskSnapshot,
   type ToolSpec,
 } from "../runtime/assistant";
+import {
+  HANDS_OFF,
+  approvalSummary,
+  handGroup,
+  needsApproval,
+  overBudget,
+  MAX_TURN_TOKENS,
+  MAX_TURN_MS,
+  type HandGroup,
+  type HandsSettings,
+} from "../runtime/hands";
 import { t } from "../runtime/i18n";
 import type { AuthShape } from "../runtime/llm-models";
 import type { WidgetRecord } from "../runtime/registry";
 import { agentSnapshot, runAgentAction, type AgentReply } from "./agent";
+import { callHand, cancelHand, type HandsReply } from "./hands";
 
 /** 和 Rust 的 `ProfileView` 对齐。**没有 apiKey 字段**，只有掩码 */
 export interface ProfileView {
@@ -135,6 +147,8 @@ interface DeltaPayload {
 let requestSerial = 0;
 /** 正在飞的那一轮。用户的"停止"按钮要知道叫停谁 */
 let activeRequest: string | null = null;
+/** 正在跑的那只手。停命令和停模型是两条通道 —— 按停止时两条都要收 */
+let activeTool: string | null = null;
 
 function newRequestId(): string {
   requestSerial += 1;
@@ -144,8 +158,13 @@ function newRequestId(): string {
 /**
  * 叫停正在跑的那一轮。**幂等**：那一轮已经结束（或者从没开始）时什么都不做 ——
  * 界面不该因为"按晚了一步"弹一个错误。
+ *
+ * 两条都要发：模型那头是"别再读了"，命令那头是"把进程杀了"。只发前者的话，
+ * 用户按停止之后 `npm test` 还在后台跑 —— 而界面上写着"已停止"。
  */
 export async function cancelActiveTurn(): Promise<void> {
+  const tool = activeTool;
+  if (tool) void cancelHand(tool);
   const id = activeRequest;
   if (!id) return;
   try {
@@ -240,6 +259,18 @@ export function remoteSurface(): AssistantSurface {
   };
 }
 
+/** 一条要用户点头的调用。确认条上只显示 `detail`，其余给按钮用 */
+export interface ApprovalRequest {
+  name: string;
+  args: Record<string, unknown>;
+  /** 路径 / 命令 / 坐标 —— 用户点 Allow 之前必须看得懂的那一行 */
+  detail: string;
+  group: HandGroup;
+}
+
+/** `true` 才执行。抛异常按"拒绝"处理（宁可少做，也不要带着未知状态往下跑） */
+export type Approver = (request: ApprovalRequest) => Promise<boolean>;
+
 export interface TurnOptions {
   /** 会话本身。**原地追加** —— 面板要留着看，调用方拿同一个数组就行 */
   messages: ChatMessage[];
@@ -261,6 +292,31 @@ export interface TurnOptions {
    * 小的模型带不动 60k 字的历史，超了不是慢，是 400。不传 = 只按条数裁。
    */
   maxChars?: number;
+  /** 用户拨开的手（`assistant_hands` 读来的那份）。不传 = 一条都没有 */
+  hands?: HandsSettings;
+  /** 危险动作的审批。不传 = 一律拒绝（安全默认，不是"自动放行"） */
+  approve?: Approver;
+}
+
+/** 跑一只手：带一个自己的 requestId，停止时能精确地叫停它 */
+async function runHand(name: string, args: Record<string, unknown>): Promise<HandsReply> {
+  const id = newRequestId();
+  activeTool = id;
+  try {
+    return await callHand(id, name, args);
+  } finally {
+    if (activeTool === id) activeTool = null;
+  }
+}
+
+/** 触顶那句话。**说清是哪一条**：用户接下来的动作完全不同 */
+function budgetNote(kind: "time" | "tokens"): string {
+  if (kind === "time") {
+    return t("I stopped here: this turn has been running for {minutes} minutes.", {
+      minutes: Math.round(MAX_TURN_MS / 60_000),
+    });
+  }
+  return t("I stopped here: this turn has used {tokens} tokens.", { tokens: MAX_TURN_TOKENS });
 }
 
 /**
@@ -269,11 +325,20 @@ export interface TurnOptions {
  * 返回 `false` 表示是被 `shouldStop` 叫停的，界面可以据此不写"完成"。
  */
 export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
-  const { messages, surface, onEvent, shouldStop, tools, maxChars } = options;
+  const { messages, surface, onEvent, shouldStop, tools, maxChars, hands, approve } = options;
   const defs = toolDefs(tools);
+  const active = hands ?? HANDS_OFF;
+  const startedAt = Date.now();
+  let tokens = 0;
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
     if (shouldStop?.()) return false;
+    // 预算是**每一步**看一次：模型绕圈时用户只能看着它花钱（0004 §4）
+    const spent = overBudget({ elapsedMs: Date.now() - startedAt, tokens });
+    if (spent) {
+      onEvent({ type: "text", text: budgetNote(spent) });
+      return true;
+    }
 
     const wire = toWire(trimHistory(messages, undefined, maxChars));
     // 走流式：字先出来，用户能立刻看见"它在说话"，而不是等 20 秒的 Thinking…
@@ -286,6 +351,8 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
     const text = (reply.text ?? "").trim();
     if (text) onEvent({ type: "text", text });
     if (reply.usage) {
+      const spentNow = (reply.usage.promptTokens ?? 0) + (reply.usage.completionTokens ?? 0);
+      tokens += spentNow;
       onEvent({
         type: "usage",
         promptTokens: reply.usage.promptTokens ?? 0,
@@ -307,11 +374,40 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
       if (shouldStop?.()) return false;
 
       const parsed = parseArguments(call.arguments);
-      // 执行走 surface：主窗口那份在本地跑 `runAgentAction`，小窗那份是 IPC
-      // 转给主窗口。循环本身不需要知道区别 —— 它只要一个 `AgentReply`
-      const result: AgentReply = parsed.ok
-        ? await surface.act(call.name, parsed.value)
-        : { ok: false, code: "bad_args", error: parsed.error };
+      const group = handGroup(call.name);
+      let result: HandsReply;
+
+      if (!parsed.ok) {
+        result = { ok: false, code: "bad_args", error: parsed.error };
+      } else if (!group) {
+        // 桌面动作：走 surface（主窗口本地跑，小窗 IPC 转给主窗口）。
+        // 循环不需要知道区别 —— 它只要一个 `AgentReply`
+        result = await surface.act(call.name, parsed.value);
+      } else if (!active[group]) {
+        // 开关关着，而模型还是调了：前端没把 schema 给它时不该发生，
+        // 但真发生了就要说清楚，别让它以为"工具坏了"
+        result = {
+          ok: false,
+          code: "disabled",
+          error: t("The {group} capability is switched off in Assistant settings.", { group }),
+        };
+      } else if (needsApproval(call.name)) {
+        // **审批必须在执行之前** await。放在之后等于"先删了再问"（0003 §5）
+        const detail = approvalSummary(call.name, parsed.value);
+        const allowed = approve
+          ? await approve({ name: call.name, args: parsed.value, detail, group })
+          : false;
+        if (shouldStop?.()) return false;
+        result = allowed
+          ? await runHand(call.name, parsed.value)
+          : {
+              ok: false,
+              code: "denied",
+              error: "the user declined this action — do not retry it; ask what they want instead",
+            };
+      } else {
+        result = await runHand(call.name, parsed.value);
+      }
 
       onEvent({
         type: "tool",
