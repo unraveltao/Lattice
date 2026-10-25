@@ -24,7 +24,7 @@
 
 import { useMemo, useState } from "react";
 import type { WidgetLoadError, WidgetRecord } from "../runtime/registry";
-import { matchesWidget, tokenize } from "../runtime/library-search";
+import { rankWidgets, tokenize } from "../runtime/library-search";
 import { firstRunVisible } from "../runtime/onboarding";
 import { permissionLabel, isPermissionReady } from "../runtime/manifest";
 import { useT } from "../runtime/i18n";
@@ -153,10 +153,13 @@ export function LibraryPanel({
     widgets.length > 0 &&
     firstRunVisible({ onboarded, installedCount: installed.length });
 
-  const matches = (record: WidgetRecord) => matchesWidget(record, tokens);
-
-  const shownInstalled = installed.filter(matches);
-  const shownAvailable = available.filter(matches);
+  /*
+   * 过滤 + 排序一次做完。判据只有 `rankWidgets` 一处：它先按 `matchScore`
+   * 丢掉不命中的，再把命中的按"档位 + 字段权重"排好，同分保持清单原顺序。
+   * 分两段各排各的 —— "已安装"和"可安装"是两段，不该混成一张榜。
+   */
+  const shownInstalled = rankWidgets(installed, tokens);
+  const shownAvailable = rankWidgets(available, tokens);
   const nothingMatched = filtering && shownInstalled.length === 0 && shownAvailable.length === 0;
 
   const activate = (record: WidgetRecord) => {

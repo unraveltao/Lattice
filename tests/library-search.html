@@ -22,19 +22,21 @@
     <pre id="out">running…</pre>
     <script type="module">
       /*
-       * 组件库搜索：查询切词 + 单包命中判定。
+       * 组件库搜索：查询切词 + 单包命中判定 + 谁排在前面。
        *
-       * 这页钉五件事：
+       * 这页钉七件事：
        *   1. 空查询一律命中（那是"没在搜"，不是"什么都不要"）
        *   2. 大小写、首尾空白、连续空白都不影响结果
        *   3. 多词是 AND —— "clock 24" 不能把只有 "clock" 的包也带出来
        *   4. 权限名也算命中（"storage" 能搜到要存储的包）
        *   5. 搜不到的词就是搜不到 —— 不要做模糊匹配，那会让"没结果"变成"一堆噪音"
        *   6. 双语组件两种语言的词都命中 —— 用户只记得他当初看到的那个词
+       *   7. 命中的要有顺序：名字整串相等 > 从头开始 > 词首 > 中间；同一档里
+       *      名字 > id > 描述 > 作者 > 权限名；同分保持清单原顺序
        *
        * 纯函数，不碰 DOM，整页毫秒级。
        */
-      import { matchesWidget, tokenize } from "/src/runtime/library-search.ts";
+      import { matchesWidget, matchScore, rankWidgets, tokenize } from "/src/runtime/library-search.ts";
 
       const lines = [];
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
@@ -116,6 +118,111 @@
       log(matchesWidget(pet, tokenize("desktop")), "英文描述命中");
       log(matchesWidget(pet, tokenize("大肥鱼 desktop")), "两个词分属两种语言也算 AND 命中");
       log(!matchesWidget(pet, tokenize("大肥鱼 cat")), "有一个词不在 -> 不命中");
+
+      // ---- 7. 命中的谁排前面 ----
+      /*
+       * 排序的判据只有一处（`rankWidgets`）。这一组刻意用**同一批记录、不同的输入
+       * 顺序**去验：实现里要是顺手依赖了输入顺序，或者靠 `sort` 的稳定性，换个
+       * 顺序就会露出来。
+       */
+      const byId = (list) => list.map((record) => record.manifest.id).join(",");
+
+      const exactName = widget("Clock", "lattice.exact", "nothing", "Lattice", []);
+      const prefixName = widget("Clockwork", "lattice.prefix", "nothing", "Lattice", []);
+      const wordName = widget("World clock", "lattice.word", "nothing", "Lattice", []);
+      const subName = widget("TurboClock", "lattice.subname", "nothing", "Lattice", []);
+      const subId = widget("Timer", "lattice.xclock", "nothing", "Lattice", []);
+      const subDesc = widget("Timer", "lattice.subdesc", "TurboClock copy", "Lattice", []);
+      const subAuthor = widget("Timer", "lattice.subauthor", "nothing", "TurboClock", []);
+
+      // 档位：输入是倒着的，输出该是 exact > prefix > word > substring
+      eq(
+        byId(rankWidgets([subName, wordName, exactName, prefixName], tokenize("clock"))),
+        "lattice.exact,lattice.prefix,lattice.word,lattice.subname",
+        "先按档位排：整串相等 > 从头开始 > 词首 > 中间",
+      );
+
+      // 同一档里按字段权重：名字 > id > 描述 > 作者
+      eq(
+        byId(rankWidgets([subAuthor, subDesc, subId, subName], tokenize("clock"))),
+        "lattice.subname,lattice.xclock,lattice.subdesc,lattice.subauthor",
+        "同一档里名字 > id > 描述 > 作者",
+      );
+
+      /*
+       * 档位压过字段：一个"权限名的词首命中"（3000 + 10）排在"名字里的中间命中"
+       * （2000 + 80）前面。这不是 bug —— 词首命中通常更接近用户要找的东西，
+       * 而权限名本来就不该因为权重低就被排到整段名字之后。
+       */
+      const permWord = widget("Timer", "lattice.perm", "nothing", "Lattice", ["storage"]);
+      const nameSubStorage = widget("Xstorage", "lattice.namesub", "nothing", "Lattice", []);
+      log(
+        matchScore(permWord, tokenize("storage")) > matchScore(nameSubStorage, tokenize("storage")),
+        "档位压过字段：权限名的词首命中排在名字的中间命中前面",
+      );
+
+      // id 里跟在 `.` 后面算词首，比夹在字母中间的高一档
+      log(
+        matchScore(widget("Timer", "lattice.clock", "nothing", "Lattice", []), tokenize("clock")) >
+          matchScore(subId, tokenize("clock")),
+        "id 里跟在 . 后面算词首，压过夹在字母中间的",
+      );
+
+      // 同分保持输入顺序，两个方向都验 —— 那样"碰巧"不会蒙混过关
+      const tieA = widget("Timer A", "lattice.tie-a", "a clock", "Lattice", []);
+      const tieB = widget("Timer B", "lattice.tie-b", "a clock", "Lattice", []);
+      eq(
+        byId(rankWidgets([tieB, tieA], tokenize("clock"))),
+        "lattice.tie-b,lattice.tie-a",
+        "同分保持输入顺序（B 在前就还是 B 在前）",
+      );
+      eq(
+        byId(rankWidgets([tieA, tieB], tokenize("clock"))),
+        "lattice.tie-a,lattice.tie-b",
+        "换个输入顺序，同分的也跟着换（不是按 id 排）",
+      );
+
+      // 不命中的整条不出现
+      eq(
+        byId(rankWidgets([exactName, note, clock], tokenize("clock"))),
+        "lattice.exact,lattice.clock",
+        "不命中的整条不出现（`note` 掉出去了）",
+      );
+
+      // 没在搜的时候原样返回：清单自己的顺序（官方包在前之类）不该被顺手打乱
+      eq(
+        byId(rankWidgets([subName, exactName], [])),
+        "lattice.subname,lattice.exact",
+        "空词表原样返回，不重排",
+      );
+
+      // 多词：分数是每个词各自最好那一处的和，所以"两个词都在名字里"更高
+      const bothInName = widget("Clock 24", "lattice.multi-name", "nothing", "Lattice", []);
+      const oneEach = widget("Timer", "lattice.multi-split", "clock and 24", "Lattice", []);
+      log(
+        matchScore(bothInName, tokenize("clock 24")) > matchScore(oneEach, tokenize("clock 24")),
+        "两个词都命中在名字里，比一个在名字一个在描述高",
+      );
+
+      // 命中判定与分数同源：else 分支里再写一份 includes，两边迟早会岔
+      eq(
+        matchesWidget(clock, tokenize("clock")),
+        matchScore(clock, tokenize("clock")) !== null,
+        "命中判定就是 matchScore 的 null 判断（只有一处判据）",
+      );
+      eq(
+        matchesWidget(clock, tokenize("zzz")),
+        matchScore(clock, tokenize("zzz")) !== null,
+        "不命中时两边也一致",
+      );
+
+      // 中文没有词边界：整串相等压过出现在中间
+      const zhExact = widget({ zh: "时钟", en: "Clock" }, "lattice.zh-exact", "无", "Lattice", []);
+      const zhMid = widget({ zh: "小时钟", en: "Wall clock" }, "lattice.zh-mid", "无", "Lattice", []);
+      log(
+        matchScore(zhExact, tokenize("时钟")) > matchScore(zhMid, tokenize("时钟")),
+        "中文名整串相等压过出现在中间（汉字之间不算词边界）",
+      );
 
       document.getElementById("out").innerHTML = lines
         .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
