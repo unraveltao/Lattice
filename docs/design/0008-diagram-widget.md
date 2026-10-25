@@ -1,8 +1,8 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-25
 supersedes:
-code:
+code: public/widgets/lattice.diagram/{manifest.json,index.html,style.css,widget.js,diagram-core.js}, tests/diagram.html, GLOSSARY.md, docs/ROADMAP.md
 ---
 
 # 0008 —— 在组件里画一张能改的图（`lattice.diagram`）
@@ -38,6 +38,7 @@ code:
 
 - "连线用直线" → **平滑贝塞尔曲线**。正交折线必须避让图形，而避让是 dagre / mxGraph 存在的全部理由，手写这一层不比组件本身小。
 - "agent 出图以后再说" → **v1 就做**。数据平面（`agent.tools`）已经落地，接现成的比自己发明协议便宜。
+- "agent 传一组节点" → **传几行文本**。动笔时才发现 §3.6 只允许 `string / number / boolean` 三种参数类型，"一组对象"根本传不进来。
 - "多选/框选 v1 要做" 没被采纳；"连线标签"也没做，但 `label?` 字段先留。
 
 ## 4. 接口与数据
@@ -50,12 +51,19 @@ code:
 
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
-| `draw` | `{ nodes: [{ label, kind? }], edges: [{ from, to }] }` | `{ ok, nodes, edges }` |
-| `add` | 同上，追加到现有图 | 同上 |
-| `read` | `{}` | `{ nodes: [{ label }], edges: [{ from, to }] }`，**不回坐标** |
+| `draw` | `{ spec }`：整张替换 | `{ nodes, edges }`（数量） |
+| `add` | `{ spec }`：追加到现有图 | 同上 |
+| `read` | `{}` | `{ nodes: [{ label, kind }], edges: [{ from, to }] }`，**不回坐标**；`from` / `to` 是**标签**不是下标 |
 
-- `kind` 只认 `box` / `circle` / `diamond`，缺省 `box`。文本和连线由组件补 —— 让模型选"这是不是文本框"没有意义。
-- `from` / `to` 是 `nodes` 的**下标**（0 起）。
+- **`spec` 是几行文本，不是数组对象** —— 这条是平台逼出来的：WIDGET_SPEC §3.6 规定工具参数只能是 `string` / `number` / `boolean`，传不了"一组节点"。所以 agent 写的是
+  ```
+  # 注释随便写
+  Web -> Api -> Db
+  Cache:circle
+  Api -> Cache
+  ```
+  一行一条：`A -> B -> C` 是两条边，`Name:box|circle|diamond` 指定形状，没定义过的标签第一次出现按矩形建。**标签里不能出现 `->`**，冒号后面不是 kind 时整行当标签（所以 `Time: 09:30` 不会被拆）。
+- `kind` 只认 `box` / `circle` / `diamond`，缺省 `box`。让模型选"这是不是文本框"没有意义 —— 文本框是排版手段，不是它要表达的东西。
 - 上限：**24 个节点 / 40 条边 / 每个标签 40 字符**。超了**拒绝**并回一句能读懂的话 —— 不截断，截断等于替它决定后半截不重要。
 - 一次调用 = **一步撤销**。`draw` 会先清空，但清空前那份在撤销栈里，`Ctrl+Z` 能整体退回。
 - 排版在组件里做（确定性纯函数）：按入边分层、从左到右；**输入里有环**（A→B→A）时退回"按输入顺序分列"，不报错。
@@ -103,7 +111,7 @@ code:
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/diagram.html` | ~90 | 世界↔屏幕变换、命中检测、端点与贝塞尔控制点、`applyOps` 的增删改、上限拒绝、有环时的分层退回、`version` 不认识时不落盘 |
+| `tests/diagram.html` | 97（实测） | 世界↔屏幕变换、命中检测、端点与贝塞尔控制点、`applyOps` 的增删改、上限拒绝、有环时的分层退回、`version` 不认识时不落盘 |
 | `.scratch/diagram-probe.html` | 布局探针 | 五种图形 + 三条曲线在 420×300 与 260×180 下不溢出，右上角 120×28 窗饰不压内容 |
 
 **手工验一次**：桌面上画一张（加框 → 双击改字 → 连线 → 拖框看线跟着走 → 缩放 → `Ctrl+Z` 三次 → 关窗重开还在）；让 assistant 说"把这三个服务画成一条链"，同一句话跑两次必须一模一样（确定性）；最后在两个宿主里同时开这张图，确认"有未落盘改动时不会被另一边拽回去"。

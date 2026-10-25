@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>diagram test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.diagram/diagram-core.js"></script>
+    <script>
+      /*
+       * 架构图的纯逻辑。
+       *
+       * 这一层错了不会报错 —— 只会把框画到隔壁、让线不跟着框走、或者让 agent
+       * 画出一张叠在一起的图。所以坐标、几何、命中、排版、spec 解析逐条钉住。
+       *
+       * 注意：这里用普通 <script src> 同步加载真身（`diagram-core.js`），不是
+       * 复制一份逻辑来测 —— 复制的那份永远是对的。
+       */
+      var C = window.__latticeDiagramCore;
+      var lines = [];
+      function log(pass, text) {
+        lines.push((pass ? "PASS " : "FAIL ") + text);
+      }
+      function eq(actual, expected, text) {
+        log(JSON.stringify(actual) === JSON.stringify(expected), text + "（得到 " + JSON.stringify(actual) + "）");
+      }
+      function flush() {
+        var out = document.getElementById("out");
+        out.textContent = lines.join("\n");
+        out.className = lines.some(function (line) {
+          return line.indexOf("FAIL") === 0;
+        })
+          ? "bad"
+          : "ok";
+      }
+
+      if (!C) {
+        log(false, "拿不到 window.__latticeDiagramCore");
+        flush();
+      } else {
+        // ---- 1. 读盘 ----
+        var blank = C.normalizeDiagram(null);
+        eq(blank.trusted, true, "没有数据可以种一份空图");
+        eq(blank.diagram.nodes.length, 0, "空图没有图形");
+        eq(blank.diagram.version, 1, "空图带版本号");
+
+        eq(C.normalizeDiagram("nonsense").trusted, false, "不是对象 → 不可信，别写盘");
+        eq(C.normalizeDiagram({ nodes: "x" }).trusted, false, "nodes 不是数组 → 不可信");
+        eq(C.normalizeDiagram({ version: 99, nodes: [] }).trusted, false, "版本不认识 → 不可信");
+
+        var messy = C.normalizeDiagram({
+          version: 1,
+          nodes: [
+            { id: "n1", kind: "box", x: 10, y: 10, w: 100, h: 40, text: "A", tone: "accent" },
+            { id: "n1", kind: "box", x: 0, y: 0, w: 100, h: 40, text: "dup" },
+            { id: "", x: 0, y: 0, w: 100, h: 40, text: "noid" },
+            { id: "n2", kind: "blob", x: 0, y: 0, w: 10, h: 10, text: "B", tone: "purple" },
+          ],
+          edges: [
+            { id: "e1", from: "n1", to: "n2" },
+            { id: "e2", from: "n1", to: "missing" },
+            { id: "e3", from: "n1", to: "n1" },
+          ],
+        });
+        eq(messy.diagram.nodes.length, 2, "重复 id 和空 id 被丢掉");
+        eq(messy.diagram.nodes[1].kind, "box", "不认识的 kind 退回矩形");
+        eq(messy.diagram.nodes[1].tone, "neutral", "不认识的色调退回中性");
+        eq(messy.diagram.nodes[1].w, 80, "宽度会被夹到下限 80");
+        eq(messy.diagram.edges.length, 1, "指向不存在图形、以及自己连自己的线都丢掉");
+
+        // ---- 2. 估尺寸 ----
+        var small = C.estimateNodeSize("");
+        log(small.w >= 80 && small.h >= 40, "空标签也有最小尺寸");
+        var cjk = C.estimateNodeSize("桌面组件");
+        var ascii = C.estimateNodeSize("abcd");
+        log(cjk.w > ascii.w, "中文比同字数的英文宽");
+        log(C.estimateNodeSize("x".repeat(200)).w <= 240, "再长也夹在上限内");
+
+        // ---- 3. 坐标 ----
+        var view = { x: 30, y: 20, zoom: 2 };
+        var world = C.screenToWorld(view, 130, 120);
+        eq([world.x, world.y], [50, 50], "屏幕 → 世界");
+        var back = C.worldToScreen(view, world.x, world.y);
+        eq([back.x, back.y], [130, 120], "再换回来是同一点");
+
+        var zoomed = C.zoomAt(view, 130, 120, 3);
+        var after = C.screenToWorld(zoomed, 130, 120);
+        log(Math.abs(after.x - 50) < 0.5 && Math.abs(after.y - 50) < 0.5, "缩放时鼠标底下那一点不动");
+        eq(C.zoomAt(view, 0, 0, 99).zoom, 2.5, "缩放有上限");
+        eq(C.zoomAt(view, 0, 0, 0.01).zoom, 0.4, "缩放有下限");
+
+        eq(C.snap(13, true), 16, "吸附到 8 的格");
+        eq(C.snap(13, false), 13, "关掉吸附就原样");
+        eq(C.snap(12, true), 16, "12 落在 8 和 16 中间，向上取到 16");
+
+        // ---- 4. 端点与曲线 ----
+        var left = { id: "a", kind: "box", x: 0, y: 0, w: 100, h: 40, text: "A", tone: "neutral" };
+        var right = { id: "b", kind: "box", x: 200, y: 0, w: 100, h: 40, text: "B", tone: "neutral" };
+        var horizontal = C.edgePoints(left, right);
+        eq(horizontal.p0.x, 100, "横排时从右边中点出发");
+        eq(horizontal.p0.y, 20, "出发点是右边缘的中点");
+        eq(horizontal.p3.x, 200, "落在目标左边");
+        log(horizontal.p1.x > horizontal.p0.x, "控制点沿法线往外伸");
+
+        var below = { id: "c", kind: "box", x: 0, y: 200, w: 100, h: 40, text: "C", tone: "neutral" };
+        var vertical = C.edgePoints(left, below);
+        eq(vertical.p0.y, 40, "竖排时从下边中点出发");
+        log(vertical.p1.y > vertical.p0.y, "控制点往下伸");
+
+        var path = C.edgePath(left, right);
+        log(path.indexOf("M ") === 0 && path.indexOf("C ") > 0, "路径是一条三次贝塞尔");
+        var head = C.arrowHead(horizontal, 9).split(" ");
+        eq(head.length, 3, "箭头是三个点");
+        eq(head[0], "200,20", "箭头尖就是曲线终点");
+
+        // ---- 4b. 标签折行 ----
+        eq(C.wrapLabel("", 100), [""], "空标签给一行空的");
+        eq(C.wrapLabel("abcd", 100), ["abcd"], "装得下就不折");
+        var folded = C.wrapLabel("abcdefghijklmnop", 80);
+        log(folded.length > 1, "装不下就折行");
+        var stuffed = C.wrapLabel("x".repeat(40), 80);
+        eq(stuffed.length, 3, "最多三行");
+        log(stuffed[2].slice(-1) === "…", "第三行以省略号收尾");
+
+        // ---- 5. 命中 ----
+        var circle = { id: "o", kind: "circle", x: 0, y: 0, w: 100, h: 100, text: "", tone: "neutral" };
+        log(C.pointInNode(circle, 50, 50), "圆心命中");
+        log(!C.pointInNode(circle, 5, 5), "圆的外接方角不命中");
+        var diamond = { id: "d", kind: "diamond", x: 0, y: 0, w: 100, h: 100, text: "", tone: "neutral" };
+        log(C.pointInNode(diamond, 50, 50), "菱形中心命中");
+        log(!C.pointInNode(diamond, 8, 8), "菱形的外接方角不命中");
+        log(C.pointInNode(left, 5, 5), "矩形角上命中");
+
+        var two = C.applyOps(C.emptyDiagram(), [
+          { op: "add-node", text: "under", x: 0, y: 0, w: 100, h: 40 },
+          { op: "add-node", text: "over", x: 0, y: 0, w: 100, h: 40 },
+        ]);
+        eq(C.nodeAt(two, 50, 20).text, "over", "后加的在上，命中先命中它");
+
+        var wired = C.applyOps(two, [{ op: "add-edge", from: two.nodes[0].id, to: two.nodes[1].id }]);
+        var straight = C.applyOps(C.emptyDiagram(), [
+          { op: "add-node", text: "A", x: 0, y: 0, w: 100, h: 40 },
+          { op: "add-node", text: "B", x: 300, y: 0, w: 100, h: 40 },
+          { op: "add-edge", from: "n1", to: "n2" },
+        ]);
+        log(C.edgeAt(straight, 200, 20) !== null, "线的中点能被点中");
+        eq(C.edgeAt(straight, 200, 80), null, "离线远的地方点不中");
+        eq(C.hitTest(straight, { x: 0, y: 0, zoom: 1 }, 350, 20).kind, "node", "点框拿到框");
+        eq(C.hitTest(straight, { x: 0, y: 0, zoom: 1 }, 200, 20).kind, "edge", "点线拿到线");
+        eq(C.hitTest(straight, { x: 0, y: 0, zoom: 1 }, 200, 200).kind, null, "空白处什么都不是");
+
+        // ---- 6. 改动 ----
+        var before = C.emptyDiagram();
+        var afterAdd = C.applyOps(before, [{ op: "add-node", text: "A", x: 0, y: 0 }]);
+        eq(before.nodes.length, 0, "改动不改入参（撤销栈靠这个）");
+        eq(afterAdd.nodes.length, 1, "新图多了一个框");
+        eq(afterAdd.nodes[0].id, "n1", "id 自己长出来");
+
+        var two2 = C.applyOps(afterAdd, [{ op: "add-node", text: "B", x: 200, y: 0 }]);
+        eq(two2.nodes[1].id, "n2", "第二个框是 n2");
+        var linked = C.applyOps(two2, [{ op: "add-edge", from: "n1", to: "n2" }]);
+        eq(linked.edges[0].id, "e1", "第一条线是 e1");
+        eq(C.applyOps(two2, [{ op: "add-edge", from: "n1", to: "n9" }]).edges.length, 0, "端点不存在就不加");
+        eq(C.applyOps(two2, [{ op: "add-edge", from: "n1", to: "n1" }]).edges.length, 0, "自己连自己不加");
+
+        var moved = C.applyOps(linked, [{ op: "move", id: "n1", x: 33.4, y: 12.6 }]);
+        eq([moved.nodes[0].x, moved.nodes[0].y], [33, 13], "移动落成整数");
+        var resized = C.applyOps(linked, [{ op: "resize", id: "n1", w: 5, h: 5 }]);
+        log(resized.nodes[0].w >= 80 && resized.nodes[0].h >= 40, "缩到最小也还在下限之上");
+
+        var named = C.applyOps(linked, [{ op: "text", id: "n1", text: "x".repeat(60) }]);
+        eq(named.nodes[0].text.length, 40, "标签最多 40 字");
+
+        var toned = C.applyOps(linked, [{ op: "tone", id: "n1", tone: "warn" }]);
+        eq(toned.nodes[0].tone, "warn", "换色调");
+        eq(C.applyOps(linked, [{ op: "tone", id: "n1", tone: "purple" }]).nodes[0].tone, "neutral", "不认识的色调退回中性");
+
+        var removed = C.applyOps(linked, [{ op: "remove", id: "n1" }]);
+        eq(removed.nodes.length, 1, "删掉一个框");
+        eq(removed.edges.length, 0, "挂在它身上的线一起删掉");
+        var cut = C.applyOps(linked, [{ op: "remove", id: "e1" }]);
+        eq(cut.edges.length, 0, "删掉一条线");
+        eq(cut.nodes.length, 2, "删线不动框");
+
+        // ---- 7. agent 的 spec ----
+        var basic = C.parseSpec("Platform\nWidget\nPlatform -> Widget");
+        eq(basic.ok, true, "三行能解析");
+        eq(basic.nodes.length, 2, "没写 kind 的按矩形建，一共两个");
+        eq(basic.edges.length, 1, "一条线");
+        eq(basic.edges[0].from, 0, "线用下标表示起点");
+
+        var kinds = C.parseSpec("A:circle\nB:diamond\nC:box");
+        eq([kinds.nodes[0].kind, kinds.nodes[1].kind, kinds.nodes[2].kind], ["circle", "diamond", "box"], "冒号后面认 kind");
+
+        var chain = C.parseSpec("A -> B -> C");
+        eq(chain.nodes.length, 3, "链式写法把三个标签都建出来");
+        eq(chain.edges.length, 2, "A->B->C 是两条线");
+
+        var messySpec = C.parseSpec("# 这是注释\n\n  A  \nA -> B\n");
+        eq(messySpec.nodes.length, 2, "注释和空行被跳过");
+        eq(messySpec.nodes[0].label, "A", "标签去掉首尾空格");
+        eq(messySpec.edges.length, 1, "重复出现的标签不会再建一个");
+
+        var clock = C.parseSpec("Time: 09:30");
+        eq(clock.nodes.length, 1, "冒号后面不是 kind 时，整行当标签");
+        eq(clock.nodes[0].label, "Time: 09:30", "标签里的冒号保留");
+
+        eq(C.parseSpec("").ok, false, "空 spec 拒绝");
+        eq(C.parseSpec("   \n\n").ok, false, "只有空白的 spec 也拒绝");
+        var tooMany = [];
+        for (var i = 0; i < 30; i += 1) tooMany.push("N" + i);
+        eq(C.parseSpec(tooMany.join("\n")).ok, false, "超过 24 个节点拒绝");
+        var longLabel = C.parseSpec("y".repeat(60));
+        eq(longLabel.ok, false, "标签超过 40 字拒绝");
+        log(/label is too long/.test(longLabel.error), "拒绝时说清楚是标签太长");
+
+        // ---- 8. 排版 ----
+        var spec = {
+          nodes: [
+            { label: "A", kind: "box" },
+            { label: "B", kind: "box" },
+            { label: "C", kind: "box" },
+          ],
+          edges: [
+            { from: 0, to: 1 },
+            { from: 1, to: 2 },
+          ],
+        };
+        var first = C.layout(spec);
+        var second = C.layout(spec);
+        eq(first, second, "同一份 spec 排两次完全一样");
+        log(first[0].x < first[1].x && first[1].x < first[2].x, "入边分层后从左到右");
+        log(first[0].y === first[1].y, "每列只有一个时纵向对齐");
+
+        var fan = C.layout({
+          nodes: [
+            { label: "root", kind: "box" },
+            { label: "left", kind: "box" },
+            { label: "right", kind: "box" },
+          ],
+          edges: [
+            { from: 0, to: 1 },
+            { from: 0, to: 2 },
+          ],
+        });
+        eq(fan[1].x, fan[2].x, "同一个父节点的两个子节点在同一列");
+        log(fan[1].y !== fan[2].y, "同一列的节点竖着排，不重叠");
+
+        var cycle = C.layout({
+          nodes: [
+            { label: "A", kind: "box" },
+            { label: "B", kind: "box" },
+          ],
+          edges: [
+            { from: 0, to: 1 },
+            { from: 1, to: 0 },
+          ],
+        });
+        eq(cycle.length, 2, "有环也把两个框都摆出来");
+        log(cycle[0].x !== cycle[1].x, "有环时退回按输入顺序分列");
+
+        // ---- 9. 从 spec 建图 ----
+        var drawn = C.fromSpec(C.parseSpec("A -> B"), C.emptyDiagram(), true);
+        eq(drawn.nodes.length, 2, "draw 建出两个框");
+        eq(drawn.edges.length, 1, "draw 建出一条线");
+        log(drawn.nodes[0].x >= 0 && drawn.nodes[0].y >= 0, "坐标不为负");
+
+        var appended = C.fromSpec(C.parseSpec("C -> D"), drawn, false);
+        eq(appended.nodes.length, 4, "add 是追加");
+        log(appended.nodes[2].x > drawn.nodes[1].x + drawn.nodes[1].w, "追加的图排在老图右边");
+        eq(appended.edges.length, 2, "追加时老线还在");
+        eq(appended.edges[1].from, appended.nodes[2].id, "新线的端点指向新框");
+
+        // ---- 10. 适应窗口 ----
+        var fitted = C.fitView(drawn, 400, 300);
+        log(fitted.zoom > 0 && fitted.zoom <= 1, "适应窗口时不放大");
+        var tiny = C.fitView(drawn, 120, 90);
+        log(tiny.zoom >= 0.4, "窗口很小时也不低于缩放下限");
+        eq(C.fitView(C.emptyDiagram(), 400, 300).zoom, 1, "空图不缩放");
+
+        flush();
+      }
+    </script>
+  </body>
+</html>

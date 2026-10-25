@@ -38,9 +38,9 @@
 | 样式 CSS | 4 245 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css`） |
 | Rust | 18 175 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
 | 组件 SDK | 713 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
-| 官方组件 + 示例 | 13 338 行 | 14 个官方包 + 1 个示例（示例里那份 SDK 副本也算在内；未跟踪的桌宠不计） |
+| 官方组件 + 示例 | 19 574 行 | 16 个官方包 + 1 个示例（含每个包里的 SDK 副本；未跟踪的桌宠不计） |
 | 构建脚本 | 2 629 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
-| 浏览器断言 | 2 091 条 | 47 个自检页，跑一遍的真实计数（0 failed） |
+| 浏览器断言 | 2 263 条 | 49 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 33 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条，都不依赖 dev server |
 | Rust 单测 | 370 条 | 328 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 48 条、`mcp_policy` 17 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `assistant_session_policy` 15 + `fs_policy` 14 + `hands_policy` 16 + `shell_policy` 9），42 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 80 个 | |
@@ -221,9 +221,11 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **重叠按簇分 lane**：A 9–11、B 10–12、C 11–13 通过 B 连成一簇，取最大并发数；三节同堂并排，不会出现半栏 / 整栏参差。
     - **奇偶周只在填了 `Term starts` 时生效**：没填就全部显示，不猜；周次用 UTC 日期戳做差，跨夏令时不会少一周。
     - **数据按 `widgetId` 共享**：和 todo / calendar 一样，所有 Timetable 是同一份课表；两份不同课表要换 id。没做 Excel / CSV 导入 —— 那要文件选择 + xlsx 解析，先用点击加课把本体跑通。
-  - [ ] **架构图 / 流程图（`lattice.diagram`，设计稿，未开工）** —— 卡内一块能平移缩放、能画矩形 / 圆 / 菱形 / 文本 + 曲线连线的图面。权限只有 `storage` 和 `agent:tools`，**平台一行不改**。取舍、工具契约、落盘格式和失败模式在 [`design/0008-diagram-widget.md`](./design/0008-diagram-widget.md)。
-    - **图形不是 placement**：桌面上一个 placement 建一个真窗口，一张 30 个框的图就是 30 个窗口 —— 所以图只能长在组件里。
+  - [x] **架构图 / 流程图（`lattice.diagram`）** —— 卡内一块能平移缩放、能画矩形 / 圆 / 菱形 / 文本 + 曲线连线的图面。权限只有 `storage` 和 `agent:tools`，**桥方法一条没加、Tauri 命令一条没加**。取舍、工具契约、落盘格式和失败模式在 [`design/0008-diagram-widget.md`](./design/0008-diagram-widget.md)，`tests/diagram.html` 97 条。
+    - **图形不是 placement**：桌面上一个 placement 建一个真窗口，一张 30 个框的图就是 30 个窗口 —— 所以图只能长在组件里。代价写清楚了：没有剪贴板导出（沙箱没有 `allow-downloads`），图大了只能缩放。
     - **agent 给语义、组件排版**：模型不擅长坐标，给它"三个服务、A→B→C"，位置由确定性的分层算法算（有环时退回按输入顺序分列）。
+    - **参数只能传标量**（§3.6），所以 agent 写的是几行文本（`Web -> Api -> Db`、`Cache:circle`），不是一组对象。这条是动笔时才发现的，不是设计时想到的。
+    - **一次调用一步撤销**：`draw` 先清空再画，清空前那份在撤销栈里，`Ctrl+Z` 整体退回 —— 否则 agent 画错一张，用户得按几十次。
   - **本地目录和公开目录不同步**：`public/store/` 里现在是 14 个，`unraveltao/lattice-registry` 上还是 6 个。发上去要走 `npm run publish:widget -- public/widgets/<id> --key <私钥>`，然后在目录仓库提 PR —— 那是"作者发布流程写成文档"那条的活。
 
 **明确不做**：账号、云端评分、下载计数、组件市场首页。这些全都要服务端，而 v0.5 的整个前提是"没有服务端"。评分和举报继续落本地文件（`reports/*.json`），作者自己收 —— 假装有云端比没有更糟。

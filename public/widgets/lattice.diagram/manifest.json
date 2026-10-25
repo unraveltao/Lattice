@@ -1,0 +1,159 @@
+{
+  "id": "lattice.diagram",
+  "name": { "zh": "架构图", "en": "Diagram" },
+  "version": "0.1.0",
+  "description": {
+    "zh": "一块能平移缩放的图面：矩形、圆、菱形、文本和曲线箭头，拖框线跟着走",
+    "en": "A pannable, zoomable canvas: boxes, circles, diamonds, text and curved arrows that follow the shapes"
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 420, "h": 300, "minW": 260, "minH": 180 },
+  "layer": "desktop",
+  "interactive": true,
+  "permissions": ["storage", "agent:tools"],
+  "config": [
+    {
+      "key": "snap",
+      "type": "toggle",
+      "label": { "zh": "吸附到网格", "en": "Snap to grid" },
+      "default": true,
+      "help": {
+        "zh": "拖动和缩放时对齐到 8px 的格子。关掉之后可以摆到任意像素，但两个框很难对齐。",
+        "en": "Aligns dragging and resizing to an 8px grid. Turn it off to place things at any pixel, at the cost of lining boxes up by hand."
+      }
+    }
+  ],
+  "agent": {
+    "tools": [
+      {
+        "name": "draw",
+        "description": "Replace the diagram. One line per node or edge, e.g. 'Api -> Db' or 'Cache:circle'.",
+        "params": { "spec": "string" },
+        "required": ["spec"]
+      },
+      {
+        "name": "add",
+        "description": "Append to the diagram, same line format as draw: 'A -> B', 'Name:box|circle|diamond'.",
+        "params": { "spec": "string" },
+        "required": ["spec"]
+      },
+      {
+        "name": "read",
+        "description": "List the node labels and the connections of the current diagram.",
+        "params": {}
+      }
+    ]
+  },
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "画第一个框", "en": "Your first box" },
+        "items": [
+          {
+            "zh": "双击空白处加一个矩形，底栏最左边那颗也能加。加完直接打字，回车存下。",
+            "en": "Double-click empty space to add a rectangle, or use the leftmost button in the bottom bar. Type straight away; Enter keeps it."
+          },
+          {
+            "zh": "底栏四个按钮依次是矩形、菱形、圆、文本——菱形留给判断，文本只有字没有框。",
+            "en": "The four buttons on the left are rectangle, diamond, circle and text — diamond is for decisions, text is words with no frame."
+          },
+          {
+            "zh": "选中一个框，四个角上有把手，拖它们改大小。按 Delete 删掉，挂在它身上的线一起删。",
+            "en": "Select a box to get handles on its corners; drag them to resize. Delete removes it and any line attached to it."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "连线", "en": "Connecting" },
+        "items": [
+          {
+            "zh": "点底栏的箭头按钮，然后依次点两个框，就有一条带箭头的曲线。方向是第一个指向第二个。",
+            "en": "Click the arrow button in the bottom bar, then click two boxes; you get a curved arrow from the first to the second."
+          },
+          {
+            "zh": "线的两端挂在框上，不是画在坐标上的——拖框、改大小，线自己跟着走，永远接在边上。",
+            "en": "Both ends hang off the boxes rather than fixed coordinates — move or resize a box and the line follows, always touching an edge."
+          },
+          {
+            "zh": "点线本身可以选中它，再按 Delete 删掉。删框的时候不用管线，它会被一起带走。",
+            "en": "Click a line to select it, then Delete to remove it. Removing a box takes its lines with it, so you never orphan one."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "看大图", "en": "Seeing the whole thing" },
+        "items": [
+          {
+            "zh": "空白处按住拖动是平移，滚轮也是平移；Ctrl 加滚轮（或触控板双指捏）是缩放。",
+            "en": "Drag empty space to pan, or use the wheel; Ctrl with the wheel (or a trackpad pinch) zooms."
+          },
+          {
+            "zh": "底栏最右边那颗「适应窗口」把整张图装进卡片。放大到 250% 就到顶了，再大没有意义。",
+            "en": "The last button, Fit to window, puts the whole diagram back in the card. Zoom stops at 250%."
+          },
+          {
+            "zh": "图比卡片大是正常的——平移着看，不要为了看全把卡片拉到半个屏幕。",
+            "en": "A diagram bigger than the card is normal — pan around instead of stretching the card across half the screen."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "颜色与撤销", "en": "Colour and undo" },
+        "items": [
+          {
+            "zh": "选中框后点那个半圆按钮换色调：中性、强调、警示三档，颜色跟着平台主题走。",
+            "en": "With a box selected, the half-circle button cycles three tones: neutral, accent and warning. The colours follow the platform theme."
+          },
+          {
+            "zh": "撤销 50 步，Ctrl+Z 退回。一次拖动算一步，不是每帧一步。",
+            "en": "Fifty steps of undo on Ctrl+Z. One drag counts as one step, not one per frame."
+          },
+          {
+            "zh": "关掉卡片再打开，图还在。同一个组件摆两份是两张不同的图。",
+            "en": "Close the card and open it again and the diagram is still there. Two copies are two different diagrams."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "让 assistant 画", "en": "Letting the assistant draw" },
+        "items": [
+          {
+            "zh": "给它一句「把这三个服务画成一条链」，它会用同样的框和曲线画出来，位置自己排。",
+            "en": "Ask it to draw three services as a chain and it lays out the same boxes and curves itself."
+          },
+          {
+            "zh": "它一次画一整张（替换）或者往后加；不管哪种，Ctrl+Z 一步就能整体退回。",
+            "en": "It either draws a whole new diagram or appends to the current one; either way a single Ctrl+Z takes it back."
+          },
+          {
+            "zh": "这条能力要单独授权（属性面板里那行 Agent tool calls）。不给它，它就画不进来。",
+            "en": "This needs its own permission — the Agent tool calls row in the inspector. Without it, nothing can be drawn in."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "第一个版本：矩形、圆、菱形、文本四种图形，曲线连线两端挂在框上，拖框线跟着走。",
+          "en": "First release: rectangles, circles, diamonds and text, with curved connectors anchored to the shapes so lines follow them."
+        },
+        {
+          "zh": "平移、缩放、8px 吸附、50 步撤销；关掉卡片再打开图还在。",
+          "en": "Pan, zoom, 8px snapping and fifty steps of undo; the diagram survives closing the card."
+        },
+        {
+          "zh": "assistant 能直接画：说一句「三个服务连成一条链」，它排版、画线，一次调用算一步撤销。",
+          "en": "The assistant can draw: describe a chain of three services and it lays out and connects them, one undo step per call."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

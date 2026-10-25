@@ -1,0 +1,279 @@
+/*
+ * 架构图组件的样式。
+ *
+ * 颜色全部走平台的 `--lattice-*` 令牌（`theme.get` 推过来时直接写在 :root 上），
+ * 所以切浅色 / 深色主题不用改这里一行。色调只有三档，也都在这里定：
+ * neutral 跟着底板走，accent 用强调色，warn 是唯一一个写死的暖色（平台没有
+ * "警告"这个令牌，而纯 accent 表达不了"这里有问题"）。
+ */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  color: var(--lattice-text, #e6e6e6);
+  font-family: var(--lattice-font, system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+.dg {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 顶上这条是标题栏：22px 高，右边 120px 是窗饰的地盘 */
+.dg-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding: 0 120px 0 10px;
+}
+
+.dg-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dg-status {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--lattice-text-muted, #9aa0a6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dg-status[data-bad="true"] {
+  color: #d9924a;
+}
+
+.dg-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  cursor: default;
+}
+
+.dg-stage.is-panning {
+  cursor: grabbing;
+}
+
+.dg-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+}
+
+.dg-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  margin: 0;
+  transform: translateY(-50%);
+  text-align: center;
+  font-size: 11px;
+  color: var(--lattice-text-muted, #9aa0a6);
+  pointer-events: none;
+}
+
+/* ---- 图形 ---- */
+
+.dg-nodes .node .shape {
+  fill: var(--dg-fill);
+  stroke: var(--dg-stroke);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.dg-nodes .node[data-tone="neutral"] {
+  --dg-fill: color-mix(in srgb, var(--lattice-surface, #1c1e22) 92%, var(--lattice-text, #e6e6e6));
+  --dg-stroke: var(--lattice-border, #3a3d44);
+}
+
+.dg-nodes .node[data-tone="accent"] {
+  --dg-fill: color-mix(in srgb, var(--lattice-accent, #6ea8fe) 20%, var(--lattice-surface, #1c1e22));
+  --dg-stroke: var(--lattice-accent, #6ea8fe);
+}
+
+.dg-nodes .node[data-tone="warn"] {
+  --dg-fill: color-mix(in srgb, #d9924a 22%, var(--lattice-surface, #1c1e22));
+  --dg-stroke: #d9924a;
+}
+
+/* 文本框没有框，只有字 */
+.dg-nodes .node[data-kind="text"] .shape {
+  fill: none;
+  stroke: none;
+}
+
+.dg-nodes .node.is-selected .shape {
+  stroke: var(--lattice-accent, #6ea8fe);
+  stroke-width: 2;
+}
+
+.dg-nodes .node text {
+  fill: var(--lattice-text, #e6e6e6);
+  font-size: 13px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+/* ---- 连线 ---- */
+
+.dg-edges .edge path {
+  fill: none;
+  stroke: var(--lattice-text-muted, #9aa0a6);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.dg-edges .edge polygon {
+  fill: var(--lattice-text-muted, #9aa0a6);
+}
+
+.dg-edges .edge.is-selected path {
+  stroke: var(--lattice-accent, #6ea8fe);
+}
+
+.dg-edges .edge.is-selected polygon {
+  fill: var(--lattice-accent, #6ea8fe);
+}
+
+/* ---- 缩放手柄 ---- */
+
+.dg-handles rect {
+  fill: var(--lattice-surface, #1c1e22);
+  stroke: var(--lattice-accent, #6ea8fe);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.dg-handles rect[data-handle="nw"],
+.dg-handles rect[data-handle="se"] {
+  cursor: nwse-resize;
+}
+
+.dg-handles rect[data-handle="ne"],
+.dg-handles rect[data-handle="sw"] {
+  cursor: nesw-resize;
+}
+
+/* ---- 底栏 ---- */
+
+.dg-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  padding: 0 8px;
+  border-top: 1px solid var(--lattice-border, #3a3d44);
+  overflow: hidden;
+}
+
+.dg-tool {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--lattice-text-muted, #9aa0a6);
+  cursor: pointer;
+}
+
+.dg-tool svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dg-tool svg .is-filled {
+  fill: currentColor;
+  stroke: none;
+}
+
+.dg-tool:hover {
+  background: color-mix(in srgb, var(--lattice-text, #e6e6e6) 10%, transparent);
+  color: var(--lattice-text, #e6e6e6);
+}
+
+.dg-tool:focus-visible {
+  outline: 1.5px solid var(--lattice-accent, #6ea8fe);
+  outline-offset: 1px;
+}
+
+.dg-tool.is-on {
+  background: color-mix(in srgb, var(--lattice-accent, #6ea8fe) 18%, transparent);
+  color: var(--lattice-accent, #6ea8fe);
+}
+
+.dg-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+  color: var(--lattice-text-muted, #9aa0a6);
+}
+
+.dg-sep {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  margin: 0 3px;
+  background: var(--lattice-border, #3a3d44);
+}
+
+.dg-zoom {
+  /* 能缩：卡片窄到装不下时先挤掉这个百分比，别把按钮顶出去 */
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  padding-left: 6px;
+  overflow: hidden;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--lattice-text-muted, #9aa0a6);
+}
+
+/* ---- 改字用的浮层 ---- */
+
+.dg-text {
+  position: absolute;
+  margin: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--lattice-accent, #6ea8fe);
+  border-radius: 6px;
+  background: var(--lattice-surface, #1c1e22);
+  color: var(--lattice-text, #e6e6e6);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: center;
+  resize: none;
+  outline: none;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+}
