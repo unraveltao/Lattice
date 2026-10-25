@@ -359,7 +359,7 @@
       // 报错、只会静默出事：
       //
       //   1. 坏值一律落 `internal` —— **绝不**因为一个坏值变成全开
-      //   2. 全部模式六组全开，但用户存的那一份**一动都不能动**
+      //   2. 完全访问六组全开，但用户存的那一份**一动都不能动**
       //   3. 内部模式原样返回同一个对象（不复制、不改）
       //   4. `modeIgnoresSwitches` 是"不看开关"，不是"替你打开"
       //   5. 平台自身配置的路径判据按**段**算，不按子串（子串会让用户看到一条
@@ -376,7 +376,7 @@
       eq(normalizeMode(true), "internal", "旧文件里的布尔落内部");
       eq(normalizeMode(undefined), "internal", "没有这个字段 = 内部");
 
-      ok(modeIgnoresSwitches("everything"), "全部模式不看开关");
+      ok(modeIgnoresSwitches("everything"), "完全访问不看开关");
       ok(!modeIgnoresSwitches("internal"), "内部模式照开关");
       ok(!modeIgnoresSwitches("bogus"), "认不出来的值当内部（不放大）");
 
@@ -390,7 +390,7 @@
         workspace: "",
         approvalMode: "ask",
       };
-      eq(effectiveHands(HANDS_OFF, "everything"), FORCED, "全部模式六组全开，workspace 与档位不动");
+      eq(effectiveHands(HANDS_OFF, "everything"), FORCED, "完全访问六组全开，workspace 与档位不动");
       eq(enabledGroups(HANDS_OFF), [], "调用之后用户存的那一份没被改");
       ok(effectiveHands(ALL_ON, "internal") === ALL_ON, "内部模式原样返回（同一个对象，不是复制）");
       eq(effectiveHands(HANDS_OFF, "internal"), HANDS_OFF, "内部模式六组照用户存的");

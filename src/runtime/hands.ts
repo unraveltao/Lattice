@@ -81,9 +81,9 @@ export function enabledGroups(hands: HandsSettings): HandGroup[] {
 // 三条方向性决定写在这一处，别在下游各写一份：
 //   - 坏值一律落 `internal` —— 和 `normalizeApproval` 对陌生值落回 `ask`
 //     同一条理由：坏值不许放大权限
-//   - 全部模式**不改**用户存的那一份（`effectiveHands` 返回新对象，`modeIgnoresSwitches`
+//   - 完全访问**不改**用户存的那一份（`effectiveHands` 返回新对象，`modeIgnoresSwitches`
 //     只影响这一轮算出来的表）：切回内部，六组开关原样回来，用户不需要"再关一遍"
-//   - 全部模式**不顺手改** `workspace` 与 `approvalMode`：一个设置不该动另一个
+//   - 完全访问**不顺手改** `workspace` 与 `approvalMode`：一个设置不该动另一个
 
 export const ASSISTANT_MODES = ["internal", "everything"] as const;
 export type AssistantMode = (typeof ASSISTANT_MODES)[number];
@@ -101,7 +101,7 @@ export function normalizeMode(raw: unknown): AssistantMode {
 }
 
 /**
- * 全部模式下六组开关**不算数**：不是"替你打开"，而是"不看它"。
+ * 完全访问下六组开关**不算数**：不是"替你打开"，而是"不看它"。
  *
  * 区别很实在 —— 前者是替用户改设置（切换那一刻就把开关写回去了），后者只在
  * 这一轮算表时不看；切回内部，用户原来关着的仍然是关着的。
@@ -111,12 +111,12 @@ export function modeIgnoresSwitches(mode: AssistantMode): boolean {
 }
 
 /**
- * 这一轮真的能用的手。内部模式**原样返回 `hands` 本身**（不复制），全部模式
+ * 这一轮真的能用的手。内部模式**原样返回 `hands` 本身**（不复制），完全访问
  * 返回一个新对象。
  *
- * 内部 = **照用户存的开关**（默认六组全关；想给权力就一组一组打开，或者点
- * 面板上那颗「给 agent 权力」一次全开）；全部 = 六组全开。这是"全部比内部
- * 多什么"的唯一判据。
+ * 内部 = **照用户存的开关**（默认六组全关；想给权力就一组一组打开，或者直接
+ * 启用「完全访问」—— 那一下会把六组一起拨开，并且不再逐条问）；完全访问 = 六组
+ * 全开。这是"完全访问比内部多什么"的唯一判据。
  *
  * 第一版这里写的是"内部一只都不给"，代码却一直是"照存的开关" —— 文档、面板
  * 上那句提示和实现对不上，用户于是以为内部模式不能用工具。**手是用户一组一组
@@ -129,8 +129,11 @@ export function effectiveHands(hands: HandsSettings, mode: AssistantMode): Hands
 }
 
 /**
- * 一次把六组都打开（面板上那颗「给 agent 权力」）。**只动手**：
- * `approvalMode` 与 `workspace` 原样保留。
+ * 一次把六组都打开。**只动手**：`approvalMode` 与 `workspace` 原样保留。
+ *
+ * 调用它的是「启用完全访问」那道确认（`AssistantPanel` 的 `confirmEverything`）：
+ * 先把六组拨开再写模式，用户按完之后面板上那六个勾就是他真的拿到的权力，看得见、
+ * 也收得回。它自己**不写 mode**，也不碰审批档 —— 写模式是 `saveMode` 的事。
  *
  * 和 `effectiveHands(hands, "everything")` 值一样、意思不一样：那个是"这一轮
  * 不看开关"，这个是"把开关真的拨过去"，要落盘、要看得见、要能一组一组改回来。

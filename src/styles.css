@@ -4875,7 +4875,16 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-assistant-mode-confirm {
   display: flex;
-  flex: none;
+  /*
+   * **能缩、缩不下就自己滚**。320×420 那个最小窗口里，英文的风险段 + 四行硬线 +
+   * 勾选框一共 380px —— `flex: none` 会把下面的对话区和输入框整个顶出窗框，而
+   * 那颗「Enable Full access」正好在被顶出去的那一截里：对话框自己够不着自己
+   * 的按钮。给它 `flex: 0 1 auto` + `min-height: 0`，空间不够时它先让、让不下的
+   * 部分在框里滚；输入框永远看得见，按钮永远按得到。
+   */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   flex-direction: column;
   gap: 8px;
   padding: 12px;

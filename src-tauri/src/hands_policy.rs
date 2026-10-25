@@ -122,7 +122,7 @@ pub fn normalize_mode(raw: &str) -> &'static str {
     }
 }
 
-/// 全部模式下六组开关**不算数**：不是"替你打开"，而是"不看它"。
+/// 完全访问下六组开关**不算数**：不是"替你打开"，而是"不看它"。
 ///
 /// 区别很实在 —— 前者是替用户改设置（切换那一刻就把开关写回去了），后者只在
 /// 这一轮算表时不看；切回内部，用户原来关着的仍然是关着的。
@@ -153,7 +153,7 @@ pub fn everything_overrides(approval: &str, mode: &str) -> bool {
     mode_ignores_switches(mode) && approval != "readonly"
 }
 
-/// 审计那一栏的"这一笔是在全部模式下做的"标记。**加在最后**：
+/// 审计那一栏的"这一笔是在完全访问下做的"标记。**加在最后**：
 /// 目标是 `shell.run · npm test`，标记是 `… · everything`，别插到中间去
 pub fn mark_everything(detail: &str, mode: &str) -> String {
     if mode_ignores_switches(mode) {

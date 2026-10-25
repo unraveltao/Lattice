@@ -131,7 +131,7 @@ function messagesFromSession(messages: SessionMessage[]): ChatMessage[] {
 }
 
 /**
- * 启动之后是否已经提示过「全部」模式。**进程级一个布尔就够**（主窗口抽屉与
+ * 启动之后是否已经提示过「完全访问」。**进程级一个布尔就够**（主窗口抽屉与
  * 小窗各一份，各提示一次）。反复弹会把常驻模式条的意义抹掉 —— 用户学会无视它
  * 之后，真正需要的提示也一起被无视了
  */
@@ -183,16 +183,20 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
   /** 用户拨开的那几只手。读一次、拨一次存一次（和模型档同一份 JSON） */
   const [hands, setHands] = useState<HandsSettings>(HANDS_OFF);
   /**
-   * 两个模式（0009）：内部 / 全部。**存盘**，每次开面板读一次。
+   * 两个模式（0009）：内部 / 完全访问（`mode` 的两个值仍叫 `internal` / `everything`
+   * —— 值进的是 `assistant.json`，字面量不动；界面上的名字叫「完全访问」，
+   * 和 DSH 那一套同一句话：它少问几步、能直接干更多事）。**存盘**，每次开面板读一次。
    *
-   * `effective` 也一起收下来：只读档压在「全部」上面时它是 false，模式条要照实
+   * `effective` 也一起收下来：只读档压在完全访问上面时它是 false，模式条要照实
    * 说"被只读档压住"，而不是把模式偷偷显示成 internal
    */
   const [mode, setMode] = useState<AssistantMode>(DEFAULT_ASSISTANT_MODE);
   const [modeEffective, setModeEffective] = useState(true);
-  /** 切到「全部」之前那一次确认。**只往提权的方向问**，切回来不问 */
+  /** 启用完全访问之前那一次确认。**只往提权的方向问**，关掉不问 */
   const [modeConfirm, setModeConfirm] = useState(false);
-  /** 启动时就已经在「全部」模式：开面板提示一次（这是存盘的唯一代价） */
+  /** 那次确认里"我明白风险"那一框：没勾上不许启用（DSH 也是这么拦的） */
+  const [riskAck, setRiskAck] = useState(false);
+  /** 启动时就已经开着完全访问：开面板提示一次（这是存盘的唯一代价） */
   const [modeReminder, setModeReminder] = useState(false);
   /**
    * 外部服务（MCP）：服务器列表 + 上一次发现的结果。
@@ -335,7 +339,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
   const active = profiles?.profiles.find((item) => item.id === profiles.activeId) ?? null;
   /**
    * 这一轮真的开着的那几组。技能那一行靠它标"缺 Files" ——
-   * **模式也参与**：全部模式下六组临时全开，那一行就不该再挂着"缺"
+   * **模式也参与**：完全访问下六组一律算开，那一行就不该再挂着"缺"
    */
   const groupsOn = useMemo<HandGroup[]>(() => {
     const effective = effectiveHands(hands, mode);
@@ -376,7 +380,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         if (cancelled) return;
         setMode(view.mode);
         setModeEffective(view.effective);
-        // 存的就是「全部」：**启动之后第一次打开面板提示一次**。
+        // 存的就是「完全访问」：**启动之后第一次打开面板提示一次**。
         // 之后只靠常驻的那条模式条，不再打断用户
         if (!modeRemindedOnce) {
           modeRemindedOnce = true;
@@ -557,7 +561,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     alwaysThisTurn.current.clear();
     /* 外部服务的工具表是**动态的**：先问一次（走 Rust 的内存缓存），再合进表里。
      * 发现失败不该挡掉这一轮 —— 大不了这次没有外部工具，比整轮报错好 */
-    /* 「全部」模式下六组**临时全开**（用户存的那一份不动）。这一份 `handsOn`
+    /* 完全访问下六组**一律算开**（`effectiveHands` 自己不写盘）。这一份 `handsOn`
      * 是这一轮唯一的真相：工具表、提示词、执行器三处都用它 */
     const handsOn = effectiveHands(hands, mode);
     let extra: Record<string, ToolSpec> = {};
@@ -677,13 +681,23 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
   );
 
   /** 换审批档并落盘。和拨开关同一条规矩：先落盘再更新界面 */
-  /* 切模式。往提权的方向（→ 全部）先弹一次确认，把四条硬线印在上面；
+  /* 两个模式（0009）。往提权的方向（→ 完全访问）**必须过那道确认**：标题 +
+   * 风险段 + 四条硬线 + 必须勾的"我明白" + Cancel / Enable Full access。
    * 往安全的方向（→ 内部）**不问** —— 拦着用户往回走没有道理 */
+  const fullAccess = modeIgnoresSwitches(mode);
+  /** 只读档优先：它压着完全访问，勾了框也不许启用（否则按完什么都不会变） */
+  const fullAccessBlocked = normalizeApproval(hands.approvalMode) === "readonly";
+
+  const requestFullAccess = useCallback(() => {
+    setRiskAck(false);
+    setModeConfirm(true);
+  }, []);
+
   const changeMode = useCallback(
     (next: AssistantMode) => {
       if (next === mode) return;
       if (modeIgnoresSwitches(next)) {
-        setModeConfirm(true);
+        requestFullAccess();
         return;
       }
       setMode(next);
@@ -693,26 +707,45 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
           setModeEffective(view.effective);
         })
         .catch(() => {
-          /* 存不上就退回原样：别把界面画成一个假的"已切回内部" */
+          /* 存不上就退回原样：别把界面画成一个假的"已关掉" */
           setMode(mode);
         });
     },
-    [mode],
+    [mode, requestFullAccess],
   );
 
-  const confirmEverything = useCallback(() => {
+  /**
+   * 确认启用完全访问。
+   *
+   * 两件事**一起做**，顺序有意：先把六组拨开（`grantAllHands`），再写模式。
+   * 这样按完之后面板上那六个勾就是它真的拿到的权力 —— 看得见、也收得回；
+   * 只改模式的话，用户会看到"模式说全开、六个勾全空"，分不清到底给了什么。
+   * 关掉完全访问**不替用户收手**（一个设置不该改另一个）：手留着，问话回来。
+   */
+  const confirmEverything = useCallback(async () => {
+    if (fullAccessBlocked || !riskAck) return;
     setModeConfirm(false);
     setModeReminder(false);
+    const next = grantAllHands(hands);
+    setHands(next);
+    try {
+      setHands(await saveHands(next));
+    } catch (problem) {
+      /* 开关没存上就别切模式：一步都没落地比半步落地好收拾 */
+      setHands(hands);
+      setError(String(problem instanceof Error ? problem.message : problem));
+      return;
+    }
     setMode("everything");
-    void saveMode("everything")
-      .then((view) => {
-        setMode(view.mode);
-        setModeEffective(view.effective);
-      })
-      .catch(() => {
-        setMode(mode);
-      });
-  }, [mode]);
+    try {
+      const view = await saveMode("everything");
+      setMode(view.mode);
+      setModeEffective(view.effective);
+    } catch (problem) {
+      setMode(mode);
+      setError(String(problem instanceof Error ? problem.message : problem));
+    }
+  }, [fullAccessBlocked, riskAck, hands, mode]);
 
   const setApprovalMode = useCallback(
     async (mode: ApprovalMode) => {
@@ -749,27 +782,20 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     } catch (problem) {
       setError(String(problem instanceof Error ? problem.message : problem));
     }
-  }, [hands.workspace, hands.approvalMode]);
-
-  /**
-   * 「给 agent 权力」：六只手一次全开，其余一概不碰。
-   *
-   * **它写的是开关，不是模式**（0009）：模式管"要不要问"，开关管"能不能"。
-   * 所以这一下既不改 `mode`、也不改 `approvalMode`（`readonly` 仍然优先）、
-   * 更不动 `workspace` —— 用户按完还能逐组拨回去，面板上看得见自己开了什么。
-   * 别图省事改走 `saveMode("everything")`：那等于顺手把"还问不问"也一起替他决定了。
-   */
-  const grantAll = useCallback(async () => {
-    const next = grantAllHands(hands);
-    setHands(next);
-    try {
-      const saved = await saveHands(next);
-      setHands(saved);
-    } catch (problem) {
-      setHands(hands);
-      setError(String(problem instanceof Error ? problem.message : problem));
+    // 完全访问里这颗按钮是"停 + 收手 + 把门也关上"：模式回内部，问话回来。
+    // 模式条那颗「关掉」不一样 —— 那个留着六个勾（手还在，只是每步问你）
+    if (modeIgnoresSwitches(mode)) {
+      setMode("internal");
+      try {
+        const view = await saveMode("internal");
+        setMode(view.mode);
+        setModeEffective(view.effective);
+      } catch (problem) {
+        setMode(mode);
+        setError(String(problem instanceof Error ? problem.message : problem));
+      }
     }
-  }, [hands]);
+  }, [hands.workspace, hands.approvalMode, mode]);
 
   const setWorkspace = useCallback(
     async (value: string) => {
@@ -994,7 +1020,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         </header>
       )}
 
-      {/* 常驻模式条（0009）：模式是存盘的，忘记自己还在「全部」是它唯一的价格。
+      {/* 常驻模式条（0009）：模式是存盘的，忘记自己还在「完全访问」是它唯一的价格。
           所以这条必须一直在看得见的地方 —— 用打断去兜是另一种烦 */}
       <div
         className="lattice-assistant-mode"
@@ -1009,15 +1035,13 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
             : t("Manages Lattice, plus whichever hands you switch on. Approvals follow the mode you picked.")
         }
       >
-        <span className="lattice-assistant-mode-name">
-          {modeIgnoresSwitches(mode) ? t("Everything") : t("Internal")}
-        </span>
+        <span className="lattice-assistant-mode-name">{fullAccess ? t("Full access") : t("Internal")}</span>
         {/*
-          那段解释**只在「全部」时写**。它是警告，警告要一直在、但不能占着
+          那段解释**只在完全访问时写**。它是警告，警告要一直在、但不能占着
           三行常驻 —— 内部模式是默认态，模式名本身就说完了，多写一句的代价是
           400 宽的小窗里对话区少两行。0009 记的也是"一行"。
         */}
-        {modeIgnoresSwitches(mode) && (
+        {fullAccess && (
           <span className="lattice-assistant-mode-hint">
             {modeEffective
               ? t("Files, commands, the web, the screen, input and MCP servers. Approvals are not asked.")
@@ -1027,13 +1051,13 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         <button
           type="button"
           className="lattice-btn is-small"
-          onClick={() => changeMode(modeIgnoresSwitches(mode) ? "internal" : "everything")}
+          onClick={() => changeMode(fullAccess ? "internal" : "everything")}
         >
-          {modeIgnoresSwitches(mode) ? t("Switch to internal") : t("Switch to everything")}
+          {fullAccess ? t("Turn off") : t("Enable Full access")}
         </button>
       </div>
 
-      {/* 存的就是「全部」：启动之后第一次开面板提示一次，之后靠上面那条 */}
+      {/* 存的就是完全访问：启动之后第一次开面板提示一次，之后靠上面那条 */}
       {modeReminder && (
         <div className="lattice-assistant-mode-note">
           <span>{t("This was already on when Lattice started.")}</span>
@@ -1043,23 +1067,52 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         </div>
       )}
 
-      {/* 打开之前那一次确认：把四条硬线印在上面。**只往提权的方向问** */}
+      {/*
+        启用完全访问那一次确认（DSH 那一套形状）：标题 + 风险段 + 四条硬线 +
+        一句"怎么收回" + 必须勾的那一框 + Cancel / Enable。**只往提权的方向问**。
+        两条入口（模式条那颗、手那一段那颗）都走这里 —— 一个状态，一个确认。
+      */}
       {modeConfirm && (
-        <div className="lattice-assistant-mode-confirm" role="alertdialog" aria-label={t("Switch to everything?")}>
-          <span className="lattice-assistant-mode-confirm-title">{t("Switch to everything?")}</span>
+        <div
+          className="lattice-assistant-mode-confirm"
+          role="alertdialog"
+          aria-label={t("Enable Full access?")}
+        >
+          <span className="lattice-assistant-mode-confirm-title">{t("Enable Full access?")}</span>
+          <p className="lattice-assistant-hint">
+            {t("Confirmation prompts go away: it reads and writes files anywhere, runs commands, fetches pages, screenshots, moves the mouse and types, and calls the MCP servers you added — without asking. The six groups below all switch on, so you can see what it got.")}
+          </p>
           <ul>
-            <li>{t("It reads and writes files anywhere, runs commands, fetches pages, screenshots, moves the mouse and calls MCP servers — without asking.")}</li>
             <li>{t("It still cannot install, uninstall or grant widgets.")}</li>
             <li>{t("Editing Lattice's own settings always asks.")}</li>
             <li>{t("Widgets cannot borrow it, and agent calls are unaffected.")}</li>
             <li>{t("The budget does not change: 24 steps, 5 minutes, 200k tokens.")}</li>
           </ul>
+          <p className="lattice-assistant-hint">
+            {t("Turning it off again takes one click, and turning it off never asks.")}
+          </p>
+          {fullAccessBlocked && (
+            <p className="lattice-assistant-hint">
+              {t("Read-only mode is on and wins — switch approvals to Ask or Automatic first.")}
+            </p>
+          )}
+          <label className="lattice-hand-row">
+            <input type="checkbox" checked={riskAck} onChange={(event) => setRiskAck(event.target.checked)} />
+            <span className="lattice-hand-copy">
+              <span className="lattice-hand-name">{t("I understand the risks and want to continue")}</span>
+            </span>
+          </label>
           <span className="lattice-assistant-mode-confirm-actions">
-            <button type="button" className="lattice-btn is-small" onClick={confirmEverything}>
-              {t("Switch to everything")}
-            </button>
             <button type="button" className="lattice-btn is-small" onClick={() => setModeConfirm(false)}>
               {t("Cancel")}
+            </button>
+            <button
+              type="button"
+              className="lattice-btn is-small is-primary"
+              disabled={!riskAck || fullAccessBlocked}
+              onClick={() => void confirmEverything()}
+            >
+              {t("Enable Full access")}
             </button>
           </span>
         </div>
@@ -1078,14 +1131,13 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
           <section className="lattice-hands">
             <header className="lattice-hands-head">
               <span>{t("What it may do")}</span>
-              {/* 一颗「给 agent 权力」+ 一颗「全关」。前者只在内部模式出现：
-                  全部模式本来就六组全开，按钮在那儿点了也不会改变任何事。
-                  **它拨的是开关**，审批档与工作目录一概不动 —— 用户按完还能
-                  一组一组拨回去，面板上看得见自己开了什么（0009） */}
+              {/* 主入口：一颗「Enable Full access」（= 完全访问，同一道确认）。
+                  完全访问里它不出现（那时六组本来就全开、也不问，留着它等于一个
+                  按了没反应的按钮），只剩「全关」—— 那颗在完全访问里同时把门关上 */}
               <span className="lattice-assistant-actions">
-                {!modeIgnoresSwitches(mode) && HAND_GROUPS.some((group) => !hands[group]) && (
-                  <button type="button" className="lattice-btn is-small is-primary" onClick={() => void grantAll()}>
-                    {t("Give the agent power")}
+                {!fullAccess && (
+                  <button type="button" className="lattice-btn is-small is-primary" onClick={requestFullAccess}>
+                    {t("Enable Full access")}
                   </button>
                 )}
                 <button type="button" className="lattice-btn is-small" onClick={() => void turnAllOff()}>
@@ -1123,17 +1175,22 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
                 这句必须写死在这儿 —— 内部模式曾经被描述成"一只都不给"，
                 而代码一直是"照开关"，用户于是以为内部不能用工具 */}
             <p className="lattice-assistant-hint">
-              {t("Internal mode gives the agent exactly the groups you switch on here. Everything mode switches them all on and stops asking.")}
+              {t("Internal mode gives the agent exactly the groups you switch on here. Full access switches them all on and stops asking.")}
             </p>
             {HAND_GROUPS.map((group) => (
               <label
                 key={group}
                 className={`lattice-hand-row${HAND_READY[group] ? "" : " is-soon"}`}
               >
+                {/*
+                  完全访问期间六组一律算开（`effectiveHands` 不看存的值），所以勾
+                  照实画成勾、开关也锁上：让用户去拨一个"拨了不生效"的框，比不给
+                  拨更糟。退回内部之后，这两样立刻恢复成可拨的真值
+                */}
                 <input
                   type="checkbox"
-                  checked={hands[group]}
-                  disabled={!HAND_READY[group]}
+                  checked={fullAccess || hands[group]}
+                  disabled={!HAND_READY[group] || fullAccess}
                   onChange={(event) => void toggleHand(group, event.target.checked)}
                 />
                 <span className="lattice-hand-copy">

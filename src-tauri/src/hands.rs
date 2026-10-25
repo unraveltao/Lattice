@@ -128,7 +128,7 @@ pub async fn assistant_tool(
     name: String,
     args: String,
 ) -> String {
-    // 全部模式下审计是**唯一剩下的那道痕迹**，所以它从"记录"变成了"闸门"：
+    // 完全访问下审计是**唯一剩下的那道痕迹**，所以它从"记录"变成了"闸门"：
     // 写不进去就不动手。别的模式不受影响 —— 审计不该成为普通路径的故障点
     let mode = mode_now(&app);
     let elevated = hands_policy::mode_ignores_switches(mode);
@@ -241,7 +241,8 @@ fn run(app: &AppHandle, name: &str, raw_args: &str, cancel: Arc<AtomicBool>) -> 
         );
     };
     let state = llm::hands_state(app);
-    // 全部模式下**六组临时全开**（用户存的那一份不动），`readonly` 优先 ——
+    // 完全访问下**六组一律算开**（这里只算，不写盘；面板那道确认会把六组真的
+    // 拨开、把 `mode` 写下去，所以用户按完看得见它拿到了什么），`readonly` 优先 ——
     // 界面会把开关画成"由模式强制打开"，但这里才是那条真正的判定：
     // 一次渲染进程的 bug 不该变成"模式开着但我没拨开关，所以照跑"。
     // 注意是**每次调用现查模式**，不是每轮开头查一次：会话里正在飞的那一轮

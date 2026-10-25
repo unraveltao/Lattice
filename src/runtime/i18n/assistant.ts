@@ -251,9 +251,10 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Found {count} tools.": "找到 {count} 个工具。",
   "Saved. Refresh to see its tools.": "已保存。点重新发现看看它有哪些工具。",
 
-  // —— 两个模式（0009）：内部 / 全部 ——
-  // 简体名词就用"内部 / 全部"，和 ROADMAP 与设计稿一致；不写"全权"（那是 0006 的名字）
-  Everything: "全部",
+  // —— 两个模式（0009）：内部 / 完全访问 ——
+  // 界面上的名字「完全访问」（Full access）：`mode` 存的值仍是 `internal` / `everything`
+  // （存值的字面量是历史，别为了改名去动 `assistant.json`）。不写"全权"（那是 0006 的名字）
+  "Full access": "完全访问",
   Internal: "内部",
   "Files, commands, the web, the screen, input and MCP servers. Approvals are not asked.":
     "文件、命令、网页、屏幕、键鼠和 MCP 服务。一律不问。",
@@ -262,12 +263,14 @@ export const ASSISTANT_ZH: Record<string, string> = {
   // "六只手一只都不开"，和代码对不上，用户于是以为内部模式不能用工具
   "Manages Lattice, plus whichever hands you switch on. Approvals follow the mode you picked.":
     "管棂自己，加上你拨开的那几组手。要不要问由审批档决定。",
-  "Internal mode gives the agent exactly the groups you switch on here. Everything mode switches them all on and stops asking.":
-    "内部模式给它的正是你在这里拨开的那几组；全部模式六组全开，并且一律不问。",
-  "Give the agent power": "给 agent 权力",
-  "Switch to internal": "切回内部",
-  "Switch to everything": "切到全部",
-  "Switch to everything?": "切到「全部」？",
+  "Internal mode gives the agent exactly the groups you switch on here. Full access switches them all on and stops asking.":
+    "内部模式给它的正是你在这里拨开的那几组；完全访问六组全开，并且一律不问。",
+  // 启用完全访问那一道确认（DSH 那一套形状：标题 + 风险段 + 硬线 + 必须勾的框 + 两颗按钮）
+  "Enable Full access": "启用完全访问",
+  "Turn off": "关掉",
+  "Enable Full access?": "启用完全访问？",
+  "Confirmation prompts go away: it reads and writes files anywhere, runs commands, fetches pages, screenshots, moves the mouse and types, and calls the MCP servers you added — without asking. The six groups below all switch on, so you can see what it got.":
+    "确认条不再出现：它会读写任何地方的文件、跑命令、取网页、截屏、动鼠标、敲键盘、调你加的 MCP 服务 —— 都不再问一句。下面那六组会一起拨开，你能看见它到底拿到了什么。",
   "It reads and writes files anywhere, runs commands, fetches pages, screenshots, moves the mouse and calls MCP servers — without asking.":
     "它能读写任何地方的文件、跑命令、取网页、截屏、动鼠标、调 MCP 服务 —— 都不问。",
   "It still cannot install, uninstall or grant widgets.":
@@ -277,6 +280,11 @@ export const ASSISTANT_ZH: Record<string, string> = {
     "组件借不到它，agent 的 HTTP 端点也不受影响。",
   "The budget does not change: 24 steps, 5 minutes, 200k tokens.":
     "预算不变：24 步 / 5 分钟 / 20 万 token。",
-  "This was already on when Lattice started.": "棂启动的时候它就已经在「全部」模式了。",
+  "Turning it off again takes one click, and turning it off never asks.":
+    "想收回去点一下就关；关掉它从来不问。",
+  "Read-only mode is on and wins — switch approvals to Ask or Automatic first.":
+    "只读档开着，而且它优先 —— 先把审批档换成 Ask 或 Automatic。",
+  "I understand the risks and want to continue": "我明白风险，继续",
+  "This was already on when Lattice started.": "棂启动的时候它就已经是「完全访问」了。",
   "Got it": "知道了",
 };

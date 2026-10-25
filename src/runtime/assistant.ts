@@ -242,7 +242,7 @@ export const DANGEROUS_ACTIONS: ReadonlySet<string> = new Set(["placement.remove
  * 认不出来的名字一律按"会改东西"算（`needsApproval` 的默认值就是 `true`）。
  */
 export interface ApprovalContext {
-  /** 这一轮是「全部」模式（0009）。缺省 = 内部 */
+  /** 这一轮是完全访问（0009）。缺省 = 内部 */
   everything?: boolean;
   /** 这一次调用要碰的路径（`file.write` / `screen.capture`）。缺省 = 不知道 */
   path?: string;

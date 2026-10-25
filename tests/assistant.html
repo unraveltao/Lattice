@@ -589,28 +589,28 @@
       // "能碰什么"。三条例外钉在这里，因为它们都是静默出事的那一类：
       // `readonly` 优先、写自身配置仍然问、读自身配置不算提权。
 
-      eq(approvalFor("file.write", "ask", { everything: true }), "allow", "全部模式：写不问");
-      eq(approvalFor("shell.run", "ask", { everything: true }), "allow", "全部模式：命令不问");
+      eq(approvalFor("file.write", "ask", { everything: true }), "allow", "完全访问：写不问");
+      eq(approvalFor("shell.run", "ask", { everything: true }), "allow", "完全访问：命令不问");
       eq(
         approvalFor("placement.remove", "auto", { everything: true }),
         "allow",
-        "全部模式：连删除也放行（撤销那 8 秒还在）",
+        "完全访问：连删除也放行（撤销那 8 秒还在）",
       );
-      eq(approvalFor("file.write", "readonly", { everything: true }), "deny", "全部模式盖不过只读档");
+      eq(approvalFor("file.write", "readonly", { everything: true }), "deny", "完全访问盖不过只读档");
       eq(
         approvalFor("file.write", "ask", { everything: true, path: "C:\\app\\assistant.json" }),
         "ask",
-        "全部模式：写自身配置仍然要问（能改自己权限文件的助手等于没有权限系统）",
+        "完全访问：写自身配置仍然要问（能改自己权限文件的助手等于没有权限系统）",
       );
       eq(
         approvalFor("file.read", "ask", { everything: true, path: "C:\\app\\assistant.json" }),
         "allow",
-        "全部模式：读自身配置不算提权",
+        "完全访问：读自身配置不算提权",
       );
       eq(
         approvalFor("widget.lattice.todo.add", "ask", { everything: true }),
         "allow",
-        "全部模式：组件声明的工具一样不问",
+        "完全访问：组件声明的工具一样不问",
       );
       eq(approvalFor("file.write", "ask"), "ask", "不给第三参数时，行为和以前一模一样");
 
