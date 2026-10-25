@@ -7,9 +7,13 @@
  *
  * 内容全部来自清单（见 `runtime/help.ts`），这里只负责排版，不做任何判断：
  * 谁有说明、说明写了几节，在解析清单时就已经定了。
+ *
+ * 文案是**作者写的**（`LocalizedText`），所以这里用 `useText()` 取值 ——
+ * 语言一变就得重画，和平台自己的 `t()` 是两套来源、同一条规矩。
  */
 
 import { useT } from "../runtime/i18n";
+import { useText } from "../runtime/widget-text";
 import type { ChangelogEntry, WidgetHelp } from "../runtime/help";
 
 interface HelpContentProps {
@@ -21,18 +25,23 @@ interface HelpContentProps {
 
 export function HelpContent({ help, changelog = [], showHistory = true }: HelpContentProps) {
   const t = useT();
+  const text = useText();
   return (
     <div className="lattice-help">
-      {help.sections.map((section) => (
-        <section key={section.title} className="lattice-help-section">
-          <h4 className="lattice-help-title">{section.title}</h4>
-          <ul className="lattice-help-list">
-            {section.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      {help.sections.map((section) => {
+        const title = text(section.title);
+        return (
+          <section key={title} className="lattice-help-section">
+            <h4 className="lattice-help-title">{title}</h4>
+            <ul className="lattice-help-list">
+              {section.items.map((item, index) => (
+                // 键只能用渲染出来的那句：作者两门的写法不同，用序号更稳
+                <li key={index}>{text(item)}</li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
 
       {showHistory && changelog.length > 0 && (
         <details className="lattice-help-history">
@@ -47,8 +56,8 @@ export function HelpContent({ help, changelog = [], showHistory = true }: HelpCo
                 {entry.date ? <span>{entry.date}</span> : null}
               </p>
               <ul className="lattice-help-list">
-                {entry.changes.map((change) => (
-                  <li key={change}>{change}</li>
+                {entry.changes.map((change, index) => (
+                  <li key={index}>{text(change)}</li>
                 ))}
               </ul>
             </div>
@@ -72,6 +81,7 @@ export function HelpDialog({
   changelog,
   onClose,
 }: {
+  /** 已经按当前语言取好的名字（调用方 `pickText` 过） */
   name: string;
   version: string;
   help: WidgetHelp;

@@ -29,6 +29,7 @@ import {
 } from "../runtime/catalogue";
 import { PERMISSION_LABELS, permissionLabel, type Permission } from "../runtime/manifest";
 import { useLang, useT } from "../runtime/i18n";
+import { textVariants, useText } from "../runtime/widget-text";
 import type { CatalogueSnapshot } from "./catalogue";
 import type { PermissionReview } from "./store";
 import { Glyph, ICON } from "./icons";
@@ -75,9 +76,10 @@ interface CatalogueSectionProps {
 function matches(entry: CatalogueEntry, tokens: string[]): boolean {
   if (tokens.length === 0) return true;
   const haystack = [
-    entry.name,
+    // 名字与描述是作者写的，两门都摆进来（和 `library-search.ts` 同一条规矩）
+    ...textVariants(entry.name),
     entry.id,
-    entry.description,
+    ...textVariants(entry.description),
     entry.author,
     // 权限名中英各放一份：英文名保持原样（与 `library-search.ts` 一致），
     // 另一份按当前界面语言取 —— 中文界面下搜"网络"要能命中要联网的包。
@@ -106,6 +108,7 @@ export function CatalogueSection({
   forceOpen = false,
 }: CatalogueSectionProps) {
   const t = useT();
+  const text = useText();
   /** 中文里列举用「、」，英文里是逗号 —— 拼出来的是句子，标点要跟着语言走 */
   const isZh = useLang() === "zh";
   const listSep = isZh ? "、" : ", ";
@@ -182,7 +185,8 @@ export function CatalogueSection({
 
   if (!snapshot.catalogue) return null;
 
-  const name = snapshot.catalogue.name;
+  // 目录自己的名字也是作者写的（可以两门），按当前语言取
+  const name = text(snapshot.catalogue.name);
   const updated = snapshot.catalogue.updated;
 
   /*
@@ -390,6 +394,7 @@ function CatalogueCard({
   installed: boolean;
 }) {
   const t = useT();
+  const text = useText();
   const listSep = useLang() === "zh" ? "、" : ", ";
   const review = store.reviews[entry.id];
   const busy = store.busyId === entry.id;
@@ -408,11 +413,11 @@ function CatalogueCard({
           {entry.icon ? (
             <img className="lattice-card-glyph-img" src={entry.icon} alt="" width={17} height={17} />
           ) : (
-            entry.name.trim().slice(0, 1)
+            text(entry.name).trim().slice(0, 1)
           )}
         </span>
         <span className="lattice-card-heading">
-          <span className="lattice-card-name">{entry.name}</span>
+          <span className="lattice-card-name">{text(entry.name)}</span>
           <code className="lattice-card-id">{entry.id}</code>
         </span>
         {plan.kind === "blocked" ? (
@@ -426,7 +431,7 @@ function CatalogueCard({
         )}
       </div>
 
-      <p className="lattice-card-desc">{entry.description || t("No description yet")}</p>
+      <p className="lattice-card-desc">{text(entry.description) || t("No description yet")}</p>
 
       <div className="lattice-card-meta">
         <span className="lattice-mono">v{plan.pkg.version}</span>

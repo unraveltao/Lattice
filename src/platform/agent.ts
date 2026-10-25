@@ -22,6 +22,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { nextFreeSlot, useLattice, type Placement, type ThemeMode } from "./store";
 import type { WidgetRecord } from "../runtime/registry";
+import { pickText } from "../runtime/widget-text";
 
 const EVENT = "lattice:agent";
 
@@ -95,7 +96,8 @@ export function agentSnapshot(records: WidgetRecord[]) {
     actions: AGENT_ACTIONS,
     widgets: records.map((record) => ({
       id: record.manifest.id,
-      name: record.manifest.name,
+      // 快照是给模型 / CLI 看的一份纯文本，名字取当前语言那一份就够了
+      name: pickText(record.manifest.name),
       version: record.manifest.version,
       installed: state.installedIds.includes(record.manifest.id),
       permissions: record.manifest.permissions ?? [],
@@ -104,7 +106,7 @@ export function agentSnapshot(records: WidgetRecord[]) {
     placements: state.placements.map((placement) => ({
       instanceId: placement.instanceId,
       widgetId: placement.widgetId,
-      name: byId.get(placement.widgetId)?.name ?? placement.widgetId,
+      name: pickText(byId.get(placement.widgetId)?.name) || placement.widgetId,
       x: placement.x,
       y: placement.y,
       w: placement.w,

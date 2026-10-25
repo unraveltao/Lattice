@@ -65,6 +65,69 @@
         eq(fields, [], "config 不是数组时退成空表（不抛错）");
       }
 
+      /*
+       * 双语文案（`{ zh, en }`）：标签、说明、占位符、选项名都可以两门都写，
+       * 平台按界面语言挑一份。这里钉的是"形状原样留着、上限按门算"。
+       */
+      {
+        const [field] = normalizeConfig([
+          {
+            key: "outfit",
+            type: "select",
+            label: { zh: "穿什么", en: "Outfit" },
+            help: { zh: "换一套衣服", en: "Change her clothes" },
+            options: [
+              { value: "maid", label: { zh: "女仆装", en: "Maid" } },
+              { value: "crew" },
+            ],
+          },
+        ]);
+        eq(field.label, { zh: "穿什么", en: "Outfit" }, "双语 label 两门都留着");
+        eq(field.help, { zh: "换一套衣服", en: "Change her clothes" }, "双语 help 两门都留着");
+        eq(
+          field.options[0].label,
+          { zh: "女仆装", en: "Maid" },
+          "双语选项名两门都留着",
+        );
+        eq(
+          field.options[1].label,
+          "crew",
+          "选项没写 label 时用 value 本身（老写法不变）",
+        );
+      }
+
+      {
+        const [field] = normalizeConfig([{ key: "caption", type: "toggle", label: { fr: "Légende" } }]);
+        eq(field.label, "caption", "两门都写坏 / 写了不认识的语种时退回字段键");
+      }
+
+      {
+        const [field] = normalizeConfig([
+          { key: "caption", type: "text", placeholder: { zh: "说点什么…", en: "Say something…" } },
+        ]);
+        eq(
+          field.placeholder,
+          { zh: "说点什么…", en: "Say something…" },
+          "输入框提示也能两门都写",
+        );
+
+        const [capped] = normalizeConfig([
+          { key: "caption", type: "text", placeholder: { zh: "一".repeat(200), en: "x".repeat(200) } },
+        ]);
+        eq(
+          [capped.placeholder.zh.length, capped.placeholder.en.length],
+          [80, 80],
+          "占位符的上限按门各算（80）",
+        );
+      }
+
+      {
+        const [field] = normalizeConfig([
+          { key: "scale", type: "number", unit: { zh: "×", en: "x" } },
+        ]);
+        eq(field.unit, "×", "单位只有一个值，顺手写成两门也取第一门");
+      }
+
       {
         const fields = normalizeConfig([
           { key: "ok", type: "toggle" },

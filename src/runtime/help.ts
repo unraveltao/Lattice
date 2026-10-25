@@ -26,11 +26,17 @@
  */
 
 import { isValidVersion } from "./semver";
+import { normalizeLine, normalizeText, type LocalizedText } from "./widget-text";
 
-/** 说明里的一节，例如 "Priorities" */
+/**
+ * 说明里的一节，例如 "Priorities"。
+ *
+ * 文案类型是 `LocalizedText`：作者可以只写一门（字符串），也可以写成
+ * `{ zh, en }` 让平台按界面语言挑 —— 规则见 `runtime/widget-text.ts`。
+ */
 export interface HelpSection {
-  title: string;
-  items: string[];
+  title: LocalizedText;
+  items: LocalizedText[];
 }
 
 export interface WidgetHelp {
@@ -41,8 +47,9 @@ export interface WidgetHelp {
 /** 一条变更记录。`date` 可以空着 —— 有些版本就是没记日子 */
 export interface ChangelogEntry {
   version: string;
+  /** 语言无关的标签（`2026-10` / `Oct 2026`），不翻 */
   date: string;
-  changes: string[];
+  changes: LocalizedText[];
 }
 
 export const MAX_HELP_SECTIONS = 6;
@@ -76,14 +83,15 @@ export function normalizeHelp(raw: unknown): WidgetHelp {
     if (sections.length >= MAX_HELP_SECTIONS) break;
     if (!item || typeof item !== "object") continue;
     const section = item as Record<string, unknown>;
-    const title = clip(section.title, MAX_HELP_TITLE_CHARS);
+    const title = normalizeText(section.title, MAX_HELP_TITLE_CHARS);
     if (!title) continue;
     if (!Array.isArray(section.items)) continue;
 
-    const lines: string[] = [];
+    const lines: LocalizedText[] = [];
     for (const line of section.items) {
       if (lines.length >= MAX_HELP_ITEMS) break;
-      const text = clip(line, MAX_HELP_ITEM_CHARS);
+      // `normalizeText` 两门都不合法时返回 ""，所以这里一句就够，不用再判空串
+      const text = normalizeText(line, MAX_HELP_ITEM_CHARS);
       if (text) lines.push(text);
     }
     // 有标题没内容的一节不画：它会变成一个点开什么都没的折叠条
@@ -114,10 +122,10 @@ export function normalizeChangelog(raw: unknown): ChangelogEntry[] {
     if (!isValidVersion(version)) continue;
     if (!Array.isArray(entry.changes)) continue;
 
-    const changes: string[] = [];
+    const changes: LocalizedText[] = [];
     for (const line of entry.changes) {
       if (changes.length >= MAX_CHANGELOG_CHANGES) break;
-      const text = clip(line, MAX_CHANGELOG_CHANGE_CHARS);
+      const text = normalizeText(line, MAX_CHANGELOG_CHANGE_CHARS);
       if (text) changes.push(text);
     }
     if (changes.length === 0) continue;
@@ -125,18 +133,9 @@ export function normalizeChangelog(raw: unknown): ChangelogEntry[] {
     entries.push({
       version,
       // 日期只当标签用，不做严格校验：写 `2026-10` 或 `Oct 2026` 都不该让整条消失
-      date: clip(entry.date, 24),
+      date: normalizeLine(entry.date, 24),
       changes,
     });
   }
   return entries;
-}
-
-/** 去掉首尾空白并按字符数截断（超长时补一个省略号，别让句子断在半截） */
-function clip(value: unknown, limit: number): string {
-  if (typeof value !== "string") return "";
-  const text = value.trim().replace(/\s+/g, " ");
-  if (!text) return "";
-  if (text.length <= limit) return text;
-  return `${text.slice(0, limit - 1).trimEnd()}…`;
 }

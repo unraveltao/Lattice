@@ -8,13 +8,14 @@
  */
 
 import { PERMISSION_LABELS, permissionLabel, type Permission } from "./manifest";
+import { textVariants, type LocalizedText } from "./widget-text";
 
 /** 只需要清单里的这几项，测试里给个对象就能跑 */
 export interface SearchableWidget {
   manifest: {
-    name: string;
+    name: LocalizedText;
     id: string;
-    description: string;
+    description: LocalizedText;
     author: string;
     permissions: Permission[];
   };
@@ -44,15 +45,18 @@ export function tokenize(query: string): string[] {
  * 另一份按当前界面语言取 —— 中文界面下搜"网络"要能命中要联网的包，
  * 而英文查询的结果不能被多出来的中文名改变。
  *
+ * 作者写的名字 / 描述**所有语言各放一份**（`textVariants`）：用户不记得自己
+ * 当初看到的是哪一门，打"鲸鱼"要能搜到大肥鱼，打 "whale" 也要能。
+ *
  * 空词表（也就是空查询）**一律命中**：那是"没在搜"，不是"什么都不要"。
  */
 export function matchesWidget(record: SearchableWidget, tokens: string[]): boolean {
   if (tokens.length === 0) return true;
 
   const haystack = [
-    record.manifest.name,
+    ...textVariants(record.manifest.name),
     record.manifest.id,
-    record.manifest.description,
+    ...textVariants(record.manifest.description),
     record.manifest.author,
     ...record.manifest.permissions.flatMap((permission) => [
       PERMISSION_LABELS[permission] ?? permission,

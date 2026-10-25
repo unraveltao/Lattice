@@ -30,22 +30,29 @@
  *   那种组件该自己画一个设置页。
  */
 
+import { normalizeLine, normalizeText, type LocalizedText } from "./widget-text";
+
 /** 配置值只有这三种。对象和数组一律不支持 —— 属性面板没法通用地渲染它们 */
 export type ConfigValue = string | number | boolean;
 
 /** 一个实例的配置：只存"改过的键"，没改过的由 schema 的 default 补 */
 export type ConfigValues = Record<string, ConfigValue>;
 
+/**
+ * 标签类的文案都是 `LocalizedText`：作者可以写一门字符串，也可以写
+ * `{ zh, en }` 让平台按界面语言挑（见 `runtime/widget-text.ts`）。`unit`
+ * 例外 —— 它是 `px` / `s` / `%` 这种语言无关的符号，写成两门反而奇怪。
+ */
 export interface ConfigOption {
   value: string;
-  label: string;
+  label: LocalizedText;
 }
 
 interface BaseField {
   key: string;
-  label: string;
+  label: LocalizedText;
   /** 一句话说明，显示在控件下面。空串表示不显示 */
-  help: string;
+  help: LocalizedText;
 }
 
 export interface ToggleField extends BaseField {
@@ -66,7 +73,8 @@ export interface NumberField extends BaseField {
 export interface TextField extends BaseField {
   type: "text";
   default: string;
-  placeholder: string;
+  /** 输入框里的灰字，也是用户能看到的字，所以同样可以写成两门 */
+  placeholder: LocalizedText;
   maxLength: number;
 }
 
@@ -125,8 +133,9 @@ export function normalizeConfig(raw: unknown): ConfigField[] {
 }
 
 function buildField(key: string, input: Record<string, unknown>): ConfigField | null {
-  const label = typeof input.label === "string" && input.label.trim() ? input.label.trim() : key;
-  const help = typeof input.help === "string" ? input.help.trim() : "";
+  // 标签没写就用键名：键名是英文，总比空着强
+  const label = normalizeText(input.label) || key;
+  const help = normalizeText(input.help);
 
   switch (input.type) {
     case "toggle":
@@ -147,7 +156,7 @@ function buildField(key: string, input: Record<string, unknown>): ConfigField | 
         min: low,
         max: high,
         step,
-        unit: typeof input.unit === "string" ? input.unit.trim().slice(0, 6) : "",
+        unit: normalizeLine(input.unit, 6),
         default: clamp(fallback, low, high),
       };
     }
@@ -159,7 +168,7 @@ function buildField(key: string, input: Record<string, unknown>): ConfigField | 
         help,
         type: "text",
         default: typeof input.default === "string" ? input.default.slice(0, MAX_TEXT_LENGTH) : "",
-        placeholder: typeof input.placeholder === "string" ? input.placeholder.slice(0, 80) : "",
+        placeholder: normalizeText(input.placeholder, 80),
         maxLength: Math.min(MAX_TEXT_LENGTH, Math.max(1, Math.round(finite(input.maxLength, 120)))),
       };
 
@@ -207,10 +216,10 @@ function normalizeOptions(raw: unknown): ConfigOption[] {
     const record = item && typeof item === "object" ? (item as Record<string, unknown>) : null;
     const resolved = value ?? (typeof record?.value === "string" ? record.value : "");
     if (!resolved || seen.has(resolved)) continue;
-    const label =
-      typeof record?.label === "string" && record.label.trim() ? record.label.trim() : resolved;
+    // 没写 label（或者两门都不可用）就用 value 本身当显示名
+    const label = normalizeText(record?.label, 40) || resolved;
     seen.add(resolved);
-    options.push({ value: resolved.slice(0, 40), label: label.slice(0, 40) });
+    options.push({ value: resolved.slice(0, 40), label });
   }
   return options;
 }

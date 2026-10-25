@@ -28,6 +28,7 @@ import {
 import { isTauri, type WidgetRecord } from "../runtime/registry";
 import { hasHelp } from "../runtime/help";
 import { useT } from "../runtime/i18n";
+import { useText } from "../runtime/widget-text";
 import { HelpContent } from "./HelpContent";
 import { LibSection } from "./LibSection";
 import { PanelGlyph, WidgetIconMark } from "./icons";
@@ -142,6 +143,8 @@ interface ConfigControlProps {
  * 同一份偏好。属性面板按**实例**渲染，正好是用户期望的粒度。
  */
 function ConfigControl({ field, value, onChange }: ConfigControlProps) {
+  // 标签 / 说明 / 选项名 / 灰字都是**作者写的**，按当前语言取一份（见 widget-text.ts）
+  const text = useText();
   if (field.type === "toggle") {
     return (
       <div className="lattice-config">
@@ -151,26 +154,26 @@ function ConfigControl({ field, value, onChange }: ConfigControlProps) {
             checked={value === true}
             onChange={(event) => onChange(event.target.checked)}
           />
-          <span>{field.label}</span>
+          <span>{text(field.label)}</span>
         </label>
-        {field.help ? <p className="lattice-hint">{field.help}</p> : null}
+        {field.help ? <p className="lattice-hint">{text(field.help)}</p> : null}
       </div>
     );
   }
 
   return (
     <div className="lattice-config">
-      <span className="lattice-config-label">{field.label}</span>
+      <span className="lattice-config-label">{text(field.label)}</span>
       {field.type === "select" ? (
         <select
           className="lattice-input"
           value={String(value)}
           onChange={(event) => onChange(event.target.value)}
-          aria-label={field.label}
+          aria-label={text(field.label)}
         >
           {field.options.map((option) => (
             <option key={option.value} value={option.value}>
-              {option.label}
+              {text(option.label)}
             </option>
           ))}
         </select>
@@ -187,20 +190,20 @@ function ConfigControl({ field, value, onChange }: ConfigControlProps) {
           className="lattice-input"
           value={String(value)}
           onChange={(event) => onChange(event.target.value)}
-          aria-label={field.label}
+          aria-label={text(field.label)}
         />
       ) : (
         <input
           type="text"
           className="lattice-input"
           value={String(value)}
-          placeholder={field.placeholder}
+          placeholder={text(field.placeholder)}
           maxLength={field.maxLength}
           onChange={(event) => onChange(event.target.value)}
-          aria-label={field.label}
+          aria-label={text(field.label)}
         />
       )}
-      {field.help ? <p className="lattice-hint">{field.help}</p> : null}
+      {field.help ? <p className="lattice-hint">{text(field.help)}</p> : null}
     </div>
   );
 }
@@ -221,6 +224,7 @@ function ConfigNumber({
   onChange: (value: ConfigValue) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
+  const text = useText();
 
   const commit = () => {
     if (draft === null) return;
@@ -248,7 +252,7 @@ function ConfigNumber({
             event.currentTarget.blur();
           }
         }}
-        aria-label={field.label}
+        aria-label={text(field.label)}
       />
       {field.unit ? <span>{field.unit}</span> : null}
     </label>
@@ -257,6 +261,8 @@ function ConfigNumber({
 
 export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps) {
   const t = useT();
+  /** 组件名 / 描述 / 配置项文案都是作者写的，按当前语言取一份 */
+  const text = useText();
   const selectedId = useLattice((state) => state.selectedInstanceId);
   const placements = useLattice((state) => state.placements);
   const grants = useLattice((state) => state.grants);
@@ -368,7 +374,6 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
 
   const manifest = record.manifest;
   const granted = grants[manifest.id] ?? [];
-
   // 实例覆盖优先，缺的键用清单的出厂值补 —— 和 buildSpecs / WidgetFrame 同一套规则
   const configOverrides = configs[placement.instanceId];
   const resolvedConfig = resolveConfig(manifest.config, configOverrides);
@@ -411,7 +416,7 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
       <header className="lattice-panel-head">
         <h2 className="lattice-panel-title">
           {record.iconUrl && <WidgetIconMark url={record.iconUrl} size={13} />}
-          <span className="lattice-panel-title-text">{manifest.name}</span>
+          <span className="lattice-panel-title-text">{text(manifest.name)}</span>
         </h2>
         <div className="lattice-panel-actions">
           <button
@@ -435,7 +440,7 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
       </header>
 
       <div className="lattice-panel-body">
-        <p className="lattice-card-desc">{manifest.description || t("No description")}</p>
+        <p className="lattice-card-desc">{text(manifest.description) || t("No description")}</p>
 
         {/*
           "怎么用"放在最上面、默认收起：它是选中共一个组件时最先想知道的事，

@@ -34,6 +34,7 @@
        * 纯函数测试全绿而所有组件一个说明都没有，也是白搭。
        */
       import { normalizeManifest } from "/src/runtime/manifest.ts";
+      import { pickText, textVariants } from "/src/runtime/widget-text.ts";
       import {
         MAX_CHANGELOG_ENTRIES,
         MAX_HELP_ITEMS,
@@ -87,6 +88,42 @@
         "连续空白归一成一个空格",
       );
 
+      /*
+       * 双语的写法（`{ zh, en }`）：说明的标题和每一条正文都可以是两种语言。
+       * 形状必须原样留着 —— 平台按当前界面语言挑，挑不到才退到另一门。
+       */
+      const bilingual = normalizeHelp({
+        sections: [
+          {
+            title: { zh: "怎么用", en: "How to use" },
+            items: [
+              { zh: "点她一下", en: "Click her" },
+              { zh: "能拖", en: 42 },
+            ],
+          },
+        ],
+      });
+      eq(
+        bilingual.sections[0].title,
+        { zh: "怎么用", en: "How to use" },
+        "双语标题两门都留着",
+      );
+      eq(
+        bilingual.sections[0].items[0],
+        { zh: "点她一下", en: "Click her" },
+        "双语条目两门都留着",
+      );
+      eq(
+        bilingual.sections[0].items[1],
+        { zh: "能拖" },
+        "写坏一门只丢那一门，这一条照常显示",
+      );
+      eq(
+        pickText(bilingual.sections[0].title, "en"),
+        "How to use",
+        "到了界面上按语言挑（这里是英文）",
+      );
+
       const long = "x".repeat(400);
       const clipped = normalizeHelp({ sections: [{ title: "T", items: [long] }] }).sections[0].items[0];
       log(clipped.length <= 160 && clipped.endsWith("…"), "超长条目截断到 160 并补省略号");
@@ -130,6 +167,21 @@
         `变更记录上限 ${MAX_CHANGELOG_ENTRIES} 条`,
       );
 
+      const bilingualReleases = normalizeChangelog([
+        {
+          version: "1.0.0",
+          // 日期是标签，不翻；顺手写成两门也取第一门
+          date: { zh: "2026-10", en: "Oct 2026" },
+          changes: [{ zh: "能说话了", en: "She can talk now" }],
+        },
+      ]);
+      eq(
+        bilingualReleases[0].changes[0],
+        { zh: "能说话了", en: "She can talk now" },
+        "变更记录的一条也可以是双语",
+      );
+      eq(bilingualReleases[0].date, "2026-10", "日期只有一个值，取第一门非空的");
+
       // ---- 3. hasHelp ----
 
       eq(hasHelp({ sections: [] }), false, "空说明 = 没有说明");
@@ -158,6 +210,11 @@
 
       eq(manifests.length, ids.length, "每个内置组件都读出了清单");
 
+      const nameless = manifests
+        .filter((m) => !pickText(m.name, "zh") || !pickText(m.name, "en"))
+        .map((m) => m.id);
+      eq(nameless, [], "每个内置组件在中文和英文界面上都有名字（只写一门就两门都用它）");
+
       const missing = manifests.filter((m) => !hasHelp(m.help)).map((m) => m.id);
       eq(
         missing,
@@ -185,14 +242,18 @@
       const uncovered = [];
       for (const manifest of manifests) {
         if (!hasHelp(manifest.help)) continue;
+        // 说明和配置项标签都可能写成两门，所以两种语言的词都算"提到了"
         const haystack = manifest.help.sections
           .flatMap((section) => [section.title, ...section.items])
+          .flatMap((value) => textVariants(value))
           .join(" ")
           .toLowerCase();
         for (const field of manifest.config) {
           if (field.help) continue;
-          const needle = field.label.toLowerCase();
-          if (!haystack.includes(needle)) uncovered.push(`${manifest.id}:${field.key}`);
+          const needles = textVariants(field.label).map((label) => label.toLowerCase());
+          if (!needles.some((needle) => haystack.includes(needle))) {
+            uncovered.push(`${manifest.id}:${field.key}`);
+          }
         }
       }
       eq(uncovered, [], "每个没有自带 help 的配置项，都要在说明里被提到");

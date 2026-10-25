@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>widget text test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 组件**作者写的**文案：一门还是两门（`runtime/widget-text.ts`）。
+       *
+       * 这一页钉的是三条边界，它们合起来才让"老组件不用改"成立：
+       *   1. 字符串永远有效 —— 只写一门的组件在两门界面下都显示那句话
+       *   2. 缺一门时**退到另一门**，不是退成空串（和 `t()` 缺翻译退成英文同一个取舍）
+       *   3. 上限按门算，写坏一门只丢那一门
+       *
+       * 另外查 `textVariants` —— 搜索要两种语言都建索引，否则英文名在中文界面里搜不到。
+       */
+      import { setLanguage } from "/src/runtime/i18n.ts";
+      import {
+        TEXT_LANGS,
+        normalizeLine,
+        normalizeText,
+        pickText,
+        textVariants,
+      } from "/src/runtime/widget-text.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text}（得到 ${JSON.stringify(actual)}）`,
+        );
+
+      // ---- 1. 单字符串：永远有效 ----
+      eq(TEXT_LANGS, ["zh", "en"], "只有两门语言");
+      eq(normalizeText("大肥鱼"), "大肥鱼", "字符串原样保留（形状还是字符串）");
+      eq(normalizeText("  a \n\n b  "), "a b", "去掉首尾空白、把连续空白收成一个空格");
+      eq(normalizeText(""), "", "空串归成空串");
+      eq(normalizeText("   "), "", "全空白也归成空串");
+      eq(normalizeText(42), "", "数字不是文案");
+      eq(normalizeText(null), "", "null 不是文案");
+      eq(normalizeText(["zh"]), "", "数组不算双语对象");
+
+      // ---- 2. 双语对象 ----
+      eq(
+        normalizeText({ zh: "女仆装", en: "Maid" }),
+        { zh: "女仆装", en: "Maid" },
+        "两门都留着",
+      );
+      eq(normalizeText({ zh: "女仆装" }), { zh: "女仆装" }, "只写一门就只留一门");
+      eq(
+        normalizeText({ zh: "冬装", en: 42 }),
+        { zh: "冬装" },
+        "写坏一门只丢那一门（en 不是字符串）",
+      );
+      eq(normalizeText({ zh: 42, en: null }), "", "两门都坏 = 没写");
+      eq(normalizeText({ zh: "  ", en: "" }), "", "两门都是空白 = 没写");
+      eq(
+        normalizeText({ zh: "大小", en: "Size", fr: "Taille" }),
+        { zh: "大小", en: "Size" },
+        "不认识的语种被丢掉，不外泄到界面上",
+      );
+      eq(normalizeText({ en: "Size" }), { en: "Size" }, "只有英文的也可以");
+
+      // ---- 3. 上限按门算 ----
+      eq(normalizeText("abcdefgh", 4), "abc…", "超长了截断并补省略号（总长就是上限）");
+      eq(normalizeText("abcd", 4), "abcd", "正好等于上限不截");
+      eq(
+        normalizeText({ zh: "一二三四五六", en: "abcdefgh" }, 4),
+        { zh: "一二三…", en: "abc…" },
+        "上限按门各算各的，不共享额度",
+      );
+      eq(normalizeText({ zh: "大小", en: "Size" }, 0), { zh: "大小", en: "Size" }, "上限 0 = 不截断");
+      log(
+        String(normalizeText({ zh: "一".repeat(200) }, 160).zh).length === 160,
+        "help 的 160 字上限真的生效（含省略号正好 160）",
+      );
+
+      // ---- 4. 取当前语言那一门 ----
+      const both = { zh: "她自己走动吗", en: "Does she wander?" };
+      eq(pickText(both, "zh"), "她自己走动吗", "中文界面取中文");
+      eq(pickText(both, "en"), "Does she wander?", "英文界面取英文");
+      eq(pickText({ zh: "只有中文" }, "en"), "只有中文", "缺英文时退到中文，不是空串");
+      eq(pickText({ en: "English only" }, "zh"), "English only", "缺中文时退到英文");
+      eq(pickText("原话", "en"), "原话", "字符串在两门界面下都是它自己");
+      eq(pickText("", "zh"), "", "空串还是空串");
+      eq(pickText(undefined, "zh"), "", "没写就是空串（调用方只需要判空一次）");
+
+      // ---- 5. 默认语言来自 i18n ----
+      setLanguage("zh");
+      eq(pickText(both), "她自己走动吗", "不传语言时看当前界面语言（zh）");
+      setLanguage("en");
+      eq(pickText(both), "Does she wander?", "不传语言时看当前界面语言（en）");
+      setLanguage("system");
+
+      // ---- 6. 搜索要两种语言都建索引 ----
+      eq(textVariants("大肥鱼"), ["大肥鱼"], "单词一条");
+      eq(textVariants(both), ["她自己走动吗", "Does she wander?"], "两门都进搜索索引");
+      eq(textVariants({ en: "Big Fishy" }), ["Big Fishy"], "只有一门就一条");
+      eq(textVariants({ zh: "  ", en: "" }), [], "全是空的不进索引");
+      eq(textVariants(undefined), [], "没写就没索引");
+
+      // ---- 7. 只该有一门的短标签（日期 / 单位） ----
+      eq(normalizeLine("2026-10-25"), "2026-10-25", "日期原样");
+      eq(normalizeLine("2026-10-25T00:00:00Z", 10), "2026-10-2…", "短标签一样会截断");
+      eq(normalizeLine({ zh: "×", en: "x" }), "×", "顺手写成两门时取第一门非空的");
+      eq(normalizeLine({ en: "cm" }), "cm", "只有一门也能取到");
+      eq(normalizeLine({ zh: 42 }), "", "坏值归空");
+      eq(normalizeLine(null), "", "null 归空");
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

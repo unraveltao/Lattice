@@ -13,6 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Permission } from "./manifest";
 import type { ConfigValues } from "./config";
 import type { Scheduler } from "./schedule";
+import { languagePayload } from "./i18n";
 
 export const BRIDGE_TAG = "__lattice";
 
@@ -349,6 +350,19 @@ defineMethod("shell.open", "shell:open", async (params) => {
 });
 
 defineMethod("theme.get", null, () => readThemeTokens());
+
+/*
+ * 现在是什么语言。
+ *
+ * 组件自己画的字（桌宠的气泡、按钮、她的回复）是**作者写的**，平台翻不了 ——
+ * 只能把"现在是哪一门"告诉它，由它自己挑。`locale` 那一半是给 `Intl` /
+ * `toLocaleString` 用的：那儿认 `zh-CN`，不认 `zh`。
+ *
+ * 不需要权限：界面语言不是系统能力，而且组件本来就看得见平台的字。
+ * 推送那条（`{ type: "language" }`）在宿主页里发，两个宿主都要接 ——
+ * 只读一次的话，用户切了语言组件不会跟着换，和 `config.get` 同一个坑。
+ */
+defineMethod("lang.get", null, () => languagePayload());
 
 /*
  * 这个实例的配置。

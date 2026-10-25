@@ -22,6 +22,7 @@ import type { WidgetLoadError, WidgetRecord } from "../runtime/registry";
 import { matchesWidget, tokenize } from "../runtime/library-search";
 import { permissionLabel, isPermissionReady } from "../runtime/manifest";
 import { useT } from "../runtime/i18n";
+import { useText } from "../runtime/widget-text";
 import { hasHelp } from "../runtime/help";
 import { CatalogueSection, type StoreBinding } from "./CatalogueSection";
 import { HelpDialog } from "./HelpContent";
@@ -84,6 +85,8 @@ export function LibraryPanel({
   onToggle,
 }: LibraryPanelProps) {
   const t = useT();
+  /** 组件名 / 描述是**作者写的**（可能两门），按当前语言取一份 */
+  const text = useText();
   const [query, setQuery] = useState("");
   /** 正在看"怎么用"的那个组件。null = 没开 */
   const [helpTarget, setHelpTarget] = useState<WidgetRecord | null>(null);
@@ -146,11 +149,11 @@ export function LibraryPanel({
               <WidgetIconMark url={record.iconUrl} size={17} />
             ) : (
               /* 没声明图标的包退回"名字首字"，总比空一块好认 */
-              record.manifest.name.trim().slice(0, 1)
+              text(record.manifest.name).trim().slice(0, 1)
             )}
           </span>
           <span className="lattice-card-heading">
-            <span className="lattice-card-name">{record.manifest.name}</span>
+            <span className="lattice-card-name">{text(record.manifest.name)}</span>
             <code className="lattice-card-id">{record.manifest.id}</code>
           </span>
           {review ? (
@@ -163,7 +166,7 @@ export function LibraryPanel({
         </div>
 
         <p className="lattice-card-desc">
-          {record.manifest.description || t("No description yet")}
+          {text(record.manifest.description) || t("No description yet")}
         </p>
 
         <div className="lattice-card-meta">
@@ -195,7 +198,7 @@ export function LibraryPanel({
         */}
         {isInstalled && (
           <div className="lattice-card-rating" onClick={(event) => event.stopPropagation()}>
-            <div className="lattice-stars" role="group" aria-label={t("Rate {name}", { name: record.manifest.name })}>
+            <div className="lattice-stars" role="group" aria-label={t("Rate {name}", { name: text(record.manifest.name) })}>
               {[1, 2, 3, 4, 5].map((value) => (
                 <button
                   key={value}
@@ -238,7 +241,7 @@ export function LibraryPanel({
                 setHelpTarget(record);
               }}
               title={t("How to use this widget")}
-              aria-label={t("How to use {name}", { name: record.manifest.name })}
+              aria-label={t("How to use {name}", { name: text(record.manifest.name) })}
             >
               <Glyph d={ICON.info} size={12} />
             </button>
@@ -489,7 +492,7 @@ export function LibraryPanel({
 
       {helpTarget && (
         <HelpDialog
-          name={helpTarget.manifest.name}
+          name={text(helpTarget.manifest.name)}
           version={helpTarget.manifest.version}
           help={helpTarget.manifest.help}
           changelog={helpTarget.manifest.changelog}

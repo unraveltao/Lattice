@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useT } from "../runtime/i18n";
+import { useText } from "../runtime/widget-text";
 import type { WidgetRecord } from "../runtime/registry";
 
 export interface ReportTarget {
@@ -42,6 +43,8 @@ interface ReportDialogProps {
 
 export function ReportDialog({ target, saving, result, error, onClose, onSubmit }: ReportDialogProps) {
   const t = useT();
+  /** 组件名是作者写的（可能两门），按当前语言取一份 */
+  const text = useText();
   const [reason, setReason] = useState(REASONS[0]);
   const [note, setNote] = useState("");
   const [stars, setStars] = useState(0);
@@ -67,8 +70,8 @@ export function ReportDialog({ target, saving, result, error, onClose, onSubmit 
   }, [target, onClose]);
 
   const title = useMemo(
-    () => (target ? t("Report {name}", { name: target.record.manifest.name }) : ""),
-    [target, t],
+    () => (target ? t("Report {name}", { name: text(target.record.manifest.name) }) : ""),
+    [target, t, text],
   );
 
   if (!target) return null;

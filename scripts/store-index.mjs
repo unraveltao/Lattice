@@ -51,6 +51,17 @@ function arg(name, fallback) {
   return index >= 0 ? process.argv[index + 1] : fallback;
 }
 
+/**
+ * 作者写的名字 / 描述可以是双语对象（`{ zh, en }`，见 `runtime/widget-text.ts`）。
+ * 目录里**原样存下去**，两种语言都留着，界面按当前语言挑；
+ * 这里只需要挑一个来排序 —— 挑不到就退回另一种，跟前端同一条规则。
+ */
+function pickText(value, lang = "zh") {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return "";
+  return value[lang] || value.zh || value.en || "";
+}
+
 function main() {
   const widgetsDir = resolve(root, arg("--widgets", DEFAULT_WIDGETS));
   const outDir = resolve(root, arg("--out", DEFAULT_OUT));
@@ -126,11 +137,12 @@ function main() {
     console.log(`  ${manifest.id} ${manifest.version}  ${(archive.length / 1024).toFixed(1)} KB`);
   }
 
-  entries.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+  entries.sort((a, b) => pickText(a.name).localeCompare(pickText(b.name), "zh-CN"));
 
   const catalogue = {
     schema: 1,
-    name: "Lattice official",
+    // 目录自己的名字也是双语：中文界面显示"棂官方组件"，英文界面还是原来那句
+    name: { zh: "棂官方组件", en: "Lattice official" },
     updated: new Date().toISOString().slice(0, 10),
     publisher: { name: PUBLISHER_NAME, key: publicKey },
     widgets: entries,

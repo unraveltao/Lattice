@@ -49,7 +49,7 @@ my-widget/
 | 选项 | 默认 | 说明 |
 | --- | --- | --- |
 | `timeout` | `3000` | 单次桥调用的超时（毫秒） |
-| `bootTimeout` | `1200` | 启动时拉配置 / 主题各自的最长等待 |
+| `bootTimeout` | `1200` | 启动时拉配置 / 主题 / 语言各自的最长等待 |
 | `autoTheme` | `true` | 自动把主题令牌写成 CSS 变量 |
 | `autoReady` | `true` | 启动完成后自动向宿主报 `ready` |
 
@@ -63,6 +63,7 @@ my-widget/
 | `on(event, fn)` / `off(event, fn)` | 订阅宿主推送，返回退订函数 |
 | `theme` | 当前主题令牌（`--lattice-*` 长名） |
 | `applyTheme(tokens)` | 手动应用一份令牌 |
+| `language` | 当前界面语言 `{ lang: "zh" \| "en", locale }`，见下面"双语组件" |
 | `config` | 当前实例配置，已合并出厂值 |
 | `reloadConfig()` | 重新拉一次配置 |
 | `storage.{get,set,remove,onChange}` | 组件私有存储，需要 `storage` 权限 |
@@ -118,6 +119,25 @@ try {
 | `--lattice-font` | `--font` |
 
 两个名字都能用。别名是为了让组件 CSS 短一点，长名是为了和平台文档对得上。
+
+### 双语组件
+
+平台界面可以中英切换。**组件自己的字由组件自己挑** —— 平台不认识你写的那句话，不会替你翻。两件事要做：
+
+```js
+const lattice = createLattice();
+await lattice.ready;                       // 这之后 lattice.language 就是准的
+
+const pick = (zh, en) => (lattice.language.lang === "zh" ? zh : en);
+title.textContent = pick("说点什么…", "Say something…");
+
+// 用户在设置里换了界面语言：重画一遍
+lattice.on("language", () => {
+  title.textContent = pick("说点什么…", "Say something…");
+});
+```
+
+清单里也是同一套规矩：`name` / `description` / `config` 的 `label` / `help` / `changelog` 都可以写 `{ "zh": …, "en": … }` 两种语言，老的单字符串写法永远有效（写一种就是两种语言都显示它）。细节见 `docs/WIDGET_SPEC.md` §3.1。
 
 ## 不用这个包也可以
 

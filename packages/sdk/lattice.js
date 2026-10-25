@@ -63,6 +63,24 @@ const THEME_ALIASES = {
 };
 
 /**
+ * 系统语言兜底：不在宿主里（或者 `lang.get` 还没回来）时用浏览器的语言猜一次。
+ * 平台那边"跟随系统"走的是同一条判断（中文区 → `zh`，其余 → `en`）。
+ */
+function systemLanguage() {
+  const locale = (typeof navigator !== "undefined" && navigator.language) || "en";
+  return { lang: locale.toLowerCase().startsWith("zh") ? "zh" : "en", locale };
+}
+
+/** 宿主推来的语言形状不对就留着上一份，别把组件的分支打成 undefined */
+function normalizeLanguage(payload, previous) {
+  if (!payload || typeof payload !== "object") return previous;
+  const lang = payload.lang === "zh" ? "zh" : payload.lang === "en" ? "en" : previous.lang;
+  const locale =
+    typeof payload.locale === "string" && payload.locale ? payload.locale : previous.locale;
+  return { lang, locale };
+}
+
+/**
  * 建一个桥客户端。
  *
  * @param {object} [options]
@@ -91,6 +109,7 @@ export function createLattice(options = {}) {
 
   let config = {};
   let themeTokens = {};
+  let language = systemLanguage();
 
   // -------------------------------------------------------------------------
   // 消息收发
@@ -171,6 +190,11 @@ export function createLattice(options = {}) {
         emit("theme", themeTokens);
         return;
       }
+      case "language": {
+        language = normalizeLanguage(data.payload, language);
+        emit("language", language);
+        return;
+      }
       case "config-changed": {
         config = (data.payload && data.payload.config) || {};
         emit("config", config);
@@ -217,7 +241,7 @@ export function createLattice(options = {}) {
   // -------------------------------------------------------------------------
 
   /**
-   * 启动顺序：先把配置和主题**拉**一次，再向宿主报 ready。
+   * 启动顺序：先把配置、主题、语言**拉**一次，再向宿主报 ready。
    *
    * 为什么要拉：宿主只在收到 `ready` 之后才推主题和配置（它不知道组件什么时候
    * 装好监听器）。所以"等推送"会死等；先拉一次能保证 `await ready` 之后
@@ -242,12 +266,17 @@ export function createLattice(options = {}) {
         new Promise((resolve) => setTimeout(() => resolve(null), bootTimeout)),
       ]);
 
-    return Promise.all([settle(call("config.get")), settle(call("theme.get"))]).then(([values, tokens]) => {
+    return Promise.all([
+      settle(call("config.get")),
+      settle(call("theme.get")),
+      settle(call("lang.get")),
+    ]).then(([values, tokens, spoken]) => {
       if (values && typeof values === "object") config = values;
       if (tokens && typeof tokens === "object") {
         themeTokens = tokens;
         if (autoTheme) applyTheme(themeTokens);
       }
+      if (spoken) language = normalizeLanguage(spoken, language);
       if (autoReady) post({ type: "ready" });
       return api;
     });
@@ -271,6 +300,16 @@ export function createLattice(options = {}) {
     /** 当前主题令牌（长名，`--lattice-*`） */
     get theme() {
       return themeTokens;
+    },
+
+    /**
+     * 当前界面语言：`{ lang: "zh" | "en", locale: "zh-CN" }`。
+     *
+     * 作者写的中英文由组件自己挑（平台不认识组件里的句子）。`await ready`
+     * 之后这份就是对的；用户中途在设置里换语言会推 `on("language")`。
+     */
+    get language() {
+      return language;
     },
 
     applyTheme,

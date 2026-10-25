@@ -30,6 +30,7 @@
        *   3. 多词是 AND —— "clock 24" 不能把只有 "clock" 的包也带出来
        *   4. 权限名也算命中（"storage" 能搜到要存储的包）
        *   5. 搜不到的词就是搜不到 —— 不要做模糊匹配，那会让"没结果"变成"一堆噪音"
+       *   6. 双语组件两种语言的词都命中 —— 用户只记得他当初看到的那个词
        *
        * 纯函数，不碰 DOM，整页毫秒级。
        */
@@ -96,6 +97,25 @@
       // ---- 5. 不做模糊匹配 ----
       log(!matchesWidget(clock, tokenize("clok")), "拼错一个字母就是没有（不做模糊）");
       log(!matchesWidget(clock, tokenize("zzz")), "不存在的词搜不到");
+
+      // ---- 6. 双语组件：两种语言的词都算命中 ----
+      /*
+       * 搜索要**两种语言都建索引**。只索引当前语言的话，用户在中文界面里记得
+       * 的是"Big Fishy"就搜不到，反过来也一样 —— 他不记得当初看到的是哪一门。
+       */
+      const pet = widget(
+        { zh: "大肥鱼", en: "Big Fishy" },
+        "lattice.pet",
+        { zh: "一只住在桌面上的鲸鱼娘", en: "A whale girl living on the desktop" },
+        "Lattice",
+        ["llm:chat"],
+      );
+      log(matchesWidget(pet, tokenize("大肥鱼")), "中文名命中（当前界面是英文也一样）");
+      log(matchesWidget(pet, tokenize("fishy")), "英文名命中（当前界面是中文也一样）");
+      log(matchesWidget(pet, tokenize("鲸鱼娘")), "中文描述命中");
+      log(matchesWidget(pet, tokenize("desktop")), "英文描述命中");
+      log(matchesWidget(pet, tokenize("大肥鱼 desktop")), "两个词分属两种语言也算 AND 命中");
+      log(!matchesWidget(pet, tokenize("大肥鱼 cat")), "有一个词不在 -> 不命中");
 
       document.getElementById("out").innerHTML = lines
         .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)

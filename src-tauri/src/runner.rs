@@ -1221,8 +1221,9 @@ pub fn widget_set_theme(app: AppHandle, theme: String) -> Result<(), String> {
 /// 平台换了界面语言，把已经在桌面上的组件窗口一起改过来。
 ///
 /// 和主题同一套：`lang` 在建窗口时随 `HostConfig` 下去当初值，之后的切换走
-/// 这条广播（宿主页不加载 store，读不到设置里那档偏好）。组件**自己的**文案
-/// 不跟着变 —— 那是作者写的，平台只翻自己的窗饰提示和错误卡片。
+/// 这条广播（宿主页不加载 store，读不到设置里那档偏好）。宿主页做两件事：
+/// 用 `t()` 重画**平台自己写的**字（窗饰提示、错误卡片），再把新语言转发给组件
+/// 的 iframe（`{ type: "language" }`）—— 作者写的中英文只有组件自己挑得出来。
 #[tauri::command]
 pub fn widget_set_language(app: AppHandle, lang: String) -> Result<(), String> {
     let _ = app.emit("lattice:language", lang);

@@ -36,6 +36,7 @@
 
 import { ID_RE, type Permission } from "./manifest";
 import { compareVersions, isValidVersion, maxSatisfying, parseVersion } from "./semver";
+import { normalizeText, pickText, type LocalizedText } from "./widget-text";
 
 /** 目录里一个可下载的版本 */
 export interface CataloguePackage {
@@ -50,8 +51,8 @@ export interface CataloguePackage {
   signature: string;
   /** 这个版本申请了哪些权限。装上之后与本地已授予的做差，就是"新要的" */
   permissions: Permission[];
-  /** 这个版本改了什么，可选 */
-  notes: string;
+  /** 这个版本改了什么，可选。作者写的字，所以同样可以写成两门 */
+  notes: LocalizedText;
 }
 
 export interface CataloguePublisher {
@@ -62,8 +63,8 @@ export interface CataloguePublisher {
 
 export interface CatalogueEntry {
   id: string;
-  name: string;
-  description: string;
+  name: LocalizedText;
+  description: LocalizedText;
   author: string;
   /** 图标绝对地址；没有就是 null，界面退回"名字首字" */
   icon: string | null;
@@ -75,7 +76,7 @@ export interface CatalogueEntry {
 
 export interface Catalogue {
   schema: number;
-  name: string;
+  name: LocalizedText;
   /** 目录的构建日期，ISO 字符串 */
   updated: string;
   /** 目录所在目录的地址，相对 url 按它补全；仅用于展示与解析 */
@@ -227,7 +228,7 @@ export function parseCatalogue(raw: unknown, base: string): CatalogueParse {
         size: typeof version.size === "number" && version.size >= 0 ? version.size : 0,
         signature,
         permissions: normalizePermissionList(version.permissions, `${id} ${number}`, warnings),
-        notes: text(version.notes),
+        notes: normalizeText(version.notes),
       });
     }
 
@@ -240,8 +241,8 @@ export function parseCatalogue(raw: unknown, base: string): CatalogueParse {
 
     entries.push({
       id,
-      name: text(entry.name) || id,
-      description: text(entry.description),
+      name: normalizeText(entry.name) || id,
+      description: normalizeText(entry.description),
       author: text(entry.author) || publisher?.name || "unknown",
       icon: text(entry.icon) ? resolveCatalogueUrl(base, text(entry.icon)) : null,
       homepage: text(entry.homepage) || null,
@@ -250,12 +251,12 @@ export function parseCatalogue(raw: unknown, base: string): CatalogueParse {
     });
   }
 
-  entries.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+  entries.sort((a, b) => pickText(a.name).localeCompare(pickText(b.name), "zh-CN"));
 
   return {
     catalogue: {
       schema,
-      name: text(root.name) || "Untitled catalogue",
+      name: normalizeText(root.name) || "Untitled catalogue",
       updated: text(root.updated),
       base,
       entries,

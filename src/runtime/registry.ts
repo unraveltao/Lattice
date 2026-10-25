@@ -15,6 +15,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { ManifestError, normalizeManifest, type WidgetManifest } from "./manifest";
+import { pickText } from "./widget-text";
 
 export type WidgetSource = "bundled" | "user";
 
@@ -130,7 +131,8 @@ export async function loadRegistry(): Promise<RegistrySnapshot> {
     (item) => item.source === "user" || !userIds.has(item.manifest.id),
   );
 
-  unique.sort((a, b) => a.manifest.name.localeCompare(b.manifest.name, "zh-CN"));
+  // 按界面上看到的那个名字排 —— 双语的组件用当前语言那一份
+  unique.sort((a, b) => pickText(a.manifest.name).localeCompare(pickText(b.manifest.name), "zh-CN"));
   return { widgets: unique, errors };
 }
 

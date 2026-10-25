@@ -10,6 +10,7 @@ import { normalizeAppearance, type Appearance } from "./appearance";
 import { normalizeConfig, type ConfigField } from "./config";
 import { normalizeChangelog, normalizeHelp, type ChangelogEntry, type WidgetHelp } from "./help";
 import { t } from "./i18n";
+import { normalizeText, type LocalizedText } from "./widget-text";
 
 /** 组件在桌面上的层级 */
 export type WidgetLayer = "desktop" | "top";
@@ -65,9 +66,16 @@ export interface WidgetNetwork {
 export interface WidgetManifest {
   /** 反向域名风格，全局唯一，例如 lattice.clock */
   id: string;
-  name: string;
+  /**
+   * 显示名与一句话说明。
+   *
+   * 类型是 `LocalizedText`：只写一门（字符串）一直是合法的；写成
+   * `{ "zh": …, "en": … }` 时平台按界面语言挑一份。作者文案不进 `i18n/*`，
+   * 那是平台自己的字 —— 规则见 `runtime/widget-text.ts`。
+   */
+  name: LocalizedText;
   version: string;
-  description: string;
+  description: LocalizedText;
   author: string;
   /** 相对组件目录的入口 HTML，默认 index.html */
   entry: string;
@@ -197,9 +205,9 @@ export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest
 
   return {
     id,
-    name: optionalString(input.name) || dirName,
+    name: normalizeText(input.name) || dirName,
     version,
-    description: optionalString(input.description),
+    description: normalizeText(input.description),
     author: optionalString(input.author) || t("Unknown author"),
     entry: optionalString(input.entry) || "index.html",
     icon: normalizeIconPath(input.icon),

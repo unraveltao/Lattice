@@ -33,7 +33,7 @@
        * 这一页钉的是"组件作者依赖的那些行为"，不是 SDK 的内部实现：
        *   - `await ready` 之后配置和主题已经就位（第一次渲染就是对的）
        *   - 失败的调用一律 reject 一个带 `code` 的 LatticeError，不是裸 Error
-       *   - 宿主推来的 theme / config-changed / tick / store-changed 都能收到
+       *   - 宿主推来的 theme / config-changed / tick / store-changed / language 都能收到
        *   - 心跳返回 `{ id, stop }`，stop 之后不再触发
        *   - 宿主不在了（顶层窗口）时立刻失败，不会干等三秒
        *
@@ -109,6 +109,9 @@
             return;
           case "clock.now":
             reply(source, id, { ok: true, result: { epochMs: 1700000000000, timeZone: "UTC" } });
+            return;
+          case "lang.get":
+            reply(source, id, { ok: true, result: { lang: "zh", locale: "zh-CN" } });
             return;
           case "storage.set":
             store[params.key] = params.value;
@@ -198,6 +201,7 @@
         "rgb(238, 238, 238)",
         "主题短名 --fg 也写了一份（组件可以直接用 var(--fg)）",
       );
+      eq(sdk.language, { lang: "zh", locale: "zh-CN" }, "await ready 之后界面语言已就位");
       log(await waitFor(() => readyCount >= 1), "启动时向宿主报了一次 ready（宿主据此推主题和配置）");
 
       // ---- 2. 请求 / 响应配对 ----
@@ -270,6 +274,33 @@
         "推送的主题当场写到 CSS 变量上",
       );
 
+      /*
+       * ---- 5.1 语言 ----
+       *
+       * 作者写的中英文由组件自己挑，所以 SDK 必须把"现在是哪一门"送到手上：
+       * 启动时拉一次（`lang.get`），用户中途换语言靠推送。
+       */
+      log(
+        received.some((entry) => entry.method === "lang.get"),
+        "启动时拉了一次 lang.get（不是只等推送）",
+      );
+      const spoken = [];
+      sdk.on("language", (info) => spoken.push(info));
+      frame.contentWindow.postMessage(
+        { __lattice: 1, type: "language", payload: { lang: "en", locale: "en-US" } },
+        "*",
+      );
+      await wait(30);
+      eq(spoken.length, 1, "language 推到 on(\"language\")");
+      eq(sdk.language, { lang: "en", locale: "en-US" }, "推送之后 sdk.language 换成新值");
+      frame.contentWindow.postMessage(
+        { __lattice: 1, type: "language", payload: { lang: "fr" } },
+        "*",
+      );
+      await wait(30);
+      eq(sdk.language.lang, "en", "认不出的语言留着上一份，不会变成 undefined");
+      eq(sdk.language.locale, "en-US", "同一条推送里缺的字段也留着上一份");
+
       // ---- 6. 心跳 ----
       const ticks = [];
       const timer = await sdk.schedule.every(1000, (payload) => ticks.push(payload.id));
@@ -329,6 +360,7 @@
         "不在宿主里时调用立刻失败，不干等超时",
       );
       await detached.ready;
+      eq(detached.language.lang, "en", "不在宿主里时按浏览器语言猜一门（这一页钉的是 en-US）");
 
       // ---- 10. 监听器互不影响 ----
       const hits = [];

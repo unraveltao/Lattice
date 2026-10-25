@@ -43,6 +43,7 @@ import { permissionLabel } from "./runtime/manifest";
 import { isTauri, loadRegistry, type WidgetLoadError, type WidgetRecord } from "./runtime/registry";
 import { DEBUG_EVENT, ingest } from "./runtime/debug";
 import { lang, setLanguage, subscribe, t, useT, watchSystemLanguage } from "./runtime/i18n";
+import { pickText } from "./runtime/widget-text";
 import type { Permission, WidgetLayer } from "./runtime/manifest";
 
 /** 顶栏那颗按钮的循环顺序：浅色 → 深色 → 跟随系统 → 浅色 */
@@ -319,7 +320,7 @@ export default function App() {
   const crashName = useMemo(() => {
     if (!crash) return "";
     const widgetId = placements.find((item) => item.instanceId === crash.instanceId)?.widgetId;
-    return (widgetId ? records.get(widgetId)?.manifest.name : "") || widgetId || crash.instanceId;
+    return (widgetId ? pickText(records.get(widgetId)?.manifest.name) : "") || widgetId || crash.instanceId;
   }, [crash, placements, records]);
 
   /**
@@ -629,7 +630,7 @@ export default function App() {
         setNotice({
           kind: "error",
           text: t("{name} is signed with a key you blocked ({key}) — unblock it first.", {
-            name: entry.name,
+            name: pickText(entry.name),
             key: keyFingerprint(key),
           }),
         });
@@ -641,7 +642,7 @@ export default function App() {
         setNotice({
           kind: "error",
           text: t("{name} is signed with a different key now — confirm it on the card first.", {
-            name: entry.name,
+            name: pickText(entry.name),
           }),
         });
         return;
@@ -666,11 +667,11 @@ export default function App() {
         setNotice({
           kind: "ok",
           text: result.previousVersion
-            ? t("Updated {name} to {version}", { name: entry.name, version: result.version })
-            : t("Installed {name} {version}", { name: entry.name, version: result.version }),
+            ? t("Updated {name} to {version}", { name: pickText(entry.name), version: result.version })
+            : t("Installed {name} {version}", { name: pickText(entry.name), version: result.version }),
         });
       } catch (error) {
-        setNotice({ kind: "error", text: `${entry.name}: ${String(error)}` });
+        setNotice({ kind: "error", text: `${pickText(entry.name)}: ${String(error)}` });
       } finally {
         setCatalogueBusyId(null);
       }
@@ -695,7 +696,7 @@ export default function App() {
         setNotice({
           kind: "ok",
           text: t("Rolled {name} back to {version}", {
-            name: record.manifest.name,
+            name: pickText(record.manifest.name),
             version: result.version ?? t("the previous version"),
           }),
         });
@@ -993,7 +994,7 @@ export default function App() {
     const next = Object.entries(permissionReviews)[0];
     if (!next) return null;
     const [widgetId, entry] = next;
-    return { widgetId, entry, name: records.get(widgetId)?.manifest.name ?? widgetId };
+    return { widgetId, entry, name: pickText(records.get(widgetId)?.manifest.name) || widgetId };
   }, [permissionReviews, records]);
 
   return (
@@ -1216,7 +1217,7 @@ export default function App() {
           <div className="lattice-undo" role="status">
             <span className="lattice-undo-text">
               {t("Removed")}{" "}
-              <b>{records.get(lastClosed.placement.widgetId)?.manifest.name ?? lastClosed.placement.widgetId}</b>
+              <b>{pickText(records.get(lastClosed.placement.widgetId)?.manifest.name) || lastClosed.placement.widgetId}</b>
             </span>
             <button type="button" className="lattice-undo-action" onClick={restoreLastClosed}>
               {t("Undo")}

@@ -82,8 +82,9 @@ src/
     assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、system prompt、历史裁剪、OpenAI 消息形状、快照压缩（`tests/assistant.html` 83 条）
     align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 单包命中判定（纯函数，`tests/library-search.html` 钉着）
-    i18n.ts               界面文案的中英切换：**key 就是英文原句**、缺翻译退化成英文、`useT()`（组件）/ `t()`（模块）/ `setLanguage()`（`tests/i18n.html` 钉着）
+    i18n.ts               界面文案的中英切换：**key 就是英文原句**、缺翻译退化成英文、`useT()`（组件）/ `t()`（模块）/ `setLanguage()` / `languagePayload()`（给组件看的"现在是哪一门"，`tests/i18n.html` 钉着）
     i18n/*.ts             中文表按域分片（common / shell / library / panels / settings / assistant / misc）；**纯数据，一个 import 都不许有**
+    widget-text.ts        组件**作者写的**文案：字符串或 `{ zh, en }`、`pickText` 按语言挑（缺一门退另一门）、`textVariants` 给搜索建两门索引、`normalizeLine` 管日期/单位（`tests/widget-text.html` 钉着）
     debug.ts              调试总线：环形缓冲 400 条、攒批镜像到主窗口、过滤 / 统计纯函数
     semver.ts             版本号与范围：解析 / 比较 / `^ ~ >= <= > < =` / 通配 / `||`（纯函数，`tests/semver.html` 钉着）
     catalogue.ts          目录解析与安装计划：三道校验、挑版本、权限差集（纯函数，`tests/catalogue.html` 钉着）
@@ -358,10 +359,28 @@ const t = useT();                      // 组件里：语言一变就重渲染
 - **组件里必须用 `useT()`**，模块级（`platform/*.ts`、`widgetHost.ts`）用 `t()`。模块顶层算出来的常量数组（`THEME_OPTIONS` 那种）**不能**在初始化时 `t()`：英文留在常量里，渲染时 `t(option.label)`。
 - **中文写进哪个分片看归谁**：`common`（多处在用的词）、`shell`（外壳 / 画布）、`library`（组件库与商店）、`panels`（属性面板 / 说明 / 举报）、`settings`（设置浮层）、`assistant`（assistant 与调试面板）、`misc`（`platform/*.ts`、清单校验、权限名）。**同一句只有一种译法**，`tests/i18n.html` 会查。
 - **英文必须写好**：它就是 en 这一门的成品。中文不许改 `{占位符}` 的名字，位置随意（可以把变量放句子中间）。
-- **不翻**：组件清单里的 `name` / `description` / `help` / `changelog`（作者写的）、代码注释、`console.*`、错误码与枚举、URL 与路径、日志与审计。
+- **不翻**：代码注释、`console.*`、错误码与枚举、URL 与路径、日志与审计。
+- **组件清单里的 `name` / `description` / `config` 标签 / `help` / `changelog` 是作者写的**，不进 `i18n/*`（平台不认识第三方组件的每一句话）。作者要双语就写成 `{ "zh": …, "en": … }`，平台按当前语言挑（`runtime/widget-text.ts` 的 `pickText`）；只写一个字符串永远有效，两门界面都显示它。组件 HTML 里那些字平台完全管不着 —— 组件自己读 `lang.get` / 收 `language` 推送（配方见下一条）。
 - **翻**：可见文字、`placeholder`、`title`、`aria-label`。
 - 桌面组件窗口是独立 webview、**不加载 store**，所以语言随 `HostConfig.lang` 下去当初值、变化走 `lattice:language` 广播（和 `lattice:theme` 同一套）。加一处新的"平台写给桌面端看的字"，记得两样都要接。
 - 权限名走 `permissionLabel(p)`（`runtime/manifest.ts`），别直接读 `PERMISSION_LABELS` 上界面 —— 那张表是英文原文，也是中文表的 key。
+
+### 加一句组件自己说的双语（作者文案）
+
+**组件里的句子只有作者知道怎么翻。** 平台能做的是把"现在是哪一门"送到手上，别的都得组件自己挑：
+
+```js
+const { lang } = await call("lang.get");        // "zh" | "en"，首帧之后就是准的
+const say = (zh, en) => (lang === "en" ? en : zh);
+// 用户中途在设置里换语言：平台推一条，别只读一次
+if (data.type === "language") { lang = data.payload.lang; repaint(); }
+```
+
+1. **两件事都要做**（`lang.get` + `language` 推送）。只读一次 = 换语言组件不动；只听推送 = 组件的语言停在建文档那一刻（权限变更重载、热更新都会碰上）。
+2. **`lang` 只有 `zh` / `en`**。"跟随系统"是**平台**在设置里解析掉的（`runtime/i18n.ts::resolveLang`），组件不要去猜系统区域、也不要自己读 `navigator.language` 当权威。
+3. **首帧先按一门画**（不变量 18）：HTML 里写死一份、`lang.get` 回来再换。等桥的那几十毫秒里画"加载中"是把同一个等待画得更久。
+4. **清单那边的双语是 `{ zh, en }` 对象**，走 `normalizeText` / `pickText`（`runtime/widget-text.ts`）—— 字段清单和上限见 WIDGET_SPEC §2.7。搜索是两种语言都建索引的（`textVariants`），别只挑当前语言。
+5. **SDK 已经把这两件事包好了**：`lattice.language` + `lattice.on("language")`，启动时自动拉一次。手写桥的组件（内置组件全是手写的）照上面四行做。
 
 ### 改内置 assistant / 加一项 AI 能力
 

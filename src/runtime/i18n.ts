@@ -105,6 +105,18 @@ export function locale(): string {
   return current === "zh" ? "zh-CN" : "en-US";
 }
 
+/**
+ * 给组件看的那份"现在是什么语言"。
+ *
+ * 两个字段：`lang` 是平台自己的两门（`zh` / `en`，组件按它挑话术），
+ * `locale` 是 BCP-47 标签（组件要 `toLocaleString` / `Intl` 时用它，
+ * 那儿认的是 `zh-CN` 而不是 `zh`）。桥方法 `lang.get`、推送消息
+ * `language` 和桌面宿主页的 `HostConfig` 用的是同一份形状。
+ */
+export function languagePayload(): { lang: Lang; locale: string } {
+  return { lang: current, locale: locale() };
+}
+
 function announce(): void {
   if (typeof document !== "undefined") {
     document.documentElement.lang = current === "zh" ? "zh-CN" : "en";

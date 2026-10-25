@@ -137,7 +137,48 @@
         eq(catalogue.entries[0].publisher.key, KEY, "公钥被保留");
       }
 
+      /*
+       * 双语的目录与条目：名字、说明、版本的 notes 都可以写成 `{ zh, en }`。
+       *
+       * 目录是**别人**发的，平台只负责原样留下两门、按当前语言挑一份 ——
+       * 所以这里钉的是"形状别被压成字符串"，压掉了就只剩一门。
+       */
+      {
+        const { catalogue, warnings } = parseCatalogue(
+          doc({
+            name: { zh: "测试目录", en: "Test catalogue" },
+            widgets: [
+              entry({
+                id: "lattice.pet",
+                name: { zh: "大肥鱼", en: "Big Fishy" },
+                description: { zh: "一只桌宠", en: "A desktop pet" },
+                versions: [version({ notes: { zh: "修了气泡", en: "Fixed the bubble" } })],
+              }),
+            ],
+          }),
+          BASE,
+        );
+        eq(warnings.length, 0, "双语目录没有警告");
+        eq(catalogue.name, { zh: "测试目录", en: "Test catalogue" }, "目录名两门都留着");
+        eq(
+          catalogue.entries[0].name,
+          { zh: "大肥鱼", en: "Big Fishy" },
+          "条目名两门都留着（不会被压成字符串）",
+        );
+        eq(
+          catalogue.entries[0].description,
+          { zh: "一只桌宠", en: "A desktop pet" },
+          "条目说明两门都留着",
+        );
+        eq(
+          catalogue.entries[0].versions[0].notes,
+          { zh: "修了气泡", en: "Fixed the bubble" },
+          "版本的更新说明两门都留着",
+        );
+      }
+
       // ---- 3. 整份不是目录 ----
+
       eq(parseCatalogue({ schema: 2, widgets: [] }, BASE).catalogue, null, "schema 不认识 -> 拒绝");
       eq(parseCatalogue(null, BASE).catalogue, null, "不是对象 -> 拒绝");
       log(parseCatalogue({ schema: 2 }, BASE).warnings[0].includes("schema"), "拒绝时说明原因");

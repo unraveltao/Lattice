@@ -30,7 +30,8 @@ import {
 } from "../runtime/diagnostics";
 import { isTauri, type WidgetRecord } from "../runtime/registry";
 import { computeAlign, type AlignGuideState } from "../runtime/align-guides";
-import { useT } from "../runtime/i18n";
+import { languagePayload, useLang, useT } from "../runtime/i18n";
+import { useText } from "../runtime/widget-text";
 import { isWidgetLog, trace } from "../runtime/debug";
 import { WidgetIconMark } from "./icons";
 import { snap, useLattice, type Placement } from "./store";
@@ -61,6 +62,10 @@ interface WidgetFrameProps {
 
 export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
   const t = useT();
+  /** 组件名是作者写的（可能两门），按当前语言取一份 */
+  const text = useText();
+  /** 组件自己画的字跟着它走（推给 iframe，见下面的 `language` 一条） */
+  const language = useLang();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const selected = useLattice((state) => state.selectedInstanceId === placement.instanceId);
   const grants = useLattice((state) => state.grants[record.manifest.id]);
@@ -191,6 +196,7 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
 
       if (data && data[BRIDGE_TAG] === 1 && data.type === "ready") {
         post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
+        post({ [BRIDGE_TAG]: 1, type: "language", payload: languagePayload() });
         return;
       }
       if (!isBridgeRequest(data)) return;
@@ -232,6 +238,20 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
   useEffect(() => {
     post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
   }, [theme, post]);
+
+  /*
+   * 语言切换时也推一条。
+   *
+   * 组件自己画的话（桌宠的气泡、按钮）是作者写的，平台翻不了 —— 只能告诉它
+   * "现在换成哪一门了"。和 `theme` 同一个形状，同样**只读一次是不够的**：
+   * 用户切语言的那一刻组件已经在跑，不推它就一直是旧语言。
+   *
+   * 依赖是 `useLang()` 而不是 store 里的偏好：'跟随系统' 那一档下，偏好没变
+   * 而系统语言变了也算换了一门。
+   */
+  useEffect(() => {
+    post({ [BRIDGE_TAG]: 1, type: "language", payload: languagePayload() });
+  }, [language, post]);
 
   /*
    * 配置变了，推一份给组件。
@@ -482,7 +502,7 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
         title={t("Drag to move")}
       >
         {record.iconUrl && <WidgetIconMark url={record.iconUrl} size={12} />}
-        <span className="lattice-widget-title">{record.manifest.name}</span>
+        <span className="lattice-widget-title">{text(record.manifest.name)}</span>
         <span className={`lattice-chip${placement.layer === "top" ? " is-accent" : ""}`}>
           {placement.layer === "top" ? t("On top") : t("Desktop")}
         </span>
@@ -493,7 +513,7 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
           key={reloadKey}
           ref={iframeRef}
           className="lattice-widget-frame"
-          title={record.manifest.name}
+          title={text(record.manifest.name)}
           /*
            * 重挂时带一个时间戳，否则拿回来的还是缓存里那一份 ——
            * `key` 换了只说明 React 重建了元素，浏览器那边仍然可以命中缓存。

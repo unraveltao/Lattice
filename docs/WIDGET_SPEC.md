@@ -199,6 +199,73 @@ void call("window.moveBy", { dx: speed * dt, dy: 0 });
 
 动作用**整体位移**，不要用窗口内部的大小变化去模拟（同 §2.5 的美术约束）。
 
+### 2.7 中英文：作者写的字由作者挑
+
+平台界面可以在设置里切成中文或英文。**组件里那些字是作者写的，平台不翻** ——
+它不知道 `"偶尔走两步"` 对应哪句英文。所以给作者留了一个双语写法：
+
+```json
+{
+  "name": { "zh": "大肥鱼", "en": "Big Fishy" },
+  "description": { "zh": "一条会冒泡的桌宠", "en": "A desktop fish that blows bubbles" },
+  "config": [
+    {
+      "key": "wander",
+      "kind": "select",
+      "label": { "zh": "她自己走动吗", "en": "Does she wander?" },
+      "help": { "zh": "关掉就站在那儿", "en": "Turn this off and she stays put" },
+      "options": [
+        { "value": "still", "label": { "zh": "站着别动", "en": "Stay still" } }
+      ]
+    }
+  ],
+  "help": [
+    {
+      "title": { "zh": "怎么玩", "en": "How to play" },
+      "items": [
+        { "zh": "点她一下会冒泡", "en": "Click her and she says something" }
+      ]
+    }
+  ],
+  "changelog": [
+    {
+      "version": "0.2.0",
+      "date": "2026-02-14",
+      "changes": [
+        { "zh": "加了中文和英文", "en": "Added Chinese and English" }
+      ]
+    }
+  ]
+}
+```
+
+**可以写成两种形状的地方**（能写的字段就这些，别自己发明）：
+
+| 位置 | 形状 |
+| --- | --- |
+| `name`、`description` | `"一句话"` 或 `{ "zh": …, "en": … }` |
+| `config[].label`、`.help`、`.placeholder`、`options[].label` | 同上 |
+| `help[].title`、`help[].items[]` | 同上 |
+| `changelog[].changes[]` | 同上 |
+
+**不朽的单字符串。** 只写一个字符串 = 这门语言**和**另一门语言都显示它。
+第三方组件不写英文照样能用（英文界面里看到它的中文名），老包一个都不用改。
+这条和平台文案的方向一致：缺的那一份退化成**另一种语言**，而不是变成空白或者键名。
+
+**上限按语言各算。** `help` 一条 `items[]` 160 字、`title` 40 字、`changelog.changes[]` 160 字、
+`options[].label` 40 字、`placeholder` 80 字 —— 中英文各算各的，不共享额度。
+`date` / `unit` 这类**只有一个值的短字段**没有双语形式（`date` 是 ISO 日期，`unit` 是 `"cm"` 这种单位符号）。
+
+**坏的那一半逐条丢。** `{ "zh": "中文", "en": 42 }` → 英文那一份被丢掉，
+这份文字按"只有中文"处理。整条都坏（两个都不是字符串）才丢这一条，
+和 §2.4「坏条目逐条丢」同一条规矩。
+
+**卡片里的字（HTML 里写的那些）平台一点都管不着** —— 那是组件自己的文档。
+组件要跟着界面语言走，就自己读：`lang.get` 拿初值、`language` 推送跟着变（§4.3），
+包里各留一份文案自己挑。SDK 把这两件事包成了 `lattice.language` + `lattice.on("language")`。
+
+搜索是**两种语言都建索引**的：作者写了英文名，用户在中文界面里搜 `fish` 也能搜到。
+
 ### 2.1 `icon`：组件图标
 
 写一个相对组件目录的路径就行（`"icon": "icon.svg"`）。平台把它显示在三处：组件库的卡片色块、画布卡片的标题条、属性面板的标题前。
@@ -528,6 +595,7 @@ parent.postMessage(
 | `schedule.clear` | — | `{ id }` | `{ ok: true }` |
 | `config.get` | — | — | 这个实例的配置，已按清单 schema 合并出厂值，见 §2.3 |
 | `theme.get` | — | — | CSS 变量字典，见下 |
+| `lang.get` | — | — | `{ lang: "zh" \| "en", locale }`；平台当前界面语言，见 §2.7 与 §4.3 |
 | `network.fetch` | `network` | `{ url, method?, headers?, body? }` | `{ status, ok, headers, body, truncated }`，见 §3.2 |
 | `media.get` | `media:control` | — | 当前媒体会话，没有播放器时返回 `null`（不是错误），见 §4.4 |
 | `media.control` | `media:control` | `{ action }` | `{ ok }`；`action` 是 `playPause` / `next` / `previous` / `stop` |
@@ -604,6 +672,7 @@ await call("schedule.clear", { id: grant.id });
 | 消息 | 时机 | 载荷 |
 | --- | --- | --- |
 | `{ __lattice: 1, type: "theme", payload }` | 主题切换、组件加载完成 | CSS 变量字典 |
+| `{ __lattice: 1, type: "language", payload }` | 界面语言切换、组件加载完成 | `{ lang: "zh" \| "en", locale }`，见下 |
 | `{ __lattice: 1, type: "tick", payload }` | `schedule.every` 到期 | `{ id, at }`，`id` 就是订阅号 |
 | `{ __lattice: 1, type: "store-changed", payload }` | 本组件的私有存储被**任意**实例写入了 | `{ key }`，`key` 为空串表示整份文件被替换 |
 | `{ __lattice: 1, type: "config-changed", payload }` | 这个实例的配置被改了（属性面板） | `{ config }`，完整对象，见 §2.3 |
@@ -624,6 +693,27 @@ if (data.type === "store-changed" && (!data.payload.key || data.payload.key === 
 主题字典的键：`--lattice-bg`、`--lattice-surface`、`--lattice-text`、`--lattice-text-muted`、`--lattice-border`、`--lattice-accent`、`--lattice-radius`、`--lattice-font`。
 
 组件应当把这些值写到自己根元素的 CSS 变量上，这样明暗主题切换是零成本的。
+
+**语言也是"拉一次 + 收推送"两件事。** `lang.get` 拿初值，`language` 推送跟着变：
+
+```js
+let lang = (await call("lang.get")).lang;      // "zh" 或 "en"
+const say = () => {
+  hint.textContent = lang === "zh" ? "点我一下" : "Click me";
+};
+say();
+
+// 用户在设置里换了语言：平台会推一条，别只读一次
+if (data.type === "language") {
+  lang = data.payload.lang;
+  say();
+}
+```
+
+两条都别省：只读一次的话，用户换语言组件不会动；只听推送的话，组件在"语言早就切过"
+之后才加载（重载、热更新、权限变更）就永远停在建文档那一刻的值。
+`lang` 只有 `zh` / `en` 两种 —— "跟随系统"是**平台**在设置里解析掉的，组件不用管
+系统区域设置。`locale`（`zh-CN`、`en-US`）只在要排版日期、数字的时候用。
 
 ### 4.4 `media.get`：系统媒体会话
 
@@ -691,7 +781,9 @@ const session = await lattice.media.get();
 
 `lattice.js` 和 `lattice.d.ts` 是**两个普通文件**，从 `examples/counter/` 或 `npm run create:widget` 的产物里拷进组件目录即可 —— 不需要 `npm install`，不需要打包。这样"组件不用构建"这个前提保住了。
 
-它替你做的事：请求 / 响应配对、超时、`LatticeError`（带 `code` 和 `permission`）、启动时先拉配置和主题再报 `ready`、主题令牌写成 CSS 变量（长名 + 短别名）、`store-changed` / `config-changed` / `tick` 的分发。
+它替你做的事：请求 / 响应配对、超时、`LatticeError`（带 `code` 和 `permission`）、启动时先拉配置 / 主题 / **语言**再报 `ready`、主题令牌写成 CSS 变量（长名 + 短别名）、`store-changed` / `config-changed` / `tick` / `language` 的分发。
+
+双语的那两件事也在里面：`lattice.language`（`{ lang, locale }`）和 `lattice.on("language", …)`。
 
 它**不**做的事：不重试、不替你决定降级策略、不绕过权限。
 

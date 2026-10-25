@@ -48,6 +48,16 @@ export type ConfigValues = Record<string, string | number | boolean | null>;
 /** 主题令牌，键是 `--lattice-*` 长名 */
 export type ThemeTokens = Record<string, string>;
 
+/** 界面语言：`zh` 或 `en`（"跟随系统"在平台那边就已经解析成其中之一） */
+export type Lang = "zh" | "en";
+
+/** 平台当前的界面语言。组件按 `lang` 挑自己写的那一份文案 */
+export interface LanguageInfo {
+  lang: Lang;
+  /** 具体地区，如 `zh-CN` / `en-US`。只用来排版日期数字时才需要 */
+  locale: string;
+}
+
 export type MediaStatus = "playing" | "paused" | "stopped" | "changing" | "opened" | "closed";
 
 export interface MediaSession {
@@ -163,6 +173,7 @@ export interface Lattice {
   call<T = unknown>(method: string, params?: unknown): Promise<T>;
 
   on(event: "theme", handler: (tokens: ThemeTokens) => void): () => void;
+  on(event: "language", handler: (info: LanguageInfo) => void): () => void;
   on(event: "config", handler: (config: ConfigValues) => void): () => void;
   on(event: "store", handler: (key: string | undefined) => void): () => void;
   on(event: "tick", handler: (payload: TickPayload) => void): () => void;
@@ -171,6 +182,9 @@ export interface Lattice {
 
   readonly theme: ThemeTokens;
   applyTheme(tokens: ThemeTokens): void;
+
+  /** 界面语言。`await ready` 之后就是准确的；换语言会推 `on("language")` */
+  readonly language: LanguageInfo;
 
   readonly config: ConfigValues;
   reloadConfig(): Promise<ConfigValues>;

@@ -57,7 +57,7 @@ import {
   type WidgetErrorReport,
 } from "./runtime/diagnostics";
 import type { Permission } from "./runtime/manifest";
-import { setLanguage, t } from "./runtime/i18n";
+import { languagePayload, setLanguage, t } from "./runtime/i18n";
 
 interface HostConfig {
   instanceId: string;
@@ -326,6 +326,9 @@ function parseHex(value: string): [number, number, number] {
 
 /** 由 boot() 接上：把最新的令牌推给 iframe */
 let pushTheme: (() => void) | null = null;
+
+/** 由 boot() 接上：把当前语言推给 iframe（组件自己画的话要跟着换） */
+let pushLanguage: (() => void) | null = null;
 
 /** 由 buildChrome() 接上：界面语言变了以后重贴窗饰的提示语 */
 let relabelChrome: (() => void) | null = null;
@@ -1364,6 +1367,7 @@ async function boot() {
 
   const post = (payload: unknown) => iframe.contentWindow?.postMessage(payload, "*");
   pushTheme = () => post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
+  pushLanguage = () => post({ [BRIDGE_TAG]: 1, type: "language", payload: languagePayload() });
 
   /*
    * 一个桌面窗口一条时间轴。组件所有的 `schedule.every` 都挂在这上面，
@@ -1408,6 +1412,7 @@ async function boot() {
     if (data && data[BRIDGE_TAG] === 1 && data.type === "ready") {
       post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
       post({ [BRIDGE_TAG]: 1, type: "config-changed", payload: { config: instanceConfig } });
+      post({ [BRIDGE_TAG]: 1, type: "language", payload: languagePayload() });
       return;
     }
     if (!isBridgeRequest(data)) return;
@@ -1448,6 +1453,7 @@ async function boot() {
 
   iframe.addEventListener("load", () => {
     post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
+    post({ [BRIDGE_TAG]: 1, type: "language", payload: languagePayload() });
     post({ [BRIDGE_TAG]: 1, type: "config-changed", payload: { config: instanceConfig } });
   });
 
@@ -1479,11 +1485,13 @@ async function boot() {
   /*
    * 平台切了界面语言（和上面那条主题广播同一套）。
    *
-   * 只涉及**平台自己写的字**：窗饰那几颗按钮的悬停提示、"组件坏了"那张卡片。
-   * 组件自己的文案不会被翻 —— 那是作者写的，跟着它的 HTML 走。
+   * 两件事：平台自己写的字（窗饰按钮的悬停提示、"组件坏了"那张卡片）用 `t()` 重画一遍；
+   * 再把新语言推给组件 —— 作者写的中英文要由组件自己挑（`lang.get` 拿初值、这条推送跟着变），
+   * 平台不认识组件里的句子，也就没法替它翻。
    */
   void listen<string>("lattice:language", (event) => {
     setLanguage(event.payload === "zh" ? "zh" : "en");
+    pushLanguage?.();
     relabelChrome?.();
     // 错误卡片是按"签名 + 条数"记 key 的，改语言不会让它重建 —— 手动作废一次
     if (errorSheet) errorSheet.dataset.key = "";
