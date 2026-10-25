@@ -44,6 +44,7 @@ type Host = {
   setNow: (value: number) => void;
   tick: () => void;
   pushConfig: (next: Record<string, unknown>) => void;
+  setLang: (next: "zh" | "en") => Promise<void>;
   ready: Promise<void>;
 };
 
@@ -54,6 +55,7 @@ const hosts: Host[] = [];
 function mount(options: {
   config?: Record<string, unknown>;
   store?: Record<string, unknown>;
+  lang?: "zh" | "en";
 } = {}): Host {
   const frame = document.createElement("iframe");
   const store = options.store ?? {};
@@ -98,6 +100,13 @@ function mount(options: {
         "*",
       );
     },
+    setLang: async (next) => {
+      frame.contentWindow?.postMessage(
+        { __lattice: 1, type: "language", payload: { lang: next } },
+        "*",
+      );
+      await sleep(30);
+    },
     ready: Promise.resolve(),
   };
 
@@ -111,6 +120,16 @@ function mount(options: {
       if (!data || data.__lattice !== 1) return;
 
       if (data.type === "ready") {
+        /*
+         * 组件默认按中文画。除了 A 段要先断中文，其余各段都推一条英文过去 ——
+         * 等于顺带验了平台那条 language 推送真的被接住。
+         */
+        if (options.lang !== "zh") {
+          frame.contentWindow?.postMessage(
+            { __lattice: 1, type: "language", payload: { lang: "en" } },
+            "*",
+          );
+        }
         resolve();
         return;
       }
@@ -186,12 +205,20 @@ const hasSecondTick = (host: Host) =>
 
 // ---- A. 第一次打开 ----
 {
-  const host = mount();
+  const host = mount({ lang: "zh" });
   await host.ready;
   await settle();
 
   eq(text(host, "time"), "25:00", "第一次打开是整 25 分钟");
   eq(phase(host), "work", "阶段是专注");
+
+  // 没有宿主推语言时，首帧就是中文
+  eq(text(host, "phase"), "专注", "阶段名默认是中文");
+  eq([text(host, "toggle"), text(host, "reset")], ["开始", "重置"], "按钮默认是中文");
+
+  await host.setLang("en");
+  eq(text(host, "phase"), "Focus", "切到英文后阶段名是 Focus");
+
   eq(text(host, "toggle"), "Start", "按钮是 Start");
   eq(text(host, "rounds"), "0 / 4", "轮次 0 / 4");
   eq(host.setCalls, 1, "种了一份默认状态，写盘一次");

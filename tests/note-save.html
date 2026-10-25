@@ -31,6 +31,12 @@
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+      // 组件默认按中文画；这里推一条 language 让它切到英文，等于顺带验了这条推送
+      function setLang(frame, next) {
+        frame.contentWindow.postMessage({ __lattice: 1, type: "language", payload: { lang: next } }, "*");
+        return sleep(30);
+      }
+
       /**
        * 造一个便签实例，桥的响应延迟故意随机（50–300ms），
        * 用来复现"先发的后到"这种乱序。
@@ -61,6 +67,10 @@
                 "*",
               );
 
+            if (data.method === "lang.get") {
+              reply({ ok: true, result: { lang: "zh" } });
+              return;
+            }
             if (data.method === "storage.get") {
               setTimeout(() => reply({ ok: true, result: state.stored }), getDelay);
               return;
@@ -90,6 +100,26 @@
         const doc = note.frame.contentDocument;
         const text = doc.getElementById("text");
         const final = "第一版";
+
+        // 切英文之前先证明默认那门是对的
+        log(
+          doc.getElementById("status").textContent === "已保存",
+          `默认状态是「${doc.getElementById("status").textContent}」`,
+        );
+        log(text.placeholder === "写点什么…", `默认占位符是「${text.placeholder}」`);
+        log(
+          doc.getElementById("count").textContent === "3 字",
+          `默认字数是「${doc.getElementById("count").textContent}」`,
+        );
+        await setLang(note.frame, "en");
+        log(
+          doc.getElementById("status").textContent === "Saved",
+          `切英文后状态是「${doc.getElementById("status").textContent}」`,
+        );
+        log(
+          doc.getElementById("count").textContent === "3 chars",
+          `切英文后字数是「${doc.getElementById("count").textContent}」`,
+        );
 
         for (let i = 0; i < 5; i += 1) {
           text.value = final + "·" + i;

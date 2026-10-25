@@ -1,8 +1,11 @@
 {
   "id": "lattice.calculator",
-  "name": "Calculator",
-  "version": "0.1.1",
-  "description": "An expression calculator with a running history, plus Base64 / URL encoding and MD5",
+  "name": { "zh": "计算器", "en": "Calculator" },
+  "version": "0.1.2",
+  "description": {
+    "zh": "带历史记录的表达式计算器，外加 Base64 / URL 编码和 MD5",
+    "en": "An expression calculator with a running history, plus Base64 / URL encoding and MD5"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -14,14 +17,17 @@
     {
       "key": "keepHistory",
       "type": "toggle",
-      "label": "Keep a history",
+      "label": { "zh": "保留历史记录", "en": "Keep a history" },
       "default": true,
-      "help": "Off hides the list and stops writing it. Nothing already saved is deleted."
+      "help": {
+        "zh": "关掉就隐藏列表并停止写入。已经存下的记录不会被删掉。",
+        "en": "Off hides the list and stops writing it. Nothing already saved is deleted."
+      }
     },
     {
       "key": "historySize",
       "type": "number",
-      "label": "History entries",
+      "label": { "zh": "历史条数", "en": "History entries" },
       "default": 6,
       "min": 3,
       "max": 12,
@@ -32,59 +38,123 @@
   "help": {
     "sections": [
       {
-        "title": "Typing a sum",
+        "title": { "zh": "怎么输入算式", "en": "Typing a sum" },
         "items": [
-          "Type the whole expression, not one key at a time: 12*(3+4)-5. The answer updates as you type.",
-          "Enter commits it: the answer moves into the box so you can keep going, and the sum goes into the history.",
-          "Esc clears the box. Backspace does what you expect — this is a text field, not a keypad."
+          {
+            "zh": "整条式子一起打，别一下一下按键：12*(3+4)-5。答案跟着输入实时更新。",
+            "en": "Type the whole expression, not one key at a time: 12*(3+4)-5. The answer updates as you type."
+          },
+          {
+            "zh": "回车就记下：答案挪进输入框，你可以接着算，这道算式进历史。",
+            "en": "Enter commits it: the answer moves into the box so you can keep going, and the sum goes into the history."
+          },
+          {
+            "zh": "Esc 清空输入框。退格键就是它本来的样子 —— 这是一个文本框，不是键盘。",
+            "en": "Esc clears the box. Backspace does what you expect — this is a text field, not a keypad."
+          }
         ]
       },
       {
-        "title": "What the operators do",
+        "title": { "zh": "各个运算符", "en": "What the operators do" },
         "items": [
-          "+, -, *, / and ^ (power, right-associative: 2^3^2 is 2^9).",
-          "% is modulo, not percent: 17%5 is 2. A percentage is just /100 written out.",
-          "Parentheses work as usual; a leading minus is allowed, and -3^2 is -(3^2)."
+          {
+            "zh": "+、-、*、/ 和 ^（乘方，右结合：2^3^2 是 2^9）。",
+            "en": "+, -, *, / and ^ (power, right-associative: 2^3^2 is 2^9)."
+          },
+          {
+            "zh": "% 是取模，不是百分比：17%5 是 2。百分比就是写出来的 /100。",
+            "en": "% is modulo, not percent: 17%5 is 2. A percentage is just /100 written out."
+          },
+          {
+            "zh": "括号照常；开头允许负号，-3^2 是 -(3^2)。",
+            "en": "Parentheses work as usual; a leading minus is allowed, and -3^2 is -(3^2)."
+          }
         ]
       },
       {
-        "title": "The history",
+        "title": { "zh": "历史记录", "en": "The history" },
         "items": [
-          "Click a row to put that answer back in the box — the sum stays visible next to it.",
-          "History entries is how many rows fit; Keep a history off hides the list without deleting it.",
-          "It is stored per widget, so two calculators on one desktop share one history."
+          {
+            "zh": "点一行就把那个答案放回输入框 —— 算式还留在旁边看得见。",
+            "en": "Click a row to put that answer back in the box — the sum stays visible next to it."
+          },
+          {
+            "zh": "「历史条数」决定列表能放几行；「保留历史记录」关掉只是藏起来，不删。",
+            "en": "History entries is how many rows fit; Keep a history off hides the list without deleting it."
+          },
+          {
+            "zh": "历史按组件存，所以一个桌面上两个计算器共用同一份历史。",
+            "en": "It is stored per widget, so two calculators on one desktop share one history."
+          }
         ]
       },
       {
-        "title": "Encode and Hash",
+        "title": { "zh": "编码与哈希", "en": "Encode and Hash" },
         "items": [
-          "Encode turns text into Base64 or a percent-encoded URL, and back. Base64 is UTF-8 safe, so Chinese survives the round trip.",
-          "Hash gives you MD5 of the text — lowercase hex. WebCrypto has no MD5, so this one is computed in the widget.",
-          "Copy puts the result on the clipboard. The clipboard permission is separate: without it the text is selected instead."
+          {
+            "zh": "编码把文字变成 Base64 或百分号编码的 URL，也能变回来。Base64 按 UTF-8，中文来回一趟不会坏。",
+            "en": "Encode turns text into Base64 or a percent-encoded URL, and back. Base64 is UTF-8 safe, so Chinese survives the round trip."
+          },
+          {
+            "zh": "哈希给出这段文字的 MD5 —— 小写十六进制。WebCrypto 没有 MD5，所以这一个是在组件里算的。",
+            "en": "Hash gives you MD5 of the text — lowercase hex. WebCrypto has no MD5, so this one is computed in the widget."
+          },
+          {
+            "zh": "复制把结果放进剪贴板。剪贴板权限是另一项：没有它就把文字选中。",
+            "en": "Copy puts the result on the clipboard. The clipboard permission is separate: without it the text is selected instead."
+          }
         ]
       },
       {
-        "title": "When it says error",
+        "title": { "zh": "报错的时候", "en": "When it says error" },
         "items": [
-          "Cannot divide by zero and Unbalanced parentheses are the two the parser will tell you about by name.",
-          "Anything else shows Unexpected character with the character in question."
+          {
+            "zh": "解析器会点名告诉你两句：不能除以零和括号不配对。",
+            "en": "Cannot divide by zero and Unbalanced parentheses are the two the parser will tell you about by name."
+          },
+          {
+            "zh": "其余情况显示不认识的字符，并把那个字符写出来。",
+            "en": "Anything else shows Unexpected character with the character in question."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.1.2",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：页签、按钮、报错和怎么用都跟着界面语言走。",
+          "en": "Interface and help are bilingual now: tabs, buttons, errors and the how-to all follow the interface language."
+        }
+      ]
+    },
+    {
       "version": "0.1.1",
       "changes": [
-        "The title bar now leaves room for the window buttons, so the Hash tab is no longer covered."
+        {
+          "zh": "标题栏给窗口按钮让出了位置，「哈希」页签不会再被盖住。",
+          "en": "The title bar now leaves room for the window buttons, so the Hash tab is no longer covered."
+        }
       ]
     },
     {
       "version": "0.1.0",
       "changes": [
-        "First release: expression calculator with live results and a clickable history.",
-        "Base64 and URL encoding, both directions, UTF-8 safe.",
-        "MD5 of the typed text, computed in the widget."
+        {
+          "zh": "第一个版本：表达式计算器，答案实时出，历史可以点。",
+          "en": "First release: expression calculator with live results and a clickable history."
+        },
+        {
+          "zh": "Base64 和 URL 编码，两个方向都有，UTF-8 安全。",
+          "en": "Base64 and URL encoding, both directions, UTF-8 safe."
+        },
+        {
+          "zh": "输入文字的 MD5，在组件里算。",
+          "en": "MD5 of the typed text, computed in the widget."
+        }
       ]
     }
   ],

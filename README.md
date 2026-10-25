@@ -31,6 +31,8 @@ Those windows have no frame, stay out of the taskbar, and do not steal focus fro
 
 The difference from other desktop toys: **widgets are not built in, they are installed.** The 14 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
 
+**It speaks Chinese and English, all the way down.** The shell switches language in settings, and so do the things you would not expect it to reach: each official widget's name, its options and its how-to text in the inspector come out of the manifest in the language you picked, and the words drawn *inside* the cards (weekdays, "2 left", Start/Pause) follow through one `language` push to every open window. No restart, no reload.
+
 The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame every pane is set into.
 
 ## What you can do with it
@@ -93,7 +95,7 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | Official widgets | 14 |
 | Permissions | 11 |
 | Tauri commands | 61 |
-| Browser assertions | 1 606 over 40 pages |
+| Browser assertions | 1 709 over 40 pages |
 | Rust tests | 178 |
 | Documented pitfalls | 72 |
 
@@ -283,7 +285,7 @@ npm run typecheck        # tsc --noEmit
 npm run test:injection   # the diagnostics reporter is injected identically on both paths
 npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
-npm run test:browser     # 1 606 assertions over 40 pages, real Chrome, real dev server
+npm run test:browser     # 1 709 assertions over 40 pages, real Chrome, real dev server
 ```
 
 The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.

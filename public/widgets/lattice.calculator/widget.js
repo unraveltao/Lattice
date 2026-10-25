@@ -67,11 +67,45 @@
     });
   }
 
+  /*
+   * 界面语言。
+   *
+   * 卡片上的字是这个组件自己的 —— 平台不知道 "Copy" 该写成哪句中文。所以两门
+   * 都留在这儿，按 `lang.get` 挑一份；用户中途换语言，平台推一条 `language`，
+   * 把已经画出去的字原地换掉（两件事都要做：只读一次 = 换语言卡片不动，
+   * 只听推送 = 语言停在建文档那一刻）。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文，中文界面看到的就是最终样子；
+   * 英文界面要等 `lang.get` 回来那一趟（几十毫秒）才翻。`lang` 只有 `zh` / `en`
+   * 两种 —— "跟随系统"是平台在设置里解析掉的。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("计算器", "Calculator");
+    // 页签、按钮、报错话、空态都跟语言有关，整块重画一次比逐个替换稳
+    repaint();
+  }
+
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.__lattice !== 1) return;
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+    // 平台界面换了语言。`lang.get` 是建文档那一刻的答案，这条是后来变了
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
     if (data.type === "config-changed") {
@@ -102,8 +136,8 @@
   /** 一元正负号：比乘除紧、比乘方松 —— 所以 -3^2 = -(3^2) = -9 */
   var UNARY_PREC = 3;
 
-  function fail(message) {
-    var error = new Error(message);
+  function fail(zh, en) {
+    var error = new Error(say(zh, en));
     error.userFacing = true;
     return error;
   }
@@ -131,7 +165,7 @@
             i += 1;
           } else if (c === ".") {
             dots += 1;
-            if (dots > 1) throw fail("Two decimal points in one number");
+            if (dots > 1) throw fail("一个数里有两个小数点", "Two decimal points in one number");
             i += 1;
           } else if (c === "_") {
             // 千位分隔符：`1_000` 是给人看的，不是语法的一部分，所以直接吞掉
@@ -141,7 +175,7 @@
           }
         }
         var text = src.slice(start, i).replace(/_/g, "");
-        if (text === ".") throw fail("A number cannot be just a dot");
+        if (text === ".") throw fail("小数点不能单独当一个数", "A number cannot be just a dot");
         tokens.push({ kind: "num", value: parseFloat(text) });
         prev = "num";
         continue;
@@ -169,9 +203,9 @@
 
       // × ÷ − 这些"看起来像运算符"的字符，给一句人话，而不是"Unexpected character"
       if (ch === "×" || ch === "÷" || ch === "−") {
-        throw fail("Use * / - instead of " + ch);
+        throw fail("用 * / -，别用 " + ch, "Use * / - instead of " + ch);
       }
-      throw fail("Unexpected character: " + ch);
+      throw fail("不认识的字符：" + ch, "Unexpected character: " + ch);
     }
     return tokens;
   }
@@ -214,12 +248,12 @@
           }
           out.push(item);
         }
-        if (!opened) throw fail("Unbalanced parentheses");
+        if (!opened) throw fail("括号不配对", "Unbalanced parentheses");
       }
     }
     while (stack.length) {
       var rest = stack.pop();
-      if (rest.kind === "(") throw fail("Unbalanced parentheses");
+      if (rest.kind === "(") throw fail("括号不配对", "Unbalanced parentheses");
       out.push(rest);
     }
     return out;
@@ -232,10 +266,12 @@
       if (token.kind === "num") {
         stack.push(token.value);
       } else if (token.kind === "unary") {
-        if (!stack.length) throw fail("Nothing to apply the sign to");
+        if (!stack.length) throw fail("正负号前面没有数", "Nothing to apply the sign to");
         stack.push(stack.pop() * token.value);
       } else {
-        if (stack.length < 2) throw fail("Missing a number before " + token.value);
+        if (stack.length < 2) {
+          throw fail(token.value + " 前面少一个数", "Missing a number before " + token.value);
+        }
         var b = stack.pop();
         var a = stack.pop();
         switch (token.value) {
@@ -249,22 +285,22 @@
             stack.push(a * b);
             break;
           case "/":
-            if (b === 0) throw fail("Cannot divide by zero");
+            if (b === 0) throw fail("不能除以零", "Cannot divide by zero");
             stack.push(a / b);
             break;
           case "%":
-            if (b === 0) throw fail("Cannot divide by zero");
+            if (b === 0) throw fail("不能除以零", "Cannot divide by zero");
             stack.push(a % b);
             break;
           case "^":
             stack.push(Math.pow(a, b));
             break;
           default:
-            throw fail("Unknown operator " + token.value);
+            throw fail("不认识的运算符 " + token.value, "Unknown operator " + token.value);
         }
       }
     }
-    if (stack.length !== 1) throw fail("Incomplete expression");
+    if (stack.length !== 1) throw fail("算式不完整", "Incomplete expression");
     return stack[0];
   }
 
@@ -337,7 +373,7 @@
     try {
       return binaryToUtf8(atob(clean));
     } catch (error) {
-      throw fail("Not valid Base64");
+      throw fail("不是合法的 Base64", "Not valid Base64");
     }
   }
 
@@ -349,7 +385,7 @@
     try {
       return decodeURIComponent(String(text).replace(/\+/g, " "));
     } catch (error) {
-      throw fail("Not valid percent-encoding");
+      throw fail("不是合法的百分号编码", "Not valid percent-encoding");
     }
   }
 
@@ -445,6 +481,7 @@
   // -------------------------------------------------------------------------
 
   var root = document.getElementById("root");
+  var titleEl = document.querySelector(".calc-title");
   var exprEl = document.getElementById("expr");
   var resultEl = document.getElementById("result");
   var historyEl = document.getElementById("history");
@@ -454,11 +491,20 @@
   var hashOut = document.getElementById("hash-out");
   var copyBtn = document.getElementById("copy");
 
+  /** 页签上的词。两门都留在这儿，换语言时原地换掉，不重建页签 */
+  var TAB_LABELS = {
+    calc: { zh: "计算", en: "Calc" },
+    encode: { zh: "编码", en: "Encode" },
+    hash: { zh: "哈希", en: "Hash" },
+  };
+
   var config = { keepHistory: true, historySize: 6 };
   var history = [];
   /** 当前能"复制"的那段文字；null = 没东西可复制（按钮藏起来） */
   var copyable = null;
   var copyTarget = null;
+  /** 复制按钮上那一句现在是哪一种状态：idle / copied / selected / failed */
+  var copyState = "idle";
 
   var EXPR_KEY = "expr";
   var HISTORY_KEY = "history";
@@ -484,6 +530,45 @@
     copyBtn.hidden = !copyable;
   }
 
+  /** 复制按钮上的字跟着状态和语言走（"已复制"两秒后就该变回"复制"） */
+  function refreshCopyLabel() {
+    copyBtn.textContent =
+      copyState === "copied"
+        ? say("已复制", "Copied")
+        : copyState === "selected"
+          ? say("已选中", "Selected")
+          : copyState === "failed"
+            ? say("复制失败", "Failed")
+            : say("复制", "Copy");
+  }
+
+  /** 页面上那些写死的字：标题、页签、占位符、aria-label、空态 */
+  function applyStaticText() {
+    titleEl.textContent = say("计算器", "Calculator");
+    Array.prototype.forEach.call(document.querySelectorAll(".calc-tab"), function (tab) {
+      var labels = TAB_LABELS[tab.dataset.pane];
+      if (labels) tab.textContent = labels[lang];
+    });
+    exprEl.setAttribute("aria-label", say("表达式", "Expression"));
+    encodeIn.setAttribute("aria-label", say("编码输入", "Encode input"));
+    encodeIn.placeholder = say("要编码或解码的文字", "Text to encode or decode");
+    hashIn.setAttribute("aria-label", say("哈希输入", "Hash input"));
+    hashIn.placeholder = say("要计算哈希的文字", "Text to hash");
+    // 空态那行也是人看的字；已经有结果的时候别把结果盖掉
+    if (encodeOut.dataset.empty === "true") encodeOut.textContent = say("还没有结果", "Nothing yet");
+    if (hashOut.dataset.empty === "true") {
+      hashOut.textContent = say("MD5 显示在这里", "MD5 appears here");
+    }
+    refreshCopyLabel();
+  }
+
+  /** 换语言之后重画：静态字 + 计算页上的报错话（别的页留着算好的结果） */
+  function repaint() {
+    applyStaticText();
+    var pane = document.querySelector(".calc-pane.is-active");
+    if (!pane || pane.dataset.pane === "calc") compute();
+  }
+
   function setResult(text, isError) {
     resultEl.textContent = text;
     resultEl.classList.toggle("is-error", !!isError);
@@ -501,7 +586,7 @@
       setResult("= " + text, false);
       showCopy(text, exprEl);
     } catch (error) {
-      setResult(error.userFacing ? error.message : "Could not read that", true);
+      setResult(error.userFacing ? error.message : say("读不懂这段算式", "Could not read that"), true);
       showCopy(null);
     }
   }
@@ -639,7 +724,11 @@
         setOutput(encodeOut, out, false);
         showCopy(out, encodeOut);
       } catch (error) {
-        setOutput(encodeOut, error.userFacing ? error.message : "Could not convert that", true);
+        setOutput(
+          encodeOut,
+          error.userFacing ? error.message : say("转不了这段文字", "Could not convert that"),
+          true,
+        );
         showCopy(null);
       }
     });
@@ -657,7 +746,7 @@
       if (!text) {
         setOutput(hashOut, "", false);
         hashOut.dataset.empty = "true";
-        hashOut.textContent = "MD5 appears here";
+        hashOut.textContent = say("MD5 显示在这里", "MD5 appears here");
         showCopy(null);
         return;
       }
@@ -673,9 +762,11 @@
     if (!copyable) return;
     call("clipboard.write", { text: copyable })
       .then(function () {
-        copyBtn.textContent = "Copied";
+        copyState = "copied";
+        refreshCopyLabel();
         setTimeout(function () {
-          copyBtn.textContent = "Copy";
+          copyState = "idle";
+          refreshCopyLabel();
         }, 1200);
       })
       .catch(function (error) {
@@ -690,9 +781,11 @@
           selection.removeAllRanges();
           selection.addRange(range);
         }
-        copyBtn.textContent = error.code === "permission_denied" ? "Selected" : "Failed";
+        copyState = error.code === "permission_denied" ? "selected" : "failed";
+        refreshCopyLabel();
         setTimeout(function () {
-          copyBtn.textContent = "Copy";
+          copyState = "idle";
+          refreshCopyLabel();
         }, 1600);
       });
   });
@@ -700,6 +793,16 @@
   // -------------------------------------------------------------------------
   // 启动
   // -------------------------------------------------------------------------
+
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住配置和存档 —— 计算器不该因为问不到语言就不算
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画 */
+    });
 
   call("config.get")
     .then(function (values) {

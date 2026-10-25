@@ -1,8 +1,11 @@
 {
   "id": "lattice.clock",
-  "name": "Clock",
-  "version": "0.2.0",
-  "description": "A large clock with the date; 12/24-hour and seconds are set per copy",
+  "name": { "zh": "时钟", "en": "Clock" },
+  "version": "0.2.1",
+  "description": {
+    "zh": "大字时间加一行日期；12/24 小时制和秒数按每一份单独调",
+    "en": "A large clock with the date; 12/24-hour and seconds are set per copy"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -14,66 +17,127 @@
     {
       "key": "hour12",
       "type": "toggle",
-      "label": "12-hour clock",
+      "label": { "zh": "12 小时制", "en": "12-hour clock" },
       "default": false,
-      "help": "Off means 24-hour, e.g. 21:40."
+      "help": { "zh": "关掉就是 24 小时制，比如 21:40。", "en": "Off means 24-hour, e.g. 21:40." }
     },
     {
       "key": "showSeconds",
       "type": "toggle",
-      "label": "Show seconds",
+      "label": { "zh": "显示秒", "en": "Show seconds" },
       "default": false
     }
   ],
   "help": {
     "sections": [
       {
-        "title": "Reading it",
+        "title": { "zh": "怎么看", "en": "Reading it" },
         "items": [
-          "The big line is the time; the line under it is the date as month, day and weekday.",
-          "Seconds are off by default — a clock that changes every second keeps pulling your eye back to it.",
-          "It only ticks while the card is visible. A hidden card costs nothing, and the time is right again the moment you look."
+          {
+            "zh": "大字那行是时间，下面一行是日期：几月几日、星期几。",
+            "en": "The big line is the time; the line under it is the date as month, day and weekday."
+          },
+          {
+            "zh": "秒默认关着 —— 一秒一跳的钟总把眼睛往回拽。",
+            "en": "Seconds are off by default — a clock that changes every second keeps pulling your eye back to it."
+          },
+          {
+            "zh": "只在卡片看得见的时候走。藏起来的钟不费电，回来那一拍时间就是准的。",
+            "en": "It only ticks while the card is visible. A hidden card costs nothing, and the time is right again the moment you look."
+          }
         ]
       },
       {
-        "title": "12-hour, 24-hour, seconds",
+        "title": {
+          "zh": "12 小时制、24 小时制和秒",
+          "en": "12-hour, 24-hour, seconds"
+        },
         "items": [
-          "Click the clock on the desktop, then use the inspector on the right.",
-          "12-hour clock off means 24-hour, e.g. 21:40. On gives 9:40 PM.",
-          "Show seconds adds them and widens the digits so the card does not jitter."
+          {
+            "zh": "在桌面上点一下这块钟，再用右边的属性面板。",
+            "en": "Click the clock on the desktop, then use the inspector on the right."
+          },
+          {
+            "zh": "「12 小时制」关着是 24 小时制（21:40），打开是 9:40 下午。",
+            "en": "12-hour clock off means 24-hour, e.g. 21:40. On gives 9:40 PM."
+          },
+          {
+            "zh": "「显示秒」会多出两位，字号自动收窄，卡片不会跳。",
+            "en": "Show seconds adds them and widens the digits so the card does not jitter."
+          }
         ]
       },
       {
-        "title": "Each copy keeps its own settings",
+        "title": {
+          "zh": "每一份各有各的设置",
+          "en": "Each copy keeps its own settings"
+        },
         "items": [
-          "Two clocks on one desktop can show different formats — settings belong to the copy, not to the widget.",
-          "Changes apply immediately; the card is redrawn, not reloaded."
+          {
+            "zh": "桌面上摆两个钟可以一个 24 小时制、一个 12 小时制 —— 设置属于这一份，不属于这个组件。",
+            "en": "Two clocks on one desktop can show different formats — settings belong to the copy, not to the widget."
+          },
+          {
+            "zh": "改完立刻生效：卡片是重画，不是重新加载。",
+            "en": "Changes apply immediately; the card is redrawn, not reloaded."
+          }
         ]
       },
       {
-        "title": "If it shows --:--",
+        "title": { "zh": "显示 --:-- 怎么办", "en": "If it shows --:--" },
         "items": [
-          "The platform did not allow reading the time. The widget asks for it, so it needs the clock permission.",
-          "Grant it again and the card recovers on its next tick — no restart needed."
+          {
+            "zh": "平台没允许读时间。这个组件要读，所以需要「时钟」这项权限。",
+            "en": "The platform did not allow reading the time. The widget asks for it, so it needs the clock permission."
+          },
+          {
+            "zh": "在属性面板里重新授予，下一拍就恢复 —— 不用重启。",
+            "en": "Grant it again and the card recovers on its next tick — no restart needed."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.2.1",
+      "date": "2026-10-24",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：日期按中文习惯写「10月22日 周四」，12 小时制用上午 / 下午。",
+          "en": "Interface and help are bilingual now: a Chinese date reads 10月22日 周四, 12-hour mode uses 上午 / 下午."
+        }
+      ]
+    },
+    {
       "version": "0.2.0",
       "date": "2026-10-24",
       "changes": [
-        "12-hour clock and Show seconds moved into the inspector, so each copy can differ.",
-        "Ticks on the platform scheduler: a hidden clock stops working instead of burning power.",
-        "No longer needs the storage permission — settings live with the platform, not inside the widget."
+        {
+          "zh": "12 小时制和「显示秒」搬进属性面板，每一份可以各调各的。",
+          "en": "12-hour clock and Show seconds moved into the inspector, so each copy can differ."
+        },
+        {
+          "zh": "心跳挂到平台调度器上：看不见的时候停摆，而不是空烧电。",
+          "en": "Ticks on the platform scheduler: a hidden clock stops working instead of burning power."
+        },
+        {
+          "zh": "不再需要存储权限 —— 设置跟着平台走，不放在组件里。",
+          "en": "No longer needs the storage permission — settings live with the platform, not inside the widget."
+        }
       ]
     },
     {
       "version": "0.1.0",
       "changes": [
-        "First release: large time, date and weekday line.",
-        "12/24-hour switch on the card itself."
+        {
+          "zh": "第一个版本：大字时间、日期和星期。",
+          "en": "First release: large time, date and weekday line."
+        },
+        {
+          "zh": "卡片上自带 12/24 小时制切换。",
+          "en": "12/24-hour switch on the card itself."
+        }
       ]
     }
   ],

@@ -50,12 +50,47 @@
     });
   }
 
+  /*
+   * 界面语言。
+   *
+   * 日期写法、天数的单位和报错话是这个组件自己的字 —— 平台不知道 "Jan 1"
+   * 该写成哪句中文。两门都留在这儿，按 `lang.get` 挑一份；用户中途换语言，
+   * 平台推一条 `language`，把已经画出去的字原地换掉（两件事都要做：只读一次
+   * = 换语言卡片不动，只听推送 = 语言停在建文档那一刻）。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文，英文界面要等 `lang.get`
+   * 回来那一趟（几十毫秒）才翻。`lang` 只有 `zh` / `en` 两种。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("倒计时", "Countdown");
+    daysUnitEl.textContent = say("天", "days");
+    // 日期写法和报错话都跟语言有关，重画一次比逐个替换稳
+    render();
+  }
+
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.__lattice !== 1) return;
 
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+
+    // 平台界面换了语言。`lang.get` 是建文档那一刻的答案，这条是后来变了
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
 
@@ -87,6 +122,7 @@
   var root = document.querySelector(".cd");
   var labelEl = document.getElementById("label");
   var daysEl = document.getElementById("days");
+  var daysUnitEl = document.getElementById("days-unit");
   var clockEl = document.getElementById("clock");
   var tickId = 0;
 
@@ -139,6 +175,14 @@
     render();
   }
 
+  /** 目标日期的写法：英文 "Jan 1, 2027"，中文 "2027年1月1日" */
+  function formatTargetDate() {
+    if (lang === "en") {
+      return MONTHS[target.getMonth()] + " " + target.getDate() + ", " + target.getFullYear();
+    }
+    return target.getFullYear() + "年" + (target.getMonth() + 1) + "月" + target.getDate() + "日";
+  }
+
   function render() {
     if (!target) return;
     call("clock.now")
@@ -157,14 +201,13 @@
 
         root.classList.toggle("is-done", done);
         /*
-         * 日期写成 "Jan 1, 2027"：英文习惯是月在前、日和年之间加逗号。
-         * 用户自己写了说明（比如 "Christmas"）就整行换成它 —— 那种情况下
-         * 再拼一句 "Until …" 只会把两句话挤在一起。
+         * 日期写成 "Jan 1, 2027"：英文习惯是月在前、日和年之间加逗号；中文写成
+         * "2027年1月1日"。用户自己写了文案（比如 "Christmas"）就整行换成它 ——
+         * 那种情况下再拼一句 "Until …" 只会把两句话挤在一起。
          */
         labelEl.textContent = config.label
           ? config.label
-          : (done ? "Arrived · " : "Until ") +
-            MONTHS[target.getMonth()] + " " + target.getDate() + ", " + target.getFullYear();
+          : (done ? say("已到 · ", "Arrived · ") : say("直到 ", "Until ")) + formatTargetDate();
         daysEl.textContent = String(days);
         clockEl.textContent = pad(hours) + ":" + pad(minutes) + ":" + pad(seconds);
       })
@@ -172,9 +215,21 @@
         daysEl.textContent = "--";
         clockEl.textContent = "";
         labelEl.textContent =
-          error.code === "permission_denied" ? "Needs clock permission" : "Could not read the time";
+          error.code === "permission_denied"
+            ? say("需要「时钟」权限", "Needs clock permission")
+            : say("读不到时间", "Could not read the time");
       });
   }
+
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住配置和心跳 —— 倒计时不该因为问不到语言就不走
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画 */
+    });
 
   call("config.get")
     .then(function (values) {

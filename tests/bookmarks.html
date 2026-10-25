@@ -43,6 +43,12 @@
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+      // 组件默认按中文画；这里推一条 language 让它切到英文，等于顺带验了这条推送
+      function setLang(frame, next) {
+        frame.contentWindow.postMessage({ __lattice: 1, type: "language", payload: { lang: next } }, "*");
+        return sleep(30);
+      }
+
       function mountBookmarks({ initial = null, config, openError = null } = {}) {
         const state = {
           stored: initial,
@@ -76,6 +82,10 @@
                 "*",
               );
 
+            if (data.method === "lang.get") {
+              reply({ ok: true, result: { lang: "zh" } });
+              return;
+            }
             if (data.method === "config.get") {
               reply({ ok: true, result: state.config });
               return;
@@ -132,6 +142,26 @@
         log(rows(doc).length === 0, `空货架没有行（${rows(doc).length}）`);
         log(doc.getElementById("empty").hidden === false, "空货架显示提示语");
         log(doc.getElementById("count").textContent === "", "空货架计数为空");
+
+        // 切英文之前先证明默认那门是对的
+        log(
+          doc.getElementById("url").placeholder === "粘贴链接，回车确认",
+          `默认占位符是「${doc.getElementById("url").placeholder}」`,
+        );
+        log(
+          doc.getElementById("empty").textContent === "还没有链接 —— 在上面粘贴一条",
+          `默认空态是「${doc.getElementById("empty").textContent}」`,
+        );
+        await submit(shelf, "javascript:alert(1)");
+        log(
+          doc.getElementById("hint").textContent === "这里只收 http 和 https 链接。",
+          `中文拒绝提示是「${doc.getElementById("hint").textContent}」`,
+        );
+        await setLang(shelf.frame, "en");
+        log(
+          doc.getElementById("hint").textContent.includes("http"),
+          `切英文后拒绝提示是「${doc.getElementById("hint").textContent}」`,
+        );
 
         await submit(shelf, "github.com");
         log(rows(doc).length === 1, `加一条后有 1 行（${rows(doc).length}）`);

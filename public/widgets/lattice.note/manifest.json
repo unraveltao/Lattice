@@ -1,8 +1,11 @@
 {
   "id": "lattice.note",
-  "name": "Note",
-  "version": "0.1.0",
-  "description": "Jot something down; saved automatically to widget storage",
+  "name": { "zh": "便签", "en": "Note" },
+  "version": "0.1.1",
+  "description": {
+    "zh": "随手写点什么；自动存进组件存储",
+    "en": "Jot something down; saved automatically to widget storage"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -12,44 +15,93 @@
   "help": {
     "sections": [
       {
-        "title": "Just start typing",
+        "title": { "zh": "直接开始写", "en": "Just start typing" },
         "items": [
-          "Click into the card and type. There is no save button — the text is written 400 ms after you stop.",
-          "Clicking away, or the card being hidden, saves at once instead of waiting for that pause.",
-          "It also types inside a desktop window, where the window itself never takes focus."
+          {
+            "zh": "点进卡片直接打字，没有保存按钮 —— 停手 400 毫秒后就会写盘。",
+            "en": "Click into the card and type. There is no save button — the text is written 400 ms after you stop."
+          },
+          {
+            "zh": "点到别处、或者卡片被收起来，会立刻保存，不等那一下停顿。",
+            "en": "Clicking away, or the card being hidden, saves at once instead of waiting for that pause."
+          },
+          {
+            "zh": "在桌面窗口里也能打 —— 那扇窗自己从不抢焦点。",
+            "en": "It also types inside a desktop window, where the window itself never takes focus."
+          }
         ]
       },
       {
-        "title": "The status line",
+        "title": { "zh": "状态行", "en": "The status line" },
         "items": [
-          "Unsaved means there are keystrokes not on disk yet. Saving… is a write in flight. Saved means it is down.",
-          "If a write fails the line says so and your text stays in the card; the next keystroke retries.",
-          "A missing storage permission is named outright — the note keeps working until the card reloads."
+          {
+            "zh": "「未保存」表示还有敲下去的字没写盘；「保存中…」是正在写；「已保存」就是已经落地了。",
+            "en": "Unsaved means there are keystrokes not on disk yet. Saving… is a write in flight. Saved means it is down."
+          },
+          {
+            "zh": "写盘失败时那一行会说明，字还留在卡片里；再敲一下就会重试。",
+            "en": "If a write fails the line says so and your text stays in the card; the next keystroke retries."
+          },
+          {
+            "zh": "缺存储权限会直接点出来 —— 这张便签在卡片重载之前照常能用。",
+            "en": "A missing storage permission is named outright — the note keeps working until the card reloads."
+          }
         ]
       },
       {
-        "title": "The character count",
+        "title": { "zh": "字数", "en": "The character count" },
         "items": [
-          "It counts characters, not words, so you can see how much room is left before the line wraps.",
-          "Hover the status line when it is truncated to read the full message."
+          {
+            "zh": "数的是字数而不是词数，好让你知道换行之前还剩多少地方。",
+            "en": "It counts characters, not words, so you can see how much room is left before the line wraps."
+          },
+          {
+            "zh": "状态行被截断时，把鼠标停上去能看全。",
+            "en": "Hover the status line when it is truncated to read the full message."
+          }
         ]
       },
       {
-        "title": "One note, several cards",
+        "title": { "zh": "一张便签，几张卡片", "en": "One note, several cards" },
         "items": [
-          "Every Note widget shows the same text — they are views of one note, not separate notes.",
-          "If you want a second note, install a copy under a different id."
+          {
+            "zh": "每张便签卡片显示的都是同一段文字 —— 它们是一张便签的几个视图，不是几张便签。",
+            "en": "Every Note widget shows the same text — they are views of one note, not separate notes."
+          },
+          {
+            "zh": "想要第二张便签，就换个 id 再装一份。",
+            "en": "If you want a second note, install a copy under a different id."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.1.1",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：状态行写「已保存 / 未保存」，字数用「字」。",
+          "en": "Interface and help are bilingual now: the status line reads Saved / Unsaved, and the count uses characters."
+        }
+      ]
+    },
+    {
       "version": "0.1.0",
       "changes": [
-        "First release: type and it saves, with a status line and a character count.",
-        "Editing works inside a desktop window that never takes focus.",
-        "The text area keeps clear of the window buttons, so no line hides underneath them."
+        {
+          "zh": "第一个版本：打字即保存，带一行状态和字数。",
+          "en": "First release: type and it saves, with a status line and a character count."
+        },
+        {
+          "zh": "在一扇从不抢焦点的桌面窗口里也能编辑。",
+          "en": "Editing works inside a desktop window that never takes focus."
+        },
+        {
+          "zh": "正文给窗口按钮让开了位置，没有哪一行藏在按钮底下。",
+          "en": "The text area keeps clear of the window buttons, so no line hides underneath them."
+        }
       ]
     }
   ],

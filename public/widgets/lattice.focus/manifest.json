@@ -1,8 +1,11 @@
 {
   "id": "lattice.focus",
-  "name": "Focus",
-  "version": "0.1.0",
-  "description": "A pomodoro timer that keeps its place: close the lid, come back, the clock is still right",
+  "name": { "zh": "专注", "en": "Focus" },
+  "version": "0.1.1",
+  "description": {
+    "zh": "一个守时的番茄钟：合上盖子再回来，时间还是对的",
+    "en": "A pomodoro timer that keeps its place: close the lid, come back, the clock is still right"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -14,7 +17,7 @@
     {
       "key": "workMinutes",
       "type": "number",
-      "label": "Focus length",
+      "label": { "zh": "专注时长", "en": "Focus length" },
       "default": 25,
       "min": 5,
       "max": 90,
@@ -24,7 +27,7 @@
     {
       "key": "breakMinutes",
       "type": "number",
-      "label": "Break length",
+      "label": { "zh": "休息时长", "en": "Break length" },
       "default": 5,
       "min": 1,
       "max": 30,
@@ -34,18 +37,18 @@
     {
       "key": "longBreakEvery",
       "type": "number",
-      "label": "Long break after",
+      "label": { "zh": "长休息间隔", "en": "Long break after" },
       "default": 4,
       "min": 0,
       "max": 8,
       "step": 1,
       "unit": "rounds",
-      "help": "0 turns long breaks off."
+      "help": { "zh": "0 表示关掉长休息。", "en": "0 turns long breaks off." }
     },
     {
       "key": "longBreakMinutes",
       "type": "number",
-      "label": "Long break length",
+      "label": { "zh": "长休息时长", "en": "Long break length" },
       "default": 15,
       "min": 5,
       "max": 60,
@@ -55,63 +58,133 @@
     {
       "key": "autoStart",
       "type": "toggle",
-      "label": "Start the next phase automatically",
+      "label": { "zh": "自动开始下一阶段", "en": "Start the next phase automatically" },
       "default": false,
-      "help": "Off means the timer stops at each boundary and waits for you."
+      "help": {
+        "zh": "关着的时候每到一站就停下等你。",
+        "en": "Off means the timer stops at each boundary and waits for you."
+      }
     }
   ],
   "help": {
     "sections": [
       {
-        "title": "Starting and pausing",
+        "title": { "zh": "开始与暂停", "en": "Starting and pausing" },
         "items": [
-          "The button reads Start before the phase begins, Resume when you stopped halfway, Pause while it runs.",
-          "Reset puts the current phase back to its full length and stops it.",
-          "The colour and the label change with the phase: Focus, Break, Long break."
+          {
+            "zh": "按钮上写开始（阶段还没动）、继续（停在一半）、暂停（正在跑）。",
+            "en": "The button reads Start before the phase begins, Resume when you stopped halfway, Pause while it runs."
+          },
+          {
+            "zh": "重置会把当前阶段恢复成整段时长并停下。",
+            "en": "Reset puts the current phase back to its full length and stops it."
+          },
+          {
+            "zh": "颜色和阶段名跟着状态走：专注、休息、长休息。",
+            "en": "The colour and the label change with the phase: Focus, Break, Long break."
+          }
         ]
       },
       {
-        "title": "Lengths and rounds",
+        "title": { "zh": "时长与轮次", "en": "Lengths and rounds" },
         "items": [
-          "Focus length, Break length and Long break length are the three durations, all set in the inspector.",
-          "Long break after counts finished rounds: 4 means three short breaks and then a long one.",
-          "Set it to 0 to turn long breaks off — then every break is a short one.",
-          "The small counter reads which round of the cycle you are in, e.g. 2 / 4."
+          {
+            "zh": "专注时长、休息时长和长休息时长是这三段的长短，都在属性面板里调。",
+            "en": "Focus length, Break length and Long break length are the three durations, all set in the inspector."
+          },
+          {
+            "zh": "「长休息间隔」数的是完成的轮次：4 就是先三次短休息，再来一次长的。",
+            "en": "Long break after counts finished rounds: 4 means three short breaks and then a long one."
+          },
+          {
+            "zh": "调成 0 就关掉长休息 —— 之后每次都只是短休息。",
+            "en": "Set it to 0 to turn long breaks off — then every break is a short one."
+          },
+          {
+            "zh": "右边那个小计数是这一轮循环里的第几个，比如 2 / 4。",
+            "en": "The small counter reads which round of the cycle you are in, e.g. 2 / 4."
+          }
         ]
       },
       {
-        "title": "Automatic or manual",
+        "title": { "zh": "自动还是手动", "en": "Automatic or manual" },
         "items": [
-          "Start the next phase automatically off means the timer stops at every boundary and waits for you.",
-          "That is the default on purpose: a break that starts itself is a break you did not decide to take.",
-          "On, it rolls straight from focus into break and back until you pause."
+          {
+            "zh": "「自动开始下一阶段」关着的时候，每到一站就停下等你。",
+            "en": "Start the next phase automatically off means the timer stops at every boundary and waits for you."
+          },
+          {
+            "zh": "默认关着是故意的：自己开始的休息，不是你决定要歇的那一次。",
+            "en": "That is the default on purpose: a break that starts itself is a break you did not decide to take."
+          },
+          {
+            "zh": "打开之后，它会从专注直接滚进休息、再滚回来，直到你按暂停。",
+            "en": "On, it rolls straight from focus into break and back until you pause."
+          }
         ]
       },
       {
-        "title": "It survives the lid closing",
+        "title": { "zh": "合上盖子也不丢", "en": "It survives the lid closing" },
         "items": [
-          "The timer stores the moment it will end, not the time left — sleeping, closing the lid or restarting loses no minutes.",
-          "A phase that ended while the machine was asleep is finished the moment it comes back, not restarted.",
-          "Only a paused phase stores a remaining time, which is why Resume continues where you left off."
+          {
+            "zh": "存的是「什么时候结束」，不是「还剩多久」—— 睡眠、合盖或重启都不吃掉一分钟。",
+            "en": "The timer stores the moment it will end, not the time left — sleeping, closing the lid or restarting loses no minutes."
+          },
+          {
+            "zh": "睡着的这段时间里到点的阶段，回来的那一刻就算结束，而不是重新开始。",
+            "en": "A phase that ended while the machine was asleep is finished the moment it comes back, not restarted."
+          },
+          {
+            "zh": "只有暂停着的阶段才存剩余时间，所以继续能接着刚才那儿走。",
+            "en": "Only a paused phase stores a remaining time, which is why Resume continues where you left off."
+          }
         ]
       },
       {
-        "title": "Two Focus widgets",
+        "title": { "zh": "两个专注计时器", "en": "Two Focus widgets" },
         "items": [
-          "They are two views of one timer: start on one and the other follows.",
-          "Both reaching the end in the same millisecond is handled — the round is recorded once, not twice.",
-          "The history of finished rounds is capped at the last 20, so the file cannot grow without limit."
+          {
+            "zh": "它们是同一个计时器的两个视图：在一个上按开始，另一个跟着动。",
+            "en": "They are two views of one timer: start on one and the other follows."
+          },
+          {
+            "zh": "两个在同一毫秒到点也接得住 —— 这一轮只记一次，不记两次。",
+            "en": "Both reaching the end in the same millisecond is handled — the round is recorded once, not twice."
+          },
+          {
+            "zh": "完成记录只留最近 20 轮，文件不会一直长下去。",
+            "en": "The history of finished rounds is capped at the last 20, so the file cannot grow without limit."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.1.1",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：阶段名、按钮、提示和说明都跟着平台的语言走。",
+          "en": "Interface and help are bilingual now: the phase names, buttons, hints and help follow the platform language."
+        }
+      ]
+    },
+    {
       "version": "0.1.0",
       "changes": [
-        "First release: focus, short break and long break, with a per-cycle counter.",
-        "Keeps time by storing the end moment, so sleeping or closing the lid does not lose minutes.",
-        "Two widgets stay in step; a round is recorded once even when both finish together."
+        {
+          "zh": "第一个版本：专注、短休息和长休息，带一个按轮计数的计数器。",
+          "en": "First release: focus, short break and long break, with a per-cycle counter."
+        },
+        {
+          "zh": "按结束时刻记时，所以睡眠或合上盖子都不丢分钟。",
+          "en": "Keeps time by storing the end moment, so sleeping or closing the lid does not lose minutes."
+        },
+        {
+          "zh": "两个组件步调一致；两边同时到点也只记一轮。",
+          "en": "Two widgets stay in step; a round is recorded once even when both finish together."
+        }
       ]
     }
   ],

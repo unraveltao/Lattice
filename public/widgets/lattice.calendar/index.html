@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>Calendar</title>
+    <title>日历</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -12,9 +12,9 @@
     -->
     <main class="cal" id="root">
       <header class="cal-head">
-        <button type="button" class="cal-nav" id="prev" aria-label="Previous month">‹</button>
-        <button type="button" class="cal-title" id="title" title="Back to today">—</button>
-        <button type="button" class="cal-nav" id="next" aria-label="Next month">›</button>
+        <button type="button" class="cal-nav" id="prev" aria-label="上个月">‹</button>
+        <button type="button" class="cal-title" id="title" title="回到今天">—</button>
+        <button type="button" class="cal-nav" id="next" aria-label="下个月">›</button>
       </header>
 
       <div class="cal-week" id="week" aria-hidden="true"></div>
@@ -30,10 +30,10 @@
           class="cal-entry"
           id="entry"
           type="text"
-          placeholder="9:30 Standup"
+          placeholder="9:30 站会"
           autocomplete="off"
           spellcheck="false"
-          aria-label="New event"
+          aria-label="新条目"
         />
       </section>
     </main>

@@ -1,8 +1,11 @@
 {
   "id": "lattice.countdown",
-  "name": "Countdown",
-  "version": "0.2.0",
-  "description": "Counts down to a date, showing days, hours, minutes and seconds",
+  "name": { "zh": "倒计时", "en": "Countdown" },
+  "version": "0.2.1",
+  "description": {
+    "zh": "倒数到某一天，显示还剩多少天、小时、分钟和秒",
+    "en": "Counts down to a date, showing days, hours, minutes and seconds"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -13,68 +16,120 @@
     {
       "key": "target",
       "type": "date",
-      "label": "Target date",
+      "label": { "zh": "目标日期", "en": "Target date" },
       "default": "",
-      "help": "Leave empty to count down to the next January 1."
+      "help": { "zh": "留空就倒数到下一个 1 月 1 日。", "en": "Leave empty to count down to the next January 1." }
     },
     {
       "key": "label",
       "type": "text",
-      "label": "Caption",
+      "label": { "zh": "卡片文案", "en": "Caption" },
       "default": "",
-      "placeholder": "Until Jan 1, 2027",
+      "placeholder": { "zh": "直到 2027 年 1 月 1 日", "en": "Until Jan 1, 2027" },
       "maxLength": 40,
-      "help": "Replaces the line above the number."
+      "help": { "zh": "替换数字上面那一行。", "en": "Replaces the line above the number." }
     }
   ],
   "help": {
     "sections": [
       {
-        "title": "What it counts to",
+        "title": { "zh": "倒数到哪一天", "en": "What it counts to" },
         "items": [
-          "Set Target date in the inspector. The countdown runs to midnight on that day, in your local time.",
-          "Leave it empty and it counts to the next January 1 — a year still in progress is a target too."
+          {
+            "zh": "在属性面板里设「目标日期」。倒计时走到那一天当地时间的午夜。",
+            "en": "Set Target date in the inspector. The countdown runs to midnight on that day, in your local time."
+          },
+          {
+            "zh": "留空就倒数到下一个 1 月 1 日 —— 还没过完的一年也是个目标。",
+            "en": "Leave it empty and it counts to the next January 1 — a year still in progress is a target too."
+          }
         ]
       },
       {
-        "title": "The caption",
+        "title": { "zh": "数字上面那一行", "en": "The caption" },
         "items": [
-          "The line above the number reads Until Jan 1, 2027 by default.",
-          "Fill in Caption to replace that line with your own: Christmas, Launch day, whatever you are waiting for.",
-          "Up to 40 characters — the inspector stops there, so the line always fits the card."
+          {
+            "zh": "那一行默认写「直到 2027 年 1 月 1 日」。",
+            "en": "The line above the number reads Until Jan 1, 2027 by default."
+          },
+          {
+            "zh": "填「卡片文案」就能把它换成你自己的话：圣诞节、发布日，你在等什么都行。",
+            "en": "Fill in Caption to replace that line with your own: Christmas, Launch day, whatever you are waiting for."
+          },
+          {
+            "zh": "最多 40 个字 —— 属性面板就停在那儿，所以这一行永远放得进卡片。",
+            "en": "Up to 40 characters — the inspector stops there, so the line always fits the card."
+          }
         ]
       },
       {
-        "title": "After the day arrives",
+        "title": { "zh": "那一天到了之后", "en": "After the day arrives" },
         "items": [
-          "It does not stop at zero. The number becomes days since, and the caption flips to Arrived · …",
-          "The card is marked done, so a glance is enough to see the wait is over."
+          {
+            "zh": "它不会停在零。数字变成已经过了多少天，文案翻成「已到 · …」。",
+            "en": "It does not stop at zero. The number becomes days since, and the caption flips to Arrived · …"
+          },
+          {
+            "zh": "卡片会标成完成态，扫一眼就知道等完了。",
+            "en": "The card is marked done, so a glance is enough to see the wait is over."
+          }
         ]
       },
       {
-        "title": "If it shows --",
+        "title": { "zh": "显示 -- 怎么办", "en": "If it shows --" },
         "items": [
-          "The platform did not allow reading the time. A countdown needs the clock permission to know what day it is.",
-          "An empty or unreadable target date falls back to the next January 1 rather than sitting at --."
+          {
+            "zh": "平台没允许读时间。倒计时要知道今天是哪天，所以需要「时钟」权限。",
+            "en": "The platform did not allow reading the time. A countdown needs the clock permission to know what day it is."
+          },
+          {
+            "zh": "目标日期为空或读不出来时，退回下一个 1 月 1 日，而不是停在 --。",
+            "en": "An empty or unreadable target date falls back to the next January 1 rather than sitting at --."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.2.1",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：日期按中文习惯写「2027年1月1日」，文案、天数和报错都跟着界面语言走。",
+          "en": "Interface and help are bilingual now: the date reads 2027年1月1日 in Chinese, and the caption, day count and errors follow the interface language."
+        }
+      ]
+    },
+    {
       "version": "0.2.0",
       "date": "2026-10-24",
       "changes": [
-        "Target date and Caption moved into the inspector, so two countdowns can point at different days.",
-        "Ticks on the platform scheduler; a hidden card costs nothing.",
-        "An empty or invalid date now falls back to the next January 1 instead of showing --."
+        {
+          "zh": "目标日期和卡片文案搬进属性面板，两个倒计时可以指向不同的日子。",
+          "en": "Target date and Caption moved into the inspector, so two countdowns can point at different days."
+        },
+        {
+          "zh": "心跳挂到平台调度器上；藏起来的卡片不费电。",
+          "en": "Ticks on the platform scheduler; a hidden card costs nothing."
+        },
+        {
+          "zh": "日期为空或非法时退回下一个 1 月 1 日，不再显示 --。",
+          "en": "An empty or invalid date now falls back to the next January 1 instead of showing --."
+        }
       ]
     },
     {
       "version": "0.1.0",
       "changes": [
-        "First release: days, hours, minutes and seconds to a chosen date.",
-        "Date and caption were edited on the card itself."
+        {
+          "zh": "第一个版本：倒数到选定日期的天数、小时、分钟和秒。",
+          "en": "First release: days, hours, minutes and seconds to a chosen date."
+        },
+        {
+          "zh": "日期和文案在卡片本身上改。",
+          "en": "Date and caption were edited on the card itself."
+        }
       ]
     }
   ],

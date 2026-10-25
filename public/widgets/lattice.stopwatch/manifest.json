@@ -1,8 +1,11 @@
 {
   "id": "lattice.stopwatch",
-  "name": "Stopwatch",
-  "version": "0.1.1",
-  "description": "Counts up, with laps — keeps running while the card is closed",
+  "name": { "zh": "秒表", "en": "Stopwatch" },
+  "version": "0.1.2",
+  "description": {
+    "zh": "正计时，带计次 —— 卡片关着也接着走",
+    "en": "Counts up, with laps — keeps running while the card is closed"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -13,41 +16,81 @@
   "help": {
     "sections": [
       {
-        "title": "Two buttons",
+        "title": { "zh": "两个按钮", "en": "Two buttons" },
         "items": [
-          "The right button starts, pauses and resumes — it reads Start, Pause, then Resume, the same way the Focus timer does.",
-          "The left button changes with the state: it is Lap while running and Reset while stopped, so there is never a button that would do nothing."
+          {
+            "zh": "右边那个按钮管开始、暂停和继续，按钮上的字跟着状态变，和专注计时器一样。",
+            "en": "The right button starts, pauses and resumes — it reads Start, Pause, then Resume, the same way the Focus timer does."
+          },
+          {
+            "zh": "左边那个按钮跟着状态变：跑着的时候是计次，停着的时候是重置，所以不会有一颗按了没反应的按钮。",
+            "en": "The left button changes with the state: it is Lap while running and Reset while stopped, so there is never a button that would do nothing."
+          }
         ]
       },
       {
-        "title": "Laps",
+        "title": { "zh": "计次与圈", "en": "Laps" },
         "items": [
-          "Each lap records the moment you pressed it. The newest lap is at the top, with the split for that lap and the total so far.",
-          "Laps survive a pause and a resume. Reset clears them along with the time."
+          {
+            "zh": "每按一次计次就记一圈，存的是按下去的那一刻。最新的一圈在最上面，带这一圈的用时和到那时的总时长。",
+            "en": "Each lap records the moment you pressed it. The newest lap is at the top, with the split for that lap and the total so far."
+          },
+          {
+            "zh": "圈会跟着暂停和继续留下来。重置把它们和时间一起清掉。",
+            "en": "Laps survive a pause and a resume. Reset clears them along with the time."
+          }
         ]
       },
       {
-        "title": "It keeps counting while the card is closed",
+        "title": { "zh": "卡片关着也接着走", "en": "It keeps counting while the card is closed" },
         "items": [
-          "Only the moment you pressed Start is stored, never the elapsed time. Reopening the card works the number out again, so a stopwatch left running overnight reads the whole night.",
-          "That also means sleeping the machine counts as time — it is a wall-clock span, not time spent in front of the screen.",
-          "Two Stopwatch widgets do not share one clock: each instance keeps its own time."
+          {
+            "zh": "存的只是按下开始的那一刻，不是已经过去的时间。重新打开卡片时按这个起点重算，所以跑了一整晚的秒表读出来就是一整晚。",
+            "en": "Only the moment you pressed Start is stored, never the elapsed time. Reopening the card works the number out again, so a stopwatch left running overnight reads the whole night."
+          },
+          {
+            "zh": "也就是说机器睡眠也算时间 —— 它数的是墙上时钟走过多久，不是你坐在屏幕前多久。",
+            "en": "That also means sleeping the machine counts as time — it is a wall-clock span, not time spent in front of the screen."
+          },
+          {
+            "zh": "两个秒表不共用一个钟：每一份各计各的。",
+            "en": "Two Stopwatch widgets do not share one clock: each instance keeps its own time."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.1.2",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：按钮、圈列表和说明都跟着平台的语言走。",
+          "en": "Interface and help are bilingual now: the buttons, the lap list and the help follow the platform language."
+        }
+      ]
+    },
+    {
       "version": "0.1.1",
       "changes": [
-        "The reading no longer runs under the window buttons in the top-right corner."
+        {
+          "zh": "读数不再跑到右上角的窗口按钮下面了。",
+          "en": "The reading no longer runs under the window buttons in the top-right corner."
+        }
       ]
     },
     {
       "version": "0.1.0",
       "changes": [
-        "First release: start, pause, resume, reset and laps.",
-        "Keeps running while the card is closed, because it stores the start moment rather than the time so far."
+        {
+          "zh": "第一个版本：开始、暂停、继续、重置和计次。",
+          "en": "First release: start, pause, resume, reset and laps."
+        },
+        {
+          "zh": "卡片关着也接着走 —— 它存的是按下去的那一刻，不是已经过去的时间。",
+          "en": "Keeps running while the card is closed, because it stores the start moment rather than the time so far."
+        }
       ]
     }
   ],

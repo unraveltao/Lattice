@@ -1,8 +1,11 @@
 {
   "id": "lattice.weather",
-  "name": "Weather",
-  "version": "0.1.0",
-  "description": "Current conditions for one city, refreshed on a timer and kept readable when the network is gone",
+  "name": { "zh": "天气", "en": "Weather" },
+  "version": "0.1.1",
+  "description": {
+    "zh": "一个城市的当前天气，定时刷新；断网时留着上一次读数，照样读得懂",
+    "en": "Current conditions for one city, refreshed on a timer and kept readable when the network is gone"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -17,83 +20,147 @@
     {
       "key": "place",
       "type": "text",
-      "label": "City",
+      "label": { "zh": "城市", "en": "City" },
       "default": "",
-      "placeholder": "Shanghai",
+      "placeholder": { "zh": "上海", "en": "Shanghai" },
       "maxLength": 60,
-      "help": "A city name. The first match from Open-Meteo's geocoder is used."
+      "help": {
+        "zh": "填城市名。用的是 Open-Meteo 地理编码给的第一个结果。",
+        "en": "A city name. The first match from Open-Meteo's geocoder is used."
+      }
     },
     {
       "key": "units",
       "type": "select",
-      "label": "Units",
+      "label": { "zh": "单位", "en": "Units" },
       "default": "metric",
       "options": [
-        { "value": "metric", "label": "Celsius, km/h" },
-        { "value": "imperial", "label": "Fahrenheit, mph" }
+        { "value": "metric", "label": { "zh": "摄氏，km/h", "en": "Celsius, km/h" } },
+        { "value": "imperial", "label": { "zh": "华氏，mph", "en": "Fahrenheit, mph" } }
       ]
     },
     {
       "key": "refreshMinutes",
       "type": "number",
-      "label": "Refresh every",
+      "label": { "zh": "刷新间隔", "en": "Refresh every" },
       "default": 30,
       "min": 15,
       "max": 180,
       "step": 15,
       "unit": "min",
-      "help": "Open-Meteo updates its current conditions every 15 minutes; asking more often returns the same numbers."
+      "help": {
+        "zh": "Open-Meteo 自己每 15 分钟才更新一次当前天气，问得更勤拿回来的还是同一个数。",
+        "en": "Open-Meteo updates its current conditions every 15 minutes; asking more often returns the same numbers."
+      }
     }
   ],
   "help": {
     "sections": [
       {
-        "title": "Setting the city",
+        "title": { "zh": "设城市", "en": "Setting the city" },
         "items": [
-          "Type a city into City in the inspector. The first match from Open-Meteo's geocoder wins, so be specific.",
-          "The widget never asks for your location — you type the place, and only that place is looked up.",
-          "No API key is involved: the service is free and open, which is the only reason this widget can be published."
+          {
+            "zh": "在属性面板的「城市」里填一个地名。取的是地理编码的第一个结果，所以写具体一点。",
+            "en": "Type a city into City in the inspector. The first match from Open-Meteo's geocoder wins, so be specific."
+          },
+          {
+            "zh": "组件从不问你的位置 —— 你填哪里，它就只查哪里。",
+            "en": "The widget never asks for your location — you type the place, and only that place is looked up."
+          },
+          {
+            "zh": "不需要 API key：这个服务免费、开放，这个组件能发布出来全靠这一点。",
+            "en": "No API key is involved: the service is free and open, which is the only reason this widget can be published."
+          }
         ]
       },
       {
-        "title": "Units and refresh",
+        "title": { "zh": "单位和刷新", "en": "Units and refresh" },
         "items": [
-          "Units switches between Celsius with km/h and Fahrenheit with mph. The request asks for them, nothing is converted here.",
-          "Refresh every defaults to 30 minutes, because Open-Meteo itself only updates current conditions every 15.",
-          "Asking more often than that returns the same numbers, so a shorter interval buys nothing."
+          {
+            "zh": "「单位」在摄氏配 km/h 和华氏配 mph 之间切。换算是让接口直接按单位返回，这里一个数都不换算。",
+            "en": "Units switches between Celsius with km/h and Fahrenheit with mph. The request asks for them, nothing is converted here."
+          },
+          {
+            "zh": "「刷新间隔」默认 30 分钟，因为 Open-Meteo 自己每 15 分钟才更新一次当前天气。",
+            "en": "Refresh every defaults to 30 minutes, because Open-Meteo itself only updates current conditions every 15."
+          },
+          {
+            "zh": "问得比那更勤，拿回来的还是同一个数 —— 调短不会更准。",
+            "en": "Asking more often than that returns the same numbers, so a shorter interval buys nothing."
+          }
         ]
       },
       {
-        "title": "When the network is gone",
+        "title": { "zh": "断网的时候", "en": "When the network is gone" },
         "items": [
-          "The last reading stays on the card, with a line saying how long ago it was taken, instead of an empty box.",
-          "Readings are cached per city and per unit, so two cities never overwrite each other's numbers.",
-          "The age line refreshes every minute even when no new reading is due."
+          {
+            "zh": "上一次读数留在卡片上，顶行标出它是多久之前的，而不是变成一个空框。",
+            "en": "The last reading stays on the card, with a line saying how long ago it was taken, instead of an empty box."
+          },
+          {
+            "zh": "读数按城市和单位分开缓存，两个城市不会互相盖掉。",
+            "en": "Readings are cached per city and per unit, so two cities never overwrite each other's numbers."
+          },
+          {
+            "zh": "「多久之前」那行每分钟刷新一次，即使这一分钟不该拉新数据。",
+            "en": "The age line refreshes every minute even when no new reading is due."
+          }
         ]
       },
       {
-        "title": "What it can reach",
+        "title": { "zh": "它能连到哪儿", "en": "What it can reach" },
         "items": [
-          "Only two hosts are allowed: the geocoder and the forecast service. Nothing else is reachable from this widget.",
-          "If a host were missing from that list the card says so outright — that is an authoring mistake, not a flaky network."
+          {
+            "zh": "只放行两个主机：地理编码和天气接口。这个组件连不到别的地方。",
+            "en": "Only two hosts are allowed: the geocoder and the forecast service. Nothing else is reachable from this widget."
+          },
+          {
+            "zh": "要是那串名单里少了某个主机，卡片会直接说出来 —— 那是作者写漏了，不是网络抖动。",
+            "en": "If a host were missing from that list the card says so outright — that is an authoring mistake, not a flaky network."
+          }
         ]
       },
       {
-        "title": "If it says no permission",
+        "title": { "zh": "提示没有权限怎么办", "en": "If it says no permission" },
         "items": [
-          "The card needs the network and storage permissions: one to fetch, one to keep the last reading.",
-          "Grant them again and the next refresh picks up without a restart."
+          {
+            "zh": "卡片要「联网」和「存储」两项权限：一项用来拉数据，一项用来留住上一次读数。",
+            "en": "The card needs the network and storage permissions: one to fetch, one to keep the last reading."
+          },
+          {
+            "zh": "重新授予之后，下一次刷新就接上，不用重启。",
+            "en": "Grant them again and the next refresh picks up without a restart."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.1.1",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：天气状况、体感 / 风速这些标签、城市与日期、错误话都跟着界面语言走，换语言当场重画。",
+          "en": "Interface and help are bilingual now: conditions, the feels / wind labels, city and dates, and error messages all follow the interface language and repaint on a switch."
+        }
+      ]
+    },
+    {
       "version": "0.1.0",
       "changes": [
-        "First release: current conditions from Open-Meteo, with no API key.",
-        "The last reading is cached per city and unit, so a dropped network leaves readable numbers.",
-        "Celsius or Fahrenheit, refreshed between 15 and 180 minutes."
+        {
+          "zh": "第一个版本：当前天气来自 Open-Meteo，不需要 API key。",
+          "en": "First release: current conditions from Open-Meteo, with no API key."
+        },
+        {
+          "zh": "上一次读数按城市和单位缓存，网断了也还剩能读的数字。",
+          "en": "The last reading is cached per city and unit, so a dropped network leaves readable numbers."
+        },
+        {
+          "zh": "摄氏或华氏，刷新间隔 15 到 180 分钟。",
+          "en": "Celsius or Fahrenheit, refreshed between 15 and 180 minutes."
+        }
       ]
     }
   ],

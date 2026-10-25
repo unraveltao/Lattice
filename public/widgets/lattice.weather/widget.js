@@ -73,6 +73,37 @@
 
   function noop() {}
 
+  /*
+   * 界面语言。
+   *
+   * 天气状况、体感 / 风速这些标签、地名的拼接、日期和错误话都是这个组件自己的
+   * 字 —— 平台不知道「雷阵雨」对应哪句英文。所以两门都留在这儿，按 `lang.get`
+   * 挑一份；用户中途换语言，平台推一条 `language`，把已经画出去的字原地换掉
+   * （两件事都要做：只读一次 = 换语言卡片不动，只听推送 = 语言停在建文档那一刻）。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文；英文界面要等 `lang.get` 回来
+   * 那一趟（几十毫秒）才翻。`lang` 只有 `zh` / `en` 两种 —— "跟随系统"是平台
+   * 在设置里解析掉的。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("天气", "Weather");
+    // 天气状况、标签、多久之前、错误话全在 render 里，重画一次比逐个替换稳 ——
+    // 而且不能等下一拍心跳，那一拍在 30 分钟后
+    paintLabels();
+    render();
+  }
+
   // -------------------------------------------------------------------------
   // 天气码
   // -------------------------------------------------------------------------
@@ -83,21 +114,34 @@
    * 归到七个图形里，而不是一码一图：卡片上那个图标只有 40px，二十八种图形
    * 画出来互相分不清，用户能分辨的是"晴 / 云 / 雨 / 雪 / 雾 / 雷"这六类。
    * 文案仍然逐码给准 —— 那是文字，不占地方。
+   *
+   * 中文挑的是预报里的自然说法（晴 / 阴 / 小雨 / 雷阵雨），不是逐词直译；
+   * 英文原句一个字都没动。返回 `{ glyph, zh, en }`，由 `render` 按语言挑。
    */
   function condition(code, isDay) {
     var night = isDay === 0;
+    var sun = night ? "moon" : "sun";
 
-    if (code === 0) return { glyph: night ? "moon" : "sun", label: "Clear" };
-    if (code === 1) return { glyph: night ? "moon" : "sun", label: "Mainly clear" };
-    if (code === 2) return { glyph: night ? "moon-cloud" : "partly", label: "Partly cloudy" };
-    if (code === 3) return { glyph: "cloud", label: "Overcast" };
-    if (code === 45) return { glyph: "fog", label: "Fog" };
-    if (code === 48) return { glyph: "fog", label: "Freezing fog" };
+    if (code === 0) return { glyph: sun, zh: "晴", en: "Clear" };
+    if (code === 1) return { glyph: sun, zh: "少云", en: "Mainly clear" };
+    if (code === 2)
+      return { glyph: night ? "moon-cloud" : "partly", zh: "多云", en: "Partly cloudy" };
+    if (code === 3) return { glyph: "cloud", zh: "阴", en: "Overcast" };
+    if (code === 45) return { glyph: "fog", zh: "雾", en: "Fog" };
+    if (code === 48) return { glyph: "fog", zh: "冻雾", en: "Freezing fog" };
 
     if (code >= 51 && code <= 57) {
       return {
         glyph: "drizzle",
-        label:
+        zh:
+          code === 51
+            ? "小毛毛雨"
+            : code === 53
+              ? "毛毛雨"
+              : code === 55
+                ? "大毛毛雨"
+                : "冻毛毛雨",
+        en:
           code === 51
             ? "Light drizzle"
             : code === 53
@@ -110,7 +154,8 @@
     if (code >= 61 && code <= 67) {
       return {
         glyph: "rain",
-        label:
+        zh: code === 61 ? "小雨" : code === 63 ? "中雨" : code === 65 ? "大雨" : "冻雨",
+        en:
           code === 61
             ? "Light rain"
             : code === 63
@@ -123,7 +168,8 @@
     if (code >= 71 && code <= 77) {
       return {
         glyph: "snow",
-        label:
+        zh: code === 71 ? "小雪" : code === 73 ? "中雪" : code === 75 ? "大雪" : "米雪",
+        en:
           code === 71
             ? "Light snow"
             : code === 73
@@ -136,11 +182,16 @@
     if (code >= 80 && code <= 82) {
       return {
         glyph: "rain",
-        label: code === 80 ? "Light showers" : code === 81 ? "Showers" : "Violent showers",
+        zh: code === 80 ? "小阵雨" : code === 81 ? "阵雨" : "强阵雨",
+        en: code === 80 ? "Light showers" : code === 81 ? "Showers" : "Violent showers",
       };
     }
     if (code >= 85 && code <= 86) {
-      return { glyph: "snow", label: code === 85 ? "Snow showers" : "Heavy snow showers" };
+      return {
+        glyph: "snow",
+        zh: code === 85 ? "阵雪" : "强阵雪",
+        en: code === 85 ? "Snow showers" : "Heavy snow showers",
+      };
     }
     /*
      * 95–99 才是雷暴（99 带冰雹）。这里**必须写死上界**：
@@ -149,11 +200,15 @@
      * 比报"—"糟得多。
      */
     if (code >= 95 && code <= 99) {
-      return { glyph: "storm", label: code >= 96 ? "Thunderstorm with hail" : "Thunderstorm" };
+      return {
+        glyph: "storm",
+        zh: code >= 96 ? "雷阵雨伴冰雹" : "雷阵雨",
+        en: code >= 96 ? "Thunderstorm with hail" : "Thunderstorm",
+      };
     }
 
     // 没见过的码：别编一个说法，也别画成晴天
-    return { glyph: "cloud", label: "—" };
+    return { glyph: "cloud", zh: "—", en: "—" };
   }
 
   // -------------------------------------------------------------------------
@@ -167,12 +222,20 @@
   function describeAge(ms) {
     if (!isFinite(ms) || ms < 0) return "";
     var seconds = Math.round(ms / 1000);
-    if (seconds < 90) return "just now";
+    if (seconds < 90) return say("刚刚", "just now");
     var minutes = Math.round(seconds / 60);
-    if (minutes < 60) return minutes + " min";
+    if (minutes < 60) return minutes + say("分钟", " min");
     var hours = Math.round(minutes / 60);
-    if (hours < 24) return hours + " h";
-    return Math.round(hours / 24) + " d";
+    if (hours < 24) return hours + say("小时", " h");
+    return Math.round(hours / 24) + say("天", " d");
+  }
+
+  function fail(code, zh, en) {
+    var error = new Error(en || zh);
+    error.code = code;
+    // 这句话要显示在卡片上，所以两门都带着 —— 换语言时不用回头猜它原来是哪门
+    error.text = [zh, en || zh];
+    return error;
   }
 
   function rounded(value, unit) {
@@ -219,12 +282,6 @@
   // 网络
   // -------------------------------------------------------------------------
 
-  function fail(code, message) {
-    var error = new Error(message);
-    error.code = code;
-    return error;
-  }
-
   /*
    * 一次 GET，只认 2xx 的 JSON。
    *
@@ -243,17 +300,26 @@
     return call("network.fetch", { url: url, headers: { accept: "application/json" } }, 25000).then(
       function (response) {
         if (!response || typeof response.status !== "number") {
-          throw fail("empty", "the request came back empty");
+          throw fail("empty", "请求回来是空的", "the request came back empty");
         }
         if (response.status >= 300 && response.status < 400) {
-          throw fail("redirect", "the server redirected to " + (response.headers.location || "elsewhere"));
+          var target = response.headers.location || "elsewhere";
+          throw fail(
+            "redirect",
+            "服务器重定向到 " + target,
+            "the server redirected to " + target,
+          );
         }
-        if (!response.ok) throw fail("http", "the service answered " + response.status);
-        if (response.truncated) throw fail("truncated", "the response was cut short");
+        if (!response.ok) {
+          throw fail("http", "服务回了 " + response.status, "the service answered " + response.status);
+        }
+        if (response.truncated) {
+          throw fail("truncated", "响应被截断了", "the response was cut short");
+        }
         try {
           return JSON.parse(response.body);
         } catch (error) {
-          throw fail("json", "the response was not JSON");
+          throw fail("json", "回来的不是 JSON", "the response was not JSON");
         }
       },
     );
@@ -270,13 +336,16 @@
   function classify(error) {
     var code = error && error.code;
     var message = (error && error.message) || String(error);
-    if (code === "permission_denied") return { kind: "denied", detail: message };
+    // 卡片上那句话两门都带着（`fail` 挂上来的）；桥自己抛的错只有英文那一句，
+    // 那就两门都用它 —— 平台的后端文案不该由组件瞎猜一遍
+    var pair = error && error.text ? error.text : [message, message];
+    if (code === "permission_denied") return { kind: "denied", detail: pair };
     if (code === "noplace") return { kind: "noplace", detail: message };
     if (code === "internal" && /network\.hosts/.test(message)) {
       var host = /host "([^"]+)"/.exec(message);
       return { kind: "blocked", detail: host ? host[1] : message };
     }
-    return { kind: "failed", detail: message };
+    return { kind: "failed", detail: pair };
   }
 
   // -------------------------------------------------------------------------
@@ -314,7 +383,8 @@
     config: null,
     place: null,
     reading: null,
-    detail: "",
+    /** 解释那一行：两门都存着（`[zh, en]`），换语言时重挑一次就行 */
+    detail: null,
   };
 
   /*
@@ -341,7 +411,19 @@
     wind: document.getElementById("wind"),
     glyphUse: document.getElementById("glyph-use"),
     hint: document.getElementById("hint"),
+    dtHigh: document.getElementById("dt-high"),
+    dtLow: document.getElementById("dt-low"),
+    dtFeels: document.getElementById("dt-feels"),
+    dtWind: document.getElementById("dt-wind"),
   };
+
+  /** 底行那四个小标签：跟语言走，跟数据无关，换语言时单独重画一次 */
+  function paintLabels() {
+    el.dtHigh.textContent = say("高", "H");
+    el.dtLow.textContent = say("低", "L");
+    el.dtFeels.textContent = say("体感", "Feels");
+    el.dtWind.textContent = say("风速", "Wind");
+  }
 
   // -------------------------------------------------------------------------
   // 渲染
@@ -352,15 +434,27 @@
    *
    * 不用一排破折号：占位符看起来像"正在加载"，而这几种状态里有几种是
    * 永远好不了的（清单里没列主机），需要用户或作者动手。
+   *
+   * 两门都留在这儿（`[zh, en]`），由 `render` 现挑 —— 换语言时不用等下一次刷新。
    */
   var HEADLINES = {
-    unconfigured: "Set a city",
-    loading: "—",
-    denied: "No network access",
-    blocked: "Host not allowed",
-    noplace: "Unknown place",
-    failed: "Can't reach the service",
+    unconfigured: ["还没设城市", "Set a city"],
+    loading: ["—", "—"],
+    denied: ["没有联网权限", "No network access"],
+    blocked: ["主机不在名单里", "Host not allowed"],
+    noplace: ["查不到这个城市", "Unknown place"],
+    failed: ["连不上天气服务", "Can't reach the service"],
   };
+
+  /** 提示行留的是原因，不是那句已经翻好的话：换语言时重挑一次 */
+  function paintHint() {
+    var text =
+      state.phase === "stale" && state.reading
+        ? say("离线，下一拍再试", "Offline — will retry on the next tick")
+        : "";
+    el.hint.textContent = text;
+    el.hint.classList.toggle("is-visible", !!text);
+  }
 
   function unitsOf(config) {
     return config && config.units === "imperial" ? "imperial" : "metric";
@@ -384,17 +478,19 @@
 
     el.root.dataset.state = phase;
     el.place.textContent = placeLabel();
+    paintLabels();
 
     if (!reading) {
       el.age.textContent = "";
-      el.temp.textContent = HEADLINES[phase] || "—";
-      el.cond.textContent = state.detail || "";
+      var headline = HEADLINES[phase];
+      el.temp.textContent = headline ? say(headline[0], headline[1]) : "—";
+      el.cond.textContent = state.detail ? say(state.detail[0], state.detail[1]) : "";
       el.high.textContent = "—";
       el.low.textContent = "—";
       el.feels.textContent = "—";
       el.wind.textContent = "—";
       el.glyphUse.setAttribute("href", "#g-cloud");
-      setHint("");
+      paintHint();
       return;
     }
 
@@ -403,17 +499,20 @@
     var shape = condition(reading.code, reading.isDay);
 
     el.place.textContent = placeLabel();
-    el.place.title = state.place && state.place.region
-      ? state.place.name + ", " + state.place.region
-      : "";
+    el.place.title =
+      state.place && state.place.region
+        ? state.place.name + say("，", ", ") + state.place.region
+        : "";
 
     el.temp.textContent = rounded(reading.temp, "°");
     el.temp.title =
       (typeof reading.temp === "number" ? reading.temp.toFixed(1) : "?") +
       (units === "imperial" ? " °F" : " °C") +
-      (typeof reading.humidity === "number" ? " · " + Math.round(reading.humidity) + "% humidity" : "");
+      (typeof reading.humidity === "number"
+        ? say(" · 湿度 " + Math.round(reading.humidity) + "%", " · " + Math.round(reading.humidity) + "% humidity")
+        : "");
 
-    el.cond.textContent = shape.label;
+    el.cond.textContent = say(shape.zh, shape.en);
     el.glyphUse.setAttribute("href", "#g-" + shape.glyph);
 
     el.high.textContent = rounded(reading.high, "°");
@@ -433,20 +532,11 @@
   function renderAge() {
     if (!state.reading) {
       el.age.textContent = "";
-      setHint("");
+      paintHint();
       return;
     }
     el.age.textContent = describeAge(Date.now() - state.reading.at);
-    if (state.phase === "stale") {
-      setHint("Offline — will retry on the next tick");
-    } else {
-      setHint("");
-    }
-  }
-
-  function setHint(text) {
-    el.hint.textContent = text || "";
-    el.hint.classList.toggle("is-visible", !!text);
+    paintHint();
   }
 
   // -------------------------------------------------------------------------
@@ -517,12 +607,12 @@
      */
     state.place = null;
     state.reading = null;
-    state.detail = "";
+    state.detail = null;
 
     var query = String((config && config.place) || "").trim();
     if (!query) {
       state.phase = "unconfigured";
-      state.detail = "Pick one in the inspector.";
+      state.detail = ["在属性面板里选一个城市。", "Pick one in the inspector."];
       render();
       clearTimers();
       return;
@@ -595,7 +685,7 @@
          * 当成 `[]` 处理的话，用户看到的是"服务连不上"，而其实是"没有这个城市"。
          */
         var hit = payload && payload.results && payload.results[0];
-        if (!hit) throw fail("noplace", query);
+        if (!hit) throw fail("noplace", query, query);
 
         var place = {
           query: query,
@@ -615,7 +705,7 @@
     return fetchJson(forecastUrl(place, units)).then(function (payload) {
       var current = payload && payload.current;
       if (!current || typeof current.temperature_2m !== "number") {
-        throw fail("shape", "the forecast had no current temperature");
+        throw fail("shape", "预报里没有当前温度", "the forecast had no current temperature");
       }
       var daily = payload.daily || {};
       return {
@@ -652,7 +742,7 @@
         if (token !== run || !reading) return;
         state.reading = reading;
         state.phase = "ready";
-        state.detail = "";
+        state.detail = null;
         render();
         save(readingKey(query, units), reading);
       })
@@ -671,7 +761,7 @@
        * 立刻失败的调用。把话说明白，等重载。
        */
       state.phase = "denied";
-      state.detail = "Allow network access in the inspector.";
+      state.detail = ["在属性面板里允许联网。", "Allow network access in the inspector."];
       render();
       clearTimers();
       return;
@@ -680,7 +770,10 @@
     if (problem.kind === "blocked") {
       // 作者写漏了 network.hosts，重试一万次也一样
       state.phase = "blocked";
-      state.detail = problem.detail + " is not in the manifest.";
+      state.detail = [
+        problem.detail + " 没写进清单。",
+        problem.detail + " is not in the manifest.",
+      ];
       render();
       clearTimers();
       return;
@@ -688,7 +781,10 @@
 
     if (problem.kind === "noplace") {
       state.phase = "noplace";
-      state.detail = "No match for “" + problem.detail + "”.";
+      state.detail = [
+        "查不到「" + problem.detail + "」。",
+        "No match for “" + problem.detail + "”.",
+      ];
       render();
       return;
     }
@@ -714,6 +810,12 @@
 
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
 
@@ -746,13 +848,23 @@
     }
   });
 
+  /*
+   * 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+   * 不该拖住配置和刷新，卡片也不该停在两种文字的混合状态。
+   */
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(noop);
+
   call("config.get")
     .then(function (config) {
       start(config);
     })
     .catch(function () {
       state.phase = "failed";
-      state.detail = "This widget could not read its own settings.";
+      state.detail = ["这个组件读不到自己的设置。", "This widget could not read its own settings."];
       render();
     })
     .then(function () {

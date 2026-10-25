@@ -53,6 +53,35 @@
   }
 
   /*
+   * 界面语言。
+   *
+   * 平台在设置里能切中英两门，而**卡片上的字是这个组件自己的** —— 平台不知道
+   * "周日"对应哪句英文。所以两门都留在这儿，按 `lang.get` 挑一份；用户中途换
+   * 语言，平台推一条 `language`，把已经画出去的字原地换掉（两件事都要做：只读
+   * 一次 = 换语言卡片不动，只听推送 = 语言停在建文档那一刻）。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文，中文界面看到的就是最终样子；
+   * 英文界面要等 `lang.get` 回来那一趟（几十毫秒）才翻，换来的是不用先画一遍
+   * "加载中"。`lang` 只有 `zh` / `en` 两种 —— "跟随系统"是平台在设置里解析掉的。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("时钟", "Clock");
+    // 星期、月份、上午下午、报错那几句都跟语言有关，重画一次比逐个替换稳
+    render();
+  }
+
+  /*
    * 配置。默认值写在这里**只是**为了在 `config.get` 回来之前有个能画的东西 ——
    * 真值永远以宿主给的为准（它已经按清单的 schema 合并过出厂值）。
    */
@@ -73,6 +102,12 @@
 
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
 
@@ -108,7 +143,10 @@
   var dateEl = document.getElementById("date");
   var tickId = 0;
 
-  var WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var WEEKDAYS = {
+    zh: ["周日", "周一", "周二", "周三", "周四", "周五", "周六"],
+    en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+  };
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   function pad(value) {
@@ -122,26 +160,32 @@
         var hours = date.getHours();
         var suffix = "";
         if (config.hour12) {
-          suffix = hours < 12 ? " AM" : " PM";
+          // 中文不写 AM/PM，写上午 / 下午；英文仍然是那三四个字母
+          suffix = hours < 12 ? say("上午", "AM") : say("下午", "PM");
           hours = hours % 12 || 12;
         }
 
         var text = (config.hour12 ? hours : pad(hours)) + ":" + pad(date.getMinutes());
         if (config.showSeconds) text += ":" + pad(date.getSeconds());
         timeEl.textContent = text;
-        // AM/PM 用 12px 挂在数字右边：跟数字一样大的话会宽到折行
+        // 上午/下午、AM/PM 用 12px 挂在数字右边：跟数字一样大的话会宽到折行
         suffixEl.textContent = suffix.trim();
         root.classList.toggle("is-long", config.showSeconds);
 
-        // 日期写成 "Oct 22, Thu"：月份缩写 + 日 + 星期。
+        // 日期：英文是 "Oct 22, Thu"（月份缩写 + 日 + 星期），中文是 "10月22日 周四"。
         // 时区 ID（Asia/Shanghai）是给程序看的，桌面时钟上没人想读它，
         // 换成星期几，这块空间才算有用。
         dateEl.textContent =
-          MONTHS[date.getMonth()] + " " + date.getDate() + ", " + WEEKDAYS[date.getDay()];
+          lang === "en"
+            ? MONTHS[date.getMonth()] + " " + date.getDate() + ", " + WEEKDAYS.en[date.getDay()]
+            : date.getMonth() + 1 + "月" + date.getDate() + "日 " + WEEKDAYS.zh[date.getDay()];
       })
       .catch(function (error) {
         timeEl.textContent = "--:--";
-        dateEl.textContent = error.code === "permission_denied" ? "Needs clock permission" : "Could not read the time";
+        dateEl.textContent =
+          error.code === "permission_denied"
+            ? say("需要「时钟」权限", "Needs clock permission")
+            : say("读不到时间", "Could not read the time");
       });
   }
 
@@ -151,6 +195,16 @@
    * `ready` 之后宿主还会推一次主题和配置 —— 那是给"宿主先加载、组件后到"
    * 这种时序兜底的，重复应用一次没有副作用。
    */
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住配置和心跳
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画：时钟不该因为问不到语言就不走 */
+    });
+
   call("config.get")
     .then(function (values) {
       if (values) applyConfig(values);

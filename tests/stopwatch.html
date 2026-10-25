@@ -127,6 +127,21 @@
       const lapEl = doc.getElementById("lap");
       const lapsEl = doc.getElementById("laps");
 
+      // 组件默认按中文画；这里推一条 language 让它切到英文，等于顺带验了这条推送
+      function setLang(next) {
+        frame.contentWindow.postMessage(
+          { __lattice: 1, type: "language", payload: { lang: next } },
+          "*",
+        );
+        return new Promise((resolve) => setTimeout(resolve, 30));
+      }
+
+      // 没有宿主推语言时，首帧就是中文
+      eq([runEl.textContent, lapEl.textContent], ["开始", "重置"], "开局：开始 + 重置（默认中文）");
+      eq(doc.querySelector(".sw-title").textContent, "秒表", "标题默认是中文");
+
+      await setLang("en");
+
       eq([runEl.textContent, lapEl.textContent], ["Start", "Reset"], "开局：Start + Reset");
       eq(lapEl.disabled, true, "开局 Reset 是灰的（没东西可重置）");
       eq(timeEl.textContent, "00:00.00", "开局读数是 0");

@@ -57,6 +57,27 @@
         addEvent, removeEvent, normalizeEvents, MAX_PER_DAY,
       } = api;
 
+      // ---- 0. 默认中文，再切英文 ----
+
+      /*
+       * 组件默认按中文画（HTML 里写死的那一帧）。先确认默认那门，再推一条
+       * language 把它切到英文 —— 后面那些英文断言本来是按英文写的，顺便
+       * 验证这条平台推送真的被组件接住了。
+       */
+      function setLang(next) {
+        frame.contentWindow.postMessage(
+          { __lattice: 1, type: "language", payload: { lang: next } },
+          "*",
+        );
+        return new Promise((resolve) => setTimeout(resolve, 30));
+      }
+
+      eq(formatMonth(2026, 9), "2026年10月", "默认中文月份写成 2026年10月");
+      eq(weekdayLabels("monday")[0], "周一", "默认中文星期头从周一开始");
+      eq(formatDay("2026-10-24", new Date(2026, 9, 1).getTime()), "10月24日", "默认中文日期写成 10月24日");
+
+      await setLang("en");
+
       // ---- 1. 日期键 ----
 
       eq(keyOf(new Date(2026, 9, 24)), "2026-10-24", "日期键补零到两位");
@@ -226,6 +247,13 @@
 
       const snap = () => api.snapshot();
       const today = api.todayKey();
+
+      // 已经画出来的 DOM 也要跟着语言走：切回中文看一眼，再切回英文继续
+      await setLang("zh");
+      eq(titleEl.textContent, api.formatMonth(snap().view.year, snap().view.month), "换成中文后月标题跟着重画");
+      eq(doc.querySelector(".cal-weekday").textContent, "周一", "星期头跟着重画");
+      await setLang("en");
+      eq(doc.querySelector(".cal-weekday").textContent, api.weekdayLabels("monday")[0], "切回英文星期头也回来");
 
       eq(grid.children.length, 42, "界面画了 42 格");
       eq(snap().selected, today, "开局选中的是今天");

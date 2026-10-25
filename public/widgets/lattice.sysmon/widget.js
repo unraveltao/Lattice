@@ -69,6 +69,36 @@
     });
   }
 
+  /*
+   * 界面语言。
+   *
+   * 行标签（内存 / 磁盘 / 网络）、单位、开机时长和提示行都是这个组件自己的字 ——
+   * 平台不知道「内存」对应哪句英文。所以两门都留在这儿，按 `lang.get` 挑一份；
+   * 用户中途换语言，平台推一条 `language`，把已经画出去的字原地换掉（两件事都要做：
+   * 只读一次 = 换语言卡片不动，只听推送 = 语言停在建文档那一刻）。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文；英文界面要等 `lang.get` 回来
+   * 那一趟（几十毫秒）才翻。`lang` 只有 `zh` / `en` 两种 —— "跟随系统"是平台
+   * 在设置里解析掉的。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("系统", "System");
+    // 行标签、单位、提示行和已经画出去的读数全都要跟着换：当场重画一次，
+    // 别等下一拍心跳 —— 那一拍在一秒后，用户会看见半张中文半张英文
+    repaint();
+  }
+
   // ---------- 纯逻辑（自检页直接调，别在测试里抄一份） ----------
 
   function clamp01(value) {
@@ -108,16 +138,25 @@
     return bytes(value) + "/s";
   }
 
-  /** 秒 → `12s` / `4m` / `3h 20m` / `2d 4h`。卡片窄，最多两位，能省则省 */
+  /**
+   * 秒 → `12s` / `4m` / `3h 20m` / `2d 4h`（中文写 `12秒` / `4分` / `3小时20分` / `2天4小时`）。
+   * 卡片窄，最多两位，能省则省。数字与 `%` / `GB` 这类符号不翻，只有单位跟着语言走
+   */
   function duration(seconds) {
     var total = Math.floor(Number(seconds));
     if (!isFinite(total) || total < 0) return "";
-    if (total < 60) return total + "s";
+    // 中文单位之间不留空格，英文两个单位之间留一个（`3h 20m` / `3d 4h`）
+    var s = say("秒", "s");
+    var m = say("分", "m");
+    var h = say("小时", "h");
+    var d = say("天", "d");
+    var gap = say("", " ");
+    if (total < 60) return total + s;
     var minutes = Math.floor(total / 60);
-    if (minutes < 60) return minutes + "m";
+    if (minutes < 60) return minutes + m;
     var hours = Math.floor(minutes / 60);
-    if (hours < 24) return hours + "h " + (minutes % 60) + "m";
-    return Math.floor(hours / 24) + "d " + (hours % 24) + "h";
+    if (hours < 24) return hours + h + gap + (minutes % 60) + m;
+    return Math.floor(hours / 24) + d + gap + (hours % 24) + h;
   }
 
   /**
@@ -174,9 +213,11 @@
   // ---------- DOM ----------
 
   var el = {
+    title: document.getElementById("title"),
     uptime: document.getElementById("uptime"),
     cpu: document.getElementById("cpu"),
     mem: document.getElementById("mem"),
+    memName: document.getElementById("mem-name"),
     memSub: document.getElementById("mem-sub"),
     memCommit: document.getElementById("mem-commit"),
     trend: document.getElementById("trend"),
@@ -195,14 +236,37 @@
   /** 缓冲里留多少拍：60 × 1 秒 = 一分钟，正好是"刚才那一下卡顿还在不在" */
   var HISTORY = 60;
 
+  /** 上一次画出来的读数：换语言要拿它重画，不能等下一拍心跳 */
+  var lastMetrics = null;
+
+  /**
+   * 提示行留的是**原因**，不是那句已经翻好的话 —— 换语言时重挑一次就行。
+   * 值见下面的 HINTS，空串表示不显示。
+   */
+  var hintCode = "";
+
+  var HINTS = {
+    denied: ["需要「系统指标」权限", "Needs the System metrics permission"],
+    internal: ["系统指标要在桌面应用里读", "System metrics need the desktop app"],
+    unavailable: ["读不到系统指标", "Metrics unavailable"],
+    scheduler: ["调度器不可用", "Scheduler unavailable"],
+  };
+
   var cpuHistory = [];
   var memHistory = [];
   /** 第一拍只是基线（后端没有前值，占用一定是 0），不进历史 */
   var primed = false;
   var trendBox = { w: 0, h: 0 };
 
-  function setHint(text) {
-    el.hint.textContent = text || "";
+  function setHint(code) {
+    hintCode = code || "";
+    paintHint();
+  }
+
+  function paintHint() {
+    var pair = HINTS[hintCode];
+    var text = pair ? say(pair[0], pair[1]) : "";
+    el.hint.textContent = text;
     el.hint.classList.toggle("is-visible", !!text);
   }
 
@@ -265,7 +329,7 @@
       bar.style.height = "max(2px, " + (value * 100).toFixed(0) + "%)";
       bar.classList.toggle("is-high", value >= 0.75 && value < 0.9);
       bar.classList.toggle("is-critical", value >= 0.9);
-      bar.title = "Core " + (at + 1) + " · " + percent(value) + "%";
+      bar.title = say("核心 ", "Core ") + (at + 1) + " · " + percent(value) + "%";
     }
   }
 
@@ -273,7 +337,30 @@
 
   function render(metrics) {
     if (!metrics) return;
+    lastMetrics = metrics;
 
+    if (primed) {
+      cpuHistory.push(clamp01((metrics.cpu || {}).usage));
+      memHistory.push(clamp01((metrics.memory || {}).usage));
+      // 环形缓冲：满了丢最老的
+      if (cpuHistory.length > HISTORY) cpuHistory.shift();
+      if (memHistory.length > HISTORY) memHistory.shift();
+    } else {
+      primed = true;
+    }
+    paint(metrics);
+  }
+
+  /** 换语言时重画同一份读数：不进历史缓冲，也不重新采样 */
+  function repaint() {
+    el.title.textContent = say("系统", "System");
+    el.memName.textContent = say("内存", "Memory");
+    if (lastMetrics) paint(lastMetrics);
+    paintHint();
+  }
+
+  /** 只把读数写到 DOM 上。历史缓冲和采样归 `render` 管，这里一次都不碰 */
+  function paint(metrics) {
     var cpu = metrics.cpu || {};
     var memory = metrics.memory || {};
     var disk = metrics.disk || {};
@@ -284,73 +371,100 @@
     var memUsage = clamp01(memory.usage);
 
     el.cpu.textContent = percent(cpuUsage) + "%";
-    el.cpu.title =
+    el.cpu.title = say(
       percent(cpuUsage) +
-      "% across " +
-      (cpu.cores || "?") +
-      " logical cores · 0–100% is the whole machine, not one core";
+        "%，" +
+        (cpu.cores || "?") +
+        " 个逻辑核的总和 · 0–100% 指的是整机，不是单个核",
+      percent(cpuUsage) +
+        "% across " +
+        (cpu.cores || "?") +
+        " logical cores · 0–100% is the whole machine, not one core",
+    );
     markLevel(el.cpu, cpuUsage);
 
     el.mem.textContent = percent(memUsage) + "%";
-    el.mem.title =
-      percent(memUsage) + "% of physical memory in use · " + bytes(memory.total) + " installed";
+    el.mem.title = say(
+      "物理内存已用 " + percent(memUsage) + "% · 共 " + bytes(memory.total),
+      percent(memUsage) + "% of physical memory in use · " + bytes(memory.total) + " installed",
+    );
     markLevel(el.mem, memUsage);
 
     el.memSub.textContent = bytes(memory.used) + " / " + bytes(memory.total);
     // 提交量拿不到（老后端 / GetPerformanceInfo 失败）就整段留空，别写 "commit 0 B / 0 B"
     var hasCommit = memory.commitLimit > 0;
     el.memCommit.textContent = hasCommit
-      ? "commit " + bytes(memory.commitUsed) + " / " + bytes(memory.commitLimit)
+      ? say("已提交 ", "commit ") + bytes(memory.commitUsed) + " / " + bytes(memory.commitLimit)
       : "";
     el.memCommit.title = hasCommit
-      ? "Committed " +
-        bytes(memory.commitUsed) +
-        " of a " +
-        bytes(memory.commitLimit) +
-        " limit — the limit includes the page file, and running out of it is what actually fails allocations"
+      ? say(
+          "已提交 " +
+            bytes(memory.commitUsed) +
+            "，上限 " +
+            bytes(memory.commitLimit) +
+            " —— 上限里算进了页面文件，撞到它才会真的分配失败",
+          "Committed " +
+            bytes(memory.commitUsed) +
+            " of a " +
+            bytes(memory.commitLimit) +
+            " limit — the limit includes the page file, and running out of it is what actually fails allocations",
+        )
       : "";
 
     // 剩余空间比百分比好使：不用心算
     var diskFree = Math.max(0, (disk.total || 0) - (disk.used || 0));
-    el.disk.textContent = disk.total > 0 ? (disk.mount || "C:") + " " + bytes(diskFree) + " free" : "—";
-    el.disk.title =
-      bytes(disk.used) +
-      " used of " +
-      bytes(disk.total) +
-      " on " +
+    el.disk.textContent =
+      disk.total > 0
+        ? (disk.mount || "C:") + say(" 剩余 " + bytes(diskFree), " " + bytes(diskFree) + " free")
+        : "—";
+    el.disk.title = say(
       (disk.mount || "C:") +
-      " (" +
-      percent(disk.usage) +
-      "%)";
+        " 已用 " +
+        bytes(disk.used) +
+        "，共 " +
+        bytes(disk.total) +
+        "（" +
+        percent(disk.usage) +
+        "%）",
+      bytes(disk.used) +
+        " used of " +
+        bytes(disk.total) +
+        " on " +
+        (disk.mount || "C:") +
+        " (" +
+        percent(disk.usage) +
+        "%)",
+    );
     markLevel(el.disk, clamp01(disk.usage));
 
-    el.procs.textContent = system.processes ? system.processes + " processes" : "—";
+    el.procs.textContent = system.processes
+      ? system.processes + say(" 个进程", " processes")
+      : "—";
     el.procs.title =
       (system.processes || 0) +
-      " processes · " +
+      say(" 个进程 · ", " processes · ") +
       (system.threads || 0) +
-      " threads · " +
+      say(" 个线程 · ", " threads · ") +
       (system.handles || 0) +
-      " handles";
+      say(" 个句柄", " handles");
 
     el.down.textContent = "↓ " + rate(network.rxPerSec);
     el.up.textContent = "↑ " + rate(network.txPerSec);
-    el.down.title = bytes(network.rxTotal) + " received since boot";
-    el.up.title = bytes(network.txTotal) + " sent since boot";
+    el.down.title = say(
+      "开机以来收到 " + bytes(network.rxTotal),
+      bytes(network.rxTotal) + " received since boot",
+    );
+    el.up.title = say(
+      "开机以来发出 " + bytes(network.txTotal),
+      bytes(network.txTotal) + " sent since boot",
+    );
 
-    el.uptime.textContent = system.uptimeSec ? duration(system.uptimeSec) + " up" : "";
+    el.uptime.textContent = system.uptimeSec
+      ? say("已开机 " + duration(system.uptimeSec), duration(system.uptimeSec) + " up")
+      : "";
 
     renderCores(cpu.perCore);
 
-    if (primed) {
-      cpuHistory.push(cpuUsage);
-      memHistory.push(memUsage);
-      // 环形缓冲：满了丢最老的
-      if (cpuHistory.length > HISTORY) cpuHistory.shift();
-      if (memHistory.length > HISTORY) memHistory.shift();
-    } else {
-      primed = true;
-    }
     // 每次渲染前量一次：`ResizeObserver` 在无头环境里可能还没跑第一拍，
     // 而 `drawTrend` 没有尺寸就什么都不画
     resizeTrend();
@@ -376,17 +490,17 @@
       .catch(function (error) {
         if (error.code === "permission_denied") {
           denied = true;
-          setHint("Needs the System metrics permission");
+          setHint("denied");
           return;
         }
         // 浏览器预览（npm run dev）走这条：WebView2 外面没有这些计数器
         if (error.code === "internal") {
-          setHint("System metrics need the desktop app");
+          setHint("internal");
           return;
         }
         failures += 1;
         // 偶发失败（比如采样正卡在系统调用上）不吓人，连续三次才提示
-        if (failures >= 3) setHint("Metrics unavailable");
+        if (failures >= 3) setHint("unavailable");
       });
   }
 
@@ -396,6 +510,11 @@
 
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
     if (data.type === "tick") {
@@ -430,6 +549,18 @@
   }
 
   /*
+   * 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+   * 不该拖住心跳，卡片也不该因为问不到语言就停在两种文字的混合状态。
+   */
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画 */
+    });
+
+  /*
    * 先打一拍再开始计时。
    *
    * 速率类指标（CPU 占用、网络吞吐）靠两次采样做差，Rust 侧第一次调用
@@ -443,7 +574,7 @@
       refresh();
     })
     .catch(function () {
-      setHint("Scheduler unavailable");
+      setHint("scheduler");
     })
     .then(function () {
       parent.postMessage({ __lattice: 1, type: "ready" }, "*");

@@ -1,14 +1,14 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>Todo</title>
+    <title>待办</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <main class="todo">
       <header class="todo-head">
-        <h1 class="todo-title">To-do</h1>
+        <h1 class="todo-title">待办清单</h1>
         <span class="todo-meta" id="meta"></span>
       </header>
       <form class="todo-form" id="form">
@@ -16,14 +16,14 @@
           class="todo-input"
           id="input"
           type="text"
-          placeholder="Add a to-do, press Enter"
+          placeholder="添加一条待办，回车确认"
           autocomplete="off"
           maxlength="120"
         />
       </form>
       <div class="todo-body">
         <ul class="todo-list" id="list"></ul>
-        <p class="todo-empty" id="empty">Nothing here yet</p>
+        <p class="todo-empty" id="empty">还没有待办</p>
       </div>
     </main>
     <script src="widget.js"></script>

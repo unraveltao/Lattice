@@ -1,8 +1,11 @@
 {
   "id": "lattice.calendar",
-  "name": "Calendar",
-  "version": "0.1.1",
-  "description": "Month view with your own events — click a day, type a line",
+  "name": { "zh": "日历", "en": "Calendar" },
+  "version": "0.1.2",
+  "description": {
+    "zh": "月视图加自己的条目——点一天，写一行",
+    "en": "Month view with your own events — click a day, type a line"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -14,56 +17,108 @@
     {
       "key": "weekStart",
       "type": "select",
-      "label": "Week starts on",
+      "label": { "zh": "一周从哪天开始", "en": "Week starts on" },
       "default": "monday",
       "options": [
-        { "value": "monday", "label": "Monday" },
-        { "value": "sunday", "label": "Sunday" }
+        { "value": "monday", "label": { "zh": "周一", "en": "Monday" } },
+        { "value": "sunday", "label": { "zh": "周日", "en": "Sunday" } }
       ],
-      "help": "Which day sits in the first column. Monday for most of the world, Sunday for the US."
+      "help": {
+        "zh": "哪一天排在第一列。世界上多数地方用周一，美国用周日。",
+        "en": "Which day sits in the first column. Monday for most of the world, Sunday for the US."
+      }
     }
   ],
   "help": {
     "sections": [
       {
-        "title": "Adding an event",
+        "title": { "zh": "添加条目", "en": "Adding an event" },
         "items": [
-          "Click a day, then type in the box at the bottom and press Enter. The day you clicked is the day it lands on.",
-          "Start the line with a time and it is kept: `9:30 Standup` is stored as 09:30 plus the title `Standup`. Without a time it is an all-day entry and sorts above the timed ones.",
-          "Click the ✕ on a row to delete it. There is no undo — but deleting is one click, and typing it again is one line."
+          {
+            "zh": "点一天，在下面的输入框里写一行，回车就记上了。记在哪一天，取决于你点的是哪一天。",
+            "en": "Click a day, then type in the box at the bottom and press Enter. The day you clicked is the day it lands on."
+          },
+          {
+            "zh": "行首写时间就会留下：「9:30 站会」存成 09:30 加标题「站会」。不写时间的算全天，排在有时刻的条目上面。",
+            "en": "Start the line with a time and it is kept: `9:30 Standup` is stored as 09:30 plus the title `Standup`. Without a time it is an all-day entry and sorts above the timed ones."
+          },
+          {
+            "zh": "点某一行上的 ✕ 就删掉。没有撤销——但删除只要一下，重写也只要一行。",
+            "en": "Click the ✕ on a row to delete it. There is no undo — but deleting is one click, and typing it again is one line."
+          }
         ]
       },
       {
-        "title": "Reading the month",
+        "title": { "zh": "看这个月", "en": "Reading the month" },
         "items": [
-          "A dot under a number means that day has something on it. The month always shows six weeks, so the grid does not jump in height as you page through.",
-          "Days from the neighbouring months are shown greyed — clicking one jumps to that month rather than making it look like the entry landed in the wrong place.",
-          "The ‹ and › buttons move one month. The title is clickable and takes you back to today."
+          {
+            "zh": "数字下面的小圆点表示那天有安排。一个月固定画六周，翻月时格子高度不会跳。",
+            "en": "A dot under a number means that day has something on it. The month always shows six weeks, so the grid does not jump in height as you page through."
+          },
+          {
+            "zh": "邻月的日子是灰的——点它会跳到那个月，而不是让条目看起来记错了月份。",
+            "en": "Days from the neighbouring months are shown greyed — clicking one jumps to that month rather than making it look like the entry landed in the wrong place."
+          },
+          {
+            "zh": "‹ 和 › 一次翻一个月。标题可以点，点一下回到今天。",
+            "en": "The ‹ and › buttons move one month. The title is clickable and takes you back to today."
+          }
         ]
       },
       {
-        "title": "What it stores",
+        "title": { "zh": "存了什么", "en": "What it stores" },
         "items": [
-          "Only what you typed, per widget — the events are kept in this widget's own storage, so two calendars do not share a list.",
-          "Nothing is uploaded anywhere. There is no account, no sync, and no network permission in this version.",
-          "The selected day is remembered too, so reopening the card lands where you left off."
+          {
+            "zh": "只存你写下的东西，按组件分开——条目放在这个组件自己的存储里，两张日历不共享同一份表。",
+            "en": "Only what you typed, per widget — the events are kept in this widget's own storage, so two calendars do not share a list."
+          },
+          {
+            "zh": "什么都不上传。没有账号、没有同步，这一版也不需要联网权限。",
+            "en": "Nothing is uploaded anywhere. There is no account, no sync, and no network permission in this version."
+          },
+          {
+            "zh": "选中的那一天也会记住，重新打开卡片就停在你离开的地方。",
+            "en": "The selected day is remembered too, so reopening the card lands where you left off."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.1.2",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：月份写「2026年10月」，星期头写「周一」…「周日」，全天、空态和按钮也跟着换。",
+          "en": "Interface and help are bilingual now: a Chinese month reads 2026年10月, weekday headers read 周一…周日, and all-day entries, empty states and buttons follow."
+        }
+      ]
+    },
+    {
       "version": "0.1.1",
       "changes": [
-        "The month buttons moved clear of the window buttons in the top-right corner."
+        {
+          "zh": "月份按钮挪开了，不再压在右上角的窗口按钮下面。",
+          "en": "The month buttons moved clear of the window buttons in the top-right corner."
+        }
       ]
     },
     {
       "version": "0.1.0",
       "changes": [
-        "First release: month view, click a day, type a line to add an event.",
-        "A leading time (`9:30 …`) is parsed and kept; the rest is the title.",
-        "Six-week grid so the card does not change height between months."
+        {
+          "zh": "第一个版本：月视图，点一天、写一行就加一条。",
+          "en": "First release: month view, click a day, type a line to add an event."
+        },
+        {
+          "zh": "行首的时间（「9:30 …」）会被解析并保留，其余是标题。",
+          "en": "A leading time (`9:30 …`) is parsed and kept; the rest is the title."
+        },
+        {
+          "zh": "固定六周的网格，翻月时卡片高度不变。",
+          "en": "Six-week grid so the card does not change height between months."
+        }
       ]
     }
   ],

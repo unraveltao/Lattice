@@ -231,6 +231,18 @@ const attr = (host: Host, id: string, name: string) =>
   host.doc.getElementById(id)?.getAttribute(name) ?? "";
 const phase = (host: Host) => host.doc.getElementById("root")?.getAttribute("data-state") ?? "";
 
+/**
+ * 组件默认按中文画（测试页没有宿主，问不到 `lang.get`）；这里推一条
+ * `language` 让它切到英文 —— 顺便验了平台那条推送真的被接住。
+ */
+const setLang = async (host: Host, next: "zh" | "en") => {
+  host.frame.contentWindow?.postMessage(
+    { __lattice: 1, type: "language", payload: { lang: next } },
+    "*",
+  );
+  await sleep(30);
+};
+
 // ---------------------------------------------------------------------------
 
 // ---- 场景 1：没配城市 ----
@@ -240,6 +252,12 @@ const phase = (host: Host) => host.doc.getElementById("root")?.getAttribute("dat
   await settle();
 
   eq(phase(host), "unconfigured", "没配城市时状态是 unconfigured");
+  eq(text(host, "temp"), "还没设城市", "默认那门是中文：大字号位置是一句中文引导语");
+  log(
+    text(host, "cond").includes("属性面板"),
+    `中文解释指向属性面板：「${text(host, "cond")}」`,
+  );
+  await setLang(host, "en");
   eq(text(host, "temp"), "Set a city", "大字号位置是一句引导语，不是破折号");
   log(/inspector/i.test(text(host, "cond")), `解释指向属性面板：「${text(host, "cond")}」`);
   eq(host.netCalls.length, 0, "一个请求都没发");
@@ -268,6 +286,16 @@ const phase = (host: Host) => host.doc.getElementById("root")?.getAttribute("dat
   eq(phase(host), "ready", "拿到数据后状态是 ready");
   eq(text(host, "place"), "Shanghai", "标题用地名，不是用户填的词");
   eq(text(host, "temp"), "21°", "20.7 度显示成 21°");
+  eq(text(host, "cond"), "小毛毛雨", "中文里挑自然说法，不逐词直译");
+  eq(text(host, "age"), "刚刚", "中文说「刚刚」");
+  eq(
+    host.doc.getElementById("dt-feels")?.textContent,
+    "体感",
+    "底行标签是中文（数字和 ° 不翻）",
+  );
+
+  await setLang(host, "en");
+
   eq(text(host, "cond"), "Light drizzle", "天气码 51 翻成 Light drizzle");
   eq(attr(host, "glyph-use", "href"), "#g-drizzle", "图形换成毛毛雨");
   eq(text(host, "high"), "21°", "今日高温");
@@ -342,6 +370,12 @@ const phase = (host: Host) => host.doc.getElementById("root")?.getAttribute("dat
 
   eq(phase(host), "stale", "连不上时退回 stale，不是空白也不是报错块");
   eq(text(host, "temp"), "18°", "旧读数照常显示");
+  eq(text(host, "cond"), "阴", "旧读数里的天气码也翻成中文");
+  eq(text(host, "age"), "42分钟", `中文标明多久之前：「${text(host, "age")}」`);
+  log(/离线/.test(text(host, "hint")), `中文底部说明是离线的：「${text(host, "hint")}」`);
+
+  await setLang(host, "en");
+
   eq(text(host, "cond"), "Overcast", "旧读数里的天气码也照常翻译");
   eq(text(host, "age"), "42 min", "顶行标明这份数据是 42 分钟前的");
   log(/offline/i.test(text(host, "hint")), `底部说明是离线的：「${text(host, "hint")}」`);
@@ -373,6 +407,8 @@ const phase = (host: Host) => host.doc.getElementById("root")?.getAttribute("dat
   await settle();
 
   eq(phase(host), "denied", "没授权时状态是 denied");
+  eq(text(host, "temp"), "没有联网权限", "中文说的是没授权，不是网络坏了");
+  await setLang(host, "en");
   eq(text(host, "temp"), "No network access", "说的是没授权，不是网络坏了");
   log(/allow/i.test(text(host, "cond")), `指向授权：「${text(host, "cond")}」`);
   eq(host.timers.size, 0, "不挂心跳 —— 没权限时重试一万次也一样");
@@ -393,6 +429,8 @@ const phase = (host: Host) => host.doc.getElementById("root")?.getAttribute("dat
   await settle();
 
   eq(phase(host), "blocked", "状态是 blocked，不是普通失败");
+  eq(text(host, "temp"), "主机不在名单里", "中文标题说清是主机的问题");
+  await setLang(host, "en");
   eq(text(host, "temp"), "Host not allowed", "标题说清是主机的问题");
   log(text(host, "cond").includes("api.open-meteo.com"), `把主机名念出来：「${text(host, "cond")}」`);
   eq(host.timers.size, 0, "不挂心跳 —— 清单写错了靠定时器好不了");
@@ -410,6 +448,8 @@ const phase = (host: Host) => host.doc.getElementById("root")?.getAttribute("dat
   await settle();
 
   eq(phase(host), "noplace", "查不到城市时状态是 noplace");
+  eq(text(host, "temp"), "查不到这个城市", "中文标题说查不到");
+  await setLang(host, "en");
   eq(text(host, "temp"), "Unknown place", "标题说查不到");
   log(text(host, "cond").includes("Atlantis"), `把用户填的词念回去：「${text(host, "cond")}」`);
   eq(text(host, "place"), "Atlantis", "标题仍然显示用户填的词，不清空");
@@ -487,6 +527,8 @@ const phase = (host: Host) => host.doc.getElementById("root")?.getAttribute("dat
   host.setNet((url) =>
     url.startsWith(GEO) ? geocodeHit("Shanghai", 31.22222, 121.45806) : json(canned),
   );
+
+  await setLang(host, "en");
 
   const cases: [number, number, string, string][] = [
     // [码, is_day, 期望文案, 期望图形]
@@ -596,6 +638,12 @@ const phase = (host: Host) => host.doc.getElementById("root")?.getAttribute("dat
   await settle();
 
   eq(text(host, "place"), "Tokyo", "标题是东京");
+  eq(
+    text(host, "temp"),
+    "连不上天气服务",
+    "默认中文也说得出「连不上」，而不是一直停在加载",
+  );
+  await setLang(host, "en");
   eq(
     text(host, "temp"),
     "Can't reach the service",

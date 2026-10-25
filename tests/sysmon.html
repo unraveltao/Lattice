@@ -49,6 +49,18 @@
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
       /*
+       * 组件默认按中文画（测试页没有宿主，问不到 `lang.get`）；这里推一条
+       * `language` 让它切到英文 —— 等于顺带验了平台那条推送真的被接住。
+       */
+      const setLang = (view, next) => {
+        view.frame.contentWindow.postMessage(
+          { __lattice: 1, type: "language", payload: { lang: next } },
+          "*",
+        );
+        return sleep(30);
+      };
+
+      /*
        * 抛异常也要留一行红字。
        *
        * 不接这两个事件的话，页面里任何一处 `await` 抛出都表现为"#out 停在
@@ -179,6 +191,16 @@
         const view = mount({ metrics: METRICS });
         await view.ready;
         await sleep(120);
+
+        // 默认那一门是中文：时长的单位也跟着变，数字和 GB / % 不翻
+        const zhLib = view.pure();
+        log(zhLib.duration(600) === "10分", `默认中文 10 分钟 →「${zhLib.duration(600)}」`);
+        log(
+          zhLib.duration(12000) === "3小时20分",
+          `默认中文 3 小时 20 分 →「${zhLib.duration(12000)}」`,
+        );
+
+        await setLang(view, "en");
         const lib = view.pure();
 
         log(lib.bytes(0) === "0 B", `0 字节显示「${lib.bytes(0)}」`);
@@ -234,6 +256,16 @@
         await view.ready;
         await sleep(150);
         const doc = view.frame.contentDocument;
+
+        // 默认中文：行标签、底栏和开机时长都得是中文那一份
+        log(text(doc, "mem-name") === "内存", `默认中文行标签「${text(doc, "mem-name")}」`);
+        log(text(doc, "procs") === "142 个进程", `默认中文进程数「${text(doc, "procs")}」`);
+        log(
+          text(doc, "uptime") === "已开机 3天4小时",
+          `默认中文开机时长「${text(doc, "uptime")}」`,
+        );
+
+        await setLang(view, "en");
 
         log(view.calls.includes("schedule.every"), `心跳注册走了调度器（${view.calls.join(", ")}）`);
         log(text(doc, "cpu") === "42%", `CPU 显示「${text(doc, "cpu")}」`);
@@ -360,6 +392,9 @@
         await view.ready;
         await sleep(150);
         const doc = view.frame.contentDocument;
+
+        log(text(doc, "hint") === "需要「系统指标」权限", `默认中文提示「${text(doc, "hint")}」`);
+        await setLang(view, "en");
 
         log(
           doc.getElementById("hint").classList.contains("is-visible") &&

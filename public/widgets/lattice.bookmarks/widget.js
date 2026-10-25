@@ -101,6 +101,39 @@
     count: document.getElementById("count"),
   };
 
+  /*
+   * 界面语言。
+   *
+   * 货架上的字（权限提示、"已经在货架上"、空态）都是这个组件自己的，平台
+   * 只负责告诉我们现在是哪一门。两件事都要做：启动时问一次 `lang.get`，
+   * 用户中途换语言再收 `language` 推送，把已经画出去的字原地换掉。
+   *
+   * 首帧按 HTML 里写死的中文画（不变量 18）；英文界面等桥回来那一趟再翻。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("收藏夹", "Bookmarks");
+    document.querySelector(".shelf-title").textContent = say("收藏夹", "Bookmarks");
+    el.url.placeholder = say("粘贴链接，回车确认", "Paste a link, press Enter");
+    el.url.setAttribute("aria-label", say("链接地址", "Link address"));
+    el.empty.textContent = say("还没有链接 —— 在上面粘贴一条", "No links yet — paste one above");
+    // 行的标题 / aria、空态和计数都在 render 里；正在改名时不能重画，
+    // 否则手里的输入框会被整个拆掉
+    if (!renaming) render();
+    // 提示行是按"键"记的，重画一次当前那条
+    if (hintKey) setHint(hintKey);
+  }
+
   // -------------------------------------------------------------------------
   // URL：归一化与展示
   // -------------------------------------------------------------------------
@@ -144,7 +177,7 @@
 
   /** 没给名字时用域名当名字。比"未命名"有用，也比抓网页标题诚实（那要联网） */
   function deriveTitle(url) {
-    return hostOf(url).slice(0, MAX_TITLE) || "Link";
+    return hostOf(url).slice(0, MAX_TITLE) || say("链接", "Link");
   }
 
   function initialOf(item) {
@@ -212,9 +245,12 @@
   function persist() {
     return call("storage.set", { key: KEY, value: snapshot() }).catch(function () {
       // 内存里照用，只是写不下去。别把列表清掉 —— 用户的数据不该因为权限没了就消失
-      el.count.textContent = "Not saved";
+      el.count.textContent = say("未保存", "Not saved");
       el.count.classList.add("is-error");
-      el.count.title = "Couldn't write the shelf — check the storage permission.";
+      el.count.title = say(
+        "写不进货架 —— 检查存储权限。",
+        "Couldn't write the shelf — check the storage permission.",
+      );
     });
   }
 
@@ -290,8 +326,8 @@
 
     var actions = document.createElement("span");
     actions.className = "link-actions";
-    actions.appendChild(actionButton("rename", "Rename", ICON_RENAME));
-    actions.appendChild(actionButton("remove", "Remove", ICON_REMOVE));
+    actions.appendChild(actionButton("rename", say("改名", "Rename"), ICON_RENAME));
+    actions.appendChild(actionButton("remove", say("删除", "Remove"), ICON_REMOVE));
     actions.addEventListener("click", function (event) {
       var button = event.target.closest(".link-btn");
       if (!button) return;
@@ -332,9 +368,46 @@
   // 动作
   // -------------------------------------------------------------------------
 
-  function setHint(text, warn) {
-    el.hint.textContent = text || "";
-    el.hint.classList.toggle("is-warn", !!warn);
+  /*
+   * 提示行按"键"记，不存已经翻好的字：换语言时要能重画当前那一条。
+   * 这些提示都是"为什么没成"，所以有字就带警示色。
+   */
+  var hintKey = null;
+
+  var HINT_TEXT = {
+    badUrl: function () {
+      return say("这里只收 http 和 https 链接。", "Only http and https links can be saved here.");
+    },
+    duplicate: function () {
+      return say("这条链接已经在货架上了。", "That link is already on the shelf.");
+    },
+    full: function () {
+      return say(
+        "货架最多放 " + MAX_ITEMS + " 条 —— 先删掉一条。",
+        "The shelf holds " + MAX_ITEMS + " links — remove one first.",
+      );
+    },
+    openPermission: function () {
+      return say('需要「打开链接」权限。', 'Needs the "Open links" permission.');
+    },
+    openDesktop: function () {
+      return say("打开链接只在桌面应用里可用。", "Opening links works in the desktop app.");
+    },
+    openFailed: function () {
+      return say("打不开这条链接。", "Couldn't open that link.");
+    },
+    readFailed: function () {
+      return say("读不到已保存的链接。", "Couldn't read the saved links.");
+    },
+    configFailed: function () {
+      return say("这个组件读不到自己的设置。", "This widget could not read its own settings.");
+    },
+  };
+
+  function setHint(key) {
+    hintKey = key || null;
+    el.hint.textContent = hintKey ? HINT_TEXT[hintKey]() : "";
+    el.hint.classList.toggle("is-warn", !!hintKey);
   }
 
   function clearHint() {
@@ -353,19 +426,19 @@
        * 说清楚"为什么不行"。一句 "Invalid URL" 会让用户反复试 —— 他手里那条
        * 明明能在浏览器里打开（可能是 `file:`，也可能是浏览器自己补了协议）。
        */
-      setHint("Only http and https links can be saved here.", true);
+      setHint("badUrl");
       return false;
     }
 
     for (var i = 0; i < items.length; i++) {
       if (items[i].url === url) {
-        setHint("That link is already on the shelf.", true);
+        setHint("duplicate");
         return false;
       }
     }
 
     if (items.length >= MAX_ITEMS) {
-      setHint("The shelf holds " + MAX_ITEMS + " links — remove one first.", true);
+      setHint("full");
       return false;
     }
 
@@ -396,11 +469,11 @@
     call("shell.open", { url: item.url }).catch(function (error) {
       var code = error && error.code;
       if (code === "permission_denied") {
-        setHint('Needs the "Open links" permission.', true);
+        setHint("openPermission");
       } else if (code === "internal") {
-        setHint("Opening links works in the desktop app.", true);
+        setHint("openDesktop");
       } else {
-        setHint("Couldn't open that link.", true);
+        setHint("openFailed");
       }
     });
   }
@@ -424,7 +497,7 @@
     input.className = "link-rename";
     input.value = item.title;
     input.maxLength = MAX_TITLE;
-    input.setAttribute("aria-label", "Name");
+    input.setAttribute("aria-label", say("名字", "Name"));
     input.addEventListener("keydown", function (event) {
       // 别让 Enter/Delete 冒到行上（那会打开或删掉这一条）
       event.stopPropagation();
@@ -506,6 +579,12 @@
       return;
     }
 
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
+      return;
+    }
+
     if (data.type === "store-changed") {
       var key = data.payload && data.payload.key;
       if (key && key !== KEY) return;
@@ -566,14 +645,24 @@
       .catch(function () {
         items = [];
         render();
-        setHint("Couldn't read the saved links.", true);
+        setHint("readFailed");
       });
   }
+
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住配置和读盘
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画 */
+    });
 
   call("config.get")
     .then(start)
     .catch(function () {
-      setHint("This widget could not read its own settings.", true);
+      setHint("configFailed");
     })
     .then(function () {
       parent.postMessage({ __lattice: 1, type: "ready" }, "*");

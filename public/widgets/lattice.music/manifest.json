@@ -1,8 +1,11 @@
 {
   "id": "lattice.music",
-  "name": "Music",
-  "version": "0.2.0",
-  "description": "What Windows is playing, with play/pause, previous and next — plus a live trace of how loud it is",
+  "name": { "zh": "音乐", "en": "Music" },
+  "version": "0.2.1",
+  "description": {
+    "zh": "Windows 正在放什么，带播放 / 暂停、上一首和下一首 —— 还有一条实时的音量折线",
+    "en": "What Windows is playing, with play/pause, previous and next — plus a live trace of how loud it is"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -14,95 +17,186 @@
     {
       "key": "showProgress",
       "type": "toggle",
-      "label": "Show progress bar",
+      "label": { "zh": "显示进度条", "en": "Show progress bar" },
       "default": true,
-      "help": "Off keeps just the title and the buttons — some players report no duration at all."
+      "help": {
+        "zh": "关掉就只留曲名和按钮 —— 有些播放器根本不给总时长。",
+        "en": "Off keeps just the title and the buttons — some players report no duration at all."
+      }
     },
     {
       "key": "showLevel",
       "type": "toggle",
-      "label": "Show sound level",
+      "label": { "zh": "显示音量折线", "en": "Show sound level" },
       "default": true,
-      "help": "The wavy line at the bottom. Off gives that space back to the controls and stops sampling."
+      "help": {
+        "zh": "底部那条波浪线。关掉之后那块地方还给按钮，也停止采样。",
+        "en": "The wavy line at the bottom. Off gives that space back to the controls and stops sampling."
+      }
     },
     {
       "key": "pollMs",
       "type": "number",
-      "label": "Refresh interval",
+      "label": { "zh": "刷新间隔", "en": "Refresh interval" },
       "default": 2000,
       "min": 1000,
       "max": 10000,
       "step": 500,
-      "help": "How often to ask Windows what is playing. App switches are caught on the next poll."
+      "help": {
+        "zh": "多久问一次 Windows 现在在放什么。切换播放器会在下一拍被发现。",
+        "en": "How often to ask Windows what is playing. App switches are caught on the next poll."
+      }
     }
   ],
   "help": {
     "sections": [
       {
-        "title": "It follows whatever Windows is playing",
+        "title": { "zh": "Windows 放什么它就显示什么", "en": "It follows whatever Windows is playing" },
         "items": [
-          "It reads the system media session, so Spotify, a browser tab and a local player all appear the same way.",
-          "Play / pause, previous and next act on that session — not on one particular app.",
-          "The card shows the track, the artist and album, and the app that is playing it.",
-          "A greyed-out previous or next means that player says it cannot skip — not that the widget is stuck."
+          {
+            "zh": "它读的是系统媒体会话，所以 Spotify、浏览器里的一个标签页、本地播放器都是一个样子。",
+            "en": "It reads the system media session, so Spotify, a browser tab and a local player all appear the same way."
+          },
+          {
+            "zh": "播放 / 暂停、上一首、下一首都作用在那个会话上 —— 不是某一个特定的应用。",
+            "en": "Play / pause, previous and next act on that session — not on one particular app."
+          },
+          {
+            "zh": "卡片上显示曲名、歌手和专辑，还有在放它的那个应用。",
+            "en": "The card shows the track, the artist and album, and the app that is playing it."
+          },
+          {
+            "zh": "上一首 / 下一首是灰的，说明那个播放器自己说不能切歌 —— 不是组件卡住了。",
+            "en": "A greyed-out previous or next means that player says it cannot skip — not that the widget is stuck."
+          }
         ]
       },
       {
-        "title": "The wavy line is how loud it is",
+        "title": { "zh": "那条波浪线是音量", "en": "The wavy line is how loud it is" },
         "items": [
-          "It taps what your speakers are playing right now, so it moves with any sound — a game or a video too, not just the track above.",
-          "It only keeps a number: no audio is recorded, stored or sent anywhere.",
-          "Nothing playing means a flat line on the baseline. That is the honest reading, not a fault.",
-          "No sound device, or one held by another app, also gives a flat line — the widget retries every two seconds."
+          {
+            "zh": "它采的是扬声器此刻在响的声音，所以游戏、视频也能让它动，不只是上面那首歌。",
+            "en": "It taps what your speakers are playing right now, so it moves with any sound — a game or a video too, not just the track above."
+          },
+          {
+            "zh": "它只留一个数字：不录音、不存、也不往外发。",
+            "en": "It only keeps a number: no audio is recorded, stored or sent anywhere."
+          },
+          {
+            "zh": "没声音就是贴着基线的一条平线。那是诚实的读数，不是坏了。",
+            "en": "Nothing playing means a flat line on the baseline. That is the honest reading, not a fault."
+          },
+          {
+            "zh": "没有声音设备、或者设备被别的程序占着，同样是平线 —— 组件每两秒重试一次。",
+            "en": "No sound device, or one held by another app, also gives a flat line — the widget retries every two seconds."
+          }
         ]
       },
       {
-        "title": "The buttons answer immediately",
+        "title": { "zh": "按钮当场就有反应", "en": "The buttons answer immediately" },
         "items": [
-          "A click flips the icon at once; the next poll corrects it if the player disagreed.",
-          "Waiting two seconds for the icon to change reads as a broken button, so it does not wait."
+          {
+            "zh": "一点图标就翻；播放器不同意的话，下一拍轮询会把它纠正回来。",
+            "en": "A click flips the icon at once; the next poll corrects it if the player disagreed."
+          },
+          {
+            "zh": "等两秒图标才变，看着就是按钮坏了 —— 所以它不等。",
+            "en": "Waiting two seconds for the icon to change reads as a broken button, so it does not wait."
+          }
         ]
       },
       {
-        "title": "The progress bar",
+        "title": { "zh": "进度条", "en": "The progress bar" },
         "items": [
-          "Turn Show progress bar off if your player reports no length — a bar that never moves is worse than none.",
-          "It is interpolated locally between polls, so it slides smoothly without asking Windows every second.",
-          "Seeking is not supported: the system media session does not expose it everywhere."
+          {
+            "zh": "播放器不报时长的，把「显示进度条」关掉 —— 一条永远不动的槽比没有更糟。",
+            "en": "Turn Show progress bar off if your player reports no length — a bar that never moves is worse than none."
+          },
+          {
+            "zh": "两拍之间由本地插值往前推，所以它滑得很顺，又不用每秒去问 Windows。",
+            "en": "It is interpolated locally between polls, so it slides smoothly without asking Windows every second."
+          },
+          {
+            "zh": "不支持拖动跳转：系统媒体会话并不是哪儿都暴露这个能力。",
+            "en": "Seeking is not supported: the system media session does not expose it everywhere."
+          }
         ]
       },
       {
-        "title": "Nothing playing",
+        "title": { "zh": "没有在播放", "en": "Nothing playing" },
         "items": [
-          "That is not an error. With no player open the card says Nothing playing and greys the buttons out.",
-          "Opening a player is picked up on the next poll, so give it a moment."
+          {
+            "zh": "那不是错误。没开播放器时卡片写「没有在播放」，按钮变灰。",
+            "en": "That is not an error. With no player open the card says Nothing playing and greys the buttons out."
+          },
+          {
+            "zh": "打开播放器后，下一拍就能看到它 —— 给它一点时间。",
+            "en": "Opening a player is picked up on the next poll, so give it a moment."
+          }
         ]
       },
       {
-        "title": "Refresh interval",
+        "title": { "zh": "刷新间隔", "en": "Refresh interval" },
         "items": [
-          "How often the card asks Windows what is playing. App switches are caught on the next poll, so a long interval lags.",
-          "The default is 2 seconds, which is below what the eye notices and still cheap."
+          {
+            "zh": "卡片多久问一次 Windows 在放什么。切播放器要等下一拍，间隔长了就会慢半拍。",
+            "en": "How often the card asks Windows what is playing. App switches are caught on the next poll, so a long interval lags."
+          },
+          {
+            "zh": "默认 2 秒，短到眼睛察觉不出来，又不会太费。",
+            "en": "The default is 2 seconds, which is below what the eye notices and still cheap."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.2.1",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：空态、按钮标题、提示行和属性面板跟着界面语言走，换语言当场重画。歌名和歌手是系统给的，不翻。",
+          "en": "Interface and help are bilingual now: the empty state, button titles, hints and the inspector follow the interface language and repaint on a switch. Track and artist come from the system and are not translated."
+        }
+      ]
+    },
+    {
       "version": "0.2.0",
       "changes": [
-        "Renamed from Now Playing to Music, with the id lattice.music.",
-        "New: a sound-level trace along the bottom, like an ECG — it follows whatever your speakers are playing.",
-        "The card is taller and the layout no longer runs out of room at the bottom.",
-        "The player name is cleaned up: Spotify.exe now reads Spotify."
+        {
+          "zh": "从「正在播放」改名成「音乐」，id 也换成了 lattice.music。",
+          "en": "Renamed from Now Playing to Music, with the id lattice.music."
+        },
+        {
+          "zh": "新增：底部一条音量折线，像心电图 —— 它跟着扬声器里所有的声音走。",
+          "en": "New: a sound-level trace along the bottom, like an ECG — it follows whatever your speakers are playing."
+        },
+        {
+          "zh": "卡片长高了，底部的布局不再挤到没地方放。",
+          "en": "The card is taller and the layout no longer runs out of room at the bottom."
+        },
+        {
+          "zh": "播放器名清理过了：Spotify.exe 现在显示成 Spotify。",
+          "en": "The player name is cleaned up: Spotify.exe now reads Spotify."
+        }
       ]
     },
     {
       "version": "0.1.0",
       "changes": [
-        "First release: read the system media session, with play / pause, previous and next.",
-        "Progress bar interpolated locally, so it moves without polling Windows every second.",
-        "Buttons flip immediately and are corrected by the next poll."
+        {
+          "zh": "第一个版本：读系统媒体会话，带播放 / 暂停、上一首和下一首。",
+          "en": "First release: read the system media session, with play / pause, previous and next."
+        },
+        {
+          "zh": "进度条在本地插值，不用每秒去问 Windows 也能往前走。",
+          "en": "Progress bar interpolated locally, so it moves without polling Windows every second."
+        },
+        {
+          "zh": "按钮按下去当场翻转，再由下一拍轮询校正。",
+          "en": "Buttons flip immediately and are corrected by the next poll."
+        }
       ]
     }
   ],

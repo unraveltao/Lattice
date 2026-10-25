@@ -1,8 +1,11 @@
 {
   "id": "lattice.sysmon",
-  "name": "System",
-  "version": "0.2.0",
-  "description": "CPU and memory with a one-minute trace, per-core load, commit charge, disk space, network and uptime",
+  "name": { "zh": "系统", "en": "System" },
+  "version": "0.2.1",
+  "description": {
+    "zh": "CPU 和内存各一个百分比，配一条一分钟的走势；还有逐核负载、提交量、磁盘剩余、网络和开机时长",
+    "en": "CPU and memory with a one-minute trace, per-core load, commit charge, disk space, network and uptime"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -12,72 +15,160 @@
   "help": {
     "sections": [
       {
-        "title": "What it reads",
+        "title": { "zh": "它读什么", "en": "What it reads" },
         "items": [
-          "CPU and memory as a percentage, plus a trace of the last minute for both.",
-          "One bar per logical core, so a single pegged core is visible on a 16-core machine.",
-          "Memory also shows commit — used against the limit, which includes the page file.",
-          "Free space on the system volume, network down and up per second, process count, and how long the machine has been up.",
-          "The platform samples once a second; the card only draws what it is handed."
+          {
+            "zh": "CPU 和内存各一个百分比，外加两者最近一分钟的走势。",
+            "en": "CPU and memory as a percentage, plus a trace of the last minute for both."
+          },
+          {
+            "zh": "一个逻辑核一根竖条，16 核机器上哪个核跑满了也看得出来。",
+            "en": "One bar per logical core, so a single pegged core is visible on a 16-core machine."
+          },
+          {
+            "zh": "内存还带提交量 —— 已提交对上限，上限里算进了页面文件。",
+            "en": "Memory also shows commit — used against the limit, which includes the page file."
+          },
+          {
+            "zh": "系统盘还剩多少、网络每秒收发多少、进程数，以及开机多久。",
+            "en": "Free space on the system volume, network down and up per second, process count, and how long the machine has been up."
+          },
+          {
+            "zh": "平台每秒采一次，卡片只负责把拿到的数画出来。",
+            "en": "The platform samples once a second; the card only draws what it is handed."
+          }
         ]
       },
       {
-        "title": "Reading the trace",
+        "title": { "zh": "看那条折线", "en": "Reading the trace" },
         "items": [
-          "The line is history, newest on the right. It fills in from the right as samples arrive, so a card you just opened shows a short line, not a flat one.",
-          "CPU is the filled line; memory is the dashed one. Both use the same 0–100% scale, so you can compare them directly.",
-          "A tall spike with a flat memory line is a burst; a slowly rising memory line is a leak.",
-          "The trace covers one minute and is kept in the card — nothing is written to disk."
+          {
+            "zh": "线是历史，最新的在右边。采样从右往左填，所以刚打开的卡片是一小段线，不是一条平线。",
+            "en": "The line is history, newest on the right. It fills in from the right as samples arrive, so a card you just opened shows a short line, not a flat one."
+          },
+          {
+            "zh": "CPU 是带填充的实线，内存是虚线。两条共用 0–100% 那套坐标，可以直接比。",
+            "en": "CPU is the filled line; memory is the dashed one. Both use the same 0–100% scale, so you can compare them directly."
+          },
+          {
+            "zh": "CPU 尖一下而内存线不动，是一阵突发；内存线慢慢往上爬，是泄漏。",
+            "en": "A tall spike with a flat memory line is a burst; a slowly rising memory line is a leak."
+          },
+          {
+            "zh": "折线只留一分钟，而且只活在卡片里 —— 一个字节都不落盘。",
+            "en": "The trace covers one minute and is kept in the card — nothing is written to disk."
+          }
         ]
       },
       {
-        "title": "Reading the core bars",
+        "title": { "zh": "看逐核那排竖条", "en": "Reading the core bars" },
         "items": [
-          "One bar per logical core, left to right, height is that core's load.",
-          "A whole-machine figure of 6% on a 16-core machine can mean one core at 100% or all of them idle. The bars tell the two apart.",
-          "They disappear for a tick if the core count changes — waking from sleep or a hot-plug — rather than drawing the wrong core's load."
+          {
+            "zh": "一个逻辑核一根，从左往右，高度就是这个核的负载。",
+            "en": "One bar per logical core, left to right, height is that core's load."
+          },
+          {
+            "zh": "16 核机器上整机 6%，可能是一个核跑满，也可能全都闲着 —— 竖条能分出这两种。",
+            "en": "A whole-machine figure of 6% on a 16-core machine can mean one core at 100% or all of them idle. The bars tell the two apart."
+          },
+          {
+            "zh": "核数变了（休眠唤醒、热插拔）的那一拍这一行会收起来，而不是画成别的核的负载。",
+            "en": "They disappear for a tick if the core count changes — waking from sleep or a hot-plug — rather than drawing the wrong core's load."
+          }
         ]
       },
       {
-        "title": "Why the numbers look low",
+        "title": { "zh": "数字为什么这么低", "en": "Why the numbers look low" },
         "items": [
-          "CPU is the total across all cores — one busy core on a 16-core machine reads about 6%.",
-          "Memory is physical RAM in use, so a machine with a lot of cache can sit high and still be fine. Watch commit for the number that actually fails allocations.",
-          "Disk is the system volume only; other drives are not counted."
+          {
+            "zh": "CPU 是所有核加起来的总和 —— 16 核里一个核忙，整机只有 6% 左右。",
+            "en": "CPU is the total across all cores — one busy core on a 16-core machine reads about 6%."
+          },
+          {
+            "zh": "内存是物理内存的占用，缓存多的机器可以一直很高却没事。要看「真会分配失败」的那个数，看提交量。",
+            "en": "Memory is physical RAM in use, so a machine with a lot of cache can sit high and still be fine. Watch commit for the number that actually fails allocations."
+          },
+          {
+            "zh": "磁盘只算系统卷，别的盘不计入。",
+            "en": "Disk is the system volume only; other drives are not counted."
+          }
         ]
       },
       {
-        "title": "It stops when you cannot see it",
+        "title": { "zh": "看不见的时候就停", "en": "It stops when you cannot see it" },
         "items": [
-          "Hiding the card or minimising the window stops the sampling — a monitor nobody is looking at should not cost anything.",
-          "It picks up again on the first tick after it becomes visible, so the first reading after that is already current."
+          {
+            "zh": "把卡片藏起来或者最小化窗口，采样就停了 —— 没人看的监视器不该花电。",
+            "en": "Hiding the card or minimising the window stops the sampling — a monitor nobody is looking at should not cost anything."
+          },
+          {
+            "zh": "重新看得见的那一拍就接上，第一眼看到的就是当前读数。",
+            "en": "It picks up again on the first tick after it becomes visible, so the first reading after that is already current."
+          }
         ]
       },
       {
-        "title": "If it shows dashes",
+        "title": { "zh": "显示成破折号怎么办", "en": "If it shows dashes" },
         "items": [
-          "The platform refused to read system metrics. The widget needs the system monitor permission.",
-          "Grant it again and the card recovers on its next tick — no restart needed."
+          {
+            "zh": "平台没允许读系统指标。这个组件要读，所以需要「系统指标」这项权限。",
+            "en": "The platform refused to read system metrics. The widget needs the system monitor permission."
+          },
+          {
+            "zh": "在属性面板里重新授予，下一拍就恢复 —— 不用重启。",
+            "en": "Grant it again and the card recovers on its next tick — no restart needed."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.2.1",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：行标签、单位、开机时长、提示行和属性面板跟着界面语言走，换语言当场重画。",
+          "en": "Interface and help are bilingual now: row labels, units, uptime, hints and the inspector follow the interface language, and repaint on a switch."
+        }
+      ]
+    },
+    {
       "version": "0.2.0",
       "changes": [
-        "A one-minute trace of CPU and memory, so a burst and a slow climb look different.",
-        "One bar per logical core — a single pegged core no longer hides behind a low whole-machine average.",
-        "Memory gained the commit charge against its limit, and free space replaces the bare disk percentage.",
-        "Uptime and the process count join the footer; threads and handles are one hover away.",
-        "The card grew to 268×240 to fit the trace; it still works down to 220×210."
+        {
+          "zh": "加了一分钟走势：CPU 和内存各画一条，一眼能分出「突发一下」和「慢慢往上爬」。",
+          "en": "A one-minute trace of CPU and memory, so a burst and a slow climb look different."
+        },
+        {
+          "zh": "一个逻辑核一根竖条 —— 单个核跑满再也不会藏在整机那个偏低的总数后面。",
+          "en": "One bar per logical core — a single pegged core no longer hides behind a low whole-machine average."
+        },
+        {
+          "zh": "内存多了提交量对上限，磁盘那格从百分比换成剩余空间。",
+          "en": "Memory gained the commit charge against its limit, and free space replaces the bare disk percentage."
+        },
+        {
+          "zh": "底栏加了开机时长和进程数；线程数和句柄数在悬停提示里。",
+          "en": "Uptime and the process count join the footer; threads and handles are one hover away."
+        },
+        {
+          "zh": "卡片长到 268×240 才放得下折线；缩到 220×210 照样能用。",
+          "en": "The card grew to 268×240 to fit the trace; it still works down to 220×210."
+        }
       ]
     },
     {
       "version": "0.1.0",
       "changes": [
-        "First release: CPU, memory, disk and network, sampled once a second by the platform.",
-        "Starts on the top layer so it stays readable over other windows; the inspector can pin it to the desktop instead."
+        {
+          "zh": "第一个版本：CPU、内存、磁盘、网络，由平台每秒采一次。",
+          "en": "First release: CPU, memory, disk and network, sampled once a second by the platform."
+        },
+        {
+          "zh": "默认放在顶层，压着别的窗口也读得清；想钉在桌面上可以在属性面板里改。",
+          "en": "Starts on the top layer so it stays readable over other windows; the inspector can pin it to the desktop instead."
+        }
       ]
     }
   ],

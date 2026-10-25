@@ -1,8 +1,11 @@
 {
   "id": "lattice.convert",
-  "name": "Convert",
-  "version": "0.1.0",
-  "description": "Unit converter for length, mass, temperature, data, time and speed — both directions, live",
+  "name": { "zh": "换算", "en": "Convert" },
+  "version": "0.1.1",
+  "description": {
+    "zh": "长度、质量、温度、数据、时间和速度的单位换算 —— 两个方向都能算，边打边出结果",
+    "en": "Unit converter for length, mass, temperature, data, time and speed — both directions, live"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -14,55 +17,104 @@
     {
       "key": "precision",
       "type": "number",
-      "label": "Significant digits",
+      "label": { "zh": "有效数字", "en": "Significant digits" },
       "default": 6,
       "min": 3,
       "max": 12,
       "step": 1,
       "unit": "digits",
-      "help": "How many digits the answer keeps. 6 is enough for cooking and for wiring a plug."
+      "help": {
+        "zh": "答案保留几位数字。做饭、接线，6 位都够用。",
+        "en": "How many digits the answer keeps. 6 is enough for cooking and for wiring a plug."
+      }
     }
   ],
   "help": {
     "sections": [
       {
-        "title": "Two ways to use it",
+        "title": { "zh": "两种用法", "en": "Two ways to use it" },
         "items": [
-          "Type a number on the top row and read the answer on the bottom row.",
-          "Type in the bottom row instead and the top row answers — both fields are live, neither is read-only.",
-          "The ⇅ button swaps the two units and carries the answer up, so you can keep converting back."
+          {
+            "zh": "在上面那行打一个数，答案看下面那行。",
+            "en": "Type a number on the top row and read the answer on the bottom row."
+          },
+          {
+            "zh": "反过来，在下面那行打，上面那行出答案 —— 两个框都活着，没有哪个是只读的。",
+            "en": "Type in the bottom row instead and the top row answers — both fields are live, neither is read-only."
+          },
+          {
+            "zh": "⇅ 按钮把两个单位对调，并把答案搬到上面，好让你接着往回换。",
+            "en": "The ⇅ button swaps the two units and carries the answer up, so you can keep converting back."
+          }
         ]
       },
       {
-        "title": "What it converts",
+        "title": { "zh": "能换什么", "en": "What it converts" },
         "items": [
-          "Length, mass, temperature, data size, time and speed. The chips at the top switch between them.",
-          "Data sizes are 1024-based (1 KB = 1024 B), the way Windows reports file sizes.",
-          "Temperature is the one that is not a simple multiplication — Celsius, Fahrenheit and Kelvin convert through absolute values."
+          {
+            "zh": "长度、质量、温度、数据大小、时间和速度。顶上那排小标签用来切换。",
+            "en": "Length, mass, temperature, data size, time and speed. The chips at the top switch between them."
+          },
+          {
+            "zh": "数据大小按 1024 算（1 KB = 1024 B），跟 Windows 报文件大小的口径一样。",
+            "en": "Data sizes are 1024-based (1 KB = 1024 B), the way Windows reports file sizes."
+          },
+          {
+            "zh": "温度是唯一不是简单乘法的：摄氏、华氏和开尔文之间走绝对值换算。",
+            "en": "Temperature is the one that is not a simple multiplication — Celsius, Fahrenheit and Kelvin convert through absolute values."
+          }
         ]
       },
       {
-        "title": "Significant digits",
+        "title": { "zh": "有效数字", "en": "Significant digits" },
         "items": [
-          "The answer keeps this many digits and drops the rest, so 1 m in feet reads 3.28084 rather than 3.280839895013123.",
-          "Very large or very small answers switch to scientific notation instead of running off the card."
+          {
+            "zh": "答案保留这么多位，多的丢掉，所以 1 米换成英尺显示 3.28084，而不是 3.280839895013123。",
+            "en": "The answer keeps this many digits and drops the rest, so 1 m in feet reads 3.28084 rather than 3.280839895013123."
+          },
+          {
+            "zh": "特别大或特别小的答案会改用科学计数法，不会跑出卡片。",
+            "en": "Very large or very small answers switch to scientific notation instead of running off the card."
+          }
         ]
       },
       {
-        "title": "It remembers where you were",
+        "title": { "zh": "记得你上次停在哪", "en": "It remembers where you were" },
         "items": [
-          "The last category and the two units are stored per widget, so reopening the card lands on the same conversion.",
-          "The number itself is not stored — a converter that reopens with a stale number is worse than an empty box."
+          {
+            "zh": "上一次的分类和两个单位按组件存，再打开卡片还是同一组换算。",
+            "en": "The last category and the two units are stored per widget, so reopening the card lands on the same conversion."
+          },
+          {
+            "zh": "数字本身不存 —— 一打开就带着一个旧数字的换算器，比空框更糟。",
+            "en": "The number itself is not stored — a converter that reopens with a stale number is worse than an empty box."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.1.1",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：分类、单位下拉和怎么用都跟着界面语言走。",
+          "en": "Interface and help are bilingual now: categories, unit menus and the how-to all follow the interface language."
+        }
+      ]
+    },
+    {
       "version": "0.1.0",
       "changes": [
-        "First release: six categories, both directions live, swap button.",
-        "Remembers the category and units, not the number."
+        {
+          "zh": "第一个版本：六个分类，两个方向都实时算，带对调按钮。",
+          "en": "First release: six categories, both directions live, swap button."
+        },
+        {
+          "zh": "记住分类和单位，不记数字。",
+          "en": "Remembers the category and units, not the number."
+        }
       ]
     }
   ],

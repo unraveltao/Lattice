@@ -133,6 +133,34 @@
         MAX_COURSES, COLORS,
       } = api;
 
+      // ---- 0. 默认中文，再切英文 ----
+
+      /*
+       * 组件默认按中文画（HTML 里写死的那一帧）。先确认默认那门，再推一条
+       * language 切到英文 —— 后面那些英文断言本来是按英文写的，顺便验证这
+       * 条平台推送真的被组件接住了。`target` 是给第 13 节新挂的实例用的。
+       */
+      function setLang(next, target = frame) {
+        target.contentWindow.postMessage(
+          { __lattice: 1, type: "language", payload: { lang: next } },
+          "*",
+        );
+        return new Promise((resolve) => setTimeout(resolve, 30));
+      }
+
+      eq(
+        weekDates(new Date(2026, 9, 28), 5).map((d) => d.label),
+        ["周一", "周二", "周三", "周四", "周五"],
+        "默认中文星期头是周一…周五",
+      );
+      eq(
+        frame.contentDocument.querySelector(".tt-dayhead .tt-dayname").textContent,
+        "周一",
+        "界面上第一列是周一",
+      );
+
+      await setLang("en");
+
       // ---- 1. 时间 ----
 
       eq(parseTime("9:30"), 570, "9:30 解析成 570");
@@ -371,6 +399,15 @@
       eq(doc.getElementById("editor-title").textContent, "Edit class", "标题是 Edit class");
       eq(doc.getElementById("f-delete").hidden, false, "编辑时删除按钮可见");
 
+      // 编辑器已经打开时换语言：标题、主按钮和星期按钮都要跟着重画
+      await setLang("zh");
+      eq(doc.getElementById("editor-title").textContent, "编辑课程", "已打开的编辑器跟着换中文");
+      eq(doc.getElementById("f-save").textContent, "保存", "主按钮跟着换中文");
+      eq(doc.querySelector('.tt-pick[data-day="0"]').textContent, "周一", "星期按钮跟着换中文");
+      await setLang("en");
+      eq(doc.getElementById("editor-title").textContent, "Edit class", "切回英文标题也回来");
+      eq(doc.getElementById("f-save").textContent, "Save", "切回英文主按钮也回来");
+
       const editorPad = parseFloat(
         win.getComputedStyle(doc.querySelector(".tt-editor-head")).paddingRight,
       );
@@ -492,9 +529,15 @@
       if (deniedApi) {
         eq(deniedApi.snapshot().storageDenied, true, "快照里标记了 storage 被拒");
         eq(
+          denied.frame.contentDocument.getElementById("empty").textContent.includes("授予存储权限"),
+          true,
+          "默认中文的空状态告诉用户去授权",
+        );
+        await setLang("en", denied.frame);
+        eq(
           denied.frame.contentDocument.getElementById("empty").textContent.includes("Grant storage permission"),
           true,
-          "空状态告诉用户去授权",
+          "切到英文后这句跟着换",
         );
         denied.frame.remove();
       }

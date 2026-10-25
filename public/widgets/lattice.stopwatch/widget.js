@@ -65,11 +65,50 @@
     });
   }
 
+  /*
+   * 界面语言。
+   *
+   * 按钮上的字是这个组件自己的 —— 平台不知道 "Lap" 对应哪句中文。所以两门都
+   * 留在这儿，按 `lang.get` 挑一份；用户中途换语言，平台推一条 `language`，
+   * 把已经画出去的字原地换掉（两件事都要做：只读一次 = 换语言卡片不动，只听
+   * 推送 = 语言停在建文档那一刻）。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文，中文界面看到的就是最终样子；
+   * 英文界面要等 `lang.get` 回来那一趟（几十毫秒）才翻。`lang` 只有 `zh` / `en`
+   * 两种 —— "跟随系统"是平台在设置里解析掉的。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("秒表", "Stopwatch");
+    // 标题栏那一行字是 HTML 里写死的，换语言同样要换（`document.title` 只管标签页）
+    var titleEl = document.querySelector(".sw-title");
+    if (titleEl) titleEl.textContent = say("秒表", "Stopwatch");
+    var lapList = document.getElementById("laps");
+    if (lapList) lapList.setAttribute("aria-label", say("计次记录", "Lap times"));
+    // 按钮和圈列表都已经画出去了，换语言要原地重画（圈号是数字，不用管）
+    renderAll();
+  }
+
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.__lattice !== 1) return;
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
     if (data.type !== "response") return;
@@ -220,8 +259,14 @@
      * 自检页正好撞上这一毫秒，才把这个不稳当的判断露出来。
      */
     var hasProgress = state.accumulated > 0 || state.laps.length > 0;
-    runEl.textContent = running ? "Pause" : hasProgress ? "Resume" : "Start";
-    lapEl.textContent = running ? "Lap" : "Reset";
+    runEl.textContent = running
+      ? say("暂停", "Pause")
+      : hasProgress
+        ? say("继续", "Resume")
+        : say("开始", "Start");
+    lapEl.textContent = running ? say("计次", "Lap") : say("重置", "Reset");
+    // aria-label 也是读得出来的字，跟着语言换
+    lapsEl.setAttribute("aria-label", say("计次记录", "Laps"));
     // 停着、且一点进度都没有：Reset 没有意义，但也不隐藏（按钮跳动更难看）
     lapEl.disabled = !running && !hasProgress;
   }
@@ -322,6 +367,16 @@
    * 等桥的话，宿主慢一点卡片就是一块空白 —— 而第一帧要画的只是 00:00.00。
    */
   renderAll();
+
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住存档和按钮接线
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画：秒表不该因为问不到语言就不走 */
+    });
 
   call("storage.get", { key: KEY })
     .then(function (saved) {

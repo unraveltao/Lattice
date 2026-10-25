@@ -62,11 +62,46 @@
     });
   }
 
+  /*
+   * 界面语言。
+   *
+   * 平台在设置里能切中英两门，而卡片上的字是这个组件自己的 —— 平台不知道
+   * "周一"对应哪句英文。所以两门都留在这儿，按 `lang.get` 挑一份；用户中途
+   * 换语言，平台推一条 `language`，把已经画出去的字原地换掉（两件事都要做：
+   * 只读一次 = 换语言卡片不动，只听推送 = 语言停在建文档那一刻）。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文；英文界面要等 `lang.get`
+   * 回来那一趟才翻。`lang` 只有 `zh` / `en` 两种 —— "跟随系统"是平台解析掉的。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("日历", "Calendar");
+    // 月份、星期头、日期、全天和空态都跟语言有关，整块重画一次最稳
+    paintChrome();
+    renderWeek();
+    renderAll();
+  }
+
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.__lattice !== 1) return;
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
     if (data.type === "config-changed") {
@@ -146,10 +181,18 @@
     return cells;
   }
 
+  /*
+   * 星期头。中文用「周一…周日」—— 和本文件注释里"周一"的叫法一致；
+   * 周日起算只是把这张表转一圈，英文照旧是两字母缩写。
+   */
+  var WEEKDAYS = {
+    zh: ["周日", "周一", "周二", "周三", "周四", "周五", "周六"],
+    en: ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"],
+  };
+
   function weekdayLabels(weekStart) {
-    return weekStart === "sunday"
-      ? ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
-      : ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+    var labels = WEEKDAYS[lang];
+    return weekStart === "sunday" ? labels.slice() : labels.slice(1).concat([labels[0]]);
   }
 
   function addMonths(year, month, delta) {
@@ -158,15 +201,20 @@
   }
 
   function formatMonth(year, month) {
-    return MONTHS[month] + " " + year;
+    return lang === "en" ? MONTHS[month] + " " + year : year + "年" + (month + 1) + "月";
   }
 
-  /** `Oct 24`，跨年了才带上年份（卡片窄，能省一个字是一个） */
+  /** 英文 `Oct 24`、中文 `10月24日`；跨年了才带上年份（卡片窄，能省一个字是一个） */
   function formatDay(key, now) {
     var parsed = parseKey(key);
     if (!parsed) return "";
     var sameYear = new Date(now === undefined ? Date.now() : now).getFullYear() === parsed.year;
-    return MONTHS_SHORT[parsed.month] + " " + parsed.day + (sameYear ? "" : ", " + parsed.year);
+    if (lang === "en") {
+      return MONTHS_SHORT[parsed.month] + " " + parsed.day + (sameYear ? "" : ", " + parsed.year);
+    }
+    return (
+      (sameYear ? "" : parsed.year + "年") + (parsed.month + 1) + "月" + parsed.day + "日"
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -257,6 +305,15 @@
   var prevEl = document.getElementById("prev");
   var nextEl = document.getElementById("next");
 
+  /** HTML 里那几句不随月份重画的字：翻月按钮、标题提示、输入框 —— 换语言时一起换 */
+  function paintChrome() {
+    prevEl.setAttribute("aria-label", say("上个月", "Previous month"));
+    nextEl.setAttribute("aria-label", say("下个月", "Next month"));
+    titleEl.title = say("回到今天", "Back to today");
+    entryEl.placeholder = say("9:30 站会", "9:30 Standup");
+    entryEl.setAttribute("aria-label", say("新条目", "New event"));
+  }
+
   var KEY = "calendar";
   var weekStart = "monday";
   var events = {};
@@ -316,16 +373,17 @@
     var list = eventsFor(events, selected);
     dayCountEl.textContent = list.length === 0 ? "" : String(list.length);
     if (list.length === 0) {
-      eventsEl.innerHTML = '<li class="cal-empty">Nothing on this day.</li>';
+      eventsEl.innerHTML = '<li class="cal-empty">' + say("这天还没有安排。", "Nothing on this day.") + "</li>";
       return;
     }
     eventsEl.innerHTML = list
       .map(function (item) {
         return (
           '<li class="cal-event" data-id="' + item.id + '">' +
-          '<span class="cal-event-time">' + (item.time || "all day") + "</span>" +
-          '<span class="cal-event-title">' + escapeHtml(item.title || "Untitled") + "</span>" +
-          '<button type="button" class="cal-event-x" data-id="' + item.id + '" aria-label="Delete">✕</button>' +
+          '<span class="cal-event-time">' + (item.time || say("全天", "all day")) + "</span>" +
+          '<span class="cal-event-title">' + escapeHtml(item.title || say("未命名", "Untitled")) + "</span>" +
+          '<button type="button" class="cal-event-x" data-id="' + item.id + '" aria-label="' +
+          say("删除", "Delete") + '">✕</button>' +
           "</li>"
         );
       })
@@ -421,8 +479,19 @@
    * 先画一帧（今天所在的月、空事件表），再去问配置和存档 ——
    * 等桥的话宿主慢一点卡片就是一块空白，而这一帧本来就画得出来。
    */
+  paintChrome();
   renderWeek();
   renderAll();
+
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住配置和存档
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画：日历不该因为问不到语言就不翻月 */
+    });
 
   call("config.get")
     .then(function (values) {

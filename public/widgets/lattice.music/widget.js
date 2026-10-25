@@ -70,6 +70,40 @@
     });
   }
 
+  /*
+   * 界面语言。
+   *
+   * 卡片上作者写的字（空态、按钮标题、提示行）是这个组件自己的 —— 平台不知道
+   * 「没有在播放」对应哪句英文。所以两门都留在这儿，按 `lang.get` 挑一份；用户
+   * 中途换语言，平台推一条 `language`，把已经画出去的字原地换掉（两件事都要做：
+   * 只读一次 = 换语言卡片不动，只听推送 = 语言停在建文档那一刻）。
+   *
+   * **歌名、歌手、专辑、播放器名不翻**：那是系统给的，不是作者写的。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文；英文界面要等 `lang.get` 回来
+   * 那一趟（几十毫秒）才翻。`lang` 只有 `zh` / `en` 两种 —— "跟随系统"是平台
+   * 在设置里解析掉的。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("音乐", "Music");
+    // 按钮的 title / aria-label、空态、播放 / 暂停图标和提示行都得当场换，
+    // 不能等下一拍轮询 —— 那一拍在 2 秒后
+    paintChrome();
+    render(lastSession);
+    paintHint();
+  }
+
   // ---------- 纯逻辑（自检页直接调，别在测试里抄一份） ----------
 
   function clamp01(value) {
@@ -220,9 +254,42 @@
   var PLAY_ICON = '<path d="M5 3.2 12.4 8 5 12.8z" />';
   var PAUSE_ICON = '<path d="M5.2 3.4h1.8v9.2H5.2zM9 3.4h1.8v9.2H9z" />';
 
-  function setHint(text) {
-    el.hint.textContent = text || "";
+  var HINTS = {
+    media: ["需要「媒体控制」权限", "Needs the Media control permission"],
+    level: ["需要「声音响度」权限", "Needs the Sound level permission"],
+    desktop: ["媒体控制要在桌面应用里用", "Media control needs the desktop app"],
+    unavailable: ["读不到媒体会话", "Media session unavailable"],
+    scheduler: ["调度器不可用", "Scheduler unavailable"],
+  };
+
+  /**
+   * 提示行留的是**原因**，不是那句已经翻好的话 —— 换语言时重挑一次就行。
+   * 空串表示不显示。
+   */
+  var hintCode = "";
+
+  function paintHint() {
+    var pair = HINTS[hintCode];
+    var text = pair ? say(pair[0], pair[1]) : "";
+    el.hint.textContent = text;
     el.hint.classList.toggle("is-visible", !!text);
+  }
+
+  function setHint(code) {
+    hintCode = code || "";
+    paintHint();
+  }
+
+  /** 按钮上那几个固定的字：跟数据无关，换语言时单独重画一次 */
+  function paintChrome() {
+    el.prev.title = say("上一首", "Previous");
+    el.prev.setAttribute("aria-label", say("上一首", "Previous"));
+    el.next.title = say("下一首", "Next");
+    el.next.setAttribute("aria-label", say("下一首", "Next"));
+    el.toggle.setAttribute("aria-label", say("播放或暂停", "Play or pause"));
+    // 主按钮的 title 跟着"现在按下去会发生什么"走，由 render 写；这里只兜住
+    // 还没拿到会话时的那一帧
+    if (!lastSession) el.toggle.title = say("播放 / 暂停", "Play / pause");
   }
 
   /**
@@ -242,7 +309,7 @@
     lastSession = session;
     if (!session) {
       el.source.textContent = "";
-      el.track.textContent = "Nothing playing";
+      el.track.textContent = say("没有在播放", "Nothing playing");
       el.track.title = "";
       el.artist.textContent = "";
       // 没有会话就整条收起来：留一条空槽加 "--:--" 看着像还没加载完
@@ -254,20 +321,21 @@
       el.toggle.disabled = true;
       el.next.disabled = true;
       el.toggleGlyph.innerHTML = PLAY_ICON;
+      el.toggle.title = say("播放 / 暂停", "Play / pause");
       playing = false;
       optimistic = null;
       return;
     }
 
     el.source.textContent = sourceLabel(session.source);
-    el.track.textContent = session.title || "Unknown track";
+    el.track.textContent = session.title || say("未知曲目", "Unknown track");
     el.track.title = session.title || "";
     el.artist.textContent = [session.artist, session.album].filter(Boolean).join(" — ");
 
     var isPlaying = optimistic === null ? session.status === "playing" : optimistic;
     playing = isPlaying;
     el.toggleGlyph.innerHTML = isPlaying ? PAUSE_ICON : PLAY_ICON;
-    el.toggle.title = isPlaying ? "Pause" : "Play";
+    el.toggle.title = isPlaying ? say("暂停", "Pause") : say("播放", "Play");
 
     el.prev.disabled = !session.canPrevious;
     el.next.disabled = !session.canNext;
@@ -400,7 +468,7 @@
           // 没授权就整条收起来：画一条永远贴底的线，用户会以为声音坏了
           levelBlocked = true;
           stopWave();
-          setHint("Needs the Sound level permission");
+          setHint("level");
           return;
         }
         if (error.code === "internal") {
@@ -442,7 +510,7 @@
         if (error.code === "permission_denied") {
           denied = true;
           render(null);
-          setHint("Needs the Media control permission");
+          setHint("media");
           return;
         }
         /*
@@ -451,12 +519,12 @@
          */
         if (error.code === "internal") {
           render(null);
-          setHint("Media control needs the desktop app");
+          setHint("desktop");
           return;
         }
         failures += 1;
         // 播放器刚启动 / 刚退出时 SMTC 会短暂报错，连续三次才提示
-        if (failures >= 3) setHint("Media session unavailable");
+        if (failures >= 3) setHint("unavailable");
       });
   }
 
@@ -476,7 +544,7 @@
         return refresh();
       })
       .catch(function () {
-        setHint("Scheduler unavailable");
+        setHint("scheduler");
       });
   }
 
@@ -516,7 +584,7 @@
       .catch(function (error) {
         optimistic = null;
         if (error.code === "permission_denied") {
-          setHint("Needs the Media control permission");
+          setHint("media");
         }
         return refresh();
       });
@@ -528,7 +596,7 @@
       playing = next;
       optimistic = next;
       el.toggleGlyph.innerHTML = next ? PAUSE_ICON : PLAY_ICON;
-      el.toggle.title = next ? "Pause" : "Play";
+      el.toggle.title = next ? say("暂停", "Pause") : say("播放", "Play");
     });
   });
 
@@ -548,6 +616,11 @@
 
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
     if (data.type === "config-changed") {
@@ -609,6 +682,20 @@
       resizeWave();
     }).observe(el.wave);
   }
+
+  paintChrome();
+
+  /*
+   * 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+   * 不该拖住配置和第一条轮询。
+   */
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画 */
+    });
 
   /*
    * 先读配置，再挂时间轴、再开折线。

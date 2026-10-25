@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>Stopwatch</title>
+    <title>秒表</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -18,17 +18,17 @@
         右上角那截数字被按钮压住。和待办 / 系统监视器 / 媒体同一条规矩。
       -->
       <header class="sw-head">
-        <span class="sw-title">Stopwatch</span>
+        <span class="sw-title">秒表</span>
       </header>
 
       <div class="sw-time" id="time">00:00.00</div>
 
       <div class="sw-actions">
-        <button type="button" class="sw-btn" id="lap">Reset</button>
-        <button type="button" class="sw-btn is-primary" id="run">Start</button>
+        <button type="button" class="sw-btn" id="lap">重置</button>
+        <button type="button" class="sw-btn is-primary" id="run">开始</button>
       </div>
 
-      <ol class="sw-laps" id="laps" aria-label="Laps"></ol>
+      <ol class="sw-laps" id="laps" aria-label="计次记录"></ol>
     </main>
     <script src="widget.js"></script>
   </body>

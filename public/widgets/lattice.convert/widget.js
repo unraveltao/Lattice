@@ -63,11 +63,50 @@
     });
   }
 
+  /*
+   * 界面语言。
+   *
+   * 分类名、单位名和几个 aria-label 是这个组件自己的字 —— 平台不知道
+   * "Length" 该写成哪句中文。两门都留在这儿，按 `lang.get` 挑一份；用户中途
+   * 换语言，平台推一条 `language`，把已经画出去的字原地换掉（两件事都要做：
+   * 只读一次 = 换语言卡片不动，只听推送 = 语言停在建文档那一刻）。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文，英文界面要等 `lang.get`
+   * 回来那一趟（几十毫秒）才翻。`lang` 只有 `zh` / `en` 两种。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  /** 表里的单位名 / 分类名：要么是字符串（语言无关），要么是两门 */
+  function labelText(label) {
+    if (typeof label === "string") return label;
+    return lang === "en" ? label.en : label.zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("换算", "Convert");
+    // 分类小标签和下拉里的单位名都是画出来的，换语言就得重建一遍
+    repaint();
+  }
+
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.__lattice !== 1) return;
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+    // 平台界面换了语言。`lang.get` 是建文档那一刻的答案，这条是后来变了
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
     if (data.type === "config-changed") {
@@ -106,7 +145,7 @@
   var CATEGORIES = [
     {
       id: "length",
-      label: "Length",
+      label: { zh: "长度", en: "Length" },
       base: "m",
       units: [
         unit("mm", "mm", 0.001),
@@ -121,7 +160,7 @@
     },
     {
       id: "mass",
-      label: "Mass",
+      label: { zh: "质量", en: "Mass" },
       base: "kg",
       units: [
         unit("mg", "mg", 1e-6),
@@ -134,7 +173,7 @@
     },
     {
       id: "temp",
-      label: "Temp",
+      label: { zh: "温度", en: "Temp" },
       base: "c",
       units: [
         affine("c", "°C", function (v) { return v; }, function (v) { return v; }),
@@ -149,7 +188,7 @@
     },
     {
       id: "data",
-      label: "Data",
+      label: { zh: "数据", en: "Data" },
       base: "B",
       units: [
         unit("B", "B", 1),
@@ -161,20 +200,20 @@
     },
     {
       id: "time",
-      label: "Time",
+      label: { zh: "时间", en: "Time" },
       base: "s",
       units: [
         unit("ms", "ms", 0.001),
         unit("s", "s", 1),
         unit("min", "min", 60),
         unit("h", "h", 3600),
-        unit("d", "day", 86400),
-        unit("w", "week", 604800),
+        unit("d", { zh: "天", en: "day" }, 86400),
+        unit("w", { zh: "周", en: "week" }, 604800),
       ],
     },
     {
       id: "speed",
-      label: "Speed",
+      label: { zh: "速度", en: "Speed" },
       base: "mps",
       units: [
         unit("mps", "m/s", 1),
@@ -284,13 +323,29 @@
     recompute(active);
   }
 
+  /** 页面上那些写死的字：标题、两个下拉的 aria-label、⇅ 的 title */
+  function applyStaticText() {
+    fromValueEl.setAttribute("aria-label", say("数值", "Value"));
+    toValueEl.setAttribute("aria-label", say("结果", "Result"));
+    fromUnitEl.setAttribute("aria-label", say("从哪个单位", "From unit"));
+    toUnitEl.setAttribute("aria-label", say("换成哪个单位", "To unit"));
+    swapEl.title = say("对调单位", "Swap units");
+  }
+
+  /** 换语言之后重画：分类小标签和下拉里的单位名 */
+  function repaint() {
+    applyStaticText();
+    renderCats();
+    renderUnits();
+  }
+
   function renderCats() {
     catsEl.innerHTML = "";
     CATEGORIES.forEach(function (category) {
       var button = document.createElement("button");
       button.type = "button";
       button.className = "cv-cat" + (category.id === state.category ? " is-active" : "");
-      button.textContent = category.label;
+      button.textContent = labelText(category.label);
       button.dataset.category = category.id;
       button.addEventListener("click", function () {
         switchCategory(category.id);
@@ -310,7 +365,7 @@
     category.units.forEach(function (item) {
       var option = document.createElement("option");
       option.value = item.id;
-      option.textContent = item.label;
+      option.textContent = labelText(item.label);
       option.selected = item.id === selectedId;
       select.appendChild(option);
     });
@@ -420,6 +475,14 @@
   renderCats();
   renderUnits();
   recompute("from");
+
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住配置和存档 —— 换算器不该因为问不到语言就不算
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(noop);
 
   call("config.get")
     .then(function (values) {

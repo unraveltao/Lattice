@@ -1,14 +1,14 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>Bookmarks</title>
+    <title>收藏夹</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <main class="shelf">
       <header class="shelf-head">
-        <h1 class="shelf-title">Bookmarks</h1>
+        <h1 class="shelf-title">收藏夹</h1>
         <span class="shelf-count" id="count" aria-live="polite"></span>
       </header>
 
@@ -17,11 +17,11 @@
           class="shelf-input"
           id="url"
           type="text"
-          placeholder="Paste a link, press Enter"
+          placeholder="粘贴链接，回车确认"
           autocomplete="off"
           spellcheck="false"
           maxlength="2048"
-          aria-label="Link address"
+          aria-label="链接地址"
         />
       </form>
 
@@ -29,7 +29,7 @@
 
       <div class="shelf-body">
         <ul class="shelf-list" id="list"></ul>
-        <p class="shelf-empty" id="empty">No links yet — paste one above</p>
+        <p class="shelf-empty" id="empty">还没有链接 —— 在上面粘贴一条</p>
       </div>
     </main>
     <script src="widget.js"></script>

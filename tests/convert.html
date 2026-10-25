@@ -167,6 +167,25 @@
         el.dispatchEvent(new win.Event("input", { bubbles: true }));
       };
 
+      /*
+       * 组件默认按中文画；这里推一条 language 让它切到英文，等于顺带验了平台
+       * 推的那条 `language` 真的被接住（没有宿主时 `lang.get` 是拿不到的）。
+       * 切换之前先看一眼默认那门：分类小标签必须是中文。
+       */
+      function setLang(next) {
+        win.postMessage({ __lattice: 1, type: "language", payload: { lang: next } }, "*");
+        return new Promise((resolve) => setTimeout(resolve, 30));
+      }
+
+      const chips = () => [...doc.querySelectorAll(".cv-cat")].map((chip) => chip.textContent);
+      eq(chips(), ["长度", "质量", "温度", "数据", "时间", "速度"], "默认那门是中文：分类小标签");
+      await setLang("en");
+      eq(
+        chips(),
+        ["Length", "Mass", "Temp", "Data", "Time", "Speed"],
+        "收到 language 推送后分类名切成英文",
+      );
+
       eq(api.snapshot(), { category: "length", from: "m", to: "ft", active: "from" }, "开局是 m → ft，且上面那行是主输入");
       eq([fromEl.value, toEl.value], ["", ""], "开局两个框都是空的");
 

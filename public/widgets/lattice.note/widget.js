@@ -44,11 +44,45 @@
     });
   }
 
+  /*
+   * 界面语言。
+   *
+   * 便签上的字（状态行、字数、占位符）都是这个组件自己的，平台不知道中文
+   * 怎么写。所以两件事都要做：启动时问一次 `lang.get`，用户中途换语言再收
+   * `language` 推送，把已经画出去的字原地换掉。
+   *
+   * 首帧按 HTML 里写死的中文画（不变量 18）；英文界面等桥回来那一趟再翻，
+   * 不为这几十毫秒画"加载中"。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("便签", "Note");
+    textEl.placeholder = say("写点什么…", "Write something…");
+    updateCount();
+    // 状态行的文字由状态机给，重画当前那一条，别把"保存中…"写成别的
+    setStatus(statusKey, statusKind);
+  }
+
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.__lattice !== 1) return;
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
     if (data.type === "store-changed") {
@@ -93,9 +127,43 @@
   var saved = 0;
   var saving = false;
 
-  function setStatus(text, kind) {
+  /*
+   * 状态行按"键"存，不存已经翻好的字：换语言时要能重画当前那一条。
+   * kind 只管颜色（saved / error / 空）。
+   */
+  var statusKey = "loading";
+  var statusKind = "";
+
+  var STATUS_TEXT = {
+    loading: function () {
+      return say("正在载入…", "Loading…");
+    },
+    saving: function () {
+      return say("保存中…", "Saving…");
+    },
+    saved: function () {
+      return say("已保存", "Saved");
+    },
+    unsaved: function () {
+      return say("未保存", "Unsaved");
+    },
+    noPermission: function () {
+      return say("没有存储权限", "No storage permission");
+    },
+    saveFailed: function () {
+      return say("保存失败", "Could not save");
+    },
+    loadFailed: function () {
+      return say("读不到内容", "Could not load");
+    },
+  };
+
+  function setStatus(key, kind) {
+    statusKey = key;
+    statusKind = kind || "";
+    var text = STATUS_TEXT[key]();
     statusEl.textContent = text;
-    statusEl.className = kind ? "is-" + kind : "";
+    statusEl.className = statusKind ? "is-" + statusKind : "";
     // 状态条只有 140px 宽（右边 120px 留给窗饰），长文案会被省略号截掉；
     // 截掉了才挂 title，没截就别挂 —— 不然"Saved"上也会凭空弹出个提示
     if (statusEl.scrollWidth > statusEl.clientWidth) statusEl.title = text;
@@ -103,7 +171,10 @@
   }
 
   function updateCount() {
-    countEl.textContent = Array.from(textEl.value).length + " chars";
+    countEl.textContent = say(
+      Array.from(textEl.value).length + " 字",
+      Array.from(textEl.value).length + " chars",
+    );
   }
 
   function save() {
@@ -111,7 +182,7 @@
     if (saving || saved >= revision) return;
     saving = true;
     var target = revision;
-    setStatus("Saving…", "");
+    setStatus("saving", "");
     call("storage.set", { key: "text", value: textEl.value })
       .then(function () {
         saved = target;
@@ -120,14 +191,11 @@
           save();
           return;
         }
-        setStatus("Saved", "saved");
+        setStatus("saved", "saved");
       })
       .catch(function (error) {
         saving = false;
-        setStatus(
-          error.code === "permission_denied" ? "No storage permission" : "Could not save",
-          "error",
-        );
+        setStatus(error.code === "permission_denied" ? "noPermission" : "saveFailed", "error");
       });
   }
 
@@ -135,7 +203,7 @@
     revision += 1;
     updateCount();
     // 正在保存时别把"保存中…"改回"未保存"，那会让人以为存完了又退回
-    if (!saving) setStatus("Unsaved", "");
+    if (!saving) setStatus("unsaved", "");
     clearTimeout(timer);
     timer = setTimeout(save, 400);
   });
@@ -163,7 +231,7 @@
         if (value === textEl.value) return;
         textEl.value = value;
         updateCount();
-        setStatus("Saved", "saved");
+        setStatus("saved", "saved");
       })
       .catch(function () {});
   }
@@ -180,25 +248,32 @@
     if (document.visibilityState === "hidden") flush();
   });
 
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住读盘和首屏
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画 */
+    });
+
   call("storage.get", { key: "text" })
     .then(function (value) {
       if (revision > 0) {
         // 用户在这几十毫秒里已经开始打字了：磁盘上的旧内容优先级最低
         updateCount();
-        setStatus("Unsaved", "");
+        setStatus("unsaved", "");
         return;
       }
       if (typeof value === "string") textEl.value = value;
       updateCount();
-      setStatus("Saved", "saved");
+      setStatus("saved", "saved");
     })
     .catch(function (error) {
       if (revision > 0) return;
       updateCount();
-      setStatus(
-        error.code === "permission_denied" ? "No storage permission" : "Could not load",
-        "error",
-      );
+      setStatus(error.code === "permission_denied" ? "noPermission" : "loadFailed", "error");
     })
     .then(function () {
       parent.postMessage({ __lattice: 1, type: "ready" }, "*");

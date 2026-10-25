@@ -1,8 +1,11 @@
 {
   "id": "lattice.bookmarks",
-  "name": "Bookmarks",
-  "version": "1.0.0",
-  "description": "A small shelf of links: paste an address, click it to open in your browser",
+  "name": { "zh": "收藏夹", "en": "Bookmarks" },
+  "version": "1.0.1",
+  "description": {
+    "zh": "一个小货架：粘贴地址，点一下就在浏览器里打开",
+    "en": "A small shelf of links: paste an address, click it to open in your browser"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -13,83 +16,162 @@
     {
       "key": "sort",
       "type": "select",
-      "label": "Order",
-      "help": "Newest first keeps what you just saved on top; By name and By site are for when the shelf is full.",
+      "label": { "zh": "排序", "en": "Order" },
+      "help": {
+        "zh": "「最新优先」把你刚存的放在最上面；「按名字」「按站点」是货架满了以后用的。",
+        "en": "Newest first keeps what you just saved on top; By name and By site are for when the shelf is full."
+      },
       "default": "recent",
       "options": [
-        { "value": "recent", "label": "Newest first" },
-        { "value": "title", "label": "By name" },
-        { "value": "host", "label": "By site" }
+        { "value": "recent", "label": { "zh": "最新优先", "en": "Newest first" } },
+        { "value": "title", "label": { "zh": "按名字", "en": "By name" } },
+        { "value": "host", "label": { "zh": "按站点", "en": "By site" } }
       ]
     },
     {
       "key": "showHost",
       "type": "toggle",
-      "label": "Show the site under each name",
-      "help": "Turn it off for a one-line list that fits more links.",
+      "label": { "zh": "在每个名字下显示站点", "en": "Show the site under each name" },
+      "help": {
+        "zh": "关掉就是一行一条，能多放几条链接。",
+        "en": "Turn it off for a one-line list that fits more links."
+      },
       "default": true
     }
   ],
   "help": {
     "sections": [
       {
-        "title": "Saving a link",
+        "title": { "zh": "收藏一条链接", "en": "Saving a link" },
         "items": [
-          "Paste an address in the box at the top and press Enter.",
-          "You do not need the https:// part — github.com is saved as https://github.com/.",
-          "Only http and https links are accepted. file: and javascript: are refused, because they can read local files or run code.",
-          "Saving the same address twice just says it is already on the shelf — no duplicates.",
-          "Hover a row and click the × to remove it."
+          {
+            "zh": "在上面的框里粘贴地址，按回车。",
+            "en": "Paste an address in the box at the top and press Enter."
+          },
+          {
+            "zh": "不用写 https:// —— github.com 会存成 https://github.com/。",
+            "en": "You do not need the https:// part — github.com is saved as https://github.com/."
+          },
+          {
+            "zh": "只收 http 和 https 链接。file: 和 javascript: 会被拒，因为它们能读本地文件或执行代码。",
+            "en": "Only http and https links are accepted. file: and javascript: are refused, because they can read local files or run code."
+          },
+          {
+            "zh": "同一个地址存两次只会提示已经在货架上 —— 不会存出重复的。",
+            "en": "Saving the same address twice just says it is already on the shelf — no duplicates."
+          },
+          {
+            "zh": "把鼠标停在一行上，点 × 删掉。",
+            "en": "Hover a row and click the × to remove it."
+          }
         ]
       },
       {
-        "title": "Opening a link",
+        "title": { "zh": "打开链接", "en": "Opening a link" },
         "items": [
-          "Click a row (or press Enter on it) to open it in your default browser.",
-          "This needs the Open links permission. Without it the card says so instead of doing nothing.",
-          "In the browser preview there is no system browser to call, so opening only works in the desktop app."
+          {
+            "zh": "点一行（或在行上按回车）用默认浏览器打开。",
+            "en": "Click a row (or press Enter on it) to open it in your default browser."
+          },
+          {
+            "zh": "这需要「打开链接」权限。没有的话卡片会直说，而不是什么都不发生。",
+            "en": "This needs the Open links permission. Without it the card says so instead of doing nothing."
+          },
+          {
+            "zh": "浏览器预览里没有系统浏览器可调，所以打开只在桌面应用里可用。",
+            "en": "In the browser preview there is no system browser to call, so opening only works in the desktop app."
+          }
         ]
       },
       {
-        "title": "Naming a link",
+        "title": { "zh": "给链接起名", "en": "Naming a link" },
         "items": [
-          "Hover a row and click the pencil, or press F2 on a focused row.",
-          "Enter or clicking anywhere else saves the name; Esc puts the old one back.",
-          "An empty name falls back to the site address, so a row is never nameless."
+          {
+            "zh": "把鼠标停在一行上点铅笔，或者选中一行按 F2。",
+            "en": "Hover a row and click the pencil, or press F2 on a focused row."
+          },
+          {
+            "zh": "回车或点到别处都会保存名字；Esc 换回原来的。",
+            "en": "Enter or clicking anywhere else saves the name; Esc puts the old one back."
+          },
+          {
+            "zh": "名字留空就退回站点地址，不会有一行没名字。",
+            "en": "An empty name falls back to the site address, so a row is never nameless."
+          }
         ]
       },
       {
-        "title": "One shelf, several windows",
+        "title": { "zh": "一个货架，几个窗口", "en": "One shelf, several windows" },
         "items": [
-          "Every Bookmarks widget shows the same shelf — it is stored per widget, not per copy.",
-          "Add a link in one window and the other windows update right away."
+          {
+            "zh": "每个收藏夹显示的都是同一个货架 —— 数据按组件存，不按这一份实例。",
+            "en": "Every Bookmarks widget shows the same shelf — it is stored per widget, not per copy."
+          },
+          {
+            "zh": "在一个窗口里加一条，别的窗口马上跟着变。",
+            "en": "Add a link in one window and the other windows update right away."
+          }
         ]
       },
       {
-        "title": "Order and density",
+        "title": { "zh": "排序与密度", "en": "Order and density" },
         "items": [
-          "The Order setting in the properties panel sorts by newest, by name, or by site.",
-          "Show the site under each name can be turned off for a denser one-line list.",
-          "The shelf holds up to 100 links."
+          {
+            "zh": "属性面板里的「排序」按最新、按名字或按站点排。",
+            "en": "The Order setting in the properties panel sorts by newest, by name, or by site."
+          },
+          {
+            "zh": "关掉「在每个名字下显示站点」就是更密的一行一条。",
+            "en": "Show the site under each name can be turned off for a denser one-line list."
+          },
+          {
+            "zh": "货架最多放 100 条链接。",
+            "en": "The shelf holds up to 100 links."
+          }
         ]
       },
       {
-        "title": "If it cannot save",
+        "title": { "zh": "存不下去的时候", "en": "If it cannot save" },
         "items": [
-          "The counter switches to Not saved when a write fails — usually a missing storage permission.",
-          "Hover it to see the reason. The list keeps working in memory until it can write again."
+          {
+            "zh": "写盘失败时计数会变成「未保存」—— 通常是缺存储权限。",
+            "en": "The counter switches to Not saved when a write fails — usually a missing storage permission."
+          },
+          {
+            "zh": "把鼠标停上去能看到原因。列表会先在内存里照常工作，等能写了再存。",
+            "en": "Hover it to see the reason. The list keeps working in memory until it can write again."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "1.0.1",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：权限提示、重复提示、空态和「只收 http/https」的说明都跟着语言走。",
+          "en": "Interface and help are bilingual now: the permission hint, the already-on-the-shelf notice, the empty state and the http/https note all follow the language."
+        }
+      ]
+    },
+    {
       "version": "1.0.0",
       "date": "2026-10-24",
       "changes": [
-        "First release: paste an address, press Enter, click a row to open it in your browser.",
-        "Rename a link with the pencil (or F2); empty names fall back to the site address.",
-        "Order by newest, name, or site; hide the site line for a denser list."
+        {
+          "zh": "第一个版本：粘贴地址、回车添加，点一行就在浏览器里打开。",
+          "en": "First release: paste an address, press Enter, click a row to open it in your browser."
+        },
+        {
+          "zh": "点铅笔（或按 F2）改名；名字留空就退回站点地址。",
+          "en": "Rename a link with the pencil (or F2); empty names fall back to the site address."
+        },
+        {
+          "zh": "可以按最新、名字或站点排序；关掉站点行能让列表更密。",
+          "en": "Order by newest, name, or site; hide the site line for a denser list."
+        }
       ]
     }
   ],

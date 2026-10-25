@@ -50,6 +50,18 @@
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
       /*
+       * 组件默认按中文画（测试页没有宿主，问不到 `lang.get`）；这里推一条
+       * `language` 让它切到英文 —— 等于顺带验了平台那条推送真的被接住。
+       */
+      const setLang = (view, next) => {
+        view.frame.contentWindow.postMessage(
+          { __lattice: 1, type: "language", payload: { lang: next } },
+          "*",
+        );
+        return sleep(30);
+      };
+
+      /*
        * 抛异常也要留一行红字。
        *
        * 不接这两个事件的话，页面里任何一处 `await` 抛出都表现为"#out 停在
@@ -213,6 +225,18 @@
         await sleep(120);
         const doc = view.doc();
 
+        // 默认那一门是中文：暂停中，主按钮说「播放」，按下去才会播
+        log(
+          doc.getElementById("toggle").title === "播放",
+          `默认中文主按钮标题「${doc.getElementById("toggle").title}」`,
+        );
+        log(
+          doc.getElementById("next").title === "下一首",
+          `默认中文下一首「${doc.getElementById("next").title}」`,
+        );
+
+        await setLang(view, "en");
+
         log(view.calls.includes("config.get"), `启动先读配置（${view.calls.join(", ")}）`);
         log(view.calls.includes("schedule.every"), "心跳注册走了调度器");
         log(view.schedule[0]?.every === 2000, `用了配置里的间隔（${view.schedule[0]?.every}ms）`);
@@ -246,6 +270,7 @@
         await view.ready;
         await sleep(120);
         const doc = view.doc();
+        await setLang(view, "en");
         log(doc.getElementById("toggle").title === "Pause", "播放中主按钮是暂停");
         const before = doc.getElementById("bar").style.width;
         await sleep(420);
@@ -261,6 +286,9 @@
         await view.ready;
         await sleep(120);
         const doc = view.doc();
+
+        log(text(doc, "track") === "没有在播放", `默认中文空态「${text(doc, "track")}」`);
+        await setLang(view, "en");
 
         log(text(doc, "track") === "Nothing playing", `没会话显示「${text(doc, "track")}」`);
         log(text(doc, "artist") === "", "没会话时副标题为空");
@@ -301,6 +329,13 @@
           "没授权时提示条出现",
         );
         log(
+          text(doc, "hint") === "需要「媒体控制」权限",
+          `默认中文提示文案「${text(doc, "hint")}」`,
+        );
+
+        await setLang(view, "en");
+
+        log(
           text(doc, "hint") === "Needs the Media control permission",
           `提示文案「${text(doc, "hint")}」`,
         );
@@ -326,6 +361,8 @@
         await view.ready;
         await sleep(120);
         const doc = view.doc();
+
+        await setLang(view, "en");
 
         doc.getElementById("toggle").click();
         // 同步断言：乐观翻转必须在这一帧就生效，不能等轮询
@@ -484,6 +521,13 @@
         const doc = view.doc();
 
         log(doc.getElementById("wave").hidden, "没授权时折线整条收起来");
+        log(
+          text(doc, "hint") === "需要「声音响度」权限",
+          `默认中文说清楚缺哪一项「${text(doc, "hint")}」`,
+        );
+
+        await setLang(view, "en");
+
         log(
           text(doc, "hint") === "Needs the Sound level permission",
           `提示说清楚缺哪一项「${text(doc, "hint")}」`,

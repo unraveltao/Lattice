@@ -1,8 +1,11 @@
 {
   "id": "lattice.timetable",
-  "name": "Timetable",
-  "version": "0.1.0",
-  "description": "A weekly class timetable with rooms, colours and a live now line — click any slot to add a class",
+  "name": { "zh": "课程表", "en": "Timetable" },
+  "version": "0.1.1",
+  "description": {
+    "zh": "一周的课程表：教室、颜色和一条实时的「现在」线——点任意空格加课",
+    "en": "A weekly class timetable with rooms, colours and a live now line — click any slot to add a class"
+  },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
@@ -14,104 +17,189 @@
     {
       "key": "days",
       "type": "select",
-      "label": "Days shown",
+      "label": { "zh": "显示哪几天", "en": "Days shown" },
       "default": "5",
       "options": [
-        { "value": "5", "label": "Mon – Fri" },
-        { "value": "6", "label": "Mon – Sat" },
-        { "value": "7", "label": "Mon – Sun" }
+        { "value": "5", "label": { "zh": "周一 – 周五", "en": "Mon – Fri" } },
+        { "value": "6", "label": { "zh": "周一 – 周六", "en": "Mon – Sat" } },
+        { "value": "7", "label": { "zh": "周一 – 周日", "en": "Mon – Sun" } }
       ],
-      "help": "Classes on hidden days are kept — switch to Mon – Sat or Mon – Sun to see them."
+      "help": {
+        "zh": "藏起来的那几天的课还在——切到「周一 – 周六」或「周一 – 周日」就能看见。",
+        "en": "Classes on hidden days are kept — switch to Mon – Sat or Mon – Sun to see them."
+      }
     },
     {
       "key": "dayStart",
       "type": "number",
-      "label": "Day starts at",
+      "label": { "zh": "一天从几点开始", "en": "Day starts at" },
       "default": 8,
       "min": 0,
       "max": 23,
       "step": 1,
       "unit": ":00",
-      "help": "The first hour on the card. A class that starts earlier expands the range automatically."
+      "help": {
+        "zh": "卡片上的第一个整点。更早开始的课会自动把范围撑开。",
+        "en": "The first hour on the card. A class that starts earlier expands the range automatically."
+      }
     },
     {
       "key": "dayEnd",
       "type": "number",
-      "label": "Day ends at",
+      "label": { "zh": "一天到几点结束", "en": "Day ends at" },
       "default": 18,
       "min": 1,
       "max": 24,
       "step": 1,
       "unit": ":00",
-      "help": "The last hour on the card. A class that ends later expands the range automatically."
+      "help": {
+        "zh": "卡片上的最后一个整点。更晚结束的课会自动把范围撑开。",
+        "en": "The last hour on the card. A class that ends later expands the range automatically."
+      }
     },
     {
       "key": "termStart",
       "type": "date",
-      "label": "Term starts",
+      "label": { "zh": "开学日期", "en": "Term starts" },
       "default": "",
-      "help": "The Monday of week 1, used for odd / even weeks. Leave empty to show every class every week."
+      "help": {
+        "zh": "第 1 周的那个周一，用来算单双周。留空就每周都显示全部课程。",
+        "en": "The Monday of week 1, used for odd / even weeks. Leave empty to show every class every week."
+      }
     }
   ],
   "help": {
     "sections": [
       {
-        "title": "Adding a class",
+        "title": { "zh": "加一节课", "en": "Adding a class" },
         "items": [
-          "Click an empty slot in the grid, or the + in the top bar. The editor opens with that day and time already filled in.",
-          "Give it a name, a room, a start and an end. Times look like 09:30; 9:30 also works.",
-          "Save with the button or Enter. Escape closes the editor without saving."
+          {
+            "zh": "点网格里的空格子，或者顶栏的 +。编辑器打开时，那一天和那个时间已经填好了。",
+            "en": "Click an empty slot in the grid, or the + in the top bar. The editor opens with that day and time already filled in."
+          },
+          {
+            "zh": "给它一个名字、教室、开始和结束。时间写成 09:30，写 9:30 也认。",
+            "en": "Give it a name, a room, a start and an end. Times look like 09:30; 9:30 also works."
+          },
+          {
+            "zh": "点「保存」或按回车存下。按 Escape 关掉编辑器，不保存。",
+            "en": "Save with the button or Enter. Escape closes the editor without saving."
+          }
         ]
       },
       {
-        "title": "Reading the week",
+        "title": { "zh": "看这一周", "en": "Reading the week" },
         "items": [
-          "Columns are weekdays, rows are hours. The header shows this week's dates, and today is marked in the accent colour.",
-          "A thin line across today's column is the current time; a class under it is outlined.",
-          "Colours are yours to choose in the editor — six tints that work on both light and dark boards."
+          {
+            "zh": "列是星期几，行是小时。表头写着这一周的日期，今天用强调色标出来。",
+            "en": "Columns are weekdays, rows are hours. The header shows this week's dates, and today is marked in the accent colour."
+          },
+          {
+            "zh": "今天那一列上横着一条细线，就是现在；正在上的课会加一圈描边。",
+            "en": "A thin line across today's column is the current time; a class under it is outlined."
+          },
+          {
+            "zh": "颜色在编辑器里自己挑——六种色在浅色和深色底板上都看得清。",
+            "en": "Colours are yours to choose in the editor — six tints that work on both light and dark boards."
+          }
         ]
       },
       {
-        "title": "Changing or removing",
+        "title": { "zh": "修改和删除", "en": "Changing or removing" },
         "items": [
-          "Click a class block to edit it. Delete removes it immediately; there is no undo.",
-          "Two classes at the same time sit side by side instead of covering each other.",
-          "Short classes hide the room line so the name stays readable."
+          {
+            "zh": "点课程块就能改。点「删除」立刻删掉，没有撤销。",
+            "en": "Click a class block to edit it. Delete removes it immediately; there is no undo."
+          },
+          {
+            "zh": "同一时间的两节课并排站，不会互相盖住。",
+            "en": "Two classes at the same time sit side by side instead of covering each other."
+          },
+          {
+            "zh": "很短的课会藏起教室那一行，把地方留给名字。",
+            "en": "Short classes hide the room line so the name stays readable."
+          }
         ]
       },
       {
-        "title": "Days and hours",
+        "title": { "zh": "天数和时段", "en": "Days and hours" },
         "items": [
-          "Days shown, Day starts at and Day ends at are in the inspector, per copy.",
-          "A class outside the chosen hours expands the range for the whole week — nothing is silently cut off.",
-          "Classes on hidden days stay in storage; they are not deleted."
+          {
+            "zh": "「显示哪几天」「一天从几点开始」「一天到几点结束」都在属性面板里，按每一份单独调。",
+            "en": "Days shown, Day starts at and Day ends at are in the inspector, per copy."
+          },
+          {
+            "zh": "选定时段之外的课会把整周的范围撑开——不会有课被悄悄裁掉。",
+            "en": "A class outside the chosen hours expands the range for the whole week — nothing is silently cut off."
+          },
+          {
+            "zh": "藏起来的那几天的课还在存储里，没有被删掉。",
+            "en": "Classes on hidden days stay in storage; they are not deleted."
+          }
         ]
       },
       {
-        "title": "Odd and even weeks",
+        "title": { "zh": "单双周", "en": "Odd and even weeks" },
         "items": [
-          "Set Term starts to the Monday of week 1, then pick Every week, Odd weeks or Even weeks in the editor.",
-          "The card shows the current week; classes for the other parity stay hidden until that week comes around.",
-          "With Term starts empty, every class is shown every week — parity is ignored rather than guessed."
+          {
+            "zh": "把「开学日期」填成第 1 周的那个周一，再在编辑器里选「每周」「单周」或「双周」。",
+            "en": "Set Term starts to the Monday of week 1, then pick Every week, Odd weeks or Even weeks in the editor."
+          },
+          {
+            "zh": "卡片显示当前这一周；不属于这一周的课先藏起来，等轮到那一周再出现。",
+            "en": "The card shows the current week; classes for the other parity stay hidden until that week comes around."
+          },
+          {
+            "zh": "「开学日期」留空时，每周都显示全部课程——单双周直接忽略，不去猜。",
+            "en": "With Term starts empty, every class is shown every week — parity is ignored rather than guessed."
+          }
         ]
       },
       {
-        "title": "If it cannot save",
+        "title": { "zh": "存不下来怎么办", "en": "If it cannot save" },
         "items": [
-          "The week label switches to Not saved when a write fails — usually a missing storage permission.",
-          "The timetable keeps working in memory until it can write again; grant storage in the inspector and edit once more.",
-          "Nothing is uploaded anywhere. There is no account and no network permission."
+          {
+            "zh": "写盘失败时，周次会变成「未保存」——通常是缺了存储权限。",
+            "en": "The week label switches to Not saved when a write fails — usually a missing storage permission."
+          },
+          {
+            "zh": "在能重新写盘之前，课表还在内存里照常能用；去属性面板授予存储权限，再改一次就好。",
+            "en": "The timetable keeps working in memory until it can write again; grant storage in the inspector and edit once more."
+          },
+          {
+            "zh": "什么都不上传。没有账号，也不需要联网权限。",
+            "en": "Nothing is uploaded anywhere. There is no account and no network permission."
+          }
         ]
       }
     ]
   },
   "changelog": [
     {
+      "version": "0.1.1",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "界面和说明都支持中文了：列头写「周一」…「周五」，编辑器、按钮、空态和提示也都跟着换。",
+          "en": "Interface and help are bilingual now: columns read 周一…周五, and the editor, buttons, empty states and messages follow."
+        }
+      ]
+    },
+    {
       "version": "0.1.0",
       "changes": [
-        "First release: weekly grid with click-to-add classes, rooms, six colours and a live now line.",
-        "Click a class to edit or delete it; overlapping classes share the column.",
-        "Odd / even week support through Term starts, plus per-copy day range and visible days."
+        {
+          "zh": "第一个版本：周视图网格，点一下加课，带教室、六种颜色和一条实时的「现在」线。",
+          "en": "First release: weekly grid with click-to-add classes, rooms, six colours and a live now line."
+        },
+        {
+          "zh": "点一节课就能改或删；重叠的课分享同一列。",
+          "en": "Click a class to edit or delete it; overlapping classes share the column."
+        },
+        {
+          "zh": "用「开学日期」支持单双周，另外显示哪几天和时段范围都按每一份单独调。",
+          "en": "Odd / even week support through Term starts, plus per-copy day range and visible days."
+        }
       ]
     }
   ],

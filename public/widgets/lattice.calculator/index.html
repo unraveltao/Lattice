@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>Calculator</title>
+    <title>计算器</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -18,13 +18,13 @@
         和待办 / 系统监视器 / 媒体一样：标题栏留 `padding-right: 120px`。
       -->
       <header class="calc-head">
-        <span class="calc-title">Calculator</span>
+        <span class="calc-title">计算器</span>
       </header>
 
       <nav class="calc-tabs" role="tablist">
-        <button type="button" class="calc-tab is-active" data-pane="calc" role="tab">Calc</button>
-        <button type="button" class="calc-tab" data-pane="encode" role="tab">Encode</button>
-        <button type="button" class="calc-tab" data-pane="hash" role="tab">Hash</button>
+        <button type="button" class="calc-tab is-active" data-pane="calc" role="tab">计算</button>
+        <button type="button" class="calc-tab" data-pane="encode" role="tab">编码</button>
+        <button type="button" class="calc-tab" data-pane="hash" role="tab">哈希</button>
       </nav>
 
       <section class="calc-pane is-active" data-pane="calc">
@@ -36,7 +36,7 @@
           autocomplete="off"
           spellcheck="false"
           placeholder="0"
-          aria-label="Expression"
+          aria-label="表达式"
         />
         <div class="calc-result" id="result">= 0</div>
         <ul class="calc-history" id="history"></ul>
@@ -47,8 +47,8 @@
           id="encode-in"
           class="calc-text"
           spellcheck="false"
-          placeholder="Text to encode or decode"
-          aria-label="Encode input"
+          placeholder="要编码或解码的文字"
+          aria-label="编码输入"
         ></textarea>
         <div class="calc-row">
           <button type="button" class="calc-btn" data-encode="b64-enc">Base64 ↑</button>
@@ -56,7 +56,7 @@
           <button type="button" class="calc-btn" data-encode="url-enc">URL ↑</button>
           <button type="button" class="calc-btn" data-encode="url-dec">URL ↓</button>
         </div>
-        <div class="calc-out" id="encode-out" data-empty="true">Nothing yet</div>
+        <div class="calc-out" id="encode-out" data-empty="true">还没有结果</div>
       </section>
 
       <section class="calc-pane" data-pane="hash">
@@ -64,13 +64,13 @@
           id="hash-in"
           class="calc-text"
           spellcheck="false"
-          placeholder="Text to hash"
-          aria-label="Hash input"
+          placeholder="要计算哈希的文字"
+          aria-label="哈希输入"
         ></textarea>
-        <div class="calc-out is-mono" id="hash-out" data-empty="true">MD5 appears here</div>
+        <div class="calc-out is-mono" id="hash-out" data-empty="true">MD5 显示在这里</div>
       </section>
 
-      <button type="button" class="calc-copy" id="copy" hidden>Copy</button>
+      <button type="button" class="calc-copy" id="copy" hidden>复制</button>
     </main>
     <script src="widget.js"></script>
   </body>

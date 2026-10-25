@@ -42,6 +42,38 @@
     });
   }
 
+  /*
+   * 界面语言。
+   *
+   * 卡片上的字都是这个组件自己的（"还剩 2 项"、"优先级"），平台只负责告诉
+   * 我们现在是哪一门。两件事都要做：启动时问一次 `lang.get`，用户中途换
+   * 语言再收 `language` 推送 —— 只读一次，换语言卡片就不动。
+   *
+   * 首帧按 HTML 里写死的中文画（不变量 18）；英文界面等 `lang.get` 回来
+   * 那一趟再翻，不为这几十毫秒画"加载中"。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("待办", "Todo");
+    titleEl.textContent = say("待办清单", "To-do");
+    inputEl.placeholder = say("添加一条待办，回车确认", "Add a to-do, press Enter");
+    emptyEl.textContent = say("还没有待办", "Nothing here yet");
+    // 标题、占位符、圆点的 aria 都散在 render / paintMeta 里，重画一遍最省事。
+    // 正拖着的时候不能重画 —— 手里那个 li 会变成离树的死节点
+    if (drag) paintMeta();
+    else render();
+  }
+
   // ---------- 业务 ----------
   var STORAGE_KEY = "items";
   var items = [];
@@ -57,7 +89,16 @@
    * 永远发现不了。
    */
   var PRIORITY_ORDER = ["high", "med", "low"];
-  var PRIORITY_LABEL = { high: "High", med: "Medium", low: "Low" };
+  var PRIORITY_LABEL = {
+    high: { zh: "高", en: "High" },
+    med: { zh: "中", en: "Medium" },
+    low: { zh: "低", en: "Low" },
+  };
+
+  /** 圆点读给屏幕阅读器听的那一档，跟着界面语言走 */
+  function priorityLabel(level) {
+    return PRIORITY_LABEL[level][lang];
+  }
 
   /** 磁盘上的老数据没有这个字段，也可能有脏值 —— 认不出来就当没设 */
   function readPriority(value) {
@@ -75,6 +116,11 @@
     if (!data || data.__lattice !== 1) return;
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
     if (data.type === "store-changed") {
@@ -101,6 +147,7 @@
   var listEl = document.getElementById("list");
   var emptyEl = document.getElementById("empty");
   var metaEl = document.getElementById("meta");
+  var titleEl = document.querySelector(".todo-title");
 
   /*
    * 同一个组件可能在画布上有一个实例、桌面上又有一个，各自持一份内存列表。
@@ -123,7 +170,7 @@
 
   function paintMeta() {
     if (saveError) {
-      metaEl.textContent = "Not saved";
+      metaEl.textContent = say("未保存", "Not saved");
       metaEl.classList.add("is-error");
       return;
     }
@@ -137,7 +184,9 @@
     items.forEach(function (item) {
       if (!item.done) left += 1;
     });
-    metaEl.textContent = left === 0 ? "All done" : left + " left";
+    // 中文没有复数，别照搬 "left" 的结构：还剩几项，全勾完就是全部完成
+    metaEl.textContent =
+      left === 0 ? say("全部完成", "All done") : say("还剩 " + left + " 项", left + " left");
   }
 
   function persist() {
@@ -152,7 +201,9 @@
         saveError = true;
         paintMeta();
         metaEl.title =
-          error.code === "permission_denied" ? "Storage permission required to save" : "Could not save";
+          error.code === "permission_denied"
+            ? say("保存需要存储权限", "Storage permission required to save")
+            : say("保存失败", "Could not save");
       })
       .then(function () {
         writing -= 1;
@@ -383,7 +434,7 @@
       check.type = "checkbox";
       check.className = "todo-check";
       check.checked = item.done;
-      check.title = item.done ? "Mark as not done" : "Mark as done";
+      check.title = item.done ? say("标为未完成", "Mark as not done") : say("标为完成", "Mark as done");
       check.setAttribute("aria-label", item.text);
       check.addEventListener("change", function () {
         item.done = check.checked;
@@ -397,14 +448,19 @@
       dot.className = "todo-dot";
       if (priority) dot.dataset.level = priority;
       dot.title = priority
-        ? "Priority: " + PRIORITY_LABEL[priority] + " — click to change"
-        : "Set priority";
+        ? say(
+            "优先级：" + priorityLabel(priority) + "，点一下切换",
+            "Priority: " + priorityLabel(priority) + " — click to change",
+          )
+        : say("设置优先级", "Set priority");
       dot.setAttribute(
         "aria-label",
-        (priority ? "Priority: " + PRIORITY_LABEL[priority] : "No priority") +
-          ". Click to " +
-          (upcoming ? "set " + PRIORITY_LABEL[upcoming].toLowerCase() : "clear it") +
-          ".",
+        (priority ? say("优先级：", "Priority: ") + priorityLabel(priority) : say("没有优先级", "No priority")) +
+          say("。点一下", ". Click to ") +
+          (upcoming
+            ? say("设为" + priorityLabel(upcoming), "set " + priorityLabel(upcoming).toLowerCase())
+            : say("清除", "clear it")) +
+          say("。", "."),
       );
       dot.addEventListener("click", function (event) {
         event.stopPropagation();
@@ -424,8 +480,8 @@
       remove.type = "button";
       remove.className = "todo-remove";
       remove.textContent = "×";
-      remove.title = "Delete";
-      remove.setAttribute("aria-label", "Delete \"" + item.text + "\"");
+      remove.title = say("删除", "Delete");
+      remove.setAttribute("aria-label", say("删除「" + item.text + "」", 'Delete "' + item.text + '"'));
       remove.addEventListener("click", function (event) {
         event.stopPropagation();
         items = items.filter(function (candidate) {
@@ -479,6 +535,16 @@
     inputEl.value = "";
     commit();
   });
+
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住读盘和首屏
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画 */
+    });
 
   call("storage.get", { key: STORAGE_KEY })
     .then(function (value) {

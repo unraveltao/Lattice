@@ -48,6 +48,12 @@
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+      // 组件默认按中文画；这里推一条 language 让它切到英文，等于顺带验了这条推送
+      function setLang(frame, next) {
+        frame.contentWindow.postMessage({ __lattice: 1, type: "language", payload: { lang: next } }, "*");
+        return sleep(30);
+      }
+
       function mountNote(w, h) {
         const frame = document.createElement("iframe");
         frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
@@ -71,6 +77,7 @@
                 Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
                 "*",
               );
+            if (data.method === "lang.get") return reply({ ok: true, result: { lang: "zh" } });
             if (data.method === "storage.get") return reply({ ok: true, result: "" });
             if (data.method === "storage.set") return reply({ ok: true, result: { ok: true } });
             reply({ ok: false, error: "unknown" });
@@ -94,6 +101,19 @@
         log(
           !!head && head.contains(status),
           "保存状态在状态条里，不在底栏 —— 底栏那一行是正文最容易写到的地方",
+        );
+
+        // 切英文之前先证明默认那门是对的
+        log(area.placeholder === "写点什么…", `默认占位符是「${area.placeholder}」`);
+        log(
+          doc.getElementById("count").textContent === "0 字",
+          `默认字数是「${doc.getElementById("count").textContent}」`,
+        );
+        await setLang(frame, "en");
+        log(area.placeholder === "Write something…", `切英文后占位符是「${area.placeholder}」`);
+        log(
+          doc.getElementById("count").textContent === "0 chars",
+          `切英文后字数是「${doc.getElementById("count").textContent}」`,
         );
 
         const top = area.getBoundingClientRect().top;

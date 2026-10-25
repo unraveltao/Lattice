@@ -77,6 +77,36 @@
 
   function noop() {}
 
+  /*
+   * 界面语言。
+   *
+   * 阶段名、按钮和提示都是这个组件自己的字 —— 平台不知道 "Break" 对应哪句中文。
+   * 所以两门都留在这儿，按 `lang.get` 挑一份；用户中途换语言，平台推一条
+   * `language`，把已经画出去的字原地换掉（两件事都要做：只读一次 = 换语言卡片
+   * 不动，只听推送 = 语言停在建文档那一刻）。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文，中文界面看到的就是最终样子；
+   * 英文界面要等 `lang.get` 回来那一趟（几十毫秒）才翻。`lang` 只有 `zh` / `en`
+   * 两种 —— "跟随系统"是平台在设置里解析掉的。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("专注", "Focus");
+    // 阶段名、按钮和提示都跟语言有关，重画一次比逐个替换稳
+    if (state) render();
+    else paintHint();
+  }
+
   // -------------------------------------------------------------------------
   // 状态
   // -------------------------------------------------------------------------
@@ -86,7 +116,17 @@
   /** 只留最近这些轮。`done` 是用来数"这一轮里第几个"的，不是日志 */
   var KEEP = 20;
 
-  var PHASES = { work: "Focus", short: "Break", long: "Long break" };
+  var PHASES = {
+    work: { zh: "专注", en: "Focus" },
+    short: { zh: "休息", en: "Break" },
+    long: { zh: "长休息", en: "Long break" },
+  };
+
+  /** 阶段名：`decode` 用键验状态，画的时候取当前语言那一份 */
+  function phaseName(phase) {
+    var pair = PHASES[phase] || PHASES.work;
+    return say(pair.zh, pair.en);
+  }
 
   function clampInt(value, min, max, fallback) {
     var number = Math.round(Number(value));
@@ -181,7 +221,8 @@
   var config = null;
   var state = null;
   var tickId = 0;
-  var hintText = "";
+  /** 提示存两门写法，换语言时能原地说一遍；null 表示没有提示 */
+  var hintPair = null;
   /** 正在翻页（见 `complete`）：挡住同一毫秒里重复的到点处理 */
   var completing = false;
 
@@ -233,7 +274,7 @@
 
     el.root.dataset.phase = state.phase;
     el.root.dataset.running = state.endsAt !== null ? "true" : "false";
-    el.phase.textContent = PHASES[state.phase];
+    el.phase.textContent = phaseName(state.phase);
 
     /*
      * "这一轮里的第几个"。第 4 次完成会立刻进入长休息，那时 done.length % 4
@@ -248,20 +289,27 @@
     }
 
     if (state.endsAt !== null) {
-      el.toggle.textContent = "Pause";
+      el.toggle.textContent = say("暂停", "Pause");
     } else {
       // 停在一半和停在起点是两件事，按钮上要说出来
-      el.toggle.textContent = left() < d[state.phase] - 500 ? "Resume" : "Start";
+      el.toggle.textContent =
+        left() < d[state.phase] - 500 ? say("继续", "Resume") : say("开始", "Start");
     }
+    // 休息时按它是"跳过这次休息"，但按钮始终只有一个心智模型：回到专注
+    el.reset.textContent = say("重置", "Reset");
 
     renderTime();
-    setHint(hintText);
+    paintHint();
   }
 
-  function setHint(text) {
-    hintText = text || "";
-    el.hint.textContent = hintText;
-    el.hint.classList.toggle("is-visible", !!hintText);
+  function setHint(zh, en) {
+    hintPair = zh ? { zh: zh, en: en } : null;
+    paintHint();
+  }
+
+  function paintHint() {
+    el.hint.textContent = hintPair ? say(hintPair.zh, hintPair.en) : "";
+    el.hint.classList.toggle("is-visible", !!hintPair);
   }
 
   /*
@@ -370,7 +418,7 @@
 
   function toggle() {
     if (!state) return;
-    setHint("");
+    setHint();
 
     if (state.endsAt !== null) {
       var remaining = Math.max(0, state.endsAt - Date.now());
@@ -399,7 +447,7 @@
    */
   function reset() {
     if (!state) return;
-    setHint("");
+    setHint();
     var next = Object.assign({}, state, {
       phase: "work",
       endsAt: null,
@@ -434,8 +482,14 @@
       state: next,
       note:
         stored.phase === "work"
-          ? "Focus finished while you were away."
-          : "That break is over — ready when you are.",
+          ? {
+              zh: "你不在的时候专注结束了。",
+              en: "Focus finished while you were away.",
+            }
+          : {
+              zh: "这次休息结束了 —— 准备好了就开始。",
+              en: "That break is over — ready when you are.",
+            },
     };
   }
 
@@ -457,13 +511,13 @@
 
         var recovered = recover(stored);
         apply(recovered.state, { force: true });
-        if (recovered.note) setHint(recovered.note);
+        if (recovered.note) setHint(recovered.note.zh, recovered.note.en);
         if (signature(recovered.state) !== signature(stored)) return save(recovered.state);
         return null;
       })
       .catch(function () {
         apply(fresh(config), { force: true });
-        setHint("Couldn't read the saved timer.");
+        setHint("读不到存下来的计时。", "Couldn't read the saved timer.");
       });
   }
 
@@ -477,6 +531,12 @@
 
     if (data.type === "theme") {
       applyTheme(data.payload);
+      return;
+    }
+
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
       return;
     }
 
@@ -540,11 +600,21 @@
     }
   });
 
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住配置和状态
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(function () {
+      /* 拿不到就按中文画：计时器不该因为问不到语言就不走 */
+    });
+
   call("config.get")
     .then(start)
     .catch(function () {
       apply(fresh(null), { force: true });
-      setHint("This widget could not read its own settings.");
+      setHint("这个组件读不到自己的设置。", "This widget could not read its own settings.");
     })
     .then(function () {
       parent.postMessage({ __lattice: 1, type: "ready" }, "*");

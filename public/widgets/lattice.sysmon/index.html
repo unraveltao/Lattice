@@ -1,14 +1,14 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>System</title>
+    <title>系统</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <main class="sys">
       <header class="sys-head">
-        <h1 class="sys-title">System</h1>
+        <h1 class="sys-title" id="title">系统</h1>
         <span class="sys-meta" id="uptime"></span>
       </header>
 
@@ -30,7 +30,7 @@
 
       <section class="sys-metric">
         <div class="sys-line">
-          <span class="sys-label"><i class="sys-dot is-mem"></i>Memory</span>
+          <span class="sys-label" id="label-mem"><i class="sys-dot is-mem"></i><span id="mem-name">内存</span></span>
           <span class="sys-value" id="mem">—</span>
         </div>
         <div class="sys-sub">

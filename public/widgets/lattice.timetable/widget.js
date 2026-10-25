@@ -69,27 +69,68 @@
 
   function noop() {}
 
+  /*
+   * 界面语言。
+   *
+   * 平台在设置里能切中英两门，而卡片上的字是这个组件自己的 —— 平台不知道
+   * "周一"对应哪句英文。所以两门都留在这儿，按 `lang.get` 挑一份；用户中途
+   * 换语言，平台推一条 `language`，把已经画出去的字原地换掉（两件事都要做：
+   * 只读一次 = 换语言卡片不动，只听推送 = 语言停在建文档那一刻）。
+   *
+   * 首帧不等桥（不变量 18）：HTML 里写死的是中文；英文界面要等 `lang.get`
+   * 回来那一趟才翻。`lang` 只有 `zh` / `en` 两种 —— "跟随系统"是平台解析掉的。
+   */
+  var lang = "zh";
+
+  /** 一句话的两种写法，按当前界面语言挑 */
+  function say(zh, en) {
+    return lang === "en" ? en : zh;
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    // 静态文案、星期按钮、周次按钮、已经打开的编辑器和整张周视图都要重画
+    paintChrome();
+    buildPicks();
+    paintPicks();
+    if (editorState) updateSub();
+    renderAll();
+  }
+
   // -------------------------------------------------------------------------
   // 常量
   // -------------------------------------------------------------------------
 
   var KEY = "timetable";
   var MAX_COURSES = 200;
-  var DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  var DAY_LABELS_LONG = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-  ];
+  /*
+   * 两门语言的表：中文用「周一…周日」（和本文件注释里的叫法一致），英文照旧
+   * 是三字母缩写 / 全名。星期头和编辑器里的星期按钮共用短名。
+   */
+  var DAY_NAMES = {
+    zh: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+    en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+  };
+  var DAY_NAMES_LONG = {
+    zh: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+    en: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+  };
   var WEEK_OPTIONS = [
-    { value: "all", label: "Every" },
-    { value: "odd", label: "Odd" },
-    { value: "even", label: "Even" },
+    { value: "all", zh: "每周", en: "Every" },
+    { value: "odd", zh: "单周", en: "Odd" },
+    { value: "even", zh: "双周", en: "Even" },
   ];
+
+  function dayName(index) {
+    return DAY_NAMES[lang][index] || "";
+  }
+
+  function dayNameLong(index) {
+    return DAY_NAMES_LONG[lang][index] || "";
+  }
 
   /*
    * 六种课程颜色。
@@ -198,7 +239,7 @@
       var date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
       out.push({
         day: i,
-        label: DAY_LABELS[i],
+        label: dayName(i),
         num: date.getDate(),
         key: dateKey(date),
       });
@@ -479,6 +520,7 @@
   // -------------------------------------------------------------------------
 
   var root = document.getElementById("root");
+  var titleLabelEl = document.getElementById("title-label");
   var weekEl = document.getElementById("week");
   var daybarEl = document.getElementById("daybar");
   var canvasEl = document.getElementById("canvas");
@@ -503,6 +545,17 @@
   var deleteEl = document.getElementById("f-delete");
   var cancelEl = document.getElementById("f-cancel");
   var saveEl = document.getElementById("f-save");
+
+  /** HTML 里写死的字段名，按 id 收在一处，换语言时挨个换 */
+  var LABEL_ELS = {
+    name: document.getElementById("lbl-name"),
+    room: document.getElementById("lbl-room"),
+    day: document.getElementById("lbl-day"),
+    start: document.getElementById("lbl-start"),
+    end: document.getElementById("lbl-end"),
+    weeks: document.getElementById("lbl-weeks"),
+    colour: document.getElementById("lbl-colour"),
+  };
 
   // -------------------------------------------------------------------------
   // 工具
@@ -533,19 +586,52 @@
     });
   }
 
+  /** HTML 里写死的那几句：标题、+ 按钮、字段名、分组的 aria-label、三个动作按钮 */
+  function paintChrome() {
+    document.title = say("课程表", "Timetable");
+    titleLabelEl.textContent = say("课程表", "Timetable");
+    addEl.setAttribute("aria-label", say("添加课程", "Add class"));
+    addEl.title = say("添加课程", "Add class");
+    LABEL_ELS.name.textContent = say("课程", "Class");
+    LABEL_ELS.room.textContent = say("教室", "Room");
+    LABEL_ELS.day.textContent = say("星期", "Day");
+    LABEL_ELS.start.textContent = say("开始", "Starts");
+    LABEL_ELS.end.textContent = say("结束", "Ends");
+    LABEL_ELS.weeks.textContent = say("周次", "Weeks");
+    LABEL_ELS.colour.textContent = say("颜色", "Colour");
+    // 教室号和时刻是例子，不翻；名字的占位符跟着语言换
+    nameEl.placeholder = say("微积分", "Calculus");
+    daysEl.setAttribute("aria-label", say("星期几", "Day of the week"));
+    weeksEl.setAttribute("aria-label", say("哪几周", "Which weeks"));
+    colorsEl.setAttribute("aria-label", say("颜色", "Colour"));
+    deleteEl.textContent = say("删除", "Delete");
+    cancelEl.textContent = say("取消", "Cancel");
+    if (editorState) paintEditorChrome();
+  }
+
+  /** 编辑器标题和主按钮跟着"新增 / 编辑"变，也跟语言变 */
+  function paintEditorChrome() {
+    var editing = Boolean(editorState && editorState.id);
+    editorTitleEl.textContent = editing ? say("编辑课程", "Edit class") : say("添加课程", "Add class");
+    saveEl.textContent = editing ? say("保存", "Save") : say("添加", "Add");
+  }
+
   // -------------------------------------------------------------------------
   // 渲染
   // -------------------------------------------------------------------------
 
   function renderHead(week) {
     if (saveError) {
-      weekEl.textContent = "Not saved";
+      weekEl.textContent = say("未保存", "Not saved");
+      weekEl.title = storageDenied
+        ? say("需要存储权限才能保存", "Storage permission required to save")
+        : say("保存失败", "Could not save");
       weekEl.classList.add("is-error");
       return;
     }
     weekEl.classList.remove("is-error");
     weekEl.title = "";
-    weekEl.textContent = week ? "W" + week : "";
+    weekEl.textContent = week ? say("第" + week + "周", "W" + week) : "";
   }
 
   function renderDaybar(dates, now) {
@@ -617,13 +703,21 @@
 
         var label =
           course.name +
-          ", " +
-          DAY_LABELS_LONG[course.day] +
-          " " +
-          course.start +
-          " to " +
-          course.end +
-          (course.room ? ", room " + course.room : "");
+          (lang === "en"
+            ? ", " +
+              dayNameLong(course.day) +
+              " " +
+              course.start +
+              " to " +
+              course.end +
+              (course.room ? ", room " + course.room : "")
+            : "，" +
+              dayNameLong(course.day) +
+              " " +
+              course.start +
+              "到" +
+              course.end +
+              (course.room ? "，教室 " + course.room : ""));
         var style =
           "--course-color:" +
           color +
@@ -684,11 +778,17 @@
       return;
     }
     if (storageDenied) {
-      emptyEl.textContent = "Grant storage permission to keep this timetable.";
+      emptyEl.textContent = say(
+        "授予存储权限才能保存这张课程表。",
+        "Grant storage permission to keep this timetable.",
+      );
     } else if (courses.length > 0) {
-      emptyEl.textContent = "No classes this week";
+      emptyEl.textContent = say("这一周没有课", "No classes this week");
     } else {
-      emptyEl.textContent = "No classes yet — click a slot or +";
+      emptyEl.textContent = say(
+        "还没有课——点空格子或 +",
+        "No classes yet — click a slot or +",
+      );
     }
     emptyEl.classList.add("is-visible");
   }
@@ -781,11 +881,8 @@
       .catch(function (error) {
         saveError = true;
         if (error && error.code === "permission_denied") storageDenied = true;
+        // 周次标题和它的悬停提示都交给 renderHead：那里按语言挑，也认得权限
         renderHead(weekNumber(config.termStart, new Date()));
-        weekEl.title =
-          error && error.code === "permission_denied"
-            ? "Storage permission required to save"
-            : "Could not save";
         renderEmpty(visibleCourses(new Date()));
       })
       .then(function () {
@@ -832,22 +929,24 @@
   // -------------------------------------------------------------------------
 
   function buildPicks() {
-    daysEl.innerHTML = DAY_LABELS.map(function (label, index) {
-      return (
-        '<button type="button" class="tt-pick" data-day="' +
-        index +
-        '" aria-pressed="false">' +
-        label +
-        "</button>"
-      );
-    }).join("");
+    daysEl.innerHTML = DAY_NAMES[lang]
+      .map(function (label, index) {
+        return (
+          '<button type="button" class="tt-pick" data-day="' +
+          index +
+          '" aria-pressed="false">' +
+          label +
+          "</button>"
+        );
+      })
+      .join("");
 
     weeksEl.innerHTML = WEEK_OPTIONS.map(function (option) {
       return (
         '<button type="button" class="tt-pick" data-weeks="' +
         option.value +
         '" aria-pressed="false">' +
-        option.label +
+        option[lang] +
         "</button>"
       );
     }).join("");
@@ -858,8 +957,8 @@
         index +
         '" style="--course-color:' +
         color +
-        '" aria-label="Colour ' +
-        (index + 1) +
+        '" aria-label="' +
+        say("颜色 " + (index + 1), "Colour " + (index + 1)) +
         '" aria-pressed="false"></button>'
       );
     }).join("");
@@ -890,7 +989,7 @@
   function updateSub() {
     if (!editorState) return;
     editorSubEl.textContent =
-      DAY_LABELS_LONG[editorState.day] +
+      dayNameLong(editorState.day) +
       " · " +
       (startEl.value.trim() || "—") +
       "–" +
@@ -910,9 +1009,9 @@
     roomEl.value = course ? course.room : "";
     startEl.value = course ? course.start : formatTime(toInt(slot.start, 8 * 60));
     endEl.value = course ? course.end : formatTime(toInt(slot.end, 9 * 60 + 30));
-    editorTitleEl.textContent = course ? "Edit class" : "Add class";
     deleteEl.hidden = !course;
-    saveEl.textContent = course ? "Save" : "Add";
+    // 标题和主按钮跟着"新增 / 编辑"挑文案，语言切换时也走这一条
+    paintEditorChrome();
     errorEl.textContent = "";
 
     editorOpen = true;
@@ -945,16 +1044,16 @@
     if (!editorState) return null;
 
     var name = nameEl.value.trim();
-    if (!name) return fail("Give the class a name.");
+    if (!name) return fail(say("给这节课起个名字。", "Give the class a name."));
 
     var start = parseTime(startEl.value);
-    if (start == null) return fail("Start time should look like 09:30.");
+    if (start == null) return fail(say("开始时间要写成 09:30 这样。", "Start time should look like 09:30."));
 
     var end = parseTime(endEl.value);
-    if (end == null) return fail("End time should look like 10:45.");
+    if (end == null) return fail(say("结束时间要写成 10:45 这样。", "End time should look like 10:45."));
 
-    if (end <= start) return fail("End time must be after the start time.");
-    if (end - start > 12 * 60) return fail("A class can be at most 12 hours long.");
+    if (end <= start) return fail(say("结束时间要晚于开始时间。", "End time must be after the start time."));
+    if (end - start > 12 * 60) return fail(say("一节课最长 12 小时。", "A class can be at most 12 hours long."));
 
     return {
       name: name.slice(0, 80),
@@ -976,7 +1075,7 @@
     } else {
       var next = addCourse(courses, Object.assign({}, data, { id: makeId() }));
       if (next === courses) {
-        fail("The timetable is full (" + MAX_COURSES + " classes).");
+        fail(say("课程表满了（最多 " + MAX_COURSES + " 节）。", "The timetable is full (" + MAX_COURSES + " classes)."));
         return;
       }
       courses = next;
@@ -1148,6 +1247,11 @@
       applyTheme(data.payload);
       return;
     }
+    // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
+    if (data.type === "language") {
+      applyLanguage(data.payload);
+      return;
+    }
     if (data.type === "config-changed") {
       applyConfig(data.payload && data.payload.config);
       return;
@@ -1180,9 +1284,18 @@
   // 启动
   // -------------------------------------------------------------------------
 
+  paintChrome();
   buildPicks();
   renderAll();
   parent.postMessage({ __lattice: 1, type: "ready" }, "*");
+
+  // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
+  // 不该拖住配置和存档
+  call("lang.get")
+    .then(function (info) {
+      applyLanguage(info);
+    })
+    .catch(noop);
 
   call("config.get")
     .then(function (values) {

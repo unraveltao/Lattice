@@ -30,7 +30,8 @@
        *   3. 顺序按作者写的来 —— 变更记录不做排序，他说新的在前就是新的在前
        *
        * 后一半是"文档别烂掉"的对账：把 `public/widgets` 下每个清单真的读出来，
-       * 检查它有没有说明、说明有没有覆盖配置项。这一半才是这个页面存在的理由 ——
+       * 检查它有没有说明、说明有没有覆盖配置项、**两门语言齐不齐、卡片接没接
+       * `language` 推送**。这一半才是这个页面存在的理由 ——
        * 纯函数测试全绿而所有组件一个说明都没有，也是白搭。
        */
       import { normalizeManifest } from "/src/runtime/manifest.ts";
@@ -257,6 +258,72 @@
         }
       }
       eq(uncovered, [], "每个没有自带 help 的配置项，都要在说明里被提到");
+
+      /*
+       * ---- 5. 双语覆盖 ----
+       *
+       * 平台自己的字（`runtime/i18n/*`）早就是两门了，但**组件上的字是作者写的**：
+       * 清单里只写一门，另一门界面上就照原样显示 —— 中文界面里冒出英文，用户
+       * 分不清是平台没做还是组件没译。这一段把内置组件钉成"必须两门齐全"。
+       *
+       * `textVariants` 是"这个词有几种写法"，所以 `length === 2` 就是两门都给了；
+       * 只写一门的组件在界面上仍然能用（退化成原文），只是不许出现在内置包里。
+       */
+      const bothLangs = (value) => textVariants(value).length === 2;
+      const gaps = [];
+      for (const manifest of manifests) {
+        const where = (field) => `${manifest.id}:${field}`;
+        if (!bothLangs(manifest.name)) gaps.push(where("name"));
+        if (!bothLangs(manifest.description)) gaps.push(where("description"));
+        for (const field of manifest.config) {
+          if (!bothLangs(field.label)) gaps.push(where(`config.${field.key}.label`));
+          if (field.help && !bothLangs(field.help)) gaps.push(where(`config.${field.key}.help`));
+          for (const option of field.options ?? []) {
+            // 简写（`"a"` 那种）时 label 就是 value 本身 —— 语言无关，不算漏
+            if (option.label === option.value) continue;
+            if (!bothLangs(option.label)) gaps.push(where(`config.${field.key}.options.${option.value}`));
+          }
+        }
+        manifest.help.sections.forEach((section, index) => {
+          if (!bothLangs(section.title)) gaps.push(where(`help[${index}].title`));
+          section.items.forEach((item, itemIndex) => {
+            if (!bothLangs(item)) gaps.push(where(`help[${index}].items[${itemIndex}]`));
+          });
+        });
+        for (const entry of manifest.changelog) {
+          entry.changes.forEach((change, index) => {
+            if (!bothLangs(change)) gaps.push(where(`changelog ${entry.version}[${index}]`));
+          });
+        }
+      }
+      // 一屏放不下的时候只印前几处 + 总数：清单有几处漏翻，读的人要的是
+      // "从哪开始改"，不是把四十个字段名刷满终端
+      const preview = gaps.length > 6 ? [...gaps.slice(0, 6), `…共 ${gaps.length} 处`] : gaps;
+      eq(preview, [], "内置组件的清单文案中英两门齐全（只写一门，另一门界面上就是原文）");
+
+      /*
+       * 清单两门齐了还不够：卡片**里面的**字是组件自己画的，平台翻不了它 ——
+       * 只能告诉它"现在换成哪一门了"。所以每个组件的源码里都得有这两样：
+       * `lang.get`（建文档那一刻是准的）和 `language` 推送（用户中途换语言）。
+       *
+       * 只接一半的症状很隐蔽：只听推送，热更新 / 权限变更重载之后就停在旧语言；
+       * 只读一次，用户在设置里换语言，卡片一动不动。
+       */
+      const unwired = [];
+      for (const manifest of manifests) {
+        const html = await (await fetch(`/widgets/${manifest.id}/${manifest.entry}`)).text();
+        const scripts = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((match) => match[1]);
+        const sources = await Promise.all(
+          scripts.map((src) =>
+            fetch(`/widgets/${manifest.id}/${src}`)
+              .then((response) => (response.ok ? response.text() : ""))
+              .catch(() => ""),
+          ),
+        );
+        const bundle = [html, ...sources].join("\n");
+        if (!bundle.includes("lang.get") || !bundle.includes('"language"')) unwired.push(manifest.id);
+      }
+      eq(unwired, [], "每个内置组件都接了语言：lang.get + language 推送");
 
       document.getElementById("out").innerHTML = lines
         .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)

@@ -63,6 +63,32 @@
         }
       };
 
+      /*
+       * 组件默认按中文画；这里推一条 language 让它切到英文，等于顺带验了平台
+       * 推的那条 `language` 真的被接住（没有宿主时 `lang.get` 是拿不到的）。
+       * 切换之前先钉一句中文，证明默认那门是对的。
+       */
+      function setLang(next) {
+        frame.contentWindow.postMessage(
+          { __lattice: 1, type: "language", payload: { lang: next } },
+          "*",
+        );
+        return new Promise((resolve) => setTimeout(resolve, 30));
+      }
+
+      eq(
+        frame.contentDocument.querySelector(".calc-title").textContent,
+        "计算器",
+        "默认那门是中文：标题栏写着「计算器」",
+      );
+      eq(boom("1/0"), "不能除以零", "默认中文：除以零说人话");
+      await setLang("en");
+      eq(
+        frame.contentDocument.querySelector(".calc-title").textContent,
+        "Calculator",
+        "收到 language 推送后标题切成英文",
+      );
+
       // ---- 1. 优先级与结合性 ----
 
       eq(evaluate("1+2*3"), 7, "先乘后加");

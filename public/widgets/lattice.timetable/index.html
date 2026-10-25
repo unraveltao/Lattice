@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <title>Timetable</title>
+    <title>课程表</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -13,8 +13,10 @@
     -->
     <main class="tt" id="root">
       <header class="tt-head">
-        <h1 class="tt-title">Timetable <span class="tt-week" id="week"></span></h1>
-        <button class="tt-add" id="add" type="button" aria-label="Add class" title="Add class">+</button>
+        <h1 class="tt-title">
+          <span id="title-label">课程表</span> <span class="tt-week" id="week"></span>
+        </h1>
+        <button class="tt-add" id="add" type="button" aria-label="添加课程" title="添加课程">+</button>
       </header>
 
       <div class="tt-daybar" id="daybar" aria-hidden="true"></div>
@@ -25,7 +27,7 @@
           <div class="tt-grid" id="grid"></div>
           <div class="tt-hours" id="hours" aria-hidden="true"></div>
         </div>
-        <p class="tt-empty" id="empty">No classes yet — click a slot or +</p>
+        <p class="tt-empty" id="empty">还没有课——点空格子或 +</p>
       </div>
 
       <section
@@ -38,13 +40,13 @@
       >
         <form class="tt-form" id="editor-form" novalidate>
           <header class="tt-editor-head">
-            <h2 class="tt-editor-title" id="editor-title">Add class</h2>
+            <h2 class="tt-editor-title" id="editor-title">添加课程</h2>
             <span class="tt-editor-sub" id="editor-sub"></span>
           </header>
 
           <div class="tt-fields">
             <label class="tt-field">
-              <span class="tt-label">Class</span>
+              <span class="tt-label" id="lbl-name">课程</span>
               <input
                 class="tt-input"
                 id="f-name"
@@ -52,11 +54,11 @@
                 maxlength="80"
                 autocomplete="off"
                 spellcheck="false"
-                placeholder="Calculus"
+                placeholder="微积分"
               />
             </label>
             <label class="tt-field">
-              <span class="tt-label">Room</span>
+              <span class="tt-label" id="lbl-room">教室</span>
               <input
                 class="tt-input"
                 id="f-room"
@@ -70,13 +72,13 @@
           </div>
 
           <div class="tt-field">
-            <span class="tt-label">Day</span>
-            <div class="tt-daypick" id="f-days" role="group" aria-label="Day of the week"></div>
+            <span class="tt-label" id="lbl-day">星期</span>
+            <div class="tt-daypick" id="f-days" role="group" aria-label="星期几"></div>
           </div>
 
           <div class="tt-fields">
             <label class="tt-field">
-              <span class="tt-label">Starts</span>
+              <span class="tt-label" id="lbl-start">开始</span>
               <input
                 class="tt-input"
                 id="f-start"
@@ -89,7 +91,7 @@
               />
             </label>
             <label class="tt-field">
-              <span class="tt-label">Ends</span>
+              <span class="tt-label" id="lbl-end">结束</span>
               <input
                 class="tt-input"
                 id="f-end"
@@ -104,22 +106,22 @@
           </div>
 
           <div class="tt-field">
-            <span class="tt-label">Weeks</span>
-            <div class="tt-weekpick" id="f-weeks" role="group" aria-label="Which weeks"></div>
+            <span class="tt-label" id="lbl-weeks">周次</span>
+            <div class="tt-weekpick" id="f-weeks" role="group" aria-label="哪几周"></div>
           </div>
 
           <div class="tt-field">
-            <span class="tt-label">Colour</span>
-            <div class="tt-colors" id="f-colors" role="group" aria-label="Colour"></div>
+            <span class="tt-label" id="lbl-colour">颜色</span>
+            <div class="tt-colors" id="f-colors" role="group" aria-label="颜色"></div>
           </div>
 
           <p class="tt-error" id="f-error" role="alert"></p>
 
           <div class="tt-actions">
-            <button class="tt-btn is-danger" id="f-delete" type="button">Delete</button>
+            <button class="tt-btn is-danger" id="f-delete" type="button">删除</button>
             <span class="tt-actions-spacer"></span>
-            <button class="tt-btn" id="f-cancel" type="button">Cancel</button>
-            <button class="tt-btn is-primary" id="f-save" type="button">Save</button>
+            <button class="tt-btn" id="f-cancel" type="button">取消</button>
+            <button class="tt-btn is-primary" id="f-save" type="button">保存</button>
           </div>
         </form>
       </section>
