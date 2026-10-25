@@ -225,23 +225,23 @@ export const WIDGET_DENIED_ACTIONS: ReadonlySet<string> = new Set(["placement.re
 export const DANGEROUS_ACTIONS: ReadonlySet<string> = new Set(["placement.remove"]);
 
 /**
- * 一次工具调用的裁决（0003 §3 + 0006 全权）。返回三值而不是布尔：**"问"和"拒"是两件事**。
+ * 一次工具调用的裁决（0003 §3 + 0009 两个模式）。返回三值而不是布尔：**"问"和"拒"是两件事**。
  *
  * - `ask`（默认档）：会改东西的要点头；只读的直接放行
  * - `auto`：只读的和会改的都放行，**不可逆的仍然问**
  * - `readonly`：只读的放行，会改的**直接拒**。不当成"问" —— 只读档里用户
  *   已经说过"别改"，再问他一次等于把设置当建议
  *
- * `ctx.fullAccess`（0006）是**另一个轴**，不是第四档：它开着的时候连
- * `DANGEROUS_ACTIONS` 也放行（撤销还在，用户手滑的兜底不在这一步）。两条例外：
- * `readonly` 优先（用户说"别改"就一步都不许走），以及写平台自身配置的调用
- * 仍然要问 —— 能改自己权限文件的助手等于没有权限系统。
+ * `ctx.everything`（0009 的「全部」模式）是**另一个轴**，不是第四档：它开着的时候
+ * 连 `DANGEROUS_ACTIONS` 也放行（撤销还在，用户手滑的兜底不在这一步）。两条例外：
+ * `readonly` 优先（用户说"别改"就一步都不许走，模式条上会写明"被只读档压住"），
+ * 以及写平台自身配置的调用仍然要问 —— 能改自己权限文件的助手等于没有权限系统。
  *
  * 认不出来的名字一律按"会改东西"算（`needsApproval` 的默认值就是 `true`）。
  */
 export interface ApprovalContext {
-  /** 全权模式开着（0006）。缺省 = 没开 */
-  fullAccess?: boolean;
+  /** 这一轮是「全部」模式（0009）。缺省 = 内部 */
+  everything?: boolean;
   /** 这一次调用要碰的路径（`file.write` / `screen.capture`）。缺省 = 不知道 */
   path?: string;
 }
@@ -252,7 +252,7 @@ export function approvalFor(
   ctx: ApprovalContext = {},
 ): "allow" | "ask" | "deny" {
   if (mode === "readonly") return needsApproval(name) ? "deny" : "allow";
-  if (ctx.fullAccess) {
+  if (ctx.everything) {
     // 自身配置那条例外只对"会改东西"的调用有意义：读 `assistant.json` 不构成提权
     if (ctx.path && needsApproval(name) && isSelfConfigPath(ctx.path)) return "ask";
     return "allow";

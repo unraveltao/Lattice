@@ -36,9 +36,8 @@
        *   5. 预算三种触顶分得清（时间 / token），因为用户接下来的动作不一样
        */
       import {
-        FULL_ACCESS_DEFAULT_MINUTES,
-        FULL_ACCESS_MAX_MINUTES,
-        FULL_ACCESS_MINUTES,
+        ASSISTANT_MODES,
+        DEFAULT_ASSISTANT_MODE,
         HAND_GROUPS,
         HAND_READY,
         HAND_SPECS,
@@ -48,19 +47,18 @@
         SELF_CONFIG_DIRS,
         SELF_CONFIG_FILES,
         approvalSummary,
-        clampFullMinutes,
         describeHand,
         effectiveHands,
         enabledGroups,
-        fullAccessClock,
-        fullAccessRemaining,
         handGroup,
         handsPrompt,
         handsTools,
         isSelfConfigPath,
         mcpNameOk,
         mcpToolSpecs,
+        modeIgnoresSwitches,
         needsApproval,
+        normalizeMode,
         overBudget,
         readyGroups,
         splitCommandLine,
@@ -353,27 +351,32 @@
       eq(describeHand("input.type", { text: "hello" }), "Type 5 characters", "打字显示字符数");
       eq(describeHand("screen.capture", {}), "Take a screenshot", "截图那一行");
 
-      // ---- 全权模式（0006）----
+      // ---- 两个模式（0009）----
       //
-      // 全权是**另一个轴**，不是第四档审批：档说的是"平时要不要点头"，全权说的是
-      // "接下来这段时间别问"。这一页钉四件事，每一件错了都不会报错、只会静默出事：
+      // 「全权」最后落成的形状是一个**模式**，不是第四档审批、也不是定时授权：
+      // 模式管"能碰什么"，审批档管"要不要问"。这一页钉五件事，每一件错了都不会
+      // 报错、只会静默出事：
       //
-      //   1. 坏时长往**短**里夹（`0` 是"看着开了其实立刻到期"，`3000` 是 50 小时）
-      //   2. 六组临时全开，但用户存的那一份**一动都不能动**
-      //   3. 倒计时只有一个算法：没开过与过期都画成 `0:00`，不画负数
-      //   4. 平台自身配置的路径判据按**段**算，不按子串（子串会让用户看到一条
+      //   1. 坏值一律落 `internal` —— **绝不**因为一个坏值变成全开
+      //   2. 全部模式六组全开，但用户存的那一份**一动都不能动**
+      //   3. 内部模式原样返回同一个对象（不复制、不改）
+      //   4. `modeIgnoresSwitches` 是"不看开关"，不是"替你打开"
+      //   5. 平台自身配置的路径判据按**段**算，不按子串（子串会让用户看到一条
       //      无法理解的确认条）
 
-      eq(FULL_ACCESS_MINUTES.join(","), "15,30,60,120", "四个时长档位");
-      eq(FULL_ACCESS_DEFAULT_MINUTES, 30, "默认 30 分钟");
-      eq(FULL_ACCESS_MAX_MINUTES, 120, "上限 120 分钟 —— 没有「永久」这一档");
+      eq(ASSISTANT_MODES.join(","), "internal,everything", "只有两个模式");
+      eq(DEFAULT_ASSISTANT_MODE, "internal", "出厂是内部（六组手一只都不给）");
 
-      eq(clampFullMinutes(0), 30, "0 落回默认（否则是「看着开了、立刻到期」）");
-      eq(clampFullMinutes(-5), 30, "负数落回默认");
-      eq(clampFullMinutes("abc"), 30, "不是数字落回默认");
-      eq(clampFullMinutes(7.9), 7, "小数向下取整，不到一分钟不算一分钟");
-      eq(clampFullMinutes(45), 45, "中间值原样放行");
-      eq(clampFullMinutes(500), 120, "手滑多一位数也夹回上限");
+      eq(normalizeMode("everything"), "everything", "认得出 everything");
+      eq(normalizeMode("internal"), "internal", "认得出 internal");
+      eq(normalizeMode(""), "internal", "空串落回内部");
+      eq(normalizeMode("EVERYTHING"), "internal", "大小写不对也不放大权限");
+      eq(normalizeMode(true), "internal", "旧文件里的布尔也不放大权限");
+      eq(normalizeMode(undefined), "internal", "没有这个字段 = 内部");
+
+      ok(modeIgnoresSwitches("everything"), "全部模式不看开关");
+      ok(!modeIgnoresSwitches("internal"), "内部模式照开关");
+      ok(!modeIgnoresSwitches("bogus"), "认不出来的值当内部（不放大）");
 
       const FORCED = {
         files: true,
@@ -385,19 +388,10 @@
         workspace: "",
         approvalMode: "ask",
       };
-      eq(effectiveHands(HANDS_OFF, true), FORCED, "全权期间六组全开，workspace 与档位不动");
+      eq(effectiveHands(HANDS_OFF, "everything"), FORCED, "全部模式六组全开，workspace 与档位不动");
       eq(enabledGroups(HANDS_OFF), [], "调用之后用户存的那一份没被改");
-      ok(effectiveHands(ALL_ON, false) === ALL_ON, "没开全权时原样返回（同一个对象，不是复制）");
-
-      eq(fullAccessRemaining(1000, 0), 0, "没开过 = 0");
-      eq(fullAccessRemaining(1000, 999), 0, "过期 = 0（不返回负数）");
-      eq(fullAccessRemaining(1000, 1000), 0, "刚好到期 = 0");
-      eq(fullAccessRemaining(1000, 61000), 60000, "还剩一分钟");
-
-      eq(fullAccessClock(0), "0:00", "0 画成 0:00");
-      eq(fullAccessClock(-5000), "0:00", "负数也画 0:00");
-      eq(fullAccessClock(28 * 60000 + 41000), "28:41", "28:41");
-      eq(fullAccessClock(3600000 + 60000), "1:01:00", "超过一小时带小时位");
+      ok(effectiveHands(ALL_ON, "internal") === ALL_ON, "内部模式原样返回（同一个对象，不是复制）");
+      eq(effectiveHands(HANDS_OFF, "internal"), HANDS_OFF, "内部模式六组照用户存的");
 
       eq(SELF_CONFIG_FILES.length, 3, "三份自身配置");
       eq(SELF_CONFIG_DIRS.join(","), "skills,assistant-sessions", "两个自身目录");

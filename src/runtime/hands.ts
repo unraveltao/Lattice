@@ -71,68 +71,52 @@ export function enabledGroups(hands: HandsSettings): HandGroup[] {
 }
 
 // ---------------------------------------------------------------------------
-// 全权模式（0006）—— 一次会话级的定时授权
+// 两个模式（0009）—— 内部 / 全部。一个存盘的开关，不是第四档审批
 // ---------------------------------------------------------------------------
 //
-// 它**不是第四档审批**。档说的是"平时要不要点头"，全权说的是"接下来这半小时
-// 别问"；所以这里只管两件事：开关怎么算、还剩多久。要不要点头仍然是
-// `approvalFor`（多一个 `fullAccess` 入参）。
+// 「全权」最后落成的形状是一个**模式**（0006 的定时授权被 0009 推翻）：模式管
+// "能碰什么"，审批档管"要不要问"，两件事各有各的家。要不要点头仍然是
+// `approvalFor`（多一个 `everything` 入参）。
 //
-// 两条方向性决定写在这一处，别在下游各写一份：
-//   - 坏时长一律**往短里夹**（`clampFullMinutes`）—— 和 `normalizeApproval`
-//     对陌生值落回 `ask` 同一条理由：坏值不许放大权限
-//   - 全权**不改**用户存的那一份（`effectiveHands` 返回新对象）：结束之后
-//     开关与档位原样回来，用户不需要"再关一遍"
+// 三条方向性决定写在这一处，别在下游各写一份：
+//   - 坏值一律落 `internal` —— 和 `normalizeApproval` 对陌生值落回 `ask`
+//     同一条理由：坏值不许放大权限
+//   - 全部模式**不改**用户存的那一份（`effectiveHands` 返回新对象，`modeIgnoresSwitches`
+//     只影响这一轮算出来的表）：切回内部，六组开关原样回来，用户不需要"再关一遍"
+//   - 全部模式**不顺手改** `workspace` 与 `approvalMode`：一个设置不该动另一个
 
-/** 时长档位（分钟）。**没有"永久"** —— 高权限的价值是"这段时间别烦我" */
-export const FULL_ACCESS_MINUTES = [15, 30, 60, 120] as const;
-export const FULL_ACCESS_DEFAULT_MINUTES = 30;
-export const FULL_ACCESS_MAX_MINUTES = 120;
+export const ASSISTANT_MODES = ["internal", "everything"] as const;
+export type AssistantMode = (typeof ASSISTANT_MODES)[number];
+/** 出厂模式：只够管内部 —— 六组手一只都不给 */
+export const DEFAULT_ASSISTANT_MODE: AssistantMode = "internal";
 
-/**
- * 把用户给的分钟夹进 `1..=120`；0 / 负数 / NaN 落回默认 30。
- *
- * 不夹的两个后果都很具体：`0` 是"看着开了、其实立刻到期"，而手滑多打一位数的
- * `3000` 是 50 小时的全权 —— 一个**忘了关也不会停**的高权限，正是这个设计
- * 最想避免的东西。
- */
-export function clampFullMinutes(raw: unknown): number {
-  const minutes = typeof raw === "number" ? raw : Number(raw);
-  if (!Number.isFinite(minutes) || minutes <= 0) return FULL_ACCESS_DEFAULT_MINUTES;
-  return Math.min(Math.floor(minutes), FULL_ACCESS_MAX_MINUTES);
+/** 认不出来的值（含旧文件里的布尔、空串、大小写不对）一律落 `internal` */
+export function normalizeMode(raw: unknown): AssistantMode {
+  const text = typeof raw === "string" ? raw : "";
+  return (ASSISTANT_MODES as readonly string[]).includes(text)
+    ? (text as AssistantMode)
+    : DEFAULT_ASSISTANT_MODE;
 }
 
 /**
- * 全权期间六组一起开。**返回新对象**。
+ * 全部模式下六组开关**不算数**：不是"替你打开"，而是"不看它"。
  *
- * 这是"全权比 `auto` 多什么"的答案：`auto` 只有"不问"，它不管开关 ——
- * 六组全关的人拨到 `auto` 仍然什么都干不了。`workspace` 与 `approvalMode`
- * 原样带过去：它们各有各的判定，不在这儿被顺手改掉。
+ * 区别很实在 —— 前者是替用户改设置（切换那一刻就把开关写回去了），后者只在
+ * 这一轮算表时不看；切回内部，用户原来关着的仍然是关着的。
  */
-export function effectiveHands(hands: HandsSettings, fullAccess: boolean): HandsSettings {
-  if (!fullAccess) return hands;
+export function modeIgnoresSwitches(mode: AssistantMode): boolean {
+  return normalizeMode(mode) === "everything";
+}
+
+/**
+ * 这一轮真的能用的手。**返回新对象**。
+ *
+ * 内部 = 六组全关（桌面动作与组件声明的工具照常给，那些不属于手）；
+ * 全部 = 六组全开。这是"全部比内部多什么"的唯一判据。
+ */
+export function effectiveHands(hands: HandsSettings, mode: AssistantMode): HandsSettings {
+  if (!modeIgnoresSwitches(mode)) return hands;
   return { ...hands, files: true, shell: true, web: true, screen: true, input: true, mcp: true };
-}
-
-/**
- * 全权还剩几毫秒。没开过（`untilMs === 0`）与已过期都是 `0`。
- *
- * **判定只认这一个数**：前端不自己攒 `setInterval` 倒数，Rust 那边每次调用
- * 也现算 —— 两处都以"到期时刻"为准，面板重挂载之后不会显示一个假的时间。
- */
-export function fullAccessRemaining(nowMs: number, untilMs: number): number {
-  const left = untilMs - nowMs;
-  return Number.isFinite(left) && left > 0 ? Math.floor(left) : 0;
-}
-
-/** 倒计时给人看：`28:41` / `1:59:30`。面板、小窗、确认框共用这一处格式 */
-export function fullAccessClock(remainingMs: number): string {
-  const total = Math.max(0, Math.floor(remainingMs / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  const mm = hours ? String(minutes).padStart(2, "0") : String(minutes);
-  return `${hours ? `${hours}:` : ""}${mm}:${String(seconds).padStart(2, "0")}`;
 }
 
 /**
