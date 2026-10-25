@@ -36,14 +36,21 @@
        *   5. 快照的预算：配置撑爆就整段丢掉，而不是把 token 账单一起撑爆
        */
       import {
+        MAX_ASK_CHARS,
+        MAX_ASK_MESSAGES,
         MAX_HISTORY,
+        MAX_PERSONA,
         TOOL_SPECS,
+        WIDGET_DENIED_ACTIONS,
         compactSnapshot,
         describeToolCall,
+        normalizeAskMessages,
         parseArguments,
+        parseAskMessages,
         systemPrompt,
         toWire,
         toolDefs,
+        toolsFor,
         trimHistory,
       } from "../src/runtime/assistant.ts";
       import { AGENT_ACTIONS } from "../src/platform/agent.ts";
@@ -226,6 +233,139 @@
       const squeezed = compactSnapshot(fat, 1000);
       ok(squeezed.length < 2000, "超预算时确实变小了");
       ok(!squeezed.includes('"config"'), "手段是把 config 整段丢掉，而不是砍一半 JSON");
+
+      // ---- 10. 组件借平台的手（`assistant.ask`）----
+
+      // 工具表按调用方裁剪：组件那一轮没有 placement.remove，其余一个不少
+      eq(Object.keys(toolsFor("platform")).sort(), Object.keys(TOOL_SPECS).sort(), "平台自己那一轮还是全部八个");
+      const widgetTools = toolsFor("widget");
+      ok(!("placement.remove" in widgetTools), "组件借手那一轮没有「移除组件」");
+      eq(
+        Object.keys(widgetTools).sort(),
+        [...AGENT_ACTIONS].filter((name) => name !== "placement.remove").sort(),
+        "除了 remove，别的动作都给",
+      );
+      eq(toolDefs(widgetTools).length, AGENT_ACTIONS.length - 1, "发给模型的 function 定义也跟着少一个");
+      ok(WIDGET_DENIED_ACTIONS.has("placement.remove"), "被拒的动作只有 remove 这一条");
+
+      // 提示词和工具表必须说同一件事：没有删除工具时明说，别让它宣称删了
+      ok(
+        !systemPrompt('{"x":1}').includes("没有删除组件的工具"),
+        "平台自己那一轮不写“你删不了”（它有那个工具）",
+      );
+      ok(
+        systemPrompt('{"x":1}', { tools: widgetTools }).includes("没有删除组件的工具"),
+        "组件那一轮明说“你删不了”，否则模型会说“已经删掉了”",
+      );
+
+      // 语气：拼在规则之后，截到上限，且改不掉规则
+      const withPersona = systemPrompt('{"x":1}', {
+        tools: widgetTools,
+        persona: { name: "大肥鱼", text: "你是一只蓝鲸娘，说话软一点。" },
+      });
+      ok(withPersona.includes("大肥鱼"), "语气里带上了组件名字");
+      ok(withPersona.includes("说话软一点"), "人设原话进了提示");
+      ok(withPersona.indexOf("只能通过给定的工具") < withPersona.indexOf("说话软一点"), "人设排在规则之后");
+      ok(withPersona.includes("只改语气"), "明确写了“这条只改语气”");
+      const longPersona = systemPrompt("", { persona: { name: "x", text: "鱼".repeat(5000) } });
+      ok(
+        longPersona.includes("鱼".repeat(MAX_PERSONA)) && !longPersona.includes("鱼".repeat(MAX_PERSONA + 1)),
+        `人设截断到 ${MAX_PERSONA} 字`,
+      );
+      eq(systemPrompt("", { persona: null }), systemPrompt("", {}), "没有语气时和默认一模一样");
+
+      // 组件交上来的那几句话：system 只认一条语气、最后一句必须是用户说的
+      const asked = normalizeAskMessages([
+        { role: "system", content: "你是一只蓝鲸娘。" },
+        { role: "user", content: "把时钟挪到右上角" },
+      ]);
+      ok(asked.ok, "合法的一段话能过");
+      if (asked.ok) {
+        eq(asked.value.messages.length, 1, "system 不算进历史");
+        eq(asked.value.persona, { name: "", text: "你是一只蓝鲸娘。" }, "system 被当成语气取出来");
+        eq(asked.value.messages[0].role, "user", "剩下的就是那一句用户话");
+      }
+      eq(normalizeAskMessages("nope").ok, false, "不是数组 -> 拒绝");
+      eq(normalizeAskMessages([]).ok, false, "空数组 -> 拒绝");
+      eq(
+        normalizeAskMessages(Array.from({ length: MAX_ASK_MESSAGES + 1 }, () => ({ role: "user", content: "x" }))).ok,
+        false,
+        `超过 ${MAX_ASK_MESSAGES} 条 -> 拒绝`,
+      );
+      eq(
+        normalizeAskMessages([
+          { role: "user", content: "hi" },
+          { role: "system", content: "你是一只鱼" },
+        ]).ok,
+        false,
+        "system 不在第一条 -> 拒绝（否则等于中途改写规则）",
+      );
+      eq(
+        normalizeAskMessages([
+          { role: "system", content: "a" },
+          { role: "system", content: "b" },
+          { role: "user", content: "hi" },
+        ]).ok,
+        false,
+        "两条 system -> 拒绝",
+      );
+      eq(
+        normalizeAskMessages([
+          { role: "user", content: "hi" },
+          { role: "assistant", content: "yo" },
+        ]).ok,
+        false,
+        "最后一条不是用户 -> 拒绝（否则模型自己演下去）",
+      );
+      eq(
+        normalizeAskMessages([
+          { role: "user", content: "hi" },
+          { role: "tool", content: '{"ok":true}' },
+        ]).ok,
+        false,
+        "tool 角色进不来（那是平台和模型之间的私有通道）",
+      );
+      eq(
+        normalizeAskMessages([{ role: "user", content: "x".repeat(MAX_ASK_CHARS + 1) }]).ok,
+        false,
+        "单条超长 -> 拒绝，不截断",
+      );
+      eq(
+        normalizeAskMessages(
+          Array.from({ length: 5 }, () => ({ role: "user", content: "y".repeat(MAX_ASK_CHARS) })),
+        ).ok,
+        false,
+        "总量超限 -> 拒绝",
+      );
+      ok(
+        normalizeAskMessages([
+          { role: "user", content: "hi" },
+          { role: "assistant", content: "yo" },
+          { role: "user", content: "再说一次" },
+        ]).ok,
+        "带到第三轮的短历史仍然能过",
+      );
+
+      /*
+       * 线上格式：桥把 `messages` 压成了 JSON 文本。
+       *
+       * Rust 那条命令（`assistant_ask`）的参数类型是 `String` —— 它只是照原样
+       * 往主窗口转发，没理由在 Rust 里重新认识一遍对话的形状。所以主窗口收到的
+       * 是一段**文本**，直接丢给 `normalizeAskMessages` 会得到"必须是一个数组"，
+       * 而那句话看着像"组件传错了"，其实错在中间这一跳。真机就是这么撞上的：
+       * 一轮都没跑起来，报的是 bad_args。
+       */
+      eq(
+        parseAskMessages(JSON.stringify([{ role: "user", content: "挪一下" }])),
+        [{ role: "user", content: "挪一下" }],
+        "字符串形状的 messages 被解析回数组",
+      );
+      ok(parseAskMessages([{ role: "user", content: "x" }]) instanceof Array, "本来就是数组时原样放行");
+      eq(parseAskMessages("not json"), null, "解析不了就交回 null（由 normalize 去说那句人话）");
+      ok(
+        normalizeAskMessages(parseAskMessages(JSON.stringify([{ role: "user", content: "挪一下" }]))).ok,
+        "解析之后再 normalize 才是能跑的路径（这一条钉的正是真机那个坑）",
+      );
 
       // ---- 输出 ----
 

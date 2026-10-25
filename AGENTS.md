@@ -12,7 +12,7 @@
 
 **棂 / Lattice** —— 可扩展的 Windows 桌面小组件平台。第三方用纯 HTML/CSS/JS 写组件，平台负责把它们安全地放到桌面上。
 
-当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志，`npm run agent -- state` 看它干了什么），数据平面（组件把能力声明成工具）还没做；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，key 只在 Rust 里，工具调用只走同一套 8 个动作，组件那侧只有 `llm:chat`）。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
+当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志，`npm run agent -- state` 看它干了什么），数据平面（组件把能力声明成工具）还没做；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，key 只在 Rust 里，工具调用只走同一套 8 个动作；组件那侧只有 `llm:chat`，另有一条**借手**的 `assistant.ask` —— 桌宠这类组件说一句话，平台替它跑一整轮（工具表砍掉删除），要 `desktop:control`）。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
 
 想先知道"为什么现在是这样"，读 [ROADMAP 的「被推翻的九个决定」](./docs/ROADMAP.md#被推翻的九个决定)——每个决定都写着当初怎么选、被什么撞翻、现在怎么补。
 
@@ -79,7 +79,7 @@ src/
     screen-fit.ts         纯几何：锚点选屏、夹紧（入参一律物理像素，`tests/screen-fit.html` 钉着）
     close-guard.ts        ✕ 该不该认这一下：指针序列 + 命中测试（纯函数，`tests/close-guard.html` 钉着）
     agent.ts              agent 动作执行器：白名单动作走真 store，回快照（`tests/agent.html` 57 条）
-    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、system prompt、历史裁剪、OpenAI 消息形状、快照压缩（`tests/assistant.html` 83 条）
+    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、工具表裁剪（`toolsFor`）、system prompt、人设片段、历史裁剪、线上形状（`parseAskMessages` / `normalizeAskMessages`）、OpenAI 消息形状、快照压缩（`tests/assistant.html` 114 条）
     align-guides.ts       拖动时的对齐吸附：每条轴只挑一条获胜线，容器边界也是候选、且认原点；`guideLines` 再把获胜线变成一段局部虚线（以被拖的那张为中心、两端各伸出半个卡 + 48px，再夹进容器）（纯函数，画布与桌面共用，`tests/align-guides.html` 钉着）
     library-search.ts     组件库搜索：切词 + 单包命中判定（纯函数，`tests/library-search.html` 钉着）
     i18n.ts               界面文案的中英切换：**key 就是英文原句**、缺翻译退化成英文、`useT()`（组件）/ `t()`（模块）/ `setLanguage()` / `languagePayload()`（给组件看的"现在是哪一门"，`tests/i18n.html` 钉着）
@@ -390,7 +390,7 @@ if (data.type === "language") { lang = data.payload.lang; repaint(); }
 2. **协议只认 OpenAI 兼容形状，归一化只有一处**。`llm_policy::normalize_base` 补 `https://`、去尾斜杠、剥掉用户顺手粘进来的 `/chat/completions` `/completions` `/models`；`http://` **只放回环**（`127.0.0.1` / `localhost` / `[::1]`，IPv6 要走 `host_of` 拆括号，别用 `split(':')`）。别在 `AssistantPanel.tsx` 里再补一套——两套规则迟早不一致，症状是"设置里能测通、一发消息就 404"。
 3. **加一个工具要改两处，且必须相等**：`runtime/agent.ts` 的 `AGENT_ACTIONS`（真执行器）+ `runtime/assistant.ts` 的 `TOOL_SPECS`（名字、参数名、类型、required）。`tests/assistant.html` 会比对两边——名字集合相等、每个动作的参数键与执行器的 `EXECUTOR_KEYS` 对得上、`required` 是子集。**别在 `AGENT_ACTIONS` 之外新写一个"给模型用的"执行器**：那等于给模型开一条不受审计、不走 store 的旁路。
 4. **工具循环只在 `platform/assistant.ts`**：≤6 步（`MAX_STEPS`）、每步把执行器返回的 JSON 字符串当 `tool` 消息回填、`shouldStop` 让"停止"立刻断掉。Rust 侧另有两道闸：`MAX_TOOL_STEPS = 8`、请求间 300ms（`MIN_GAP`，在 `spawn_blocking` 里 sleep）。
-5. **组件永远没有工具**。`bridge.ts` 的 `llm.chat` 一律 `tools: null`，模型真要调工具就抛 `internal`（"widgets cannot use tools"）。组件能用的只有 `llm.chat` + `llm.status`，权限 `llm:chat`（标签 "Use my AI model"）。这条是不变量 2 的延伸：**能改变桌面的是平台，不是组件**，否则"你信不信任这段代码"就变成"你敢不敢让它动你的布局"。
+5. **工具只借不送**。`llm.chat` 永远 `tools: null`（模型真要调工具就抛 `internal`，"widgets cannot use tools"）；组件想要手，只有 `assistant.ask` 这一条（权限 `desktop:control`，标签 "Rearrange my desktop"）。它是**借**：整轮循环仍然只在主窗口里跑，桥那边只是一次转发，工具表用 `toolsFor("widget")` 砍掉 `placement.remove`（用户能自己按 ✕，"让桌宠替我删组件"不行），系统提示里另加一句告诉模型这件事。三条别拆：① 组件宿主里不许跑执行器 —— 桌面窗口连 store 都没有，跑了就是拿旧快照往回写（和下面第 10 条小窗那个坑同源）；② 同一窗口上一轮没回来时新的直接拒，不排队；③ 它慢，180 秒（`ASK_TIMEOUT`）不是 8 秒，SDK 那侧也单独给了 185 秒。这条是不变量 2 的延伸：**能改变桌面的是平台，不是组件**，否则"你信不信任这段代码"就变成"你敢不敢让它动你的布局"。
 6. **错误话要分得清是谁的错**。`describe_status` 把 401/403 说成"provider 拒了这把 key（HTTP 401）—— 去 Assistant settings 换一把"、404 提 `/v1`、429 说配额。别统一成"网络问题"——那条教训是拿更新器换来的（见不变量 16）。
 7. **审计只记形状不记内容**：`assistant.chat` 记模型名与字符数，`assistant.models` 记主机。`agent.rs::audit` 已改成 `pub(crate)`，只此一处复用。
 8. **`llm_policy.rs` 必须保持不引 crate**。它要能在写不了 `target/debug/deps` 的机器上用 `rustc --test` 单独跑（把文件 `#[path]` 进一个壳子即可）——所以 JSON 读取是手写的（深度上限 32），`llm.rs` 才引 `serde_json` 拼返回值。往 `llm_policy.rs` 里加 `use serde::…` 会让那 21 条测试整批失去可运行性。
@@ -635,7 +635,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 ## 11. 验证
 
 - `npm run typecheck` —— 必跑，当前是干净的
-- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（34 页 / 1110 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。
+- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（40 页 / 1643 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。
 - **断言页别等 iframe**。`--virtual-time-budget` 会让虚拟时钟一路快进到 9 秒，而 iframe 的 `load` 走真实网络 —— 谁先到看运气，快进赢了就 dump 到一个空的 `<pre>`，`test:browser` 报"0 条 —— 一条断言都没跑完"。那个症状和"页面没有断言"一模一样，别去调 budget（调大只是让赌局更偏一点，还是赌）。正确做法是**同步加载**：组件把纯逻辑挂在 `window.__latticeXxx` 上，普通 `<script src>` 引进来就能断言；拿不到那个对象时也要先 `log(false, …)` 再 `flush()`，否则页面永远吐 0 条。
 - 改了组件 UI：`npm run dev` 后在浏览器里看；要截固定尺寸的图，用 Edge headless：
   ```bash
@@ -649,7 +649,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 - 改了窗口行为：只能 `npm run tauri:dev` 实机看。**改 Rust 会重启应用**；`desktopMode` 与 `restoreOnLaunch` 都落盘，重启后组件窗口会自己回来（位置和数据都在），不用重新投放。
 - **重启前先确认没有孤儿进程。** 杀掉 dev 任务不一定杀掉 `lattice.exe`：孤儿实例还活着时会**用它内存里的旧状态覆盖 `state.json`**（手动改文件会被它盖回去），而且它占着 WebView2 的用户数据目录，新进程会以 `HRESULT 0x800700AA "The requested resource is in use."` 在 `setup` 里 panic（表现为"改完 Rust 应用起不来了"，其实跟代码无关）。判据：`Get-Process lattice` 为空。真要改 `state.json` 就先退出应用。
 - 改了协议 / 安装链路：拿 `examples/counter` 当样本 —— 拖进窗口 → 出现在「已安装」→ 放到画布 → 授权 `storage` → 点几下 → 看 `%APPDATA%\com.iron-tom.lattice\widget-data\demo.counter.json` 有没有写进去。协议本身只能在应用里探（浏览器态没有 Rust，`lattice-widget.localhost` 压根不解析）：预期真文件 200 + 正确 `Content-Type`，`..` / 大写 id / 不存在的组件全部 404。
-- 改了 **SDK**（`packages/sdk/lattice.js`）：改完**立刻** `npm run sdk:sync`，再 `npm run test:sdk`（2 条，`node:test`，不需要 dev server：所有内嵌副本必须和源字节一致、`SUPPORTED_SDK` 的主次版本必须和 SDK 包版本对得上）。行为本身看 `tests/sdk.html`（34 条）—— 它自带一个假宿主，覆盖请求配对、超时、`permission_denied`、主题长名 / 别名、存储往返、`store-changed`、`config-changed`、`tick` 路由、`stop()`、网络透传、顶层窗口立刻失败。**跨窗口的断言要用 `waitFor` 轮询**：`postMessage` 是宏任务，`await` 子窗口的 promise 只排微任务，直接断言会偶发失败。
+- 改了 **SDK**（`packages/sdk/lattice.js`）：改完**立刻** `npm run sdk:sync`，再 `npm run test:sdk`（2 条，`node:test`，不需要 dev server：所有内嵌副本必须和源字节一致、`SUPPORTED_SDK` 的主次版本必须和 SDK 包版本对得上）。行为本身看 `tests/sdk.html`（47 条）—— 它自带一个假宿主，覆盖请求配对、超时、`permission_denied`、主题长名 / 别名、存储往返、`store-changed`、`config-changed`、`tick` 路由、`stop()`、网络透传、`assistant.ask`（参数形状 + 它自己那条 185 秒超时盖过实例的短 `timeout`）、顶层窗口立刻失败。**跨窗口的断言要用 `waitFor` 轮询**：`postMessage` 是宏任务，`await` 子窗口的 promise 只排微任务，直接断言会偶发失败。
 - 改了 **`.lattice` 打包 / 安装**：`npm run pack:widget -- examples/counter`，产物在 `dist-packs/`（已 gitignore）。打包要验**确定性**：连打两次，`sha256` 必须一样。解包侧用壳子跑 `package_policy.rs` + `package.rs` 的 15 条（含篡改 CRC、路径穿越、绝对路径），装完看 `%APPDATA%\com.iron-tom.lattice\widgets\<id>\` 里是不是原样。交叉验一下更稳：Node 打的包用 Python 的 `zipfile.ZipFile(...).testzip()` 读一遍。
 - 改了**商店 / 签名 / 更新**：
   - 纯逻辑：`tests/semver.html`（44 条）+ `tests/catalogue.html`（43 条）+ `tests/store-ui.html`（17 条，挂的是真的 `LibraryPanel`）。前两个是纯函数，第三个验的是"接上 React 之后还对不对"（按钮接没接上回调、文案用的是不是过滤后的数据）。

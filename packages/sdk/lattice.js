@@ -148,19 +148,24 @@ export function createLattice(options = {}) {
   /**
    * 调一个桥方法。失败一律 reject 一个 `LatticeError`，**不抛裸 Error** ——
    * 组件要靠 `code` 决定是降级还是提示授权。
+   *
+   * `options.timeout` 能盖掉这一条的默认超时：有几条路天生慢得多
+   * （`assistant.ask` 是一整轮带工具的对话，平台那边按 180 秒算），
+   * 用默认的 3 秒会把它误判成"宿主没响应"。
    */
-  function call(method, params) {
+  function call(method, params, options) {
     if (!hosted) {
       return Promise.reject(
         new LatticeError("internal", "this document is not running inside a Lattice host"),
       );
     }
+    const ms = options && Number.isFinite(options.timeout) ? options.timeout : timeout;
     return new Promise((resolve, reject) => {
       const id = ++sequence;
       const timer = setTimeout(() => {
         pending.delete(id);
         reject(new LatticeError("internal", "bridge call timed out: " + method));
-      }, timeout);
+      }, ms);
 
       pending.set(id, { resolve, reject, timer, method });
       post({ type: "request", id, method, params });
@@ -440,6 +445,42 @@ export function createLattice(options = {}) {
 
       /** 用户到底配没配模型。不需要权限 —— 组件据此决定显示输入框还是提示去设置。 */
       status: () => call("llm.status"),
+    },
+
+    assistant: {
+      /**
+       * 让平台的 assistant **替你动桌面**。要 `desktop:control`。
+       *
+       * 和 `llm.chat` 的区别是"有没有手"：这条路平台跑完一整轮带工具的对话
+       * （系统提示 + 桌面快照 + ≤6 步 + 执行 + 审计），你拿回**一句回话**和
+       * **这次真做了什么**的一行行明细。你决定不了执行什么，也拿不到工具调用本身。
+       *
+       * 三条要知道的：
+       * - **没有删除动作**。用户可以自己按 ✕，但"让桌宠替我删组件"不行。
+       * - **`system` 位置只当人设**：平台把它塞在规则之后、快照之前，截 1200 字，
+       *   覆盖不了平台的任何一条规则。
+       * - **很慢**：一轮最多 6 次模型往返，平台按 180 秒超时。别在关键路径上调它，
+       *   也别等它回来才画第一帧 —— 发了就显示"我想想……"。
+       *
+       * 失败：没授权是 `permission_denied`（`permission === "desktop:control"`），
+       * 上一轮还没回来 / 用户没配模型 / 供应商报错都是 `internal`，`message`
+       * 是可以直接给用户看的一句话。
+       *
+       * @param {{messages: Array<{role: "system"|"user"|"assistant", content: string}>, persona?: string}} input
+       * @returns {Promise<{text: string, actions: Array<{detail: string, ok: boolean, error?: string}>}>}
+       */
+      ask: (input) => {
+        const body = input || {};
+        const params = { messages: Array.isArray(body.messages) ? body.messages : [] };
+        // 没给人设就**不带这个键**：带一个 undefined 会让宿主收到一个"存在但空"的字段
+        if (typeof body.persona === "string") params.persona = body.persona;
+        return call(
+          "assistant.ask",
+          params,
+          // 比平台那 180 秒再松 5 秒：先超时的应该是平台，不是这里
+          { timeout: 185000 },
+        );
+      },
     },
 
     /** 读系统时间。要 `clock`。 */

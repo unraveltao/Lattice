@@ -247,6 +247,12 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 > **本条已被第 4 节取代。** 最后的答案是第三条路：**组件只拿嘴（`llm.chat`，不带工具），
 > 手留在平台手里**（assistant 面板 + 现有的八个动作）。既没有给组件开 `127.0.0.1`，
 > 也没有让组件能改布局。
+>
+> **v0.10 末尾又往前走了一步，但没走回头路。** 桌宠要"听一句话、替我把时钟挪过去"，
+> 于是多了 `assistant.ask`（权限 `desktop:control`）—— 组件**借**平台的手，而不是长出一只
+> 自己的：整轮工具循环仍然只在主窗口里跑，工具表还砍掉了 `placement.remove`。上面那两条
+> 依然没做：`127.0.0.1` 没开口子，组件也没有一条"自己调执行器"的路。见 §4.7 与
+> [WIDGET_SPEC §3.5](./WIDGET_SPEC.md)。
 
 ## 4. D 内置 assistant（模型在平台里）[已实现，v0.10]
 
@@ -259,6 +265,7 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 | --- | --- | --- | --- |
 | A 控制平面 | 外部 agent（Claude Desktop / CLI） | HTTP `POST /rpc` + 八个动作 | `127.0.0.1:<port>` |
 | D 内置 assistant | **平台自己**带模型 | 同一个执行器（`runAgentAction`） | 桌面小窗（Ctrl+K，能拖；浏览器里退回主窗口抽屉） |
+| W 组件借手 | 组件里的对话（桌宠、便签上的小助手） | 同一个执行器，工具表**砍掉 `placement.remove`** | 桥上的 `assistant.ask`（要 `desktop:control`），见 §4.7 |
 
 两条路的执行器**是同一个**（`platform/agent.ts`）。这不是省事，是安全模型：白名单只有一份，
 "agent 能改什么"的答案不会因为入口不同而不同。区别只在"谁在说"和"谁在听"。
@@ -297,8 +304,9 @@ DeepSeek / OpenAI / Kimi / Qwen / Ollama / LM Studio —— 而"再多支持一�
 
 ### 4.5 三条边界，别拆
 
-1. **组件的 `llm.chat` 永远不带工具。** 组件的嘴和平台的手分开，是为了让"给组件授权"
-   不等于"给组件改桌面的权力"。
+1. **组件的嘴和平台的手分开。** `llm.chat` 永远不带工具；组件想有手，只能借
+   `assistant.ask`（另一项权限、另一张更小的工具表），没有第三条路 —— 尤其没有
+   "组件直接调 `runAgentAction`"。给组件授权，不等于把布局交给它。
 2. **循环有上限**（6 轮，`MAX_STEPS`）。模型可以连着做几步，但不能自己转圈把额度烧完；
    Rust 那边还有 300ms 节流兜底。
 3. **错误要说人话。** 401 是"key 被拒"，404 是"base URL 多了或少了 `/v1`"，429 是"额度/频率"。
@@ -330,6 +338,38 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 ✕ 只是 `hide()`（webview 和那轮对话都留着）、位置只在拖动结束时写
 `assistant-window.json`（拖的过程中不碰盘）。
 
+### 4.7 组件借手（`assistant.ask`）[已实现，v0.10 末尾]
+
+桌宠那类组件要的东西不是"再来一个聊天窗"，而是"我说一句、你替我摆一下"。这条路
+（桥上叫 `assistant.ask`，权限 `desktop:control`）的形状是这样的：
+
+```
+组件 iframe ── lattice.assistant.ask({messages, persona}) ──► widgetHost/WidgetFrame
+             ── invoke("assistant_ask") ──► agent.rs ──{op:"ask"}──► 主窗口
+                                                                    ── runWidgetTurn()
+                                                                       = 同一个循环 + toolsFor("widget")
+                                                                    ◄── {text, actions}
+```
+
+四条都是"不许拆"级别的：
+
+1. **循环只在主窗口里跑。** 组件那两个宿主里，桌面窗口 (`widgetHost.ts`) 连 store 都没有，
+   让它自己跑工具循环等于拿启动时的旧快照往回写 —— 和 §4.6 小窗那条是同一个坑，代价也
+   一样（丢用户布局）。所以 `assistant.ask` 在 Rust 侧**只是一次转发**，真正的执行器是主窗口
+   里那份 store。
+2. **工具表是砍过的，不是照抄的。** `toolsFor("widget")` 把 `placement.remove` 摘掉：模型
+   在组件这条路上一旦调它，拿到的是"没有这个工具"，系统提示里另外写死了一句"这一轮你没有
+   删除组件的工具，让用户自己按 ✕"。删一块便签是**不可撤销**的（`removePlacement` 的 8 秒
+   `Undo` 只在 UI 上），而"桌宠误会了一句话"太容易发生。
+3. **一轮只能有一条。** 同一个窗口里上一轮没回来时新的直接拒（`a turn is already running`）。
+   不排队：两轮并发改同一份布局，结果一定有一半是错的，而且没有任何人能解释清楚哪一半对。
+4. **超时是 180 秒，不是 8 秒。** 一轮最多 6 次模型往返，`call_frontend` 那个 8 秒的默认值
+   会把正常的一轮砍断。`assistant.rs` 里 `ASK_TIMEOUT` 单列；SDK 那侧同样给这一条单独一个
+   185 秒（默认 3 秒会先把组件坑掉）。审计写 `widget.ask`，只记组件 id 与字数。
+
+**组件拿到的只有 `{text, actions}`。** 它看不到工具调用、看不到快照、也不能决定执行什么
+（那是"借"，不是"长手"）。作者视角的契约见 [WIDGET_SPEC §3.5](./WIDGET_SPEC.md)。
+
 ## 5. 明确不做（v1）
 
 **后台自主调控。** 比如"每天按天气自动换主题"——那需要一个常驻订阅，而人在环（用户说
@@ -343,7 +383,8 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 | `platform/agent.ts`（动作执行器） | `tests/agent.html` 57 条，跑的是**真 store** |
 | `scripts/lattice-agent.mjs`（客户端） | `npm run test:agent`，14 条，起假端点测请求形状、`say` 的整句传递与退出码 |
 | `llm_policy.rs`（地址 / 请求体 / 响应 / 工具调用 / 错误翻译） | 21 条 `rustc --test`，见 `.scratch/llm-test.rs` |
-| `runtime/assistant.ts`（工具表 / 历史裁剪 / 快照预算） | `tests/assistant.html` 83 条 |
+| `runtime/assistant.ts`（工具表 / 工具表裁剪 / 人设 / 历史裁剪 / 快照预算） | `tests/assistant.html` 114 条 |
 | `assistant_window.rs` + 小窗那条转发 | **2026-10-25 实机验过**：`assistant_window_toggle` 回 `true`，CDP 查到 `assistant.html` 的 DOM（标题栏、面板、`Assistant · deepseek-v4.1-flash`、跟随主题），窗口里说一句 → 工具真的挪了桌宠（`lattice.pet#demo01` → 60,80）并回话；藏起来再叫回来还是同一个 webview、同一轮对话；拖完 `assistant-window.json` 落成 `{x:1300.0,y:444.0}` |
 | `llm.rs` + 工具循环 + 组件那条路 | **2026-10-25 实机验过**：先起一个假的 OpenAI 兼容服务（`.scratch/fake-llm.mjs`），真点开、真打字 —— 卡片从 (32,40) 挪到 (300,120)，气泡里出现"✓ 移动 lattice.pet#demo01"和回复；两个 pet iframe 的 `llm.chat` 都回到 `{ok:true,text:"…"}`；把 key 换成错的之后 `listModels` 报"the provider rejected the API key (HTTP 401)"。**之后换成了真厂商**（天枢 Dubhe 网关，OpenAI 兼容根是 `…/v1/8686/v1`）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受 |
+| `assistant_ask` + 组件那条路（借手） | **2026-10-25 实机验过**：先在属性面板给 `lattice.pet` 勾上「替我调整桌面」（`grants` 变成 `["llm:chat","desktop:control"]`，卡片当场按新权限重载），再从主窗口 `invoke("assistant_ask", { widgetId: "lattice.pet", messages: JSON.stringify([{ role: "user", content: "把 lattice.pet#49898d37 这只挪到 700, 240，然后置顶" }]), persona: "你是一只桌宠…" })` —— 真网关回"挪到 700, 240 了，也置顶了…"，`actions` 两条都 `ok`，那只从 `(24,460)` 到 `(700,240)`；审计是 `widget.ask · lattice.pet · 71 chars`，加每一步的 `assistant.chat`（`tools: placement.move, placement.front`）。**删除真被挡住**：问"把 lattice.pet#demo01 删掉"，回的是"我删不了自己呀，手里没有删除工具。你在画布上点一下那个 ✕ 就行。"，`actions: []`，`placements` 一个字没动。**组件自己那条路也走通了**：画布里的桌宠点开气泡打"把 lattice.pet#9c90cc09 挪到 900, 100" → 气泡里出现回话加一行"· 移动 lattice.pet#9c90cc09"，盘上那只真的到了 `900,100`。中途踩的坑（`messages` 在线上是 JSON 文本）见 ROADMAP 那条 |
 | agent 端点的 CLI 往返 | **没验过** —— 要起 `tauri:dev` 并在端点开着的时候正好敲命令。起之前先确认没有残留的 `lattice.exe`（孤儿进程会用内存里那份盖掉 `state.json`） |

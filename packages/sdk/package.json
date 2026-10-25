@@ -1,6 +1,6 @@
 {
   "name": "@lattice/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Client SDK for 棂 / Lattice widgets — one dependency-free ES module, no build step",
   "type": "module",
   "main": "lattice.js",

@@ -16,12 +16,15 @@ import {
   compactSnapshot,
   describeToolCall,
   parseArguments,
+  systemPrompt,
   toWire,
+  toolsFor,
   trimHistory,
   toolDefs,
   type AssistantReply,
   type ChatMessage,
   type DeskSnapshot,
+  type ToolSpec,
 } from "../runtime/assistant";
 import { t } from "../runtime/i18n";
 import type { WidgetRecord } from "../runtime/registry";
@@ -123,6 +126,14 @@ export interface TurnOptions {
   onEvent: (event: TurnEvent) => void;
   /** 用户按了停止 / 面板关了。每轮开始和每次工具调用前都会看一眼 */
   shouldStop?: () => boolean;
+  /**
+   * 这一轮给模型哪些工具。默认全部八个。
+   *
+   * 组件借平台的手时传 `toolsFor("widget")`（少 `placement.remove`），**并且**
+   * 系统提示要用同一个表生成 —— 两边不一致的症状是"模型调了一个它没被给的工具"，
+   * 或者"它能调，但提示里说它做不到"。
+   */
+  tools?: Record<string, ToolSpec>;
 }
 
 /**
@@ -131,7 +142,8 @@ export interface TurnOptions {
  * 返回 `false` 表示是被 `shouldStop` 叫停的，界面可以据此不写"完成"。
  */
 export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
-  const { messages, surface, onEvent, shouldStop } = options;
+  const { messages, surface, onEvent, shouldStop, tools } = options;
+  const defs = toolDefs(tools);
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
     if (shouldStop?.()) return false;
@@ -139,7 +151,7 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
     const wire = toWire(trimHistory(messages));
     const reply = await invoke<AssistantReply>("llm_chat", {
       messages: JSON.stringify(wire),
-      tools: JSON.stringify(toolDefs()),
+      tools: JSON.stringify(defs),
     });
 
     const text = (reply.text ?? "").trim();
@@ -200,4 +212,58 @@ export async function runAssistantTurn(options: TurnOptions): Promise<boolean> {
  */
 export function describeDesktop(records: WidgetRecord[]): string {
   return compactSnapshot(agentSnapshot(records));
+}
+
+/** 组件借手那一轮的结果。气泡要的两样：说什么、做了什么 */
+export interface WidgetTurnOutcome {
+  text: string;
+  actions: Array<{ detail: string; ok: boolean; error?: string }>;
+}
+
+/**
+ * 组件借平台的手：跑**完整**的一轮（模型 → 工具 → 模型 …），返回结果。
+ *
+ * 三条设计要点，每条都对应一个"本来可以更省事"的做法：
+ *
+ * 1. **循环在这儿，不在组件里**。组件跑循环就得给组件一份带工具的 `llm.chat`，
+ *    那等于把"能改布局的模型"塞进不可信代码里。这里反过来：组件的 iframe 从头
+ *    到尾只发一句 `assistant.ask`，拿到的是文字和"我做了什么"。
+ * 2. **工具表是 `toolsFor("widget")`**（少 `placement.remove`），而且系统提示、
+ *    工具定义用的是**同一个表** —— 两边不一致的症状是模型调一个没给它的工具。
+ * 3. **执行仍然走 `localSurface` → `runAgentAction`**：同一份 store、同一份撤销、
+ *    同一份落盘。这条路上没有第二个执行器，也没有第二种"谁在说"能绕开白名单。
+ */
+export async function runWidgetTurn(options: {
+  messages: ChatMessage[];
+  persona: { name: string; text: string } | null;
+  records: WidgetRecord[];
+}): Promise<WidgetTurnOutcome> {
+  const { messages, persona, records } = options;
+  const surface = localSurface(records);
+  const tools = toolsFor("widget");
+  const snapshot = await surface.snapshot();
+
+  const conversation: ChatMessage[] = [
+    { role: "system", content: systemPrompt(snapshot, { tools, persona }) },
+    ...messages,
+  ];
+
+  let text = "";
+  const actions: WidgetTurnOutcome["actions"] = [];
+  await runAssistantTurn({
+    messages: conversation,
+    surface,
+    tools,
+    onEvent: (event) => {
+      if (event.type === "text") {
+        // 模型可能先说一句、调完工具再说一句。气泡只要最后那句 —— 前面的
+        // "我看看" 在气泡里只会把真正那句挤出去
+        text = event.text;
+      } else if (event.type === "tool") {
+        actions.push({ detail: event.detail, ok: event.ok, error: event.error });
+      }
+    },
+  });
+
+  return { text: text.trim(), actions };
 }

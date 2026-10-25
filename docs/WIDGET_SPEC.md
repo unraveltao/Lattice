@@ -446,10 +446,13 @@ if (data.type === "config-changed") {
 | `shell:open` | `shell.open`（用系统默认浏览器打开 http/https 链接，见 §3.3） | 可用 |
 | `agent:activity` | `agent.activity`（本机 agent 做过的操作，读的是审计日志） | 可用 |
 | `llm:chat` | `llm.chat`（用**用户自己配的**模型说一句话，花的是用户的额度，见 §3.4） | 可用 |
+| `desktop:control` | `assistant.ask`（让平台的模型**替你动桌面**，见 §3.5） | 可用 |
 
 只申请你真正用到的。申请一堆用不上的权限，用户会直接不装。
 
 `llm:chat` 是唯一一条"会花钱"的权限：它不碰网络、拿不到 key，但每次调用都在消耗用户充进去的额度。所以它和其它权限一样**逐项授权、按 widgetId**，而且默认拒绝 —— 授权界面上那行字叫 "Use my AI model"，用户看得懂自己点了什么。
+
+`desktop:control` 比 `llm:chat` 更重一层：它不但花钱，还可能**改变用户摆好的布局**。所以它是一条**独立的权限**，不是 `llm:chat` 的附加项 —— 用户装一块桌宠，不该被迫接受"它还能挪我的时钟"。授权界面上那行字叫 "Rearrange my desktop"。
 
 `media:control` 一项权限同时管读和按。拆成"读会话"和"控制播放"两行，用户没法凭一行字分清区别，只会多点一次授权。
 
@@ -558,6 +561,33 @@ const { text } = await lattice.llm.chat({
 
 平台侧每次调用都会写一行审计（`assistant.chat`，只记字数 / 工具名，不记内容），节流 300ms。
 
+### 3.5 借平台的手（`assistant.ask`）
+
+`llm.chat` 只给嘴不给手。如果一块组件想让"模型替你摆组件"，走 `assistant.ask`。它要 `desktop:control`。
+
+```js
+const { text, actions } = await lattice.assistant.ask({
+  messages: [{ role: "user", content: "把时钟挪到右上角，天气预报小一点" }],
+  persona: "你是一只桌宠，说话要短，可以吐槽。",
+});
+// text:    模型这一轮说完的话（给你显示用）
+// actions: [{ detail: "moveWidget", ok: true }, { detail: "resizeWidget", ok: false, error: "..." }]
+```
+
+**它不是"第二个 assistant"，是同一个 assistant 换了一张更小的工具表。** 平台替你跑完整个工具循环（系统提示、快照、≤6 步、执行、审计），你只拿到两样东西：一句回话，和这次真做了什么的一行行明细。你**拿不到工具调用本身**，也**不能自己决定执行什么** —— 这是有意的：能改桌面的逻辑只在主窗口里（`state.json` 是那边 store 的磁盘副本，组件这儿连 store 都没有）。
+
+七条必须知道的：
+
+- **工具表被砍过**。组件这条路上没有 `placement.remove` —— 用户可以自己按 ✕，但"让桌宠替我删组件"不行。一次误会的对话删掉一块便签，比"删不掉"难受得多。系统提示里会多一行告诉模型"这一轮你没有删除工具"，它自己会说"这个得你来点 ✕"。
+- **`system` 位置只能当人设**。你可以把 `{ role: "system" }` 放在最前面写角色（"你是一只桌宠"），平台把它当**人设片段**塞在规则**之后**、快照**之前**，并且截到 1200 字。**它覆盖不了平台的任何一条规则** —— 写在后面的东西不改前面的规则，这是顺序，不是礼貌。
+- **上限**：16 条消息、单条 4000 字、合计 16000 字。超了是拒绝（`bad_params`），不是截断。
+- **一条一轮，第二条会被拒**。同一块组件在上一轮还没回来时再问一次，返回 `internal`（"a turn is already running"）—— 不是排队：两轮并发改同一份布局，结果全会是错的，而且谁也解释不清。
+- **它很慢**。一轮带工具最多 6 步，每步都是一次模型往返。超时按 **180 秒**算，不是别的方法那种 8 秒。所以：**别在关键路径上调它**，也别等它回来才画第一帧（不变量 18）；发了就去更新一句"我想想……"，回来再改。
+- **花钱，而且花得比 `llm.chat` 多**（一轮可能好几步）。没配模型的时候和 `llm.chat` 一样返回 `internal`，先问 `llm.status`。
+- **`actions` 是"已经发生的事实"，不是计划**。里面的 `detail` 是动作名（`moveWidget` / `resizeWidget` / `pinWidget` / `setTheme` / `addWidget` / `focusWidget` …），`ok: false` 的带 `error`（多半是"找不到那个组件"或"参数不合法"）。**别把它当真值去驱动 UI 状态** —— 想知道现在的布局，问 `agent.activity`（要另授权）或者干脆不显示。它是给你写一句"我把时钟挪过去了，天气预报没找到"用的。
+
+平台侧每次调用都会写一行审计（`widget.ask`，记组件 id 与字数，不记内容）。
+
 
 ## 4. 桥 API
 
@@ -604,6 +634,7 @@ parent.postMessage(
 | `agent.activity` | `agent:activity` | `{ limit? }` | `{ enabled, entries }`；`entries` 是审计日志最后几条，新的在**后**（组件自己倒序） |
 | `llm.status` | — | — | `{ configured, model }`；只是"用户配没配模型"，拿不到 key，见 §3.4 |
 | `llm.chat` | `llm:chat` | `{ messages }` | `{ text }`；`messages` 是 `{role, content}` 数组，role 只认 `system` / `user` / `assistant`，见 §3.4 |
+| `assistant.ask` | `desktop:control` | `{ messages, persona? }` | `{ text, actions }`；平台替你跑一整轮带工具的对话，见 §3.5 |
 | `window.close` | — | — | 关闭当前组件实例的窗口，**但不删用户的 placement** |
 | `window.setRegion` | — | `{ parts }` | `{ ok, applied, parts }`；`shape: "region"` 才有 `applied: true`，见 §2.5 |
 | `window.moveBy` | — | `{ dx, dy }` | `{ ok, applied, x?, y? }`；`dx` / `dy` 是 **CSS 像素**位移，撞到工作区边缘会被夹紧，`x` / `y` 是夹紧后的**物理像素**落点，见 §2.6 |

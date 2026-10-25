@@ -11,7 +11,9 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Canvas } from "./platform/Canvas";
-import { startAgentBridge } from "./platform/agent";
+import { startAgentBridge, type AgentReply, type AgentRequest } from "./platform/agent";
+import { runWidgetTurn } from "./platform/assistant";
+import { normalizeAskMessages, parseAskMessages, MAX_PERSONA } from "./runtime/assistant";
 import { AssistantPanel } from "./platform/AssistantPanel";
 import { DebugPanel } from "./platform/DebugPanel";
 import { InspectorPanel } from "./platform/InspectorPanel";
@@ -145,7 +147,58 @@ export default function App() {
    */
   const widgetsRef = useRef<WidgetRecord[]>([]);
   widgetsRef.current = widgets;
-  useEffect(() => startAgentBridge(() => widgetsRef.current), []);
+
+  /*
+   * 组件借平台的手（`assistant.ask`，权限 `desktop:control`）。
+   *
+   * **唯一**接这条请求的地方：画布里的实例和桌面窗口里的实例都转发到主窗口 ——
+   * 布局的权威在主窗口的 store 里，`state.json` 只是它的副本（两份真相的坑见
+   * `platform/agent.ts` 的模块注释）。工具表裁掉 `placement.remove`
+   * （`toolsFor("widget")`），并且同一时刻只接一条：一个组件刷屏不该变成
+   * "模型在后台连轴转、账单自己长"。
+   */
+  const askBusy = useRef(false);
+  const askFromWidget = useCallback(
+    async (request: AgentRequest, records: WidgetRecord[]): Promise<AgentReply> => {
+      const args = (request.args ?? {}) as { messages?: unknown; widgetId?: unknown; persona?: unknown };
+      const normalized = normalizeAskMessages(parseAskMessages(args.messages));
+      if (!normalized.ok) return { ok: false, code: "bad_args", error: normalized.error };
+      if (askBusy.current) return { ok: false, code: "internal", error: "a turn is already running" };
+
+      askBusy.current = true;
+      try {
+        const widgetId = typeof args.widgetId === "string" ? args.widgetId : "";
+        const record = records.find((item) => item.manifest.id === widgetId);
+        const name = (record ? pickText(record.manifest.name) : "") || widgetId || "a widget";
+        const personaText = (
+          typeof args.persona === "string" ? args.persona : (normalized.value.persona?.text ?? "")
+        )
+          .trim()
+          .slice(0, MAX_PERSONA);
+
+        const outcome = await runWidgetTurn({
+          messages: normalized.value.messages,
+          persona: personaText ? { name, text: personaText } : null,
+          records,
+        });
+        return { ok: true, result: outcome };
+      } catch (error) {
+        return {
+          ok: false,
+          code: "internal",
+          error: String(error instanceof Error ? error.message : error),
+        };
+      } finally {
+        askBusy.current = false;
+      }
+    },
+    [],
+  );
+
+  useEffect(
+    () => startAgentBridge(() => widgetsRef.current, { ask: askFromWidget }),
+    [askFromWidget],
+  );
 
   const placements = useLattice((state) => state.placements);
   const addPlacement = useLattice((state) => state.addPlacement);

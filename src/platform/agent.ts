@@ -269,7 +269,25 @@ export function runAgentRequest(request: AgentRequest, records: WidgetRecord[]):
   if (request.op === "act") {
     return runAgentAction(request.action ?? "", request.args, records);
   }
+  // `op: "ask"` 是**异步**的（要等模型），走 `startAgentBridge` 的 handlers，
+  // 不在这个同步函数里 —— 到了这里说明没有人接，回绝掉
   return fail("unknown_action", `unknown op ${JSON.stringify(request.op)}`);
+}
+
+/**
+ * 宿主窗口能多做的两件事。
+ *
+ * `act` / `state` 都在这个模块里同步跑完；`ask` 要等一轮模型（可能几十秒），
+ * 所以由窗口自己接 —— 但执行仍然是同一个 `AGENT_ACTIONS` 与同一份 store。
+ */
+export interface AgentHandlers {
+  /**
+   * `op: "ask"`：组件借平台的手跑一轮（`assistant.ask`，权限 `desktop:control`）。
+   *
+   * 不接这一条就等于"这个平台没有那扇门"：请求会被回成 `unknown_action`，
+   * 组件那侧看到的是 `internal`，它会退回只说话。
+   */
+  ask?: (request: AgentRequest, records: WidgetRecord[]) => Promise<AgentReply>;
 }
 
 function inTauri(): boolean {
@@ -282,8 +300,14 @@ function inTauri(): boolean {
  * `getRecords` 是个函数而不是数组：组件清单会在运行中变（装一个、删一个），
  * 而这个订阅只该建一次。传数组的话每次清单变化都要重建订阅，中间那段空窗
  * 里来的请求会全部超时。
+ *
+ * `handlers` 只多一条 `ask`（组件借平台的手）。**同一份订阅**：不管来的是
+ * agent 端点、assistant 小窗还是某个组件，`act` 都走同一个执行器。
  */
-export function startAgentBridge(getRecords: () => WidgetRecord[]): () => void {
+export function startAgentBridge(
+  getRecords: () => WidgetRecord[],
+  handlers: AgentHandlers = {},
+): () => void {
   if (!inTauri()) return () => {};
 
   let disposed = false;
@@ -291,15 +315,20 @@ export function startAgentBridge(getRecords: () => WidgetRecord[]): () => void {
 
   void listen<{ id: string; request: AgentRequest }>(EVENT, (event) => {
     const { id, request } = event.payload;
-    let reply: AgentReply;
-    try {
-      reply = runAgentRequest(request, getRecords());
-    } catch (error) {
-      reply = fail("internal", String(error));
-    }
-    void invoke("agent_reply", { id, payload: JSON.stringify(reply) }).catch(() => {
-      /* 后端已经超时走了，回话没人接 —— 不值得弹错 */
-    });
+    const answer = async (): Promise<AgentReply> => {
+      if (request.op === "ask") {
+        if (!handlers.ask) return fail("unknown_action", "this window cannot run assistant turns");
+        return await handlers.ask(request, getRecords());
+      }
+      return runAgentRequest(request, getRecords());
+    };
+    void answer()
+      .catch((error) => fail("internal", String(error)))
+      .then((reply) =>
+        invoke("agent_reply", { id, payload: JSON.stringify(reply) }).catch(() => {
+          /* 后端已经超时走了，回话没人接 —— 不值得弹错 */
+        }),
+      );
   })
     .then((dispose) => {
       if (disposed) dispose();

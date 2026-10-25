@@ -276,6 +276,7 @@ const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set<string>([
   "shell:open",
   "agent:activity",
   "llm:chat",
+  "desktop:control",
 ]);
 
 function normalizePermissionList(value: unknown, where: string, warnings: string[]): Permission[] {

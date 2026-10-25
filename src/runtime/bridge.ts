@@ -14,6 +14,7 @@ import type { Permission } from "./manifest";
 import type { ConfigValues } from "./config";
 import type { Scheduler } from "./schedule";
 import { languagePayload } from "./i18n";
+import { normalizeAskMessages } from "./assistant";
 
 export const BRIDGE_TAG = "__lattice";
 
@@ -745,6 +746,56 @@ defineMethod("llm.chat", "llm:chat", async (params) => {
       throw new BridgeError("internal", "the model tried to call a tool, but widgets cannot use tools");
     }
     return { text: reply.text ?? "" };
+  } catch (error) {
+    if (error instanceof BridgeError) throw error;
+    throw new BridgeError("internal", String(error instanceof Error ? error.message : error));
+  }
+});
+
+/**
+ * 请平台替我说一句话 —— 而且让它动手。要 `desktop:control`。
+ *
+ * 这是组件能碰到桌面的**唯一**一条路，而且它摸不到执行器：`messages` 被打包送去
+ * 主窗口，主窗口跑完整的一轮（`runWidgetTurn` → 同一个 `runAssistantTurn` →
+ * 同一个 `runAgentAction`），回来的只有"她该说什么"和"我做了什么"。
+ *
+ * 五条约束：
+ *
+ * 1. **工具表是裁过的**。这一轮没有 `placement.remove`（`toolsFor("widget")`）：
+ *    加、挪、缩放、钉、置顶、换主题都能撤销或手动复原，删掉的东西找不回来 ——
+ *    撤销条只活 8 秒，一句"帮我收拾一下"不该有这个权力。
+ * 2. **system 只能是一条语气，拼在平台提示之后**。位置和条数由
+ *    `normalizeAskMessages` 挡：组件的提示词改不了平台那五条规则。
+ * 3. **不传 key、不传地址**。请求照旧由 Rust 发，组件只知道"有一轮对话在跑"。
+ * 4. **一轮就是一轮**。主窗口同时只接一条（第二条回 `a turn is already running`），
+ *    否则一个组件刷屏就能绕开"每次都要用户按一下"的节奏。
+ * 5. **画布和桌面行为必须一样**（不变量 2）。两边都是这条桥 → 同一个 IPC →
+ *    同一个主窗口，没有任何"桌面窗口才有的能力"。
+ */
+defineMethod("assistant.ask", "desktop:control", async (params, ctx) => {
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "the assistant is only available in the desktop app");
+  }
+  const normalized = normalizeAskMessages((params as { messages?: unknown } | undefined)?.messages);
+  if (!normalized.ok) throw new BridgeError("bad_params", normalized.error);
+
+  try {
+    const raw = await invoke<string>("assistant_ask", {
+      widgetId: ctx.widgetId,
+      messages: JSON.stringify(normalized.value.messages),
+      persona: normalized.value.persona?.text ?? null,
+    });
+    const reply = JSON.parse(raw) as
+      | { ok: true; result?: { text?: string; actions?: unknown } }
+      | { ok: false; code?: string; error?: string };
+    if (!reply.ok) {
+      // 主窗口那一侧的错误话已经是给人看的（"no model configured" 那种），
+      // 直接交给组件显示 —— 换成 "internal" 会让气泡只剩一句"出错了"
+      throw new BridgeError(reply.code === "bad_args" ? "bad_params" : "internal", reply.error ?? "the turn failed");
+    }
+    const text = typeof reply.result?.text === "string" ? reply.result.text : "";
+    const actions = Array.isArray(reply.result?.actions) ? reply.result.actions : [];
+    return { text, actions };
   } catch (error) {
     if (error instanceof BridgeError) throw error;
     throw new BridgeError("internal", String(error instanceof Error ? error.message : error));

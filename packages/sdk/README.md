@@ -59,7 +59,7 @@ my-widget/
 | --- | --- |
 | `hosted` | 是否真的在宿主页里。顶层窗口（直接打开 HTML）为 `false` |
 | `ready` | `Promise`，配置和主题已经应用过一次 |
-| `call(method, params?)` | 调任意桥方法。失败 reject 一个 `LatticeError` |
+| `call(method, params?, options?)` | 调任意桥方法。失败 reject 一个 `LatticeError`。`options.timeout` 盖掉这一条的默认超时 |
 | `on(event, fn)` / `off(event, fn)` | 订阅宿主推送，返回退订函数 |
 | `theme` | 当前主题令牌（`--lattice-*` 长名） |
 | `applyTheme(tokens)` | 手动应用一份令牌 |
@@ -72,6 +72,8 @@ my-widget/
 | `system.metrics()` | CPU / 内存 / 磁盘 / 网络，需要 `system:monitor` |
 | `media.{get,playPause,next,previous,stop}` | 系统媒体会话，需要 `media:control` |
 | `network.fetch(input)` | 代发 HTTP，需要 `network` + 清单白名单 |
+| `llm.chat(messages)` / `llm.status()` | 用**用户配的**模型说一句话 / 查配没配，前者需要 `llm:chat`（没有工具） |
+| `assistant.ask({ messages, persona? })` | 让平台的 assistant **替你动桌面**（一轮带工具的对话，很慢），需要 `desktop:control` |
 | `now()` | 系统时间，需要 `clock` |
 | `copy(text)` | 写剪贴板，需要 `clipboard:write` |
 | `open(url)` | 用默认浏览器打开 http/https 链接，需要 `shell:open` |

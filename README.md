@@ -61,7 +61,7 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 
 ## How it works
 
-The important part is that a widget *becomes a window* while never touching Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are ten permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
+The important part is that a widget *becomes a window* while never touching Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are eleven permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
 
 **The platform ships empty.** The 14 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
 
@@ -69,7 +69,7 @@ So is the absence of a server. The catalogue is a static `registry.json`, the pa
 
 ## Where it stands
 
-v0.10 is the current version. The last three releases: v0.8 let an agent drive the desktop (an opt-in loopback endpoint, 8 allowlisted actions, every call in an audit log); v0.9 added sound you can see and links that get out; v0.10 brought the built-in assistant — **a model you bring, hands that stay ours**: `Ctrl+K` opens a small window, paste an OpenAI-compatible base URL and a key once, and the key lives in `assistant.json` under Rust's control while the frontend only ever sees `sk-1…cdef`. The only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had; a widget that asks for `llm:chat` gets text back, never tools.
+v0.10 is the current version. The last three releases: v0.8 let an agent drive the desktop (an opt-in loopback endpoint, 8 allowlisted actions, every call in an audit log); v0.9 added sound you can see and links that get out; v0.10 brought the built-in assistant — **a model you bring, hands that stay ours**: `Ctrl+K` opens a small window, paste an OpenAI-compatible base URL and a key once, and the key lives in `assistant.json` under Rust's control while the frontend only ever sees `sk-1…cdef`. The only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had; a widget that asks for `llm:chat` gets text back, never tools — and late in the version it learned to *borrow* those hands: `desktop:control` lets a pet run one assistant turn, on a narrowed tool table with removal cut out.
 
 How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 
@@ -84,14 +84,14 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | **v0.7** | Delivery: NSIS installer, in-app updater, draft-first releases, and the SmartScreen problem written down instead of hidden |
 | **v0.8** | Agent access: an opt-in loopback HTTP endpoint, a token, an audit log, 8 allowlisted actions, and an activity board widget |
 | **v0.9** | `lattice.music`, `audio:level`, `lattice.bookmarks`, `shell:open` |
-| **v0.10** | The built-in assistant: your own model behind an OpenAI-compatible URL, the key kept in Rust, tool calling over the same 8 actions, `llm:chat` for widgets. The Agent-board widget was dropped in this version |
+| **v0.10** | The built-in assistant: your own model behind an OpenAI-compatible URL, the key kept in Rust, tool calling over the same 8 actions, `llm:chat` for widgets, and `desktop:control` so a widget can borrow those hands. The Agent-board widget was dropped in this version |
 
 **By the numbers**
 
 | Metric | Value |
 | --- | --- |
 | Official widgets | 14 |
-| Permissions | 10 |
+| Permissions | 11 |
 | Tauri commands | 59 |
 | Browser assertions | 1 606 over 40 pages |
 | Rust tests | 178 |
@@ -162,12 +162,13 @@ Every capability is a permission, and every permission is a gate in `runtime/bri
 | `shell:open` | Hand an http/https URL to the default browser | Bookmarks |
 | `agent:activity` | Read the agent's audit log | Nothing built in — third-party only |
 | `llm:chat` | Send a conversation to the assistant's model, get text back | Desktop pet |
+| `desktop:control` | Borrow the assistant's hands for one turn — rearrange widgets, never remove them | Desktop pet |
 
 <p align="center"><a href="docs/screenshot-permission.png"><img src="docs/screenshot-permission.png" width="380" alt="A card asking for a permission it was not granted"></a></p>
 
 <p align="center"><sub>A widget that reaches for a capability it was not granted says so on the card, by name; one <code>Grant</code> covers the set, and the widget re-initialises.</sub></p>
 
-Four of those deserve their own paragraph, because "it has the permission" is never the whole story.
+Five of those deserve their own paragraph, because "it has the permission" is never the whole story.
 
 **`network` is an allowlist, not a switch.** A request passes three gates in a fixed order: the permission exists → the target host is listed in `manifest.network.hosts` → the request shape is legal (method, header count, body size). There are no wildcards, on purpose: `*.example.com` turns "I allowed this one endpoint" into "I allowed the whole domain", and the permission panel only shows one line — the user could not review what they approved. A port is part of the host's identity, and redirects are never followed: following a 302 from an allowed host to an unfriendly one would hand the allowlist to whoever controls the first hop. Requests travel over IPC rather than a local HTTP proxy, because a proxy port would be a second, unaudited way out.
 
@@ -176,6 +177,8 @@ Four of those deserve their own paragraph, because "it has the permission" is ne
 **`audio:level` is one number.** A background thread captures the default output device with WASAPI loopback and computes RMS → decibels → a `0..1` envelope with a release curve. The command only reads the latest value. No buffer, no audio content, nothing to reconstruct — the only version of "show me the sound" that is safe to ship.
 
 **`llm:chat` is a mouth, not hands.** A widget can hold a conversation with the model you configured, and that is all: the bridge calls `llm.chat` with `tools: null` every time, and a reply that asks for a tool call comes back as an `internal` error instead of being executed. The key never enters the renderer — Rust reads it, attaches it, and returns text plus a masked hint — so a compromised widget has nothing to steal and nothing to move. Changing the desktop stays with the platform's own assistant, which is the thing *you* are talking to.
+
+**A widget can borrow hands, never grow its own.** `desktop:control` → `assistant.ask` runs one assistant turn on a widget's behalf: the same loop, the same executor, the same audit log, but a tool table with `placement.remove` cut out — a misunderstood sentence can never delete a widget you placed. The loop itself still runs in the main window (the desktop host does not even have the store), and the widget gets back only a sentence and a list of what actually happened. One turn at a time, and the timeout is 180 seconds, because six model round-trips do not fit in eight.
 
 ## Distribution without a server
 

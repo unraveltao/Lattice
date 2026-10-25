@@ -42,6 +42,12 @@ pub const EVENT: &str = "lattice:agent";
 
 /// 前端回话的上限。布局操作都是同步的，8 秒还没回来说明主窗口卡住了。
 const REPLY_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// `assistant_ask` 的上限：那一轮要等模型（最多 6 步工具调用，每步一次网络往返）。
+///
+/// 不跟 `REPLY_TIMEOUT` 共用，是因为两者量的东西完全不同 —— 一个是"改一个字段"，
+/// 一个是"等一次生成"。共用的话要么把布局操作拖成三分钟，要么让组件那一轮必定超时。
+const ASK_TIMEOUT: Duration = Duration::from_secs(180);
 /// accept 循环的空转间隔。也是"关掉之后多久真的不听了"的上界。
 const POLL: Duration = Duration::from_millis(120);
 /// 同时处理的连接数上限。本机 agent 是串行干活的，8 条已经过分了。
@@ -455,6 +461,15 @@ fn forward(app: &AppHandle, payload: Value, op: &str, detail: impl Into<String>)
 
 
 fn call_frontend(app: &AppHandle, payload: Value) -> Result<String, String> {
+    call_frontend_within(app, payload, REPLY_TIMEOUT)
+}
+
+/// 同上，但自带超时。
+///
+/// 存在两个超时的原因很直白：`act` 是内存里改一个 placement（8 秒已经很宽），
+/// 而 `ask` 要跑一整轮模型往返 —— 六步工具调用、每步一次网络请求，60 秒都算快。
+/// 用同一个超时的话，"她说一句话"会有 90% 概率报"主窗口没回话"。
+fn call_frontend_within(app: &AppHandle, payload: Value, timeout: Duration) -> Result<String, String> {
     let state = app.state::<Agent>();
     let id = format!("{}-{}", std::process::id(), state.seq.fetch_add(1, Ordering::SeqCst));
     let (tx, rx) = mpsc::channel::<String>();
@@ -465,7 +480,7 @@ fn call_frontend(app: &AppHandle, payload: Value) -> Result<String, String> {
         return Err(format!("could not emit to the window: {error}"));
     }
 
-    match rx.recv_timeout(REPLY_TIMEOUT) {
+    match rx.recv_timeout(timeout) {
         Ok(body) => Ok(body),
         Err(_) => {
             state.pending.lock().unwrap().remove(&id);
@@ -611,4 +626,45 @@ pub async fn assistant_act(
     })
     .await
     .map_err(|error| format!("the action task failed: {error}"))?
+}
+
+/// 组件借平台的手：一句话 + 一段语气，让主窗口跑完整的一轮。
+///
+/// 和 `assistant_act` 的区别只有两点，都在别处定义：
+/// - **谁在说**：调用方是某个组件（`widget_id` 只用来记审计），不是小窗；
+/// - **工具表裁过**：`toolsFor("widget")` 少 `placement.remove`（在前端裁，
+///   这里不重复一份白名单 —— 白名单的家在 `agent_policy::ACTIONS`）。
+///
+/// 返回值是前端给的 JSON 原样（`{ ok, result: { text, actions } }` 或 `{ ok: false }`），
+/// 和 `assistant_act` 同一个约定。**超时更长**：这一轮在等模型。
+#[tauri::command]
+pub async fn assistant_ask(
+    app: AppHandle,
+    widget_id: String,
+    messages: String,
+    persona: Option<String>,
+) -> Result<String, String> {
+    let started = std::time::Instant::now();
+    let detail = format!("{widget_id} · {} chars", messages.chars().count());
+    let payload = json!({
+        "op": "ask",
+        "args": {
+            "widgetId": widget_id,
+            "messages": messages,
+            "persona": persona,
+        },
+    });
+    // 闭包要把句柄搬进阻塞线程，审计那行还要用它 —— AppHandle 是 Arc，克隆一份
+    let for_task = app.clone();
+    let answer = tauri::async_runtime::spawn_blocking(move || {
+        call_frontend_within(&for_task, payload, ASK_TIMEOUT)
+    })
+    .await
+    .map_err(|error| format!("the ask task failed: {error}"))?;
+
+    // 审计只记"谁问的、多长、成没成"，不记内容 —— 和 `assistant.chat` 同一条规矩。
+    // 每一步模型往返另有 `assistant.chat` 一行（llm.rs），所以日志里能看出花了多少钱
+    let status = if answer.is_ok() { 200 } else { 503 };
+    audit(&app, "widget.ask", &detail, status, started.elapsed().as_millis());
+    answer
 }

@@ -146,6 +146,16 @@
           case "media.get":
             reply(source, id, { ok: true, result: null });
             return;
+          case "assistant.ask": {
+            const last = params && Array.isArray(params.messages) ? params.messages[params.messages.length - 1] : null;
+            const slow = Boolean(last && last.content === "slow");
+            const result = slow
+              ? { text: "慢的那一轮也回来了", actions: [] }
+              : { text: "挪好了", actions: [{ detail: "moveWidget", ok: true }] };
+            if (slow) setTimeout(() => reply(source, id, { ok: true, result }), 200);
+            else reply(source, id, { ok: true, result });
+            return;
+          }
           case "permission.check":
             reply(source, id, {
               ok: false,
@@ -330,6 +340,43 @@
         "network.fetch 把 headers 当普通对象传下去",
       );
       eq(await sdk.media.get(), null, "media.get 没有会话时返回 null（不是错误）");
+
+      /*
+       * ---- 7.1 借平台的手 ----
+       *
+       * `assistant.ask` 是唯一一条"天生慢"的路：平台那边要跑一整轮带工具的
+       * 对话（最多 6 次模型往返），按 180 秒算。默认的 3 秒会把它误判成"宿主
+       * 没响应"，所以 SDK 给这一条单独一个超时。这一节钉两件事：参数形状
+       * （`persona` 只在给了才发），以及慢一轮不会被默认超时砍断。
+       */
+      const asked = await sdk.assistant.ask({
+        messages: [{ role: "user", content: "把时钟挪到右上角" }],
+        persona: "你是一只桌宠",
+      });
+      eq(asked.text, "挪好了", "assistant.ask 把模型那句回话原样交回");
+      eq(asked.actions, [{ detail: "moveWidget", ok: true }], "actions 是这次真做了什么");
+      const askReq = received.filter((entry) => entry.method === "assistant.ask").pop();
+      eq(
+        askReq && askReq.params.messages,
+        [{ role: "user", content: "把时钟挪到右上角" }],
+        "messages 原样传下去",
+      );
+      eq(askReq && askReq.params.persona, "你是一只桌宠", "persona 跟着请求一起下去");
+
+      await sdk.assistant.ask({ messages: [{ role: "user", content: "在吗" }] });
+      const bareAsk = received.filter((entry) => entry.method === "assistant.ask").pop();
+      log(
+        Boolean(bareAsk) && !("persona" in bareAsk.params),
+        "没给人设时请求里不带 persona 字段（而不是发一个空串）",
+      );
+
+      const tight = child.__createLattice({ timeout: 50, bootTimeout: 400 });
+      const waited = await tight.assistant.ask({ messages: [{ role: "user", content: "slow" }] });
+      eq(
+        waited.text,
+        "慢的那一轮也回来了",
+        "assistant.ask 不跟实例的短超时走（200ms 的一轮在 timeout: 50 下照样回来）",
+      );
 
       // ---- 8. 超时 ----
       const short = child.__createLattice({ timeout: 60, bootTimeout: 60 });

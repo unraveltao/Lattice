@@ -20,7 +20,8 @@ export type Permission =
   | "audio:level"
   | "shell:open"
   | "agent:activity"
-  | "llm:chat";
+  | "llm:chat"
+  | "desktop:control";
 
 export interface LlmStatus {
   /** 地址 / 模型 / key 三样齐了才是 true */
@@ -31,6 +32,21 @@ export interface LlmStatus {
 
 export interface LlmReply {
   text: string;
+}
+
+/** 一轮 `assistant.ask` 里平台真做了的一件事。`ok: false` 的带 `error`。 */
+export interface AssistantAction {
+  /** 动作名，如 `moveWidget` / `resizeWidget` / `pinWidget` / `setTheme` */
+  detail: string;
+  ok: boolean;
+  error?: string;
+}
+
+export interface AssistantReply {
+  /** 模型这一轮说完的那句话（给你显示用） */
+  text: string;
+  /** 已经发生的事实，不是计划。别拿它当真值去驱动 UI 状态 */
+  actions: AssistantAction[];
 }
 
 export declare class LatticeError extends Error {
@@ -170,7 +186,14 @@ export interface Lattice {
   /** 启动完成：配置和主题已经应用过一次 */
   readonly ready: Promise<Lattice>;
 
-  call<T = unknown>(method: string, params?: unknown): Promise<T>;
+  call<T = unknown>(
+    method: string,
+    params?: unknown,
+    options?: {
+      /** 盖掉这一条的默认超时（毫秒）。慢方法（`assistant.ask`）要用它 */
+      timeout?: number;
+    },
+  ): Promise<T>;
 
   on(event: "theme", handler: (tokens: ThemeTokens) => void): () => void;
   on(event: "language", handler: (info: LanguageInfo) => void): () => void;
@@ -226,6 +249,19 @@ export interface Lattice {
     chat(messages: Array<{ role: "system" | "user" | "assistant"; content: string }>): Promise<LlmReply>;
     /** 用户配没配模型（不需要权限） */
     status(): Promise<LlmStatus>;
+  };
+
+  assistant: {
+    /**
+     * 让平台的 assistant **替你动桌面**：平台跑完一整轮带工具的对话，你只拿
+     * 回话和这次真做了什么（要 `desktop:control`；没有删除动作）。
+     */
+    ask(input: {
+      /** 对话本身；`system` 位置只当人设用，覆盖不了平台的规则 */
+      messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+      /** 人设（语气 / 性格），最多 1200 字 */
+      persona?: string;
+    }): Promise<AssistantReply>;
   };
 
   now(): Promise<ClockInfo>;

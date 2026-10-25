@@ -23,6 +23,7 @@ export const MISC_ZH: Record<string, string> = {
   "Open links": "打开链接",
   "Agent activity": "Agent 活动",
   "Use my AI model": "用我的 AI 模型",
+  "Rearrange my desktop": "替我调整桌面",
 
   // —— 商店：这份东西有多旧（`platform/catalogue.ts` 的 describeAge）——
   "just now": "刚刚",

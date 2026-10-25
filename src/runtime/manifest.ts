@@ -39,7 +39,8 @@ export type Permission =
   | "audio:level" // 读扬声器现在的响度（回环采集，只出一个 0..1）
   | "shell:open" // 把 http/https 链接交给系统默认浏览器
   | "agent:activity" // 读 agent 在本机做过的操作（审计日志）
-  | "llm:chat"; // 用用户配的模型说话（花的是用户自己的额度）
+  | "llm:chat" // 用用户配的模型说话（花的是用户自己的额度）
+  | "desktop:control"; // 让平台替你动桌面（借的是那八个白名单动作）
 
 export interface WidgetSize {
   w: number;
@@ -298,6 +299,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "shell:open": "Open links",
   "agent:activity": "Agent activity",
   "llm:chat": "Use my AI model",
+  "desktop:control": "Rearrange my desktop",
 };
 
 /**
@@ -318,7 +320,8 @@ export function permissionLabel(permission: Permission): string {
  * 各改各的，漏一处的表现是"清单里写了、界面上没有"，不报错。
  *
  * 九项现在全齐了（`media:control` 在 v0.4、`agent:activity` 在 v0.8、
- * `audio:level` / `shell:open` 在 v0.9 补上）。加一项权限要**四处一起改**：
+ * `audio:level` / `shell:open` 在 v0.9 补上、`desktop:control` 在 v0.10 末尾补上）。
+ * 加一项权限要**四处一起改**：
  *
  * 1. `Permission` 联合类型
  * 2. 这个集合
@@ -344,6 +347,7 @@ export const PERMISSION_READY: ReadonlySet<Permission> = new Set<Permission>([
   "shell:open",
   "agent:activity",
   "llm:chat",
+  "desktop:control",
 ]);
 
 /** 这个权限是不是已经有桥方法了 */
