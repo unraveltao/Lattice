@@ -2,7 +2,7 @@
 
 写给任何要在这个仓库里改代码的人或模型。目标：读完这一页，不用通读源码就能动手，且不会踩已经踩过的坑。
 
-> 约定：这份文件只写**稳定事实**和**判断依据**。具体的坑与解法在 [docs/PITFALLS.md](./docs/PITFALLS.md)，组件协议在 [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md)，取舍论证在 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)，代码签名的取舍在 [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md)，agent 接入的协议与威胁模型在 [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md)。它们与本文冲突时，以代码为准，并顺手修文档。
+> 约定：这份文件只写**稳定事实**和**判断依据**。具体的坑与解法在 [docs/PITFALLS.md](./docs/PITFALLS.md)，组件协议在 [docs/WIDGET\_SPEC.md](./docs/WIDGET_SPEC.md)，取舍论证在 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)，代码签名的取舍在 [docs/CODE\_SIGNING.md](./docs/CODE_SIGNING.md)，agent 接入的协议与威胁模型在 [docs/AGENT\_ACCESS.md](./docs/AGENT_ACCESS.md)。它们与本文冲突时，以代码为准，并顺手修文档。
 >
 > **文档归改代码的这一方（模型）管，不归用户管。** 用户不读、也不写 `docs/`，不会替你判断一段推理该进 `design/` 还是 `ROADMAP` 的一行 —— 按 [docs/README.md](./docs/README.md) 的判据自己定，写完自己提交；别把“这要不要写文档 / 写成什么样”拿去问用户。
 >
@@ -16,7 +16,7 @@
 
 **棂 / Lattice** —— 可扩展的 Windows 桌面小组件平台。第三方用纯 HTML/CSS/JS 写组件，平台负责把它们安全地放到桌面上。
 
-当前状态：**v0.10 进行中**（v0.1–v0.7 全部落地）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志，`npm run agent -- state` 看它干了什么），数据平面（组件把能力声明成工具）也做了 —— 组件清单加一节 `agent.tools`，要一条独立的 `agent:tools` 权限；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，**模型档能存好几条**并存——DeepSeek 和本地 Ollama 各一条，key 只在 Rust 里，**回答是流式的**（SSE 逐字出来，按 Stop 当场断），工具调用走同一套 8 个动作，**外加六组"手"**（读文件 / 跑命令 / 取网页 / 看窗口 / 点键鼠 / MCP —— 默认**全关**，读自动放行、写与命令与点击先问一句，审计只记形状）；组件那侧只有 `llm:chat`，另有一条**借手**的 `assistant.ask` —— 桌宠这类组件说一句话，平台替它跑一整轮（工具表砍掉删除），要 `desktop:control`）。**对话在重启之后还在**：一轮一轮落在 `assistant-sessions/<id>.json`（一条会话一个文件），面板顶上那行能挑回来接着聊。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
+当前状态：**v0.12 已完成**（v0.11 还开着三处数据平面的缺口，见 §8；v0.13 只是设计稿。安装包上的版本号是 `0.1.1` —— `v0.x` 是里程碑标签，不是发版号）。组件能装（拖文件夹 / 拖 `.lattice` 包 / 从商店装）、能变成真的桌面窗口、能拖能缩能锁，布局与组件数据重启不丢；商店是一份签名过的静态 JSON，带更新、回滚、举报、新权限复核；目录已经挂在公网上（GitHub Pages），默认读线上那份，带磁盘缓存和断网兜底；平台自己有 NSIS 安装包和自动更新；**agent 能调控桌面**（默认关的回环 HTTP 端点 + 8 个白名单动作 + 审计日志，`npm run agent -- state` 看它干了什么），数据平面（组件把能力声明成工具）也做了 —— 组件清单加一节 `agent.tools`，要一条独立的 `agent:tools` 权限；平台另外自带一个 **assistant**（桌面上一个独立小窗，`Ctrl+K` 开关；自备 OpenAI 兼容地址与 key，**模型档能存好几条**并存——DeepSeek 和本地 Ollama 各一条，key 只在 Rust 里，**回答是流式的**（SSE 逐字出来，按 Stop 当场断），工具调用走同一套 8 个动作，**外加六组"手"**（读文件 / 跑命令 / 取网页 / 看窗口 / 点键鼠 / MCP —— 默认**全关**，读自动放行、写与命令与点击先问一句，审计只记形状）；组件那侧只有 `llm:chat`，另有一条**借手**的 `assistant.ask` —— 桌宠这类组件说一句话，平台替它跑一整轮（工具表砍掉删除），要 `desktop:control`）。**对话在重启之后还在**：一轮一轮落在 `assistant-sessions/<id>.json`（一条会话一个文件），面板顶上那行能挑回来接着聊。没有服务端 —— 这是设计，不是还没做，见 [ROADMAP 的 v0.5 四个取舍](./docs/ROADMAP.md#v05-的四个取舍)。
 
 想先知道"为什么现在是这样"，读 [ROADMAP 的「被推翻的九个决定」](./docs/ROADMAP.md#被推翻的九个决定)——每个决定都写着当初怎么选、被什么撞翻、现在怎么补。
 
@@ -40,6 +40,7 @@ npm run store:index  # 打包 + 签名内置组件，写 public/store/（dev / b
 工具链是 `windows-gnu`，缺 `windres` / `gcc`，`scripts/tauri.mjs` 会把 `../.toolchain/mingw64/bin` 和 `../.toolchain/gcc-shim` 塞进 PATH。**不要绕过这个包装脚本直接跑 `npx tauri`**，否则编译会在 `resource.rc` 上报错。
 
 ---
+
 
 ## 3. 目录地图
 
@@ -87,7 +88,7 @@ src/
     schedule.ts           心跳时间轴：可见性取"与"、不可见停摆、回来补一拍
     screen-fit.ts         纯几何：锚点选屏、夹紧（入参一律物理像素，`tests/screen-fit.html` 钉着）
     close-guard.ts        ✕ 该不该认这一下：指针序列 + 命中测试（纯函数，`tests/close-guard.html` 钉着）
-    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、工具表裁剪（`toolsFor`）与合表（`allTools` = 桌面动作 + 手 + MCP + **组件声明的工具**，四路都从这一个口进）、**三档审批的唯一判据 `approvalFor(name, mode)`**（`allow` / `ask` / `deny`，只读档连桌面表一起剪空）、system prompt（含手那一段、组件工具那一段与只读档的开口）、人设片段、历史裁剪（条数 + 字符数两道上限）、线上形状（`parseAskMessages` / `normalizeAskMessages`）、OpenAI 消息形状、快照压缩、商店里还没装的组件那一段（`CatalogueHint` / `aboutLine`，最多 8 条）（`tests/assistant.html` 180 条）
+    assistant.ts          assistant 的纯逻辑：8 个工具的函数表 + JSON Schema、工具表裁剪（`toolsFor`）与合表（`allTools` = 桌面动作 + 手 + MCP + **组件声明的工具**，四路都从这一个口进）、**三档审批的唯一判据 `approvalFor(name, mode, ctx)`**（`allow` / `ask` / `deny`，`ctx` 带 `everything` / `path` / `workspace`；`readonly` 排最前、平台自身配置在任何档任何模式下都要问，只读档连桌面表一起剪空）、system prompt（含手那一段、组件工具那一段与只读档的开口）、人设片段、历史裁剪（条数 + 字符数两道上限）、线上形状（`parseAskMessages` / `normalizeAskMessages`）、OpenAI 消息形状、快照压缩、商店里还没装的组件那一段（`CatalogueHint` / `aboutLine`，最多 8 条）（`tests/assistant.html` 180 条）
     skills.ts             assistant 的技能包（0005）的纯逻辑：`charCount`（按码点）、`normalizeTools` / `missingGroups`（"这个技能要用 Files，而它关着"）、`checkBudget`（4 份 / 4 000 / 8 000，返回原因与数字，话由界面说）、`promptsOf`（只挑启用了且没坏的）、`skillsPrompt`（"先照它，再照你自己的习惯" + 每份一节）（`tests/skills.html` 55 条）
     hands.ts              assistant 的手的纯逻辑（0004）：六个能力组、11 个工具的 JSON Schema、**两个模式的判据 `effectiveHands` / `modeIgnoresSwitches`**（0009：内部照存的开关、完全访问一律算开、不写盘）与 `grantAllHands`（**只写那六个开关**，由「Enable Full access」那道确认调用：先拨开六组、再写模式，所以你按完看到的六个勾就是它拿到的权力）、`HAND_READY`（拨得动 ≠ 接好了）、`handGroup` / `needsApproval` / `handsTools` / `handsPrompt` / 确认条那一行、MCP 发现结果合表（`mcpToolSpecs`）与命令行切词、一轮的预算（`tests/hands.html` 103 条）
     llm-models.ts         模型档的纯知识：按模型名前缀查能力（能不能调工具 / 能不能给 temperature / 上下文多大）、历史字符预算、三种鉴权形状（bearer / api-key-header / none）、七个服务商的预置填写（纯函数，`tests/llm-models.html` 26 条）
@@ -195,77 +196,59 @@ docs/                     架构、组件规范、路线图与踩坑、代码签
 
 ---
 
+
 ## 4. 十九条不变量（改代码前必读）
 
 1. **零内置**。平台本身不含任何组件。随应用分发的包（`bundled`）必须显式"安装"（记进 `installedIds`）才可用；用户目录里的包（`user`）在磁盘上即已装。不要为了"体验好一点"让 bundled 自动可用，那会把扩展平台退化成桌面工具。
-
 2. **两个宿主，一套桥**。画布里的 `WidgetFrame.tsx` 和桌面上的 `widgetHost.ts` 都必须走 `runtime/bridge.ts` 的同一张方法表。**任何"只在预览能用"或"只在桌面能用"的分叉都是 bug**，不是特性。
-
 3. **鉴权靠窗口引用，不靠 origin**。沙箱 iframe 的 origin 是字符串 `"null"`，所有组件一样，`event.origin` 分不出实例。必须 `event.source === iframe.contentWindow`。
-
 4. **权限按 `widgetId` 授予，不按实例**。语义是"你信不信任这段代码"，跟桌面上摆了几份无关。
-
 5. **落盘不用 localStorage**。这台机器上 WebView2 把 localStorage 放内存里，进程一退就没了。所有持久化都走文件（`state.json` / `widget-data/*.json`），写入用"临时文件 + 原子替换"。
-
 6. **底板是平台的，组件只读令牌**。颜色 / 浓度 / 磨砂由宿主页画（`wallpaper.rs` 截壁纸 + `widgetHost.ts` 三层叠），组件一行代码都不参与。所以：`html, body` 必须保持透明；组件里**不许写死颜色**，字色、强调色、描边全部取 `--lattice-text` / `--lattice-accent` / `--lattice-border` —— 底板一变浅，平台会把它们整体翻一遍，写死的值不会跟着翻。出厂外观（`auto / 1 / 0`）下平台**不覆盖任何令牌**，默认样子必须跟没有这个功能时一像素不差。
-
 7. **错误通道不是桥**。`__lattice_diag`（组件报错）和 `__lattice`（桥请求/响应）是两条独立的消息，两个宿主都必须**先认错误、再认桥**，而且 `isWidgetErrorReport` 只认结构不认来源 —— 来源校验（`event.source === iframe.contentWindow`）在它之前做。混在一起的后果不是崩溃，是**组件能靠伪造一条"错误"骗到宿主的一次回话**，或者反过来每次加载都弹一张错误卡。改 `runtime/widget-reporter.js` 里的 `tag` 就要同步改 `runtime/diagnostics.ts` 的 `REPORT_TAG`，`tests/diagnostics.html` 钉住了这个字面量。
-
 8. **权限是活的，不是启动快照**。用户在属性面板撤掉一项，**已经开着的窗口必须当场失去它**。两个宿主各存一份 `granted`（`widgetHost.ts` 的 `Set`、`WidgetFrame.tsx` 的 `grantedRef`），桥每次调用都读它；Rust 侧 `HostConfig.permissions` 由 `sync_widget_windows` 每轮比对，变了就 `emit_to("lattice:widget-permissions")`。四条约束：比对必须**先排序去重**（grants 数组换个顺序不等于权限变了，否则点一下开关就重载一次组件）；载荷必须带 `instanceId`（`emit_to` 是广播，见第 9 条）；宿主收到后既要换集合**也要** `reloadWidget()`（只换集合的话，组件在授权前写进界面的"权限被拒"不会自己回头）；`create()` 里登记 `HostConfig` 时也要用排好序的那份，否则新窗口第一轮同步就会误判成"变了"；画布卡片上那句 `Needs …`（`WidgetFrame` 的 `missing`）要按最新 `grants` 过滤，只在点 `Grant` 时清的话，用户改从属性面板勾回来就会一直挂着。
-
 9. **`emit_to` 是广播，收件人自己认领**。`emit_to(label)` 听着像"只发给那个窗口"，其实不是：JS 侧 `listen()` 注册的监听器 target 是 `Any`，而 Tauri 的匹配规则是 `target == Any || filter(target)`（`event/listener.rs::match_any_or_filter`）—— **任何** emit 都会送到**每个**窗口的 `Any` 监听器上。所以凡是"发给某个窗口"的事件，载荷里都要带身份（`instanceId` 或窗口 `label`），由宿主页比一次再处理。不带的后果不是报错，是**串味**：拖 A 的底板滑杆四张卡片一起变色，撤 A 的一项权限四个组件一起重载、未落盘的草稿当场丢。`lattice:theme` 是唯一**故意**全局的（平台切明暗，所有窗口都该跟着换）。
-
 10. **看不见就别跑**。组件的心跳一律挂在 `runtime/schedule.ts` 的时间轴上，不自己 `setInterval`。窗口不可见时整条时间轴停摆，回来只补一拍。**"不可见"有两个来源**：`document.visibilityState` 和 Rust 发来的 `lattice:window-visible` —— 前者对"窗口最小化"完全无感（实测最小化前后都是 `visible`），只盯它等于没停。加了新的"窗口状态"判断，先想清楚该不该停摆，别在组件里各写一套。
     - **`requestAnimationFrame` 不是例外，是另一件事**：它画的是"这一帧的读数"，正确性不依赖它跑多少拍 —— 秒表存的是按下去的那一刻，卡片藏起来时 rAF 自然停，回来按时间戳重算一次就是对的。需要**平台在不可见时也保持节奏**、或者要**多组件对齐同一拍**的，才必须走时间轴。另外时间轴的最小间隔是 250ms（`MIN_INTERVAL`），拿它刷百分秒会每帧跳 25 个数，看着像卡了而不是在计时。
-
 11. **关窗口 ≠ 删用户数据**。`widget_close` 收一个 `reason`，**只有 `reason == "user"`（宿主页 ✕ 按钮）才发 `lattice:widget-close` 让主窗口删 placement**；别的来路（组件自己调桥的 `window.close`、或将来任何新入口）只关窗口，实例记进 `Runner.suppressed`，本次运行不再重建。placement 是用户摆好的布局，属于用户数据；窗口只是它的一个渲染。一条命令兼两种语义的代价，是任何一次意外调用都会静默删掉用户的东西 —— 这条坑真实发生过三次。加新的"关闭"入口时，`reason` 必须显式传，不许省；`widget_close` 里那行 `eprintln!` 也不许删，它记录的正是"谁关的"。（`reason: user` 这一路仍然会真的删 —— 手滑的兜底不在这里，在 UI 侧：`removePlacement` 会把快照留在 `lastClosed` 里，主窗口底部弹 8 秒 `Undo`。所以**别在 `removePlacement` 之外的地方直接 `filter` 掉 placement**，那等于绕开撤销。）
-
 12. **组件的 CSP 只在 `csp.rs` 里改**。组件是不可信代码，沙箱挡"碰宿主"，CSP 挡"往外发"。四条必须记住的：
     - **`'self'` 在这里是废的**。组件跑在 `sandbox="allow-scripts"` 的 iframe 里，文档源是 opaque，`'self'` 匹配不到任何东西 —— 写上等于把组件自己的 `widget.js` 也拦了，组件白屏。协议源必须显式写出来。
     - **协议源跟平台走**：Windows 是 `http://lattice-widget.localhost`，别处是 `lattice-widget://localhost`，必须和 `runtime/registry.ts::widgetSchemeBase` 一字不差。两处对不上，症状是"组件坏了"，最难查。
     - **`connect-src` 收在组件自己的 origin 上，不是 `'none'`**。组件 `fetch("./data.json")` 是正当用法；而放行自己的 origin 不构成出网通道 —— `lattice-widget://` 是只读文件服务，GET 只回这个组件自己的文件。
     - **CSP 不等于堵死**。`location.href = "https://…/?d="` 这种自我导航它管不了（没有 `navigate-to` 指令）。这道缝由 `egress.rs` 补：每个组件窗口建完立刻挂 `FrameNavigationStarting`，在导航发生前取消。**别把这条当成"以后再说的加固"** —— 它和 CSP 是一套的两半，只有 CSP 的话，组件照样能把数据拼进 URL 送出去。
-
 13. **配置按实例，权限按组件**。`grants` 的键是 `widgetId`（问的是"你信不信任这段代码"），`configs` 的键是 `instanceId`（问的是"这一份要怎么显示"）。两者别互相借：配置挪到 `widgetId`，两个时钟就共享 12/24 小时制；权限挪到 `instanceId`，用户要为同一个组件授权两遍。**值只在 `runtime/config.ts::resolveConfig` 里合并**（缺的键补出厂值、非法值退回出厂值），Rust 只透传 —— 规则散到两边，画布和桌面就会显示得不一样。配置变化**不重载**组件（推 `config-changed`），只有权限变化才重载。
-
 14. **联网是"按组件的白名单"，不是"有权限就能连"**。`network.fetch` 过三道闸，顺序不能换：`permissions` 里有 `network` → 目标主机在 `manifest.network.hosts` 里 → 请求形状合法（方法 / 头数 / 体积）。四条别踩回去的：
     - **没有通配符，这是故意的**。`*.example.com` 写起来方便，但它把"我允许这一个接口"变成"我允许整个域"，而这个平台的权限面板只显示一行名字 —— 用户没法审阅到底放行了什么。要多个主机就列多个。
     - **端口算身份的一部分**。`127.0.0.1:8787` 不等于 `127.0.0.1`；不写端口就是默认的 80 / 443。少了这条，"允许本机调试端口"等于"允许本机全部端口"。
     - **重定向必须关掉**（`WINHTTP_OPTION_REDIRECT_POLICY_NEVER`）。跟随 302 等于白名单失效：放行 `a.com`，`a.com` 把组件 302 到 `evil.com`，数据就出去了。现在的行为是把 302 原样当响应交回组件，由组件自己决定要不要再发一次（那时又要过一遍白名单）。
     - **走 IPC，不搭本地 HTTP 代理**。开一个 `127.0.0.1:xxxx` 的代理端口就等于给组件留了一条绕过桥的路（它 `fetch` 那个端口没人拦），而 IPC 通道只有宿主页能说话。
-    - **画布上的实例也要能出网**（`network_policy::egress_for`）。白名单在桌面窗口那条路上存在 Rust 的注册表里（建窗口时写进去的），而画布上的实例**不是窗口** —— 它跑在主窗口的 iframe 里，注册表里没有条目。第一版没做这条兜底，结果是同一个组件"桌面上能联网、设计器里不能"，而设计器恰好是用户第一次配置它的地方，症状是刚加进来就报"连不上服务"。现在未注册的窗口退回宿主页随请求带来的 `network.hosts`（`bridge.ts` 的 `egress`）。**在册的窗口一律用自己那份**：窗口已经注册了还去信请求里那份，等于让一个前端 bug 悄悄扩大出网范围。
-    这条是**加了一扇门，不是拆了别的门**：CSP（不变量 12）和 `egress.rs` 的导航拦截照旧生效，组件仍然不能自我导航把数据拼进 URL 送走。
-
+    - **画布上的实例也要能出网**（`network_policy::egress_for`）。白名单在桌面窗口那条路上存在 Rust 的注册表里（建窗口时写进去的），而画布上的实例**不是窗口** —— 它跑在主窗口的 iframe 里，注册表里没有条目。第一版没做这条兜底，结果是同一个组件"桌面上能联网、设计器里不能"，而设计器恰好是用户第一次配置它的地方，症状是刚加进来就报"连不上服务"。现在未注册的窗口退回宿主页随请求带来的 `network.hosts`（`bridge.ts` 的 `egress`）。**在册的窗口一律用自己那份**：窗口已经注册了还去信请求里那份，等于让一个前端 bug 悄悄扩大出网范围。        
+      这条是**加了一扇门，不是拆了别的门**：CSP（不变量 12）和 `egress.rs` 的导航拦截照旧生效，组件仍然不能自我导航把数据拼进 URL 送走。
     **`shell.open` 是另一扇门，也只开一条缝。** 组件要把链接交给系统浏览器，只能走 `bridge.ts` 的 `shell.open`（权限 `shell:open`）→ `open.rs`。三条别踩回去：
     - **协议白名单只有 http/https，写在 `open_policy.rs` 里。** `tauri-plugin-opener` 把字符串原样丢给 `ShellExecuteW`，而它**不认协议** —— `file:` 会把本地文件交给默认程序打开，`ms-settings:` 能直接翻到系统隐私页，`search-ms:` / 任何注册过的自定义协议一样照办。少这一道，`file:///C:/…` 比联网彻底得多。
     - **别在组件里另写一套放行规则。** 组件侧只做"让存下来的东西是干净的"（`github.com` → `https://github.com/`、`example.com:8080/x` 认成主机加端口），边界上 `open_policy::normalize` 再判一次；两边的用例表在 `tests/bookmarks.html` 和 `open_policy.rs` 的 tests 里各钉一份。
     - **它不削弱 `egress.rs`。** 那条拦的是"组件自己的 frame 导航走"，这条是"把地址交给浏览器"，组件的文档仍然钉在自己的 origin 上。
-
 15. **分发的信任锚点是包，不是目录**。装一个包要过三道，顺序不能换：`sha256(字节)` 等于目录里写的 → ed25519 签名能被 `publisher.key` 验过 → 这把钥匙等于**这个组件第一次安装时钉在本地的那把**（`store.trustedKeys`）。前两道挡传输损坏和伪造，第三道才挡得住"另起一把钥匙、连目录一起换掉"。五条别踩回去：
     - **目录本身不签名**，它只是索引。所以"目录能改"这件事必须由上面三道兜住 —— 谁想给目录加个新字段去驱动行为（自动安装、自动更新、静默授权），先想清楚这个字段被改坏之后会怎样。
     - **先验签名再看版本**。反过来的话，换了钥匙的包会被当成"一次普通更新"直接装进去，用户连提示都看不到（`planInstall` 里那两行的顺序就是这么定的）。
     - **换钥匙必须由用户点头**。`planInstall` 返回 `untrusted` 时界面要同时印出**两把**指纹，点一次确认才继续；不要"检测到新钥匙就自动信任"。
     - **覆盖安装之前必须备份，回滚是交换不是复制**。`backup.rs` 只留一代；用复制实现回滚的话，连点两次会回到同一个旧版本，用户会以为按钮坏了。三条安装路径（目录安装 / 拖文件夹 / `.lattice`）走同一条备份规则，否则"拖文件夹"会成为唯一一种没法回滚的安装方式。
     - **新版本多要的权限不自动授予，但也不禁用组件**。自动授予 = 把"更新"变成一次静默提权；禁用组件 = "更新完就不能用了"。正确形状是"照旧能用 + 一条不会自己消失的横幅，直到用户处理"。`flagPermissionReview` / `resolvePermissionReview` 是唯一入口，别在别处直接改 `grants`。
-
 16. **平台更新和组件更新是两套东西，别混**。组件走目录 JSON + `.lattice` 包 + ed25519；平台走 `latest.json` + NSIS 安装包 + minisign。两条路径不共用代码，只共用"静态文件 + 签名 + 没有服务端"这个思路。四条别踩回去：
     - **两把钥匙，两个私钥位置**。组件发布者的 `scripts/dev-publisher.key` 是**故意公开**的（演示目录用）；平台更新的 `.keys/updater.key` 必须保密 —— 它泄露等于任何人都能给你所有用户推假更新。`.keys/` 在 `.gitignore` 里，公钥在 `tauri.conf.json` 的 `plugins.updater.pubkey`。
     - **只在用户点击时检查，没有后台轮询**。加了轮询就要回答"多久一次、失败重试几次、用户关了怎么办"，而收益只是"早几天知道"。
     - **装完 `restart()`，不是 `exit()`**。新二进制只有新进程才会跑；更新完应用自己消失，用户会当成更新失败。走自定义命令 `restart_app`，不引 `plugin-process`。
     - **release 先出草稿**。`/releases/latest` 只认已发布的 release，草稿期间更新器查不到东西（等于没发）。先发再验 = 拿全体用户当灰度。
     - **发布时别勾 "Set as a pre-release"**。`/releases/latest` 跳过的不只是草稿，还有**预发布**：勾上之后 release 页面正常、产物都在、`releases/download/v0.1.0/latest.json` 也 200，唯独 `releases/latest/download/latest.json` 是 404 —— 也就是更新器会去敲的那个地址。v0.1.0 就这么挂了一版。症状更坑：插件对**任何非 2xx** 都只记日志，最后统一抛 `Error::ReleaseNotFound`，跟真断网**是同一句话**，界面上于是显示"检查你的网络"。`describeUpdateError` 现在先认这一条再认网络（`tests/updater.html` 14 条断言钉着），但根治还是别勾那个框。
-
 17. **说明写在清单里，改了行为就补一条 changelog**。组件的"怎么用"是 `manifest.json` 的 `help`，不是包里的 README —— 组件是纯静态目录，平台没有 Markdown 渲染器，写进清单才能跟着包走（同目录、同提交、同签名）、离线能看、第三方能用，还能被 `tests/help.html` 真的读出来对账。四条别踩回去：
     - **坏条目逐条丢**，和 `config` / `icon` 同一条规矩。一节没标题、一条是空串、版本号不合法 —— 丢那一条，包照常加载。说明是锦上添花，不该有"让组件打不开"的权力。
     - **上限不是建议**。6 节 × 6 条 × 160 字、变更 12 条 × 8 项，`runtime/help.ts` 里是真截断。放宽它之前先想清楚 320px 面板放不放得下。
     - **改了组件行为，同一次提交里把当前版本那一条 changelog 补上**。`tests/help.html` 会红：写了说明的组件，changelog 里必须有 `version === manifest.version` 的那一条。写用户能看懂的话（"拖动排序"），不写内部重构。
     - **每个 `config` 字段都得有交代**：要么字段自带 `help`，要么在说明正文里被提到。用户看见一个开关却不知道它干什么，等于没做这个开关。这条也是 `tests/help.html` 钉着的。
-
 18. **先画第一帧，再等桥**。组件的 `config.get` / `storage.get` 都是往返，宿主慢一点（或者根本没宿主）就是几秒钟的空白卡片 —— 而第一帧要画的通常只是默认值（`00:00.00`、`m → ft`）。正确顺序是：同步按默认值渲染 → 发请求 → 回来再改。三条别踩回去：
     - **存档迟到时用 `touched` 闸门挡住**。桥回来之前用户完全可能已经点过分类、打过数字，这时候再把存档盖上去，等于把他刚做的选择撤销掉。宁可这次不恢复，也不能吃掉用户的操作。
     - **别把"等桥"写进首屏路径**，也别用"加载中"占位 —— 空白卡片和骨架屏只是把同一个等待画得更久。
     - 自检页顺带受益：DOM 同步就有了，`tests/convert.html` / `tests/stopwatch.html` 可以直接操作组件自己的按钮，不用先等桥超时（`config.get` + `storage.get` 各 3 秒，最坏 6 秒）。
-
 19. **先定名，再写代码**。仓库里已经有名字的东西就用那个名字，没有就当场定一个写进 [`GLOSSARY.md`](./GLOSSARY.md) —— 别在代码、文档、对话里各叫一个。四条：
     - **撞名先裁再写**。一个词指两件事的时候（`目录` 曾同时指商店的清单和文件系统的文件夹；`store` 曾同时指 Zustand 容器、磁盘存储和商店），先定一个、把另一个改掉，再动手。留着"靠上下文能分清"的代价是：读的人（和模型）每次都要猜一次，而**猜错不会报错**——它会一路写下去，最后你在一个数据丢失的 bug 里才发现两边说的不是一个东西。
     - **术语表只收跨块共用的词**。边界是"组件作者能看见，且前端 / Rust / SDK 都会用到"。某个 slice 的内部字段、某条 Rust 命令名不进表——代码本身就是它的家。
@@ -319,21 +302,21 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 
 ## 6. 状态都在哪
 
-| 东西 | 位置 | 谁写 |
-| --- | --- | --- |
-| 摆放、已安装、授权、主题、网格吸附、本机档案、桌面矩形、目录地址、钉住的发布者钥匙、评分、待复核的权限 | `%APPDATA%\com.iron-tom.lattice\state.json` | `store.ts` → `state_write` |
-| 组件私有数据 | `%APPDATA%\com.iron-tom.lattice\widget-data\<widgetId>.json` | `bridge.ts` → `widget_store_write` |
-| assistant 的模型档、**API key** 与手的开关 | `%APPDATA%\com.iron-tom.lattice\assistant.json`（**v4**：`{version: 4, mode, activeId, hands: {files, shell, web, screen, input, mcp}, approvalMode, workspace, profiles: [{id, label, baseUrl, auth, apiKey, model, temperature, models}]}`；**`approvalMode` 是三档审批（`ask` / `auto` / `readonly`，坏值与旧文件一律落回 `ask`）**；**`mode` 是两个模式（`internal` / `everything`，坏值一律落 `internal` —— 坏值不许放大权限）**；v1 的 `{baseUrl, model, temperature, apiKey}` 读到时就地升级成一条档、**手全关**、档位落回 `ask`，`skills.enabled` 是启用的技能 id（只存 id，正文在 `skills/<id>/SKILL.md`；升级与导入都不替用户勾上任何一份 —— 正文会常驻每一轮的提示词）；v3 升 v4 时 `mode` 落 `internal`、`skills` 落空（升级不替用户开门），临时文件 + 原子替换） | `llm.rs`（**只有 Rust 读得到明文 key**，前端只见 `keyHint` 掩码） |
-| assistant 连的 MCP 服务 | `%APPDATA%\com.iron-tom.lattice\mcp.json`（`{version, servers: [{id, label, transport, command, args, url}]}`；临时文件 + 原子替换；坏了当"没有服务"，不让它拦住启动） | `mcp.rs`（**`id` 由 Rust 生成并复用**，界面只读写其余字段 —— id 进了工具名，换一次等于工具换了名字，模型记着的老名字全部失效） |
-| assistant 小窗的位置 / 尺寸 / 模式 / 底板 / 锁 | `%APPDATA%\com.iron-tom.lattice\assistant-window.json`（**v2**：`{version, mode, rect: {x, y, width, height}, appearance: {tint, alpha, blur}, locked}`，逻辑像素；v1 的 `{x, y}` 读到时就地升级；临时文件 + 原子替换） | `assistant_window.rs`（**松手才写**，文件坏了退回右下角默认位；读与写都夹进当前屏，坏值不许把窗口变成看不见） |
-| assistant 的对话记录（一条会话一个文件） | `%APPDATA%\com.iron-tom.lattice\assistant-sessions\<id>.json`（**明文**，id 形如 `s-<unix 秒>-<4 位随机>`；临时文件 + 原子替换；每轮保存按 200 条 / 1 MB 两道预算裁最老的，裁过就把 `truncated` 写回文件、界面据此提示"它掉过头了"） | `assistant_session.rs`（标题取第一句用户的话前 12 个字，算不出来就存空串让界面自己翻；坏文件**不拦列表**，标 `damaged: true`） |
-| 用户安装的组件 | `%APPDATA%\com.iron-tom.lattice\widgets\<id>\` | `widgets.rs` |
-| 上一代的组件（回滚用） | `%APPDATA%\com.iron-tom.lattice\widget-backups\<id>\` | `backup.rs`（只留一代，卸载时一起删） |
-| 举报与评分 | `%APPDATA%\com.iron-tom.lattice\reports\<widgetId>-<unix>.json` | `store.rs::store_report`（**不发送**，只是文件） |
-| 下载过的包 | `%APPDATA%\com.iron-tom.lattice\store-cache\<sha256>.lattice` | `store.rs::store_download` |
-| 使用记录（每天多少分钟） | `%APPDATA%\com.iron-tom.lattice\usage.json`（`{version, days}`，内存累加、每 5 分钟 / 退出落盘） | `usage.rs`（窗口焦点 + 分钟滴答；**前端不上报**，桥和权限都不动） |
-| 内置组件 | `public/widgets/<id>/` + 构建期生成的 `index.json` | `scripts/widget-index.mjs` |
-| 内置商店目录 | `public/store/registry.json` + `packages/*.lattice` | `scripts/store-index.mjs`（gitignore，构建期生成） |
+| 东西                                                  | 位置                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | 谁写                                                                                     |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 摆放、已安装、授权、主题、网格吸附、本机档案、桌面矩形、目录地址、钉住的发布者钥匙、评分、待复核的权限 | `%APPDATA%\com.iron-tom.lattice\state.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `store.ts` → `state_write`                                                             |
+| 组件私有数据                                              | `%APPDATA%\com.iron-tom.lattice\widget-data\<widgetId>.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `bridge.ts` → `widget_store_write`                                                     |
+| assistant 的模型档、**API key** 与手的开关                    | `%APPDATA%\com.iron-tom.lattice\assistant.json`（**v4**：`{version: 4, mode, activeId, hands: {files, shell, web, screen, input, mcp}, approvalMode, workspace, profiles: [{id, label, baseUrl, auth, apiKey, model, temperature, models}]}`；**`approvalMode` 是三档审批（`ask` / `auto` / `readonly`，坏值与旧文件一律落回 `ask`）**；**`mode` 是两个模式（`internal` / `everything`，坏值一律落 `internal` —— 坏值不许放大权限）**；v1 的 `{baseUrl, model, temperature, apiKey}` 读到时就地升级成一条档、**手全关**、档位落回 `ask`，`skills.enabled` 是启用的技能 id（只存 id，正文在 `skills/<id>/SKILL.md`；升级与导入都不替用户勾上任何一份 —— 正文会常驻每一轮的提示词）；v3 升 v4 时 `mode` 落 `internal`、`skills` 落空（升级不替用户开门），临时文件 + 原子替换） | `llm.rs`（**只有 Rust 读得到明文 key**，前端只见 `keyHint` 掩码）                                      |
+| assistant 连的 MCP 服务                                 | `%APPDATA%\com.iron-tom.lattice\mcp.json`（`{version, servers: [{id, label, transport, command, args, url}]}`；临时文件 + 原子替换；坏了当"没有服务"，不让它拦住启动）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `mcp.rs`（**`id` 由 Rust 生成并复用**，界面只读写其余字段 —— id 进了工具名，换一次等于工具换了名字，模型记着的老名字全部失效）         |
+| assistant 小窗的位置 / 尺寸 / 模式 / 底板 / 锁                  | `%APPDATA%\com.iron-tom.lattice\assistant-window.json`（**v2**：`{version, mode, rect: {x, y, width, height}, appearance: {tint, alpha, blur}, locked}`，逻辑像素；v1 的 `{x, y}` 读到时就地升级；临时文件 + 原子替换）                                                                                                                                                                                                                                                                                                                                                                                                                                         | `assistant_window.rs`（**松手才写**，文件坏了退回右下角默认位；读与写都夹进当前屏，坏值不许把窗口变成看不见）                    |
+| assistant 的对话记录（一条会话一个文件）                           | `%APPDATA%\com.iron-tom.lattice\assistant-sessions\<id>.json`（**明文**，id 形如 `s-<unix 秒>-<4 位随机>`；临时文件 + 原子替换；每轮保存按 200 条 / 1 MB 两道预算裁最老的，裁过就把 `truncated` 写回文件、界面据此提示"它掉过头了"）                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `assistant_session.rs`（标题取第一句用户的话前 12 个字，算不出来就存空串让界面自己翻；坏文件**不拦列表**，标 `damaged: true`） |
+| 用户安装的组件                                             | `%APPDATA%\com.iron-tom.lattice\widgets\<id>\`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `widgets.rs`                                                                           |
+| 上一代的组件（回滚用）                                         | `%APPDATA%\com.iron-tom.lattice\widget-backups\<id>\`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `backup.rs`（只留一代，卸载时一起删）                                                               |
+| 举报与评分                                               | `%APPDATA%\com.iron-tom.lattice\reports\<widgetId>-<unix>.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `store.rs::store_report`（**不发送**，只是文件）                                                 |
+| 下载过的包                                               | `%APPDATA%\com.iron-tom.lattice\store-cache\<sha256>.lattice`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `store.rs::store_download`                                                             |
+| 使用记录（每天多少分钟）                                        | `%APPDATA%\com.iron-tom.lattice\usage.json`（`{version, days}`，内存累加、每 5 分钟 / 退出落盘）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `usage.rs`（窗口焦点 + 分钟滴答；**前端不上报**，桥和权限都不动）                                              |
+| 内置组件                                                | `public/widgets/<id>/` + 构建期生成的 `index.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `scripts/widget-index.mjs`                                                             |
+| 内置商店目录                                              | `public/store/registry.json` + `packages/*.lattice`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `scripts/store-index.mjs`（gitignore，构建期生成）                                             |
 
 `store.ts` 里有一个 `hydrated` 闸门：**水合完成前不许写盘**。读状态是异步的，中间任何一次 set 都会把默认空状态盖到磁盘上。加新的持久化字段时，记得同时改 `partialize`，否则重启就丢。
 
@@ -402,7 +385,8 @@ if (data.type === "language") { lang = data.payload.lang; repaint(); }
 3. **首帧先按一门画**（不变量 18）：HTML 里写死一份、`lang.get` 回来再换。等桥的那几十毫秒里画"加载中"是把同一个等待画得更久。
 4. **清单那边的双语是 `{ zh, en }` 对象**，走 `normalizeText` / `pickText`（`runtime/widget-text.ts`）—— 字段清单和上限见 WIDGET_SPEC §2.7。搜索是两种语言都建索引的（`textVariants`），别只挑当前语言。
 5. **SDK 已经把这两件事包好了**：`lattice.language` + `lattice.on("language")`，启动时自动拉一次。手写桥的组件（内置组件全是手写的）照上面四行做。
-6. **内置组件必须真做到**，不是"建议"。15 个官方组件的清单文案、`<html lang>`、卡片里画出去的字（星期 / 月份 / 上午下午 / 计数 / 按钮 / 提示行）全是双语，写死的那一门是**中文**。`tests/help.html` 第 5 段钉着两件事：清单里该双语的字段两门齐全；每个组件的源码里既有 `lang.get` 也有 `language` 推送。只做一半的症状很隐蔽 —— 只听推送的，热重载之后就停在旧语言；只读一次的，用户换语言卡片一动不动。
+6. **内置组件必须真做到**，不是"建议"。16 个官方组件的清单文案、`<html lang>`、卡片里画出去的字（星期 / 月份 / 上午下午 / 计数 / 按钮 / 提示行）全是双语，写死的那一门是**中文**。`tests/help.html` 第 5 段钉着两件事：清单里该双语的字段两门齐全；每个组件的源码里既有 `lang.get` 也有 `language` 推送。只做一半的症状很隐蔽 —— 只听推送的，热重载之后就停在旧语言；只读一次的，用户换语言卡片一动不动。
+
 
 ### 改内置 assistant / 加一项 AI 能力
 
@@ -443,7 +427,6 @@ if (data.type === "language") { lang = data.payload.lang; repaint(); }
     - **只交正文，40k 字符封顶**。`tools/call` 回来的 `content` 里只挑 `type: "text"` 拼起来；图片 / 音频 / 资源链接一律丢掉（模型没有视觉，收了也读不懂）。超了截断并置 `truncated: true`，让模型知道自己看到的不是全部。
     - **没有沙箱**。stdio 服务拿的是当前用户的全部权限 —— 它本来就是用户自己装的程序，装它那一步已经是授权。别在文档里暗示"平台替它隔离了"。
     - **websocket 传输没做**。`transport` 只有 `stdio` / `http` 两种，别的值一律按 stdio。别把 `ws://` 地址塞进 `url` 然后指望它能通。
-
 16. **审批档三档：一次判，两处判**。0003 §3 的 `ask` / `auto` / `readonly`（默认 `ask`）不是三处 if，是一个函数：`runtime/assistant.ts` 的 `approvalFor(name, mode) → "allow" | "ask" | "deny"`。`platform/assistant.ts` 的动作循环、`toolsFor` 的工具表、`systemPrompt` 的措辞三处都读它 —— 加第四处调用可以，加第二套判据不行。六条别踩回去：
     - **三档差的只是「写类怎么处理」**：`ask` = `needsApproval(name) || DANGEROUS_ACTIONS.has(name)` → 问；`auto` = 只有 `DANGEROUS_ACTIONS`（目前只有 `placement.remove`）还问；`readonly` = 写类直接 **deny**（不是 ask —— 问一个注定被拒的问题是骚扰），而且 `handsTools` / `toolsFor` 先把写类从表里剪掉，模型压根看不见它。
     - **Rust 是第二道闸，不是装饰**。`hands_policy::readonly_blocks(mode, name)` 与前端 `approvalFor` 是同一句判据；`hands.rs` 真的回 `code:"readonly"`（HTTP 面 403）。别把安全边界只留在一个 React 组件里。
@@ -478,7 +461,7 @@ public/widgets/<id>/
 - **不要用原生表单控件**。沙箱文档的 `color-scheme` 被强制成 `normal`，原生 checkbox/radio 会按浅色主题画，在深色卡片上几乎看不见。用 `appearance: none` 自绘。
 - **"整行可拖"和"整行可点"必须分得开**。`lattice.todo` 的行既能拖起来排序，又能点一下勾掉：判据是 4px 阈值，且抬手后浏览器补的那次 `click` 要吃掉（`suppressClick` 用 `setTimeout(..., 0)` 复位 —— click 在它之前同步派发）。别用 HTML5 拖放：沙箱是不透明源，跨文档的 `dataTransfer` 靠不住；自己算还能控制让位动画。
 - **要定时器就用 `schedule.every`，不要 `setInterval`**。组件里开定时器等于绕开平台的"不可见就停摆"（不变量 10）。`schedule.every({ every: 1000 })` 拿一个订阅号，`tick` 消息里带着它，认准自己那一条再刷新；组件卸载 / 重载时 `schedule.clear(id)`。第一次要立刻显示的话（速率类指标靠两次采样做差）在 `every()` 之后自己先调一次数据方法建基线 —— Rust 侧第一次采样一定返回 0，那是设计，不是 bug。
-- **卡片顶上给窗饰让位**。桌面窗口右上角那排按钮浮在组件内容之上且**能点**，通栏的输入框 / 第一行文字会被它压住。标题栏留出 `padding-right: 96px`（待办）或顶上一条 24px 状态条（便签），见 WIDGET_SPEC §5.1。
+- **卡片顶上给窗饰让位**。桌面窗口右上角那排按钮浮在组件内容之上且**能点**，通栏的输入框 / 第一行文字会被它压住。标题栏留出 `padding-right: 120px`（待办 / 便签 / 音乐都是这个数）或顶上一条 24px 状态条，见 WIDGET_SPEC §5.1。
 - **组件拿不到 `localStorage`、读不到 `parent` 的 DOM，一切能力走桥。**
 - **组件里所有颜色从 `--lattice-*` 变量来，别硬编码明暗。**
 - **要用户调的参数写进清单的 `config`，别在卡片里画设置 UI。** 卡片只有 240×140，而且组件自己的存储是按 `widgetId` 的 —— 两个实例会共享同一份偏好。属性面板按实例渲染，那才是用户期望的粒度（见下面的配方）。
@@ -532,13 +515,16 @@ public/widgets/<id>/
 
 ---
 
+
 ## 8. 已知缺口（改之前先看这里，别当成 bug 修一半）
 
 | 缺口 | 影响 | 需要的动作 |
 | --- | --- | --- |
+| **组件工具的三处遗留**（v0.11 数据平面，见 ROADMAP 的 v0.11 那条） | 组件把能力声明成工具这条路通了（`agent:tools` + `widget.<id>.<tool>` + `lattice.diagram`），但三处没走完：① **小窗那一轮没有组件工具** —— 小窗不加载平台外壳、没有清单，所以 `Ctrl+K` 里问"帮我画个图"它看不见 diagram 的工具；② **不唤醒窗口** —— 画布上那张是破卡或组件没装时，调用直接回 `not-running` 给模型（"建窗口 → 等宿主页 boot → 再投递"是一串会输的竞态，所以故意不做）；③ **SDK 没有 `agentTools()`** —— 作者得自己 `addEventListener("message")` 认 `agent-call`，而 `lattice.on("agent-call")` **不会触发**（`lattice.js` 的 `handleMessage` 里没有这个分支） | ① 要么给小窗一份只读清单、要么在提示词里明说"这一轮没有组件工具"；② 接受它，或者把"唤醒"做成一次显式请求而不是默认路径；③ SDK 加一层 `agentTools()`，顺手把 `on("agent-call")` 接上 —— 这条最便宜，也最容易让作者踩空 |
 | **`shell.open` 只过了单测** | `open_policy.rs` 的 5 条 `rustc --test` 全过、`cargo check` 干净、`tests/bookmarks.html` 44 条全过 —— 但那全是"规则对不对"和"组件答得对不对"。**没验的**是最后一步：`ShellExecuteW` 到底有没有把浏览器叫起来，以及撤掉 `shell:open` 之后点一行是不是只出提示、什么都不打开 | 起一次桌面应用 → 装 Bookmarks（属性面板里勾上 Open links）→ 点一行看默认浏览器是否起来（`shell.open` 成功只代表"交给系统了"，浏览器起不来它也不会知道）→ 撤掉 Open links 再点一次，卡片应显示 "It needs the Open links permission"，任务管理器里不该多出浏览器进程。**跑之前先确认没有残留的 `lattice.exe`**，孤儿进程会用内存里那份盖掉 `state.json` |
 | **手在真机上还有三处没走过**（其余 2026-10-25 已验，见 [AGENT_ACCESS §4.9](./docs/AGENT_ACCESS.md)） | 六组开关、审批、六种手都在真机上跑通了：文件（中文路径与中文内容、二进制拒读、写 UTF-8 无 BOM）、`shell.run`（中文输出、退出码、按 Stop 1517ms 后子进程真的没了、`timeoutMs: 2000` 跑 20 秒的睡眠 → 2013ms 回 `timedOut`）、`web.fetch`（HTML 折成正文、跟 302 到新地址）、屏幕（列窗口 + 3456×1081 PNG 落盘）、MCP（自建 stdio 探针：起进程、`initialize`、`tools/list`、`tools/call`，第二次发现走缓存）、键鼠（点、打字含 emoji、`Enter`），以及**一轮完整对话里 Deny 之后磁盘上确实没有那个文件**。**还没走的**：`hands.rs` 那 7 条与 `mcp.rs` 那 8 条 `cargo test` 本机跑不了（写不了 `target/debug/deps`）；截图内容只有人眼能看（模型 `vision: false`）；`input.key` 只验了 `Enter`，`Ctrl+S` 这类组合键没在前台窗口里试；撤掉某组开关之后模型再调它（`disabled`）只在单测里验过 | 换一台能跑 `cargo test` 的机器补那 15 条；再起一次真机，把「撤掉 Files 之后让它读」和「Ctrl+S 进前台窗口」各试一次 |
 | **技能包与免问区只在断言里验过** | `tests/skills.html` 55 条、`skills_policy.rs` 19 条全过，`cargo check` 干净 —— 但那全是"解析对不对 / 算得对不对 / 判得对不对"。**没验的**是整条真机链路：导入一个真实目录之后面板上看到的字、启用之后提示词里真的多出那一段、`file.write` 落在 `workspace` 里没有确认条而落在外面有、关掉开关它就回到默认做法 | 起一次桌面应用 → Assistant 区导入一个真的技能目录（里面有 `SKILL.md`）→ 面板上出现名字与描述 → 打开它 → 问"按那个流程做" → 它照步骤调 `file.read` / `file.write`：写 `workspace` 内的那份不该弹确认条，写 `D:\GitDev\lattice` 里的该弹 → 关掉开关再问一次，它回到默认做法 |
+| **浏览器预览那条通道会把 `skills` 洗掉** | `scripts/dev-llm-proxy.mjs` 还停在 `assistant.json` v3：`emptyConfig()` 写 `version: 3`，`parseConfig` 是"先造一份空的、再逐个字段搬"（`activeId` / `workspace` / `approvalMode` / `profiles` / `hands` 五个），`skills` 不在搬运名单里。所以在浏览器预览（`npm run dev`，没有 Tauri）里改任何一个设置再保存，磁盘上那份 `skills.enabled` 就没了 —— 桌面端下次启动看到的是"一份技能都没启用" | 把 `skills: { enabled: [] }` 补进 `emptyConfig()`、把 `value.skills` 加进搬运名单、`version` 抬到 4，再补一条"读一份 v4 文件 → 存回去 → `skills` 还在"的断言。落点是 `npm run test:llm-proxy`（现在 24 条） |
 | **Rust 直接生成的那几句还是英文** | 界面文案都走 `t()`，但有几条给人看的字是在 Rust 里拼出来、跨 IPC 才到界面的：`llm.rs` 的设置读写错误、`llm_policy::describe_status` 的 401/403/404/429（"去 Assistant settings 换一把 key"这种）。中文环境里它们仍然显示英文 | 两条路：在 Rust 里只回**错误码**、由前端翻（干净，但要改 llm 那九个命令的返回形状）；或者把这几个 key 也收进中文表、在 Rust 里 `t()`（要先把表导进 Rust，等于第二份真源）。没做之前别在 `i18n/*` 里加"看起来该翻"的半条 —— 表里有的句子前端才取得到 |
 | **"跟随系统"只在一台英文系统上验过** | 这台机器的 WebView2 报 `en-US`，所以三档里"跟随系统"落回英文是对的，但"系统是中文时点跟随系统"和"应用开着的时候改系统语言"只走了代码（`watchSystemLanguage`），没在中文系统上真点过 | 换一台中文 Windows（或临时改显示语言）看两件事：新装第一次启动应该是中文；应用开着时切系统语言，界面应当当场跟着换。`resolveLang` 的纯逻辑已被 `tests/i18n.html` 钉住，要补的是真机那一段 |
 | **安装包没有代码签名** | 第一次运行被 SmartScreen 拦成"未知发布者"，点"仍要运行"才装得上。用户流失基本都发生在这一步 | 买 OV/EV 证书（EV 能立刻建立信誉，OV 要攒），或走 winget / Microsoft Store 分发绕开 |
@@ -688,11 +674,12 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 
 ---
 
+
 ## 11. 验证
 
 - `npm run typecheck` —— 必跑，当前是干净的
 - **`npm run check:tokens`** —— 三张表（字号 / 圆角 / 间距）的守门人，扫 `src/**/*.css`，越界就红并指出行号；`npm run test:tokens` 钉规则本身（半像素、`font` 简写、豁免、以及"仓库现状是干净的"）。改样式前后各跑一次，比肉眼数 `10.5px` 靠谱。真要写规矩外的值，行尾加 `/* token-ok 理由 */`，理由不写会被报。
-- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（47 页 / 2091 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。
+- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（50 页 / 2 325 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。
 - **断言页别等 iframe**。`--virtual-time-budget` 会让虚拟时钟一路快进到 9 秒，而 iframe 的 `load` 走真实网络 —— 谁先到看运气，快进赢了就 dump 到一个空的 `<pre>`，`test:browser` 报"0 条 —— 一条断言都没跑完"。那个症状和"页面没有断言"一模一样，别去调 budget（调大只是让赌局更偏一点，还是赌）。正确做法是**同步加载**：组件把纯逻辑挂在 `window.__latticeXxx` 上，普通 `<script src>` 引进来就能断言；拿不到那个对象时也要先 `log(false, …)` 再 `flush()`，否则页面永远吐 0 条。
 - 改了组件 UI：`npm run dev` 后在浏览器里看；要截固定尺寸的图，用 Edge headless：
   ```bash
@@ -739,7 +726,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
   #[path = "../src-tauri/src/network_policy.rs"] mod network_policy;
   ```
   `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe`。**这就是"纯逻辑要单独拆成一个文件"的原因 —— 拆出来才测得到**。断言只有一份（`#[cfg(test)] mod tests` 在模块内部），壳子别复制。
-  能这么跑的现在是 328 条（全仓 370 条 `#[test]`，`grep -c` 一下就对得上）：`llm_policy.rs`（48，**不引 crate**）、`agent_policy.rs`（26）、`input_policy.rs`（23，**不引 crate**）、`web_policy.rs`（21，**不引 crate**）、`screen_policy.rs`（21，**不引 crate**）、`mcp_policy.rs`（17，**不引 crate**）、`diagnostics.rs`（14）、`fs_policy.rs`（14，**不引 crate**）、`hands_policy.rs`（16，**不引 crate**）、`network_policy.rs`（12）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`shell_policy.rs`（9，**不引 crate**）、`occlusion_policy.rs`（8）、`usage_policy.rs`（8）、`audio_policy.rs`（6）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）。剩下 42 条（`protocol.rs` 6、`llm.rs` 6、`widget_store.rs` 5、`hands.rs` 7、`mcp.rs` 8、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
+  能这么跑的现在是 363 条（全仓 413 条 `#[test]`，`grep -c` 一下就对得上）：`llm_policy.rs`（48，**不引 crate**）、`agent_policy.rs`（26）、`input_policy.rs`（23，**不引 crate**）、`web_policy.rs`（21，**不引 crate**）、`screen_policy.rs`（21，**不引 crate**）、`hands_policy.rs`（21，**不引 crate**）、`skills_policy.rs`（19，**不引 crate**）、`mcp_policy.rs`（17，**不引 crate**）、`assistant_session_policy.rs`（15）、`diagnostics.rs`（14）、`fs_policy.rs`（14，**不引 crate**）、`network_policy.rs`（12）、`assistant_window_policy.rs`（11）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`shell_policy.rs`（9，**不引 crate**）、`occlusion_policy.rs`（8）、`usage_policy.rs`（8）、`audio_policy.rs`（6）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）。剩下 50 条（`protocol.rs` 6、`llm.rs` 14、`widget_store.rs` 5、`hands.rs` 7、`mcp.rs` 8、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
   **壳子会过期，过期了要修，不要当它不存在**：`extract-test.rs` 曾经在 `package.rs` 加上验签之后编不过（`extract` 多了第三个参数、还引用了 `signature_policy` 和 `backup`），但 `rustc` 编译失败时旧的 `.exe` 还在，`&&` 串起来的写法会**跑那个旧二进制并显示全绿** —— 那才是最坏的情况。所以：编不过就是红，先看 `rustc` 的退出码，别信后面那行 `test result`。修法是给壳子补 `#[path]` 把 `signature_policy.rs` 编进来，`backup` 依赖 `tauri` 编不进来，就写一个签名对得上的桩（四条用例传的都是 `None`，走不到那条分支）。
   `package.rs` 要用到 `flate2` / `serde_json`，`signature.rs` 要用到 `ed25519_dalek` / `sha2`，壳子得额外指路：`rustc --edition 2024 --test 壳子.rs -L src-tauri/target/debug/deps --extern flate2=<rlib> --extern serde_json=<rlib> -o 壳子.exe`（rlib 从 `target/debug/deps/` 里按 `libflate2-*.rlib` 找）。只给 `--extern` 不给 `-L` 会报 `can't find crate`。`csp.rs` 那个桩的值要抄对（`"lattice-widget"`，不是 `"lattice"`），抄错了单测会红 —— 这次正好被它抓了一下。
   **raw `rustc` 的默认 edition 是 2015**，不带 `--edition` 编出来的 panic 消息不认内联捕获（`assert!(cond, "{index}")` 会报 unused placeholder，断言本身照样成立）。想安静就照着 crate 的 edition 给一个：`rustc --edition 2024 --test src-tauri/src/guide_policy.rs -o 壳子.exe`。

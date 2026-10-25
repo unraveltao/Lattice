@@ -29,6 +29,12 @@
 
 撑起上面全部的是**一条铁律：一份事实只有一个家**。见第四节——它是这套文档不烂的唯一原因。
 
+### `.agents/skills/` 不在这张表里
+
+三份 `SKILL.md`（[`invariants`](../.agents/skills/invariants/SKILL.md) / [`new-widget`](../.agents/skills/new-widget/SKILL.md) / [`verify`](../.agents/skills/verify/SKILL.md)）是**给 agent 看的工序**，不是第四种文档：改代码之前查该守哪几条不变量、加组件按什么顺序、改完按什么阶梯验。
+
+它们不进这张表，是因为它们**不构成事实的家**。每份开头都写着"正文在 `AGENTS.md` 第 N 节"，自己只给顺序和判据。所以它们过期的方式也不同：**结论错了去改 `AGENTS.md`，工序错了才改这里**。往这三份里补一句"权限一共 12 个"就是违规 —— 那已经是别人的家了。
+
 ### 语言分工
 
 | 文件 | 语言 | 谁读 |
@@ -52,6 +58,7 @@
 | 要编译 / 打包 / 发版 | [`reference/build.md`](./reference/build.md) | 15 分钟 |
 | 要动 agent 接入 | [`AGENT_ACCESS.md`](./AGENT_ACCESS.md) | 20 分钟 |
 | 要动签名 / 发布 | [`CODE_SIGNING.md`](./CODE_SIGNING.md) + `ROADMAP` v0.7 | 15 分钟 |
+| 让 agent 按这个仓库的规矩动手 | [`.agents/skills/`](../.agents/skills/invariants/SKILL.md) 三份（`invariants` / `new-widget` / `verify`） | 按需 |
 | **要做一件还没做的事** | [`design/README.md`](./design/README.md) | 按需 |
 
 ## 三、新内容放哪
@@ -89,11 +96,11 @@
 
 这三处最容易过期，而且过期了不会报错：
 
-1. `README.md` 的 **By the numbers**（组件数 / 权限数 / 断言数 / 文档坑数）—— 数字变了要重数一遍，别估。
+1. `README.md` 的 **By the numbers** —— 现在是六项：组件数、权限数、Tauri 命令数、浏览器断言数、Rust 单测数、文档坑数；底下那张 `Code, roughly` 是另外六行行数。数字变了要重数一遍，别估。
 2. `ROADMAP.md` 的**进度总览**表 —— 一条版本从"进行中"变"已完成"。
 3. `AGENTS.md` 的**已知缺口**表 —— 补掉一条就删一条，别留着当"历史"。
 
-能自动数的那几项不用人记：`npm run check:docs` 会拿 `index.json`、`KNOWN_PERMISSIONS`、`#[tauri::command]` 去对账，顺带查全仓库文档的相对链接。断言数和坑数只能手数，脚本会把"当前实测值"打出来给人抄。CI 里跑同一条命令。
+能自动对的不用人记：`npm run check:docs` 会拿 `public/widgets/index.json`、`KNOWN_PERMISSIONS`、`#[tauri::command]`、`PITFALLS.md` 的条目数去对账，顺带查全仓库每一份 `.md` 里的相对链接。行数那六行按 **1% 容差**比 —— 它们每次提交都会动，要求精确相等等于让每个 PR 都去改 README，而一张没人愿意维护的表最后会被删掉。**断言数只能手数**（浏览器 2 325 条、Rust 413 条），脚本只核中英文两份写的是不是同一个数，别指望它发现你数错。CI 里跑同一条命令。
 
 ## 六、别做的事
 

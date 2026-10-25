@@ -292,10 +292,14 @@ AssistantPanel（主窗口抽屉）
 > 依然没做：`127.0.0.1` 没开口子，组件也没有一条"自己调执行器"的路。见 §4.7 与
 > [WIDGET_SPEC §3.5](./WIDGET_SPEC.md)。
 
-## 4. D 内置 assistant（模型在平台里）[已实现，v0.10]
+## 4. D 内置 assistant（模型在平台里）[已实现，v0.10 起；v0.11 长出手，v0.12 收成两个模式]
 
-一句话：**用户填一个 OpenAI 兼容的地址、模型名和 API key，Ctrl+K 说话，它用现有的八个
-动作改桌面。**
+一句话：**用户填一个 OpenAI 兼容的地址、模型名和 API key，`Ctrl+K` 说话，它按当前模式动手 ——
+内部模式管桌面，完全访问模式像个正常 agent。**
+
+这一节原来只描述 v0.10 的样子（八条桌面动作 + 一把 key）。v0.11 加了六组手、三档审批、
+组件声明的工具和 MCP；v0.12 把它们收成一个开关（§4.10）。**如果你只想读一件事，读 §4.10
+和 §4.11** —— 那两节决定"它现在到底能干什么"。
 
 ### 4.1 和前三个的关系
 
@@ -308,13 +312,38 @@ AssistantPanel（主窗口抽屉）
 两条路的执行器**是同一个**（`platform/agent.ts`）。这不是省事，是安全模型：白名单只有一份，
 "agent 能改什么"的答案不会因为入口不同而不同。区别只在"谁在说"和"谁在听"。
 
+**但"手"从 v0.11 起不再等于那八个动作。** 桌面动作仍然是八个（白名单没变，见 §1.4），另外
+长出四类东西：六组能力（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP，§4.10）、组件自己声明的工具
+（§2）、用户自己配的 MCP 服务（也是 §4.10），以及技能包给的"怎么做"（§4.12）。所以 §4.4 那节
+现在只讲"桌面动作那八个"，别再把它当成工具表的全貌。
+
 ### 4.2 key 在哪儿，为什么这么放
 
-`%APPDATA%\com.iron-tom.lattice\assistant.json`：
+`%APPDATA%\com.iron-tom.lattice\assistant.json`，**v4**：
 
 ```jsonc
-{ "baseUrl": "https://api.deepseek.com/v1", "model": "deepseek-chat", "temperature": 0.6, "apiKey": "sk-…" }
+{
+  "version": 4,
+  "activeId": "p-1",
+  "profiles": [
+    { "id": "p-1", "label": "DeepSeek", "baseUrl": "https://api.deepseek.com/v1",
+      "auth": "bearer", "apiKey": "sk-…", "model": "deepseek-chat", "temperature": 0.6 }
+  ],
+  "mode": "internal",          // internal | everything，见 §4.10
+  "approvalMode": "ask",       // ask | auto | readonly，见 §4.11
+  "hands": { "files": false, "shell": false, "web": false,
+             "screen": false, "input": false, "mcp": false },
+  "workspace": "",             // 免问区，只对 file.write 生效，见 §4.12
+  "skills": { "enabled": [] }  // 启用了哪几份技能包，见 §4.12
+}
 ```
+
+- **每一档自带 key / auth / model。** "一份 key 配所有模型"是做不到的：DeepSeek 走 bearer，
+  本机 Ollama 根本不要鉴权。`auth` 存字符串而不是枚举（`bearer` / `api-key-header` / `none`），
+  多一个值不用迁移。
+- **v1 / v2 / v3 就地升到 4**（`llm.rs::normalize`），档一条不丢。旧文件只有 `baseUrl` +
+  `model` 的时候，它变成 `profiles[0]`。
+- **`mode` 默认 `internal`。** 升级不该替用户把六组手全打开 —— 见 §4.10。
 
 - **前端只见掩码**（`sk-1…cdef`）。key 一旦进了 JS 状态，就会跟着调试面板、截图、某次
   `JSON.stringify` 一起外泄，而它换不了（用户得去后台吊销）。
@@ -331,11 +360,15 @@ DeepSeek / OpenAI / Kimi / Qwen / Ollama / LM Studio —— 而"再多支持一�
 `llm_policy.rs` 里一个函数的事，不是架构问题。地址归一化很宽容：`api.x.com`、
 `https://api.x.com/`、`https://api.x.com/v1`、整条 `/chat/completions` 贴进来都认。
 
-### 4.4 工具：就是那八个
+### 4.4 桌面动作：仍然只有那八个
 
 `runtime/assistant.ts` 的 `TOOL_SPECS` 和 `AGENT_ACTIONS` **逐字一致**（`tests/assistant.html`
-11 条断言钉着），每个工具的参数名也和执行器读的键逐个对上。新增动作时**三处一起改**：
+钉着），每个工具的参数名也和执行器读的键逐个对上。新增动作时**三处一起改**：
 `agent_policy::ACTIONS`、`AGENT_ACTIONS`、`TOOL_SPECS`。
+
+**这八条是"能改桌面"的全部** —— 摆、挪、缩放、删、钉、置顶、换主题、暂停组件。v0.11 的六组手
+（§4.10）不在这张表里：它们走另一条 IPC（`assistant_tool`）、另一套白名单与预算，而且**碰不到
+布局**。两张表分开是有意的 —— "能读文件"和"能挪你的卡片"不该是同一份授权里的两个参数。
 
 仍然不给的，和 §1.5 一样：授权、安装、卸载、`config.set`、`storage.write`、清空。模型要是
 被要求做这些，它该说"做不到" —— 系统提示里写死了这一条。
@@ -345,8 +378,10 @@ DeepSeek / OpenAI / Kimi / Qwen / Ollama / LM Studio —— 而"再多支持一�
 1. **组件的嘴和平台的手分开。** `llm.chat` 永远不带工具；组件想有手，只能借
    `assistant.ask`（另一项权限、另一张更小的工具表），没有第三条路 —— 尤其没有
    "组件直接调 `runAgentAction`"。给组件授权，不等于把布局交给它。
-2. **循环有上限**（6 轮，`MAX_STEPS`）。模型可以连着做几步，但不能自己转圈把额度烧完；
-   Rust 那边还有 300ms 节流兜底。
+2. **循环有上限，而且是三道。** `MAX_STEPS = 24`（一步 = 一次模型往返）、`MAX_TURN_MS = 300 000`
+   （5 分钟）、`MAX_TURN_TOKENS = 200 000`。撞上任何一道就收尾，并且**分得清是哪一道** ——
+   用户看到"到时间了"和看到"步数到了"，接下来该做的事完全不一样（前者去查谁慢，后者去拆任务）。
+   另有 300ms 的请求间隔兜底（`llm.rs::MIN_GAP`），挡的是写坏的循环，不是正常对话。
 3. **错误要说人话。** 401 是"key 被拒"，404 是"base URL 多了或少了 `/v1`"，429 是"额度/频率"。
    统一说"检查你的网络"是更新器踩过的坑（见 ROADMAP）。
 
@@ -365,7 +400,7 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
                                                                    ◄── 结果 + 压缩后的快照
 ```
 
-- 走的是 agent 端点**同一条** `call_frontend` 通道（同一个 5 秒超时、同一个审计点），不是新开一条路。
+- 走的是 agent 端点**同一条** `call_frontend` 通道（同一个 8 秒 `REPLY_TIMEOUT`、同一个审计点），不是新开一条路。要跑一整轮模型往返的那条（`assistant.ask`）另给 180 秒，见 §4.7。
 - 动作仍然先过 `agent_policy::parse_action` 的白名单 —— 小窗不是特权入口，它只是另一个壳。
 - 抽屉和小窗共用 `AssistantPanel.tsx`，两者的差别只有 `AssistantSurface` 一个对象
   （`localSurface(records)` / `remoteSurface()`），工具循环本身一行都没分叉。
@@ -449,24 +484,116 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 手一按会得到"桌面应用里才有"。
 
 **这一层必须复制的东西**：`llm_policy.rs` / `llm.rs` 的那几条规则（base URL 归一化、三种
-鉴权、错误翻译、`assistant.json` 的 v3 形状）。改一边要改另一边 —— `npm run test:llm-proxy`
-（23 条）用 Rust 测试里的同一组样例钉住它，这是唯一的提醒。
+鉴权、错误翻译、`assistant.json` 的形状）。改一边要改另一边 —— `npm run test:llm-proxy`
+（24 条）用 Rust 测试里的同一组样例钉住它，这是唯一的提醒。
+
+**它现在落后一版**：Rust 那边是 `assistant.json` **v4**（v4 加了 `skills.enabled`），而
+`scripts/dev-llm-proxy.mjs` 的 `emptyConfig()` 还写着 `version: 3`，`skills` 整段没有。
+后果不是理论上的：那个 `parseConfig` 是"先造一份空的、再逐个字段搬"（`activeId` /
+`workspace` / `approvalMode` / `profiles` / `hands` 五个），**`skills` 不在搬运名单里** ——
+所以在浏览器预览里改任何一个设置再保存，磁盘上那份 `skills.enabled` 就没了。改这一层时
+先看这个差值。
 
 ### 4.9 六只手在真机上的样子 [已实现，2026-10-25 验过]
 
 把 `callHand` 直接接到 `assistant_tool` 上逐只点名跑了一遍。四件事和"想当然"不一样，写在这里：
 
-- **`workspace` 是默认位置，不是牢笼。** `fs_policy::path_is_under` 有 4 条断言，但
+- **`workspace` 是默认位置 + 一处免问，不是牢笼。** `fs_policy::path_is_under` 有 4 条断言，但
   `hands.rs` 一次都没调用它：`file.read` 读得了任意绝对路径（`..\..` 出去也行），
-  `file.write` 只要目标目录存在就能写到外面。挡住它的是**审批条**（上面印着完整路径），
-  不是路径校验。别在文档里把它写成沙箱；真要收，先回答"读要不要一起收"—— 读是自动放行的。
-- **读自动放行，写 / 跑命令 / 点键鼠必问。** `file.list` / `file.read` / `file.search`
+  `file.write` 只要目标目录存在就能写到外面。v0.12 把它变成了**免问区**：写进 `workspace` 之内
+  的 `file.write` 不问（`approvalFor` 直接 `allow`），写在外面才弹审批条（条上印着完整路径）。
+  免问**只覆盖 `file.write`** —— `shell.run` 的 cwd 落在 workspace 里照样问，因为一条命令能做的
+  事不止"写这个目录"。别在文档里把它写成沙箱；真要收，先回答"读要不要一起收"—— 读是自动放行的。
+- **默认档（`ask`）下：读自动放行，写 / 跑命令 / 点键鼠必问。** `file.list` / `file.read` / `file.search`
   不弹确认；其余走 `approve`，拒绝时回给模型的是那句 `the user declined this action —
   do not retry it; ask what they want instead`，模型于是会说"我没有改动任何东西"。
+  这一段是 `approvalMode: "ask"` 的行为 —— `auto` 和 `readonly` 不一样，见 §4.11。
 - **截图模型看不见。** `screen.capture` 回 `vision: false` 加宽高，模型拿不到像素 ——
   提示词里就是这么写的，别指望它"看一眼屏幕"。
 - **增量是攒批的。** 一轮真网关的回答通常只来 1–2 个 `delta` 事件（Rust 按 60ms / 24 字
   攒批），短回答会并成一块；字仍然边出边显示，只是块更粗。
+
+### 4.10 六组手与两个模式 [已实现，v0.11 / v0.12]
+
+六组能力，各一个开关，**出厂全关**（`HANDS_OFF`）：
+
+| 组 | 给什么 | 怎么执行 |
+| --- | --- | --- |
+| `files` | `file.list` / `file.read` / `file.search` / `file.write` | Rust 直读直写，路径不设边界（§4.9） |
+| `shell` | `shell.run`（带 `timeoutMs`，可取消） | 起子进程，Stop 杀进程树 |
+| `web` | `web.fetch` | 跟 ≤5 跳重定向、HTML 折成正文、512 KB 上限 |
+| `screen` | `screen.windows` / `screen.capture` | 窗口列表；截图只回宽高，模型拿不到像素 |
+| `input` | `input.click` / `input.type` / `input.key` | `SendInput`，落点是算出来的绝对坐标 |
+| `mcp` | `mcp.<server>.<tool>` | 用户自己配的 MCP 服务：stdio 起子进程，或 streamable HTTP |
+
+**为什么六个开关不够，非要做成两个模式。** 开关回答的是"它能不能"，回答不了"我现在想不想每步
+都被问"。真实的用法是两种人格：一种**管桌面**（挪组件、换主题、调组件声明的工具），它不该去读
+`C:\` 上的任意文件；另一种**像个正常 agent**（读文件、跑命令、抓网页、点键鼠），用起来不该每十
+秒被打断一次。
+
+`mode` 只有两个值，存在 `assistant.json` 里（不进 `state.json` —— 那份是前端整体回写的，一次
+陈旧的 set 就能把它盖回 `internal`）：
+
+- **`internal`（内部，默认）**：桌面八个动作 + 组件声明的工具 + **你拨开的那几组手**（出厂全关），
+  审批照 `approvalMode` 走。
+- **`everything`（界面上叫"完全访问 / Full access"）**：六组手**在这一轮强制全开**
+  （`effectiveHands` 返回新对象，**不改**你存的那六个开关 —— 切回内部，原样回来，不用再关一遍），
+  审批不问（两处例外见 §4.11），审计 fail-closed。
+
+**启用要过一道确认。** 两个入口（模式条那颗、手那一段那颗）走同一个 `requestFullAccess` →
+`confirmEverything`：一段风险正文 + 四条硬线 + 一个必须勾的"我明白风险" + 灰着的 Enable。
+形状抄 DSH 那道开关，补了它没说的两件事：**不能干什么**，以及**怎么关掉**。
+
+**那颗按钮不顺手改别的。** `grantAllHands()` 只写六个开关，不写 `mode`、不写 `approvalMode`、
+不写 `workspace` —— 三个字段各管一件事，混进一次写入就是"点了一下按钮，工作区和审批档一起变了"。
+它存在的原因很土：三份文档都曾写着"内部模式没有手"，而内部模式**有**你拨开的那些手。
+
+### 4.11 审批三档 [已实现，v0.11]
+
+`approvalMode` 决定"要不要问一句"，和六组开关是**两根轴**：开关决定这张表里有没有这个工具，
+审批档决定调它的时候停不停。
+
+| 档 | 行为 | 谁适合 |
+| --- | --- | --- |
+| `ask`（默认） | 读自动放行；写 / 命令 / 键鼠 / MCP 逐次确认 | 第一次用，或者拿它干活但想看着 |
+| `auto` | 只读的和会改的都放行，**不可逆的仍然问**（`DANGEROUS_ACTIONS`，现在只有 `placement.remove`） | 已经信得过，只在意"别删我东西" |
+| `readonly` | 改东西的工具**连 schema 都不给**模型，Rust 侧再拒一次 | 只想让它读和答，不许动手 |
+
+裁决顺序在 `approvalFor` 里是写死的，知道这个顺序就够读懂所有情况：
+
+1. **`readonly` 排在最前面** —— 用户说"别改"就一步都不许走，它**压得过 `everything`**。
+2. **平台自身的配置任何档、任何模式都要问**（`assistant.json` / `mcp.json` / `state.json` /
+   `skills/**`）。这条也排在 `everything` 之前，理由很硬：一份能被模型改写的 `assistant.json`
+   会把模式、开关、免问区一起变成"它说自己有就有" —— 那不是更大的权限，是没有权限系统。
+3. `everything` 放行。
+4. `auto` 放行，除了 `DANGEROUS_ACTIONS`。
+5. `ask`：读放行，其余问。
+
+**`readonly` 是"不给工具"，不是"给了再拒"。** 模型看不到 schema，就不会一本正经地计划一件它
+做不到的事，也不会因为被拒而反复重试。所以"我开了完全访问但还想它问一句"是自相矛盾的 ——
+想要那个就回内部模式 + `ask`。
+
+### 4.12 技能包与工作区 [已实现，v0.12]
+
+**技能是说明书，不是权限。** 一份技能是 `skills/<id>/SKILL.md`：一段文本，进每一轮的提示词，
+**什么也不授予**。上限：启用 4 份、单份正文 4 000 字、合计 8 000 字（`skills_policy`）；
+`assistant.json` 的 `skills.enabled` 只存 id —— 正文抄进配置文件就等于有了两份会各自过时的说明书。
+正文由 Rust 读、由 Rust 拼进提示词，前端只看到名字和描述。
+
+**工作区是"免问区"，不是"围栏"。** 这个区别值一段：v0.11 之前 `workspace` 只是"没给绝对路径
+时去哪儿"，用户以为它是个笼子，其实写到哪里都不拦。v0.12 把它改成一处**免问** —— 写进
+workspace 之内的 `file.write` 不问，写在外面才弹条。**免问只覆盖 `file.write`**：`shell.run` 的
+cwd 在 workspace 里照样问（一条命令能做的事不止"写这个目录"），`file.read` 仍然全盘可读。
+所以它不是边界，是"这块地方我允许你顺手改"。
+
+### 4.13 会话落盘 [已实现，v0.11]
+
+一轮一轮落在 `assistant-sessions/<id>.json`，一条会话一个文件。三道额度：**50 份会话 / 每份
+200 条消息 / 单文件 1 MB**，超了按最旧的淘汰。面板顶上那行能挑回来、能新开、能删。
+
+**它是明文的，也不进审计。** 会话里是用户的原始对话（可能含路径、命令、读到的文件片段）。所以
+不加密（钥匙还得放在同一台机器上，只会让人觉得安全）、不过期（用户自己删）、也不抄进
+`agent.rs` 的审计日志 —— 审计记的是"做了什么"，不是"说了什么"。想清掉就把那个目录删了。
 
 ## 5. 明确不做（v1）
 
@@ -480,12 +607,19 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 | `agent_policy.rs`（HTTP 解析 / 令牌 / 白名单 / `say`） | 26 条 `rustc --test`，见 `.scratch/agent-test.rs` |
 | `platform/agent.ts`（动作执行器） | `tests/agent.html` 57 条，跑的是**真 store** |
 | `scripts/lattice-agent.mjs`（客户端） | `npm run test:agent`，14 条，起假端点测请求形状、`say` 的整句传递与退出码 |
-| `llm_policy.rs`（地址 / 请求体 / 响应 / 工具调用 / 错误翻译） | 21 条 `rustc --test`，见 `.scratch/llm-test.rs` |
-| `runtime/assistant.ts`（工具表 / 工具表裁剪 / 人设 / 历史裁剪 / 快照预算） | `tests/assistant.html` 114 条 |
+| `llm_policy.rs`（地址 / 请求体 / 响应 / 工具调用 / 错误翻译） | 48 条 `rustc --test`，见 `.scratch/llm-test.rs` |
+| `runtime/assistant.ts`（工具表 / 工具表裁剪 / 人设 / 历史裁剪 / 快照预算） | `tests/assistant.html` |
+| `hands_policy.rs`（六组开关 / 审批三档 / 两个模式 / 预算） | 21 条 `rustc --test`；`runtime/hands.ts` 那一侧见 `tests/hands.html` |
+| `skills_policy.rs`（正文上限 / 启用清单 / 坏条目） | 19 条 `rustc --test`；面板那侧见 `tests/skills.html` |
+| `runtime/widget-tools.ts`（`agent.tools` 归一化 / 全局 32 条 / 4 000 字拒绝） | `tests/widget-tools.html` |
 | `assistant_window.rs` + 小窗那条转发 | **2026-10-25 实机验过**：`assistant_window_toggle` 回 `true`，CDP 查到 `assistant.html` 的 DOM（标题栏、面板、`Assistant · deepseek-v4.1-flash`、跟随主题），窗口里说一句 → 工具真的挪了桌宠（`lattice.pet#demo01` → 60,80）并回话；藏起来再叫回来还是同一个 webview、同一轮对话；拖完 `assistant-window.json` 落成 `{x:1300.0,y:444.0}` |
 | `llm.rs` + 工具循环 + 组件那条路 | **2026-10-25 实机验过**：先起一个假的 OpenAI 兼容服务（`.scratch/fake-llm.mjs`），真点开、真打字 —— 卡片从 (32,40) 挪到 (300,120)，气泡里出现"✓ 移动 lattice.pet#demo01"和回复；两个 pet iframe 的 `llm.chat` 都回到 `{ok:true,text:"…"}`；把 key 换成错的之后 `listModels` 报"the provider rejected the API key (HTTP 401)"。**之后换成了真厂商**（天枢 Dubhe 网关，OpenAI 兼容根是 `…/v1/8686/v1`）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受 |
 | `assistant_ask` + 组件那条路（借手） | **2026-10-25 实机验过**：先在属性面板给 `lattice.pet` 勾上「替我调整桌面」（`grants` 变成 `["llm:chat","desktop:control"]`，卡片当场按新权限重载），再从主窗口 `invoke("assistant_ask", { widgetId: "lattice.pet", messages: JSON.stringify([{ role: "user", content: "把 lattice.pet#49898d37 这只挪到 700, 240，然后置顶" }]), persona: "你是一只桌宠…" })` —— 真网关回"挪到 700, 240 了，也置顶了…"，`actions` 两条都 `ok`，那只从 `(24,460)` 到 `(700,240)`；审计是 `widget.ask · lattice.pet · 71 chars`，加每一步的 `assistant.chat`（`tools: placement.move, placement.front`）。**删除真被挡住**：问"把 lattice.pet#demo01 删掉"，回的是"我删不了自己呀，手里没有删除工具。你在画布上点一下那个 ✕ 就行。"，`actions: []`，`placements` 一个字没动。**组件自己那条路也走通了**：画布里的桌宠点开气泡打"把 lattice.pet#9c90cc09 挪到 900, 100" → 气泡里出现回话加一行"· 移动 lattice.pet#9c90cc09"，盘上那只真的到了 `900,100`。中途踩的坑（`messages` 在线上是 JSON 文本）见 ROADMAP 那条 |
-| `platform/llm.ts`（前端唯一的门）与 dev server 那条 `/api/llm` | **2026-10-25 验过**（`npx vite --port 1431`）：页面里 `await import("/src/platform/llm.ts")` 拿到 19 个值导出，`readLlmProfiles()` 回 `keyHint: "sk-d…1-hA"`（明文没出来）、`readHands()` 六组开关齐全、`listModels()` 列 4 个模型、`callCommand("llm_chat_stream")` 对真网关回 `"ok"`（`usage 38 → 24`）。三道闸（回环地址 / 回环 `Origin` / POST 必须 `application/json`）由 `npm run test:llm-proxy` 的 23 条钉着 |
+| `platform/llm.ts`（前端唯一的门）与 dev server 那条 `/api/llm` | **2026-10-25 验过**（`npx vite --port 1431`）：页面里 `await import("/src/platform/llm.ts")` 拿到 19 个值导出，`readLlmProfiles()` 回 `keyHint: "sk-d…1-hA"`（明文没出来）、`readHands()` 六组开关齐全、`listModels()` 列 4 个模型、`callCommand("llm_chat_stream")` 对真网关回 `"ok"`（`usage 38 → 24`）。三道闸（回环地址 / 回环 `Origin` / POST 必须 `application/json`）由 `npm run test:llm-proxy` 的 24 条钉着 |
 | agent 端点的真机往返 | **2026-10-25 验过**：`agent_set_enabled` 从窗口里打开 → `%APPDATA%\…\agent\endpoint.json` 落成 `{port: 52276, token}`；`npm run agent -- ping / state / say` 三条都成（`state` 回 16 个组件的快照，`say` 回 `{ok:true}`）；`theme.set light` 经端点在真 store 上生效再还原成 dark；不带令牌回 401 `missing or wrong bearer token`；关掉之后 `endpoint.json` 消失、端口 0 个监听、CLI 退出 1 并说清"Lattice 没在跑，或者 Agent access 关着"。curl 8.21 用同一条 `POST /rpc` 也通（PowerShell 那次 `timed out reading the request` 是它自己把 JSON 里的引号吃了，不是端点的事） |
 | 六只手（`assistant_tool`） | **2026-10-25 真机逐只跑过**：文件（中文目录 `中文 目录/hello.txt` 读出 `第一行：你好，世界`；二进制回 `binary`；`file.search` 命中中文；`file.write` 落 40 字节 UTF-8 无 BOM，`parents: true` 建出两层新目录）、`shell.run`（`Write-Output '你好，世界 😀'` 原样回、`exit 3` 回 `code: 3`、stderr 有内容、cwd 是 workspace；按 Stop 1517ms 后回 `cancelled` 且子进程没了；`timeoutMs: 2000` 跑 20 秒的睡眠 → 2013ms 回 `timedOut: true`、没留孤儿）、`web.fetch`（example.com 折成正文；`http://github.com` 跟到 `https://github.com/` 并报新地址；`ftp://` 回 `bad_args`）、屏幕（`screen.windows` 22 个窗口、焦点窗口排第一、认得出 `Tauri Window` 那份；`screen.capture` 落 3456×1081 PNG，签名与 IHDR 都对）、MCP（自建 stdio 探针：起 `node` 进程 → `initialize` → `tools/list` → `mcp.probe.echo` → `tools/call` 回 `probe echo: 你好 MCP`，第二次发现走缓存 3ms）、键鼠（`input.click` 落在算好的点、`input.type` 打出 `你好 😀!`、`input.key` 的 `Enter` 进到 contenteditable） |
 | 一轮完整对话（Deny / Allow） | **2026-10-25 真机**：真网关、真 `runAssistantTurn`。让它写文件并 `approve → false`：确认条请求是 `Write 12 characters to …\denied-写.txt`，工具结果 `the user declined this action…`，模型回"你拒绝了这次写入，所以我没有改动任何东西"，**磁盘上确实没有那个文件**；换成 `approve → true`：写文件 + `shell.run Get-Date` 两条都 `ok`，落盘 19 字节 UTF-8、内容 `probe-write-允许`。读（`file.list` / `file.read`）不弹确认，和 `needsApproval` 一致 |
+
+每页的断言条数以**跑一遍**为准（`npm run test:browser`：50 页 / 2 325 条 / 0 failed）。表里只写
+"哪一页钉住哪一块"，不写死每页多少条 —— 那个数字改一次断言就要同步改三份文档，而它本来只回答
+"这一块有没有人看着"。

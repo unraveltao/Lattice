@@ -89,7 +89,12 @@ tools: files          # 可选：声明它要用哪几组手，只用于在面�
 
 **提示词**：`PromptOptions.skills?: readonly SkillPrompt[]`（`{ id, name, description, body }`），`systemPrompt` 在"手"那一段之后加一段，两句话不能省："先照它们写的步骤做"（不写这句模型只当背景资料）与"不给你任何新工具"（不写这句它会在正文里见到"跑个脚本"就去调一个没有的工具，然后开始编）。**空表一个字符都不加**。上限 4 份 / 每份 4 000 字 / 合计 8 000 字，按**码点**算，**在启用时判**（渲染时判等于静默截断），由 `runtime/skills.ts::checkBudget` 返回原因与数字、界面说话。
 
-**审批**：`approvalFor(name, mode, ctx?)`，`ctx = { everything?: boolean; path?: string; workspace?: string }`；`ask` 档下 `file.write` 的 `args.path` 落在 `workspace` 内 → `allow`。路径判定是纯函数 `insideWorkspace(path, workspace)`（`runtime/hands.ts`）：`/` 与 `\` 归一、去掉 `.` 与尾分隔符、`..` **先折叠再比**、盘符与目录名不分大小写、相对路径算在里面、`workspace` 为空或指向盘根一律 `false`。**它是"要不要多问一句"的输入，不是围栏**：真正的边界在 Rust 侧，而 `shell.run` 从来不受它管。
+**审批**：`approvalFor(name, mode, ctx?)`，`ctx = { everything?: boolean; path?: string; workspace?: string }`；`ask` 档下 `file.write` 的 `args.path` 落在 `workspace` 内 → `allow`。路径判定是纯函数 `insideWorkspace(path, workspace)`（`runtime/hands.ts`）：`/` 与 `\` 归一、去掉 `.` 与尾分隔符、`..` **先折叠再比**、盘符与目录名不分大小写、相对路径算在里面、`workspace` 为空或指向盘根一律 `false`。**它是"要不要多问一句"的输入，不是围栏。**
+
+> **"不是围栏"这句要说全**：Rust 侧**也没有**第二道 `insideWorkspace`。`fs_policy::path_is_under`
+> 是有的（`fs_policy.rs` 的 14 条断言里 4 条钉着它），但 `hands.rs` **从来没调用过它** ——
+> 今天"写到哪儿"完全由前端那条 `approvalFor` 决定。`shell.run` 就更不受它管。
+> 所以免问区只改变**问不问**，不改变**能不能**；这也正是"假装它是围栏比不设更危险"那句话的意思。
 
 顺序上还有一条（0009 定的）：写平台自身配置（`assistant.json` / `mcp.json` / `state.json` / `skills/**`）的调用**在 `everything` 之前**就返回 `ask` —— 一份能被模型改写的 `assistant.json` 会把模式、开关、免问区一起变成"它说自己有就有"。
 

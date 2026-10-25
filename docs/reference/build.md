@@ -47,7 +47,7 @@ windres 预处理 `.rc` 时会自己 spawn `gcc -E -xc-header`，而 MSYS2 gcc 1
 
 换 `CARGO_TARGET_DIR` 也不行 —— 试过 `.scratch/cargo-target`，规则匹配的是 `deps\*.exe` 这个形状，换目录照样拦（还白编了 7 分钟依赖）。
 
-所以这台机器上要完整 `cargo test` 的那 21 条单测，**只能在 CI 或者别的机器上跑**（`ci.yml` 的 `rust` job 在 `windows-latest` 上跑 `cargo test --lib`）。其余 157 条走 `rustc --test` 壳子，见 [`../../AGENTS.md`](../../AGENTS.md) §11。
+所以这台机器上要完整 `cargo test` 的那 50 条单测，**只能在 CI 或者别的机器上跑**（`ci.yml` 的 `rust` job 在 `windows-latest` 上跑 `cargo test --lib`）。其余 363 条走 `rustc --test` 壳子，见 [`../../AGENTS.md`](../../AGENTS.md) §11。
 
 ## 二、构建命令
 
@@ -87,7 +87,7 @@ npm run tauri:build    # 出安装包
 
 ```
 1. 改 tauri.conf.json 的 version
-2. 打 tag 并推：git tag v0.x.0 && git push origin v0.x.0
+2. 打 tag 并推：git tag v0.x.y && git push origin v0.x.y
 3. Actions 出草稿 release（不是直接发布）
 4. 下载安装包，在一台干净机器上装一遍
 5. 回 release 页面点 Publish
@@ -108,7 +108,21 @@ npm run tauri:build    # 出安装包
 
 两套共用「静态文件 + 签名 + 没有服务端」这个思路，代码路径一行都不重叠。别把 `planInstall` 那套复用到平台更新上 —— 安装包不是解压，是跑一个安装器。
 
-## 七、发版的三条规矩
+## 七、CI 跑什么
+
+推上去之后 `.github/workflows/ci.yml` 分三个 job，谁红看谁：
+
+| job | 跑什么 | 为什么在这儿 |
+| --- | --- | --- |
+| `frontend` | `typecheck` → `build` → `test:injection` → `test:sdk` → `test:agent` → `test:tokens` → `check:tokens` → `check:docs` | 都不需要 dev server，几秒钟跑完 |
+| `browser` | 起 dev server → `test:browser`（全部 `tests/*.html`） | 页面 import 的是 `.ts` / `.tsx`，必须有转译；本机也能跑，只是慢 |
+| `rust` | `cargo test --lib` | **本机跑不了**（安全策略拦 `target/debug/deps` 下的 exe），runner 是唯一的机会 |
+
+`ci.yml` 里有一句话值得抄在这儿：**不写具体条数**。写过一次，写的时候就已经过期了 —— 没有人会去核一个注释。要数字就跑命令，或者看 README（那个有 `check:docs` 盯着）。
+
+`check:docs` 管两件事：**相对链接是否可达**，以及 **README 的数字和代码对不对得上**。计数类（组件 / 权限 / 命令 / 坑）必须精确相等；六项代码行数按 **1% 容差** —— 行数每次提交都动，精确相等会让每个 PR 都得改 README，而一张没人愿意维护的表最后会被删掉。改完文档先在本地跑一次，别等 CI 告诉你。
+
+## 八、发版的三条规矩
 
 照着做只要记住这三句，**论证**在 [`../ROADMAP.md`](../ROADMAP.md) v0.7 的「三条边界，别改」：
 

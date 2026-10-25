@@ -11,6 +11,14 @@ code: src-tauri/src/assistant_window.rs, src-tauri/src/desktop.rs, src/platform/
 > ② 底板**跟组件同一套 appearance**（tint / alpha / blur）；③ 能**锁住、能拖边放大缩小**。
 > 这三件事都不碰组件协议，但都碰窗口行为与一份落盘文件，所以先写这一份。
 
+> **现在的状态：Rust 侧写完了，命令没接上。** `assistant_window.rs` 里 `Mode` / `Appearance` /
+> `locked` / `assistant-window.json` v2 / `apply_mode` 都在，`resizable(true)` 也改过来了；
+> 但 `lib.rs` 的 `invoke_handler` 里只注册了 `toggle` / `hide` / `save_pos` 三条，
+> **`state` / `mode` / `appearance` / `locked` / `save_rect` 五条还没挂上去**（文件里那句
+> `#[allow(dead_code)] // 接线在下一步` 就是这件事）。所以界面拿不到"现在是哪种模式"，
+> 也改不了底板和锁 —— 不是"还没做"，是"做了一半、接上就能用"。
+> 下面第 1 节描述的是**动手之前**的样子，别拿它当现状读。
+
 ## 1. 问题
 
 今天 `assistant_window.rs` 把窗口钉死在一种形态：`resizable(false)`、`decorations(false)`、

@@ -5,6 +5,13 @@
  * 两件事都属于"过期了不会报错"的类型 —— 链接死了只影响读者，数字旧了只影响可信度，
  * 而两者都是靠人手维护必然漂移的东西。所以放进 CI。
  *
+ * 数的东西分两类，因为它们的"正确"标准不一样：
+ *
+ * - **计数类**（组件、权限、命令、坑）：离散的，必须精确相等。
+ * - **行数类**（TS / CSS / Rust / SDK / 组件 / 脚本）：只回答"这是个多大的项目"，
+ *   每次提交都会动。要求精确相等等于让每个 PR 都去改 README，而一张没人愿意
+ *   维护的表最后会被删掉 —— 所以按 1% 容差比，只在"明显旧了"的时候才红。
+ *
  *   node scripts/check-docs.mjs            体检
  *   node scripts/check-docs.mjs --verbose  连能自动数的那几项也逐条打印
  *
@@ -136,6 +143,40 @@ function countPitfalls() {
   return rows.length;
 }
 
+/* ---------------------------------------------------------------- 行数 */
+
+/** 行数只按"大致规模"这个精度才有意义，所以留 1% 的余量。 */
+const LINE_TOLERANCE = 0.01;
+
+const lineCount = (text) => text.split("\n").length - 1;
+
+function countLines(relativeDir, exts) {
+  let total = 0;
+  const stack = [path.join(ROOT, relativeDir)];
+  while (stack.length) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) stack.push(full);
+      } else if (exts.includes(path.extname(entry.name))) {
+        total += lineCount(fs.readFileSync(full, "utf8"));
+      }
+    }
+  }
+  return total;
+}
+
+/** 组件与示例只数仓库里有的：桌宠还在工作区里没提交，算进来就是一个随时会变的数。 */
+function countTrackedLines(globs, exts) {
+  const out = execFileSync("git", ["ls-files", ...globs], { cwd: ROOT, encoding: "utf8" });
+  return out
+    .split("\n")
+    .filter(Boolean)
+    .filter((file) => exts.includes(path.extname(file)))
+    .reduce((total, file) => total + lineCount(fs.readFileSync(path.join(ROOT, file), "utf8")), 0);
+}
+
 const METRICS = [
   { key: "widgets", en: "Official widgets", zh: "官方组件", derive: countTrackedWidgets },
   { key: "permissions", en: "Permissions", zh: "权限", derive: countPermissions },
@@ -143,6 +184,21 @@ const METRICS = [
   { key: "assertions", en: "Browser assertions", zh: "浏览器断言", derive: null },
   { key: "rustTests", en: "Rust tests", zh: "Rust 单测", derive: null },
   { key: "pitfalls", en: "Documented pitfalls", zh: "记下来的坑", derive: countPitfalls },
+];
+
+/** 「代码量，大致」那张表。标签在中英两份里不一样，所以三条标签分开写。 */
+const LINE_METRICS = [
+  { key: "typescript", en: "TypeScript", zh: "TypeScript", derive: () => countLines("src", [".ts", ".tsx"]) },
+  { key: "css", en: "CSS", zh: "CSS", derive: () => countLines("src", [".css"]) },
+  { key: "rust", en: "Rust", zh: "Rust", derive: () => countLines("src-tauri/src", [".rs"]) },
+  { key: "sdk", en: "SDK", zh: "SDK", derive: () => countLines("packages/sdk", [".js", ".ts"]) },
+  {
+    key: "widgetsAndExample",
+    en: "Widgets + example",
+    zh: "官方组件 + 示例",
+    derive: () => countTrackedLines(["public/widgets", "examples"], [".html", ".css", ".js", ".json", ".md"]),
+  },
+  { key: "scripts", en: "Scripts", zh: "脚本", derive: () => countLines("scripts", [".mjs", ".js"]) },
 ];
 
 function checkNumbers() {
@@ -199,11 +255,61 @@ function checkNumbers() {
   return rows;
 }
 
+function checkLines() {
+  const en = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  const zh = fs.readFileSync(path.join(ROOT, "README.zh-CN.md"), "utf8");
+  const rows = [];
+
+  for (const metric of LINE_METRICS) {
+    const enCell = tableRow(en, metric.en);
+    const zhCell = tableRow(zh, metric.zh);
+    const row = { label: metric.en, en: null, zh: null, actual: null, ok: true, note: "" };
+
+    if (!enCell || !zhCell) {
+      row.ok = false;
+      row.note = !enCell ? `README.md 里找不到「${metric.en}」` : `README.zh-CN.md 里找不到「${metric.zh}」`;
+      rows.push(row);
+      continue;
+    }
+
+    row.en = firstNumbers(enCell);
+    row.zh = firstNumbers(zhCell);
+
+    const samePair =
+      row.en.length === row.zh.length && [...row.en].sort((a, b) => a - b).join() === [...row.zh].sort((a, b) => a - b).join();
+    if (!samePair) {
+      row.ok = false;
+      row.note = "中英文两份对不上";
+    }
+
+    try {
+      row.actual = metric.derive();
+    } catch (error) {
+      row.ok = false;
+      row.note = error.message;
+      rows.push(row);
+      continue;
+    }
+
+    // 1% 容差：表里写的是"上一次量的时候有多大"，不是"现在必须正好是这么多"。
+    const slack = Math.round(row.actual * LINE_TOLERANCE);
+    if (!row.en.some((n) => Math.abs(n - row.actual) <= slack)) {
+      row.ok = false;
+      row.note = `README 写的是 ${row.en.join(" / ")}，差了 ${Math.abs(row.en[0] - row.actual)} 行（容差 ${slack}）`;
+    }
+
+    rows.push(row);
+  }
+
+  return rows;
+}
+
 /* ------------------------------------------------------------------ 输出 */
 
 const files = walk(ROOT);
 const { total, broken } = checkLinks(files);
 const rows = checkNumbers();
+const lineRows = checkLines();
 
 console.log(`文档体检：${files.length} 份 .md，${total} 条相对链接\n`);
 
@@ -217,8 +323,7 @@ if (broken.length === 0) {
 const pad = (text, width) => String(text).padEnd(width);
 const cell = (numbers) => (numbers === null ? "—" : numbers.join(" / "));
 
-console.log("");
-for (const row of rows) {
+function printRow(row) {
   const mark = row.ok ? "✓" : "✗";
   const label = row.label.length > 20 ? row.label : pad(row.label, 20);
   console.log(
@@ -228,9 +333,16 @@ for (const row of rows) {
   );
 }
 
-const failed = rows.filter((row) => !row.ok);
+console.log("");
+rows.forEach(printRow);
+
+console.log("\n  代码量（大致，1% 容差）");
+lineRows.forEach(printRow);
+
+const failed = [...rows, ...lineRows].filter((row) => !row.ok);
 if (VERBOSE) {
   console.log(`\n  能自动数的四项：组件 ${countTrackedWidgets()} / 权限 ${countPermissions()} / 命令 ${countCommands()} / 坑 ${countPitfalls()}`);
+  console.log(`  能自动数的六项行数：${LINE_METRICS.map((m) => `${m.en} ${m.derive()}`).join(" / ")}`);
 }
 
 if (broken.length || failed.length) {

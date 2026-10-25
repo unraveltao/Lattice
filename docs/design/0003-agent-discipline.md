@@ -57,7 +57,7 @@ C 被否：不变量 15 的三道校验里，第三道是"换钥匙必须由用�
 
 - 不给 `widget.install` / `widget.uninstall` / `widget.grant` / `config.set` / `widget_store_write`。理由见上表与不变量 15 / 8 / 5。
 - 不做后台自主循环（"每天早上自己换主题"）：人在环和无人环是两套安全模型，v1 只做有人的。
-- 不给截屏 / 读屏。它能看你的屏幕，和"能摆桌面"不是一个授权。
+- ~~不给截屏 / 读屏。~~ **已被 [0004](./0004-agent-hands.md) 推翻**：屏幕与键鼠成了六组手里的两组（`screen` / `input`），默认关、调用必问、审计留痕。当年那句"它能看你的屏幕，和'能摆桌面'不是一个授权"仍然成立 —— 所以它才不是"顺手加一个动作"，而是一整组要用户自己拨开的开关。
 - 不调模型生成会话标题：多一次 API = 多一次花钱和延迟。
 
 ## 4. 接口与数据
@@ -76,9 +76,13 @@ assistant_session_delete({ id })
 - 标题 = 首条 user 消息折成一行、截 12 字；没有就 `New chat`。列表按 `updatedAt` 倒序。
 - `assistant.json` 顶层加 `approvalMode`（`ask | auto | readonly`，默认 `ask`）。不进 `state.json`，理由和 key 一样：那份是前端整体回写的。
 
-**审批的落点**：`AssistantSurface`。`runAssistantTurn` 在 `surface.act(...)` **之前**调 `options.approve(tool, args)`；实现在面板（抽屉与小窗各自渲染确认条，文案走 i18n）。`DANGEROUS_ACTIONS = new Set(["placement.remove"])`，以后 `widget.install` / `grant` / `uninstall` 进来只改这一处。`readonly` 用 `toolsFor("readonly")`（只留 `state`）**并且系统提示用同一张表生成** —— 两边不一致的症状是"它能调，但提示里说它做不到"。
+**审批的落点**：`AssistantSurface`。`runAssistantTurn` 在 `surface.act(...)` **之前**调 `options.approve(tool, args)`；实现在面板（抽屉与小窗各自渲染确认条，文案走 i18n）。`DANGEROUS_ACTIONS = new Set(["placement.remove"])`，以后 `widget.install` / `grant` / `uninstall` 进来只改这一处。`readonly` 用 `toolsFor("readonly")` **并且系统提示用同一张表生成** —— 两边不一致的症状是"它能调，但提示里说它做不到"。
 
-**预算**：`MAX_TURN_MS = 180_000`、`MAX_TURN_TOKENS = 120_000`（累计 prompt + completion）、`MAX_STEPS` 沿用 6。`overBudget({ elapsed, tokens })` 是纯函数，循环在每个 delta、每次 `act` 前、每次审批前各看一次。
+> **`readonly` 那一句后来变简单了**：本文写的时候以为能"只留 `state`"之类的只读动作，落地时发现**桌面上那八个动作全都改状态**（布局快照在提示里，不是工具），没有"只读的桌面动作"可留。所以 `toolsFor(name, "readonly")` 现在是**一张空表**：`approvalFor` 逐条过，`deny` 的连 schema 都不给。留成"能调但会被拒"只会让模型试着调、看着它失败、然后开始编。
+
+**预算**：**当时定的是** `MAX_TURN_MS = 180_000`、`MAX_TURN_TOKENS = 120_000`（累计 prompt + completion）、`MAX_STEPS = 6`。`overBudget({ elapsed, tokens })` 是纯函数，循环在每个 delta、每次 `act` 前、每次审批前各看一次。
+
+> **三个数后来都抬了**（0004 §4）：`MAX_STEPS = 24`（有了文件和命令之后"读一眼、改一处、跑一次、再读回来确认"就是四步，6 步连收尾都不够）、`MAX_TURN_MS = 300_000`、`MAX_TURN_TOKENS = 200_000`。三个常量现在住在 `src/runtime/hands.ts`（跟着手一起搬的），`overBudget` 的判断没变。另外多了一个 `MAX_HISTORY = 32`（发给模型的历史条数，比 Rust 那边小，裁的时候保留 system）。
 
 **观察**：`systemPrompt(snapshot, { tools, persona, catalogue })` 加两小段 ——
 
@@ -104,7 +108,7 @@ assistant_session_delete({ id })
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/assistant.html` | +18 | `needsApproval(tool, mode)`、`toolsFor("readonly")` 只含 `state`、`overBudget` 三种触发、`sessionTitle` 折行截断、观察段 8 条上限与截断标记 |
-| `assistant_session_policy.rs`（新） | 12 | 标题归一化、坏消息逐条丢、200 条 / 1 MB 裁剪、id 规则、路径不许越出目录（`..` / 盘符） |
+| `tests/assistant.html` | +18 | `needsApproval(tool, mode)`、`toolsFor("readonly")` 是空表（见 §4 那条注）、`overBudget` 三种触发、`sessionTitle` 折行截断、观察段 8 条上限与截断标记 |
+| `assistant_session_policy.rs`（新） | 12 | 标题归一化、坏消息逐条丢、200 条 / 1 MB 裁剪、id 规则、路径不许越出目录（`..` / 盘符）。**现在是 15 条** |
 
 **手工验一次**：真机让模型删一个组件（看确认条三选）、`readonly` 档下同一句话、拔网线、关应用再开看会话在、小窗和抽屉同时开各跑一轮。面板的确认条不做组件断言 —— 它靠上面那些纯函数钉，UI 走真机，和 `AssistantPanel` 现在的取舍一致。

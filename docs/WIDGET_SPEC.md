@@ -227,7 +227,7 @@ void call("window.moveBy", { dx: speed * dt, dy: 0 });
   "config": [
     {
       "key": "wander",
-      "kind": "select",
+      "type": "select",
       "label": { "zh": "她自己走动吗", "en": "Does she wander?" },
       "help": { "zh": "关掉就站在那儿", "en": "Turn this off and she stays put" },
       "options": [
@@ -235,14 +235,16 @@ void call("window.moveBy", { dx: speed * dt, dy: 0 });
       ]
     }
   ],
-  "help": [
-    {
-      "title": { "zh": "怎么玩", "en": "How to play" },
-      "items": [
-        { "zh": "点她一下会冒泡", "en": "Click her and she says something" }
-      ]
-    }
-  ],
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "怎么玩", "en": "How to play" },
+        "items": [
+          { "zh": "点她一下会冒泡", "en": "Click her and she says something" }
+        ]
+      }
+    ]
+  },
   "changelog": [
     {
       "version": "0.2.0",
@@ -255,13 +257,15 @@ void call("window.moveBy", { dx: speed * dt, dy: 0 });
 }
 ```
 
+**上面这两处写错是静默的。** 配置项的键叫 `type`，不叫 `kind`；`help` 是 `{ "sections": [...] }`，不是数组。写错了平台**不报错**，代价是那一项配置或整份"怎么用"直接不出现 —— 你会以为是自己没写对地方。§2.4 是同一件事的另一个例子。
+
 **可以写成两种形状的地方**（能写的字段就这些，别自己发明）：
 
 | 位置 | 形状 |
 | --- | --- |
 | `name`、`description` | `"一句话"` 或 `{ "zh": …, "en": … }` |
 | `config[].label`、`.help`、`.placeholder`、`options[].label` | 同上 |
-| `help[].title`、`help[].items[]` | 同上 |
+| `help.sections[].title`、`help.sections[].items[]` | 同上 |
 | `changelog[].changes[]` | 同上 |
 
 **不朽的单字符串。** 只写一个字符串 = 这门语言**和**另一门语言都显示它。
@@ -646,7 +650,7 @@ const { text, actions } = await lattice.assistant.ask({
 
 五条硬规矩：
 
-- **名字 `[a-z][a-z0-9_-]{0,31}`，最多 8 条工具、每条最多 6 个参数**。参数类型只有 `string` / `number` / `boolean` —— 够写待办和时间，不够"传一个对象进来让我猜"。`instanceId` 是平台留的那一格，写了也不收。
+- **名字 `[a-z][a-z0-9_-]{0,31}`，最多 8 条工具、每条最多 6 个参数**。参数类型只有 `string` / `number` / `boolean` —— 够写待办和时间，不够"传一个对象进来让我猜"。`instanceId` 是平台留的那一格，写了也不收。整张表另有一道 **32 条**的全局上限（所有声明工具的组件加起来）：超出的那几条**静默不出现**，没有提示 —— 装了一堆都声明工具的组件时，排在后面的会莫名其妙地少工具。
 - **写坏一条只丢那一条**，包照常加载（和不变量 17 同一条规矩）。描述超长会截到 120 字，而不是把这条丢掉。
 - **工具名会变成 `widget.<你的 id>.<工具名>`**，例如 `widget.com.example.todo.add`。前缀是平台加的：`widget.` 这一段是"这是组件自己的工具"的唯一判据，别在描述里重复它。
 - **`agent:tools` 是独立的授权轴**。"允许这个组件联网"不等于"允许 agent 往里塞数据" —— 没授这条权限，你声明的工具**一条都不会出现在模型那一侧**，一次都不会被调用。授权界面上那行字叫 "Agent tool calls"。

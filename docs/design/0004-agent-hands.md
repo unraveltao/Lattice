@@ -51,9 +51,17 @@ code: src/runtime/assistant.ts, src/runtime/hands.ts, src/platform/assistant.ts,
 **审批档（用户选的）**：`read` 自动、`write/exec/input` 必问。确认条三选：`Allow` / `Always this turn` / `Deny`。
 `Deny` 不是错误：回给模型 `{ok:false, code:"denied"}`，它能改主意再说一句 —— 而不是整轮崩掉。
 
+> 这一段描述的是**后来叫 `ask` 的那一档**。0003 §3 把审批扩成三档之后，"读自动、写/跑/点按必问"
+> 只是默认档的语义；`auto` 档下除 `DANGEROUS_ACTIONS` 之外都不再问，`readonly` 档连 schema 都不给。
+
 **文件边界（用户选的）**：读**全盘**（`file.read` / `file.list` / `file.search` 不限目录），
 **写要问**，且确认条上写完整路径。`workspace` 只是一个默认 cwd（`shell.run` 与截图落盘的地方），
 不是围栏 —— 假装它是围栏比不设更危险。
+
+> **`workspace` 后来多了一个身份**（[0005](./0005-skills-and-workspace.md)）：它成了 `file.write` 的
+> **免问区** —— 落在里面不问、外面照旧问，而且**只对 `file.write` 生效**。所以它不再是"只是一个默认
+> cwd"，但也仍然**不是围栏**：`shell.run` 一条命令就能写出这棵树，那句"假装它是围栏比不设更危险"
+> 一个字都没过期。
 
 **预算**：`MAX_STEPS` 6 → **24**（真 agent 一轮二十来步很正常）；
 `MAX_TURN_MS = 300_000`、`MAX_TURN_TOKENS = 200_000`；三者任一触顶都停，并且**说清是哪一条**。
@@ -77,18 +85,25 @@ runAssistantTurn → callTools
 
 ## 5. 接口与数据
 
-**`assistant.json` v3**
+**`assistant.json`（设计时写的是 v3，落地是 v4）**
 
 ```jsonc
 {
-  "version": 3,
+  "version": 4,
   "activeId": "p-…",
-  "approval": "read-auto",          // 固定语义：读自动、写/跑/点按必问（只有一档，不做开关）
+  "mode": "internal",               // internal | everything —— 0009 加的，v3 时还没有这一条
+  "approvalMode": "ask",            // ask | auto | readonly —— 见下面那条注
   "hands": { "files": false, "shell": false, "web": false, "screen": false, "input": false, "mcp": false },
   "workspace": "D:\\GitDev\\lattice",
+  "skills": { "enabled": [] },      // v4 加的（0005）
   "profiles": [ … ]
 }
 ```
+
+> **`"approval": "read-auto"` 这个写法没有落地。** 本文定的是"固定语义、只有一档、不做开关"，
+> 而 0003 §3 的审批三档随后落了地，字段名也就成了 `approvalMode`。上面那张工具表的"批"一栏
+> （自动 / 问）读的仍然是 `ask` 档的语义 —— 换成 `auto` 之后，除了 `DANGEROUS_ACTIONS` 那几条，
+> "问"都不再问；换成 `readonly`，整张桌面表是空的，手那一半也只给 `deny` 以外的。
 
 - **默认全 `false`**：升级上来的 v1/v2 档一条手都不开，用户自己拨。
 - 归类不对的调用（能力关着但模型调了）→ `{ok:false, code:"disabled"}`，并且提示词里**不出现**这张表里的工具 —— 两边必须一致（`toolsFor` 与 `systemPrompt` 用同一份）。
@@ -96,11 +111,16 @@ runAssistantTurn → callTools
 **Tauri 命令（新增）**
 
 ```
-assistant_tool({ requestId, name, args })  -> String   // AgentReply 形状的 JSON
-hands_cancel({ requestId })                -> bool     // 幂等
-assistant_hands()                          -> { approval, hands, workspace }
-assistant_hands_save({ hands, workspace }) -> 同上
+assistant_tool({ requestId, name, args })  -> String          // AgentReply 形状的 JSON
+hands_cancel({ requestId })                -> bool            // 幂等
+assistant_hands()                          -> HandsSettings   // 六个开关 + workspace + approvalMode（扁平）
+assistant_hands_save(hands)                -> HandsSettings
 ```
+
+> 设计时想的是 `{ approval, hands, workspace }` 三层包着，落地拍平了：`HandsSettings` 就是
+> 六个 `bool` + `workspace` + `approvalMode`（`#[serde(rename_all = "camelCase")]`）。拍平的理由很实在 ——
+> 这份载荷整个就是"手那一段设置"，再套一层壳只是让前端多写一次 `.hands`。`mode` 走的是
+> 另一对命令（`assistant_mode` / `assistant_mode_set`），因为它不属于手那一段。
 
 **工具表**（名字、审批、能力组）
 
@@ -270,8 +290,15 @@ websocket 传输、连接复用（见第 16 条）、`cmd /C` 被杀之后孙进
 验证落点：`tests/hands.html` 97 条、`tests/assistant.html` 122 条、
 `mcp_policy.rs` 17 + `input_policy.rs` 23 + `screen_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 +
 `shell_policy.rs` 9 + `web_policy.rs` 21（都能 `rustc --test` 单跑）、
-`hands.rs` 7 条与 `mcp.rs` 8 条只有 `cargo test` 跑得了。**真机那条还没走**（读一个中文路径的文件、跑 `echo 你好`、
-点 Deny 看磁盘上没变化、Stop 之后子进程真的没了、抓一个真页面看正文有没有被截断、跟一次 302、
-列一次窗口、在一张空白画布上点一下再按 `Ctrl+S`；P6 再走一条：把
-`npx -y @modelcontextprotocol/server-filesystem D:\` 存进 `mcp.json`、点 Refresh 看到工具、真调一个）——
-记在 `AGENTS.md` §8。
+`hands.rs` 7 条与 `mcp.rs` 8 条只有 `cargo test` 跑得了。
+
+> **上面那些条数是写这份文档时的**。之后 `hands_policy.rs` 21 条（`effectiveHands` / `grantAllHands`
+> 进来之后）、`tests/hands.html` 103 条，`tests/assistant.html` 也长了一截 —— 要准确数就看
+> `npm run test:browser` 的输出，别照抄这里。
+
+**真机那条后来走了**（2026-10-25，逐只点名跑了一遍，四条和"想当然"不一样的地方记在
+[`AGENT_ACCESS.md` §4.9](../AGENT_ACCESS.md)）：读中文路径的文件、`echo 你好`、`Deny` 之后磁盘上
+确实没那个文件、Stop 之后子进程真的没了、`web.fetch` 抓真页面并跟一次 302、列窗口 + 截图落盘、
+MCP 自建 stdio 探针走完 `initialize` → `tools/list` → `tools/call`、点一下 + 打一行字。
+**还没走的**写在 `AGENTS.md` §8（`hands.rs` / `mcp.rs` 那 15 条 `cargo test` 本机跑不了、
+截图内容只有人眼能看、`input.key` 只验了 `Enter`）。

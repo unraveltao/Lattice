@@ -71,6 +71,11 @@ llm_chat_cancel({ requestId })
     "temperature": 0.6, "models": ["deepseek-chat", "deepseek-reasoner"] } ] }
 ```
 
+> **`version` 现在是 4。** 这份文档定的是 v2；v3 加了 `hands` / `workspace` / `approvalMode`
+> （[0004](./0004-agent-hands.md)），v4 加了 `skills.enabled`（[0005](./0005-skills-and-workspace.md)）
+> 和 `mode`（[0009](./0009-assistant-modes.md)）。上面那段 `profiles[]` 的形状一条没变 ——
+> 后面三版加的都是顶层字段，**档本身没动过**，所以这一段仍然是对的。
+
 - v1（无 `version`，四个平铺字段）→ 包成一条 `p-1`，`label` 取地址的主机名。**读失败不写回**，只有用户下一次保存才落盘。这条比迁移本身重要：现在的 `read_config` 已经把坏文件当"没配"，如果顺手写一次空配置，用户的 key 就没了。
 - 坏档逐条丢（缺 id、`baseUrl` 不合法）；全坏 = 未配置，但仍不写回。
 - `LATTICE_LLM_KEY` / `_BASE_URL` / `_MODEL` **只覆盖 `activeId` 那一档**，`source: "env"` 只挂在那一条；其余档照旧读文件。
@@ -113,7 +118,7 @@ llm_chat_cancel({ requestId })
 - **命令多了一个**：`llm_chat_stream` / `llm_chat_cancel` 之外，`llm_chat` 和 `llm_chat_stream` 都多收一个可选的 `profileId`。原来两条路各读一次 active 档，抽出 `prepare()` 之后顺手统一了 —— 少一处"流式按 A 档、整包按 B 档"的可能。
 - **增量只在气泡里滚，不参与拼装**。设计里写的是"命令结束时返回拼好的完整消息"，实现在此之上又定了一条：前端**不**拿增量拼最终消息，最后用返回值整条覆盖。这样"拼增量拼错了"最多让字闪一下，不会留下一句错话。工具参数仍然不进事件。
 - **`SseBuffer` 按 `\n` 切，不按 `\n\n` 切**。第 5 节表格里写的是"切到 `\n\n` 才解码"；实现是"按字节切行 → 攒 `data:` 字段 → 空行收尾成一条事件"。两者等价，但后者顺带把"一条事件多行 `data:`"这件事做对了，而多字节字符永远不会被切开（`\n` 不在任何多字节序列内部）。
-- 断言数：`llm_policy.rs` 新增 **23** 条（不是 24），`tests/llm-models.html` 26 条、`tests/assistant.html` 118 条。全仓 Rust 单测 219 条。
+- 断言数：`llm_policy.rs` 新增 **23** 条（不是 24），`tests/llm-models.html` 26 条、`tests/assistant.html` 118 条。**写这份文档时**全仓 Rust 单测 219 条 —— 现在是 **413** 条（`llm_policy.rs` 自己长到 48 条），别拿这里当基准，`grep -c '#\[test\]'` 一下就对得上。
 
 ## 8. 后续：档列表搬了家（2026-10-25）
 
@@ -127,4 +132,20 @@ llm_chat_cancel({ requestId })
 面板那边只保留一份**只读的**档列表，用来在标题上显示"正在用哪个模型"。为什么不是各写一份：那三百行里没有一行是"面板专用"的，抄一份的代价不是多写一遍，是以后每次改都要改两遍，而只有一处会被真的点到。
 
 顺带加了两条命令：`assistant_config_path`（设置里显示文件位置）和 `assistant_config_open`（交给系统默认程序打开）。**都不是"导入"** —— 导入要先定义合并语义（同 id 覆盖还是新增？key 怎么算？导一半失败怎么办？），那是一个功能，不是一行代码。现在这条路是"打开真文件去改，回来重读"，后端每次现读磁盘、没有缓存。
+
+## 9. 导入（2026-10-25）：把"那是一个功能"做掉
+
+§8 说"导入要先定义合并语义，那是一个功能"。这个功能做了，语义钉在 `llm.rs` 的 `merge_profiles` 上方，这里抄一份：
+
+1. **同 id 覆盖，其次同地址覆盖**。地址才是"同一个端点"的身份 —— 换台机器导过来 id 是另一套，只按 id 认会得到两份一模一样的档。
+2. **空 key 不覆盖已有 key**。导进来的文件里通常没有 key（别人的 key 不该跟着文件走），而"导入一下把本机 key 抹了"不可接受。
+3. **hands / workspace / approval 一概不导**。那是"它能不能动我的东西"的授权，跟着一份配置文件进来就等于绕过用户按过的开关。
+4. **active 不动**（本机还没有 active 时才接管）。导入不该悄悄换掉你正在用的模型。
+5. **坏档逐条跳过并计数**。一份文件里有一条地址不合法，不该连累另外三条；但也不能静默成功 —— 三个数（新增/更新/跳过）都报给用户。
+
+**解析与合并都在 Rust**，前端只负责"选文件 + 读成文本"（`importConfig`）。理由：合并规则必须和读盘时的 `normalize` 是同一份，否则"导入成功"的东西下一次读盘就被丢掉，用户会看到"说导入了，怎么少了两档"。`normalize` 在 Rust 这边。
+
+能认三种形状：`[ {...} ]`、`{ "profiles": [ … ] }`（整份 `assistant.json`）、`{ "baseUrl": …, "model": … }`（v1 的平铺形状）。手写的档没有 `id` 也能进 —— 补一个空 id，真正确认"这是新的"之后才由 `fresh_id` 发号；同时给 `base_url` / `api_key` 加了 serde `alias`，照文档写成 snake_case 的文件也认。
+
+命令是 `assistant_config_import`，8 条单测钉上面五条语义（`a_bad_entry_is_skipped_not_fatal` 那条同时钉住了"明文 http 只给回环"）。
 

@@ -79,6 +79,40 @@ my-widget/
 | `open(url)` | 用默认浏览器打开 http/https 链接，需要 `shell:open` |
 | `close()` | 关掉自己这个窗口（不删用户的 placement） |
 
+**这四个桥方法没有包装，直接用 `call`：**
+
+| 方法 | 干什么 | 要什么权限 |
+| --- | --- | --- |
+| `window.moveBy({ dx, dy })` | 让窗口自己走一段（桌宠那种），撞到工作区边缘会被夹紧，回执里的 `x` / `y` 是真实落点 | — |
+| `window.setRegion({ parts })` | `shape: "region"` 的组件上报形状（矩形 / 椭圆拼出来的窗口） | — |
+| `audio.level()` | 一个 `0..1` 的数：输出有多响 | `audio:level` |
+| `agent.activity()` | 读 agent 的审计日志 | `agent:activity` |
+
+```js
+const { x, y } = await lattice.call("window.moveBy", { dx: 4, dy: 0 });
+```
+
+### 让 assistant 调你的组件（`agent.tools`）
+
+组件可以在清单里声明工具，让平台的 assistant 直接调它（`lattice.diagram` 就是这么画图的）。契约在 `docs/WIDGET_SPEC.md` §3.6，这里只说 SDK 这一侧最容易踩空的一点：
+
+**这个包不处理 `agent-call`。** `lattice.on("agent-call", …)` **不会触发** —— `lattice.js` 的 `handleMessage` 里没有这个分支，`agentTools()` 也还没有（v0.11 留下的三处缺口之一，见 `AGENTS.md` 第 8 节）。所以目前得自己听原始消息：
+
+```js
+window.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || data.__lattice !== 1 || data.type !== "agent-call") return;
+  const { callId, tool, args } = data.payload;
+  const reply = (payload) =>
+    event.source?.postMessage({ __lattice: 1, type: "agent-result", payload: { callId, ...payload } }, "*");
+
+  if (tool === "echo") return reply({ ok: true, result: args.text });
+  reply({ ok: false, error: `unknown tool ${tool}` });
+});
+```
+
+**一定回话，而且带上同一个 `callId`** —— 不回的那次平台等 8 秒，然后回去告诉模型"它没应"，用户看到的是"这个组件不听话"。权限是独立的一条 `agent:tools`（授权界面叫 "Agent tool calls"），和 `network` 无关：允许联网不等于允许往模型里塞数据。
+
 ### 错误
 
 所有失败都是 `LatticeError`，带 `code`：
@@ -139,7 +173,7 @@ lattice.on("language", () => {
 });
 ```
 
-清单里也是同一套规矩：`name` / `description` / `config` 的 `label` / `help` / `changelog` 都可以写 `{ "zh": …, "en": … }` 两种语言，老的单字符串写法永远有效（写一种就是两种语言都显示它）。细节见 `docs/WIDGET_SPEC.md` §3.1。
+清单里也是同一套规矩：`name` / `description` / `config` 的 `label` / `help` / `changelog` 都可以写 `{ "zh": …, "en": … }` 两种语言，老的单字符串写法永远有效（写一种就是两种语言都显示它）。细节见 `docs/WIDGET_SPEC.md` §2.7。
 
 ## 不用这个包也可以
 

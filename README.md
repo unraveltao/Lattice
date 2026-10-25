@@ -29,7 +29,7 @@ at 2× and placed on a plain wallpaper. Nothing from a real desktop is in the fr
 
 Those windows have no frame, stay out of the taskbar, and do not steal focus from whatever you are typing into. They can be pinned above everything else, or tucked under ordinary windows against the wallpaper. Position is remembered per monitor, so a mix of display scalings will not fling a card off the edge; data lives on disk and everything is back where it was after a restart.
 
-The difference from other desktop toys: **widgets are not built in, they are installed.** The 16 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
+The difference from other desktop toys: **widgets are not built in, they are installed.** The 17 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
 
 **It speaks Chinese and English, all the way down.** The shell switches language in settings, and so do the things you would not expect it to reach: each official widget's name, its options and its how-to text in the inspector come out of the manifest in the language you picked, and the words drawn *inside* the cards (weekdays, "2 left", Start/Pause) follow through one `language` push to every open window. No restart, no reload.
 
@@ -45,9 +45,10 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 | To work for a stretch | Focus · Stopwatch | A pomodoro that is still right after you close the lid and come back; a stopwatch |
 | To not lose the words you looked up | Word Drill | One card per line pasted in, four grades, and the next review scheduled in days |
 | A quick sum | Calculator · Convert | Arithmetic you can copy out; two-way conversion for length / mass / temperature / data / time / speed |
+| To draw it, not describe it | Diagram | Boxes, circles, diamonds and text on a canvas you can pan and zoom; arrows bend between the shapes, and the assistant can draw the whole thing from a few lines of text |
 | The desktop to move with the music | Music | What is playing, skip and pause, a level that follows the sound |
 | One look before you go out | Weather | Current conditions for one city, refreshed on a timer, still readable when the network is gone |
-| To let a model do the clicking | `Ctrl+K` assistant + `npm run agent` | You bring the model, the key never leaves Rust; the hands are the same 8 allowlisted actions, and the CLI shows you what they did |
+| To let a model do the clicking | `Ctrl+K` assistant + `npm run agent` | You bring the model, the key never leaves Rust; the endpoint is the same 8 allowlisted actions, the assistant adds six groups of hands you switch on one at a time, and the CLI shows you what they did |
 | None of the above | Write one | See [Writing a widget](#writing-a-widget) |
 
 ## What it is not
@@ -66,7 +67,7 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 
 The important part is that a widget *becomes a window* while never touching Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are twelve permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
 
-**The platform ships empty.** The 16 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
+**The platform ships empty.** The 17 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
 
 So is the absence of a server. The catalogue is a static `registry.json`, the packages are signed files, the hosting is GitHub Pages, and updates are a release asset. When a design starts to need a backend, the design is wrong — that constraint is argued out in [docs/ROADMAP.md](./docs/ROADMAP.md), not assumed.
 
@@ -80,7 +81,13 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 
 ## Where it stands
 
-v0.10 is the current version. The last three releases: v0.8 let an agent drive the desktop (an opt-in loopback endpoint, 8 allowlisted actions, every call in an audit log); v0.9 added sound you can see and links that get out; v0.10 brought the built-in assistant — **a model you bring, hands that stay ours**: `Ctrl+K` opens a small window, paste an OpenAI-compatible base URL and a key once, and the key lives in `assistant.json` under Rust's control while the frontend only ever sees `sk-1…cdef`. The only thing the model can *do* is the same eight allowlisted actions the agent endpoint already had — and, late in the version, six groups of hands it can switch on one at a time in settings: read files, run commands, fetch pages, look at windows, click and type, and call tools declared by the MCP servers you add. All six are off by default, reads go through without a prompt, writes and commands and clicks ask first, and the audit line records the shape of a call but never its contents; a widget that asks for `llm:chat` gets text back, never tools — and late in the version it learned to *borrow* those hands: `desktop:control` lets a pet run one assistant turn, on a narrowed tool table with removal cut out.
+**v0.12 is the current milestone.** The `v0.x` numbers in this README are milestone labels, not release versions: what the installer reports is `0.1.1`, and that is the only number that ships. v0.11 is still open on three gaps, and v0.13 is a design doc for putting the assistant on the desktop — not code yet.
+
+The milestones behind it: v0.8 let an agent drive the desktop (an opt-in loopback endpoint, 8 allowlisted actions, every call in an audit log); v0.9 added sound you can see and links that get out; v0.10 brought the built-in assistant — **a model you bring, hands that stay ours**: `Ctrl+K` opens a small window, paste an OpenAI-compatible base URL and a key once, and the key lives in `assistant.json` under Rust's control while the frontend only ever sees `sk-1…cdef`. At that point the only thing the model could *do* was the same eight allowlisted actions the agent endpoint already had, and a widget asking for `llm:chat` got text back, never tools.
+
+v0.11 is where the hands arrived: six groups it can switch on one at a time — read files, run commands, fetch pages, look at windows, click and type, and call tools declared by the MCP servers you add. All six are off by default, reads go through without a prompt, writes and commands and clicks ask first, and the audit line records the shape of a call but never its contents. The same milestone let a widget *borrow* those hands: `desktop:control` runs one assistant turn for a pet, on a narrowed tool table with removal cut out.
+
+v0.12 turned that pile of switches into **two modes** — *internal*, the desktop actions plus the tools widgets declare plus whichever hands you have opened, and *full access*, all six with no prompts behind a confirmation you have to tick — and added skill packs: `skills/<id>/SKILL.md` text in the prompt, documentation rather than permission.
 
 How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 
@@ -96,19 +103,21 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | **v0.8** | Agent access: an opt-in loopback HTTP endpoint, a token, an audit log, 8 allowlisted actions, and an activity board widget |
 | **v0.9** | `lattice.music`, `audio:level`, `lattice.bookmarks`, `shell:open` |
 | **v0.10** | The built-in assistant: your own model behind an OpenAI-compatible URL, the key kept in Rust, tool calling over the same 8 actions, `llm:chat` for widgets, and `desktop:control` so a widget can borrow those hands. The Agent-board widget was dropped in this version |
+| **v0.11** | Hands: six groups of capabilities (files, commands, web, screen, mouse and keyboard, MCP servers), three approval modes, model profiles, sessions on disk, and `agent:tools` so a widget can declare tools of its own |
+| **v0.12** | Skill packs and the workspace exemption zone; two modes — internal / full access |
 
 **By the numbers**
 
 | Metric | Value |
 | --- | --- |
-| Official widgets | 16 |
+| Official widgets | 17 |
 | Permissions | 12 |
-| Tauri commands | 86 |
+| Tauri commands | 87 |
 | Browser assertions | 2 332 over 50 pages |
 | Rust tests | 413 |
 | Documented pitfalls | 81 |
 
-Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 342 `rustc --test` pure-logic cases plus 71 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
+Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 363 `rustc --test` pure-logic cases plus 50 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
 ## Two hosts, one bridge
 
@@ -130,7 +139,7 @@ The same widget appears in two places, and the platform refuses to let them drif
 <p align="center"><sub>A clock on the desktop with the chrome revealed: drag, layer, pin, reload, close — drawn by the host page, never by the widget.</sub></p>
 
 - **Layers.** `layer: desktop` windows are parented to WorkerW and sit below normal windows; `layer: top` windows use `HWND_TOPMOST`. Both are frameless, absent from the taskbar, and use `WS_EX_NOACTIVATE` so clicking one never steals focus from what you were typing in. Corners are clipped with `SetWindowRgn`, matching the canvas radius.
-- **Chrome that does not steal the card.** The pill reserves 120 px in the top-right corner (96 px on the to-do list), it fades in on hover, and every official widget spends that budget in its CSS — the card size in a manifest is a budget, not a design canvas.
+- **Chrome that does not steal the card.** The pill reserves 120 px in the top-right corner, it fades in on hover, and every official widget spends that budget in its CSS — the card size in a manifest is a budget, not a design canvas.
 - **Snap guides, in both places.** Dragging a widget snaps it to its neighbours and to the container edges, one winner per axis. The guide is drawn as a local dashed segment centred on the dragged card, reaching half a card plus 48 px in each direction — no full-screen crosshair. On the desktop those lines are two 1 px layered windows with per-pixel alpha on their own message thread, *not* a transparent WebView2 window, which cannot be created on software-rendered machines.
 - **Invisible means stopped.** Heartbeats live on one schedule; when a window is hidden the whole timeline stops and catches up with a single tick on return. "Hidden" has two sources on purpose: `document.visibilityState` is useless here — a minimised window still reports `visible` — so Rust observes it and pushes `lattice:window-visible`. A third source covers the case nobody notices: every 1.5 s nine points inside the window are asked `WindowFromPoint`, and if all nine land on somebody else's window, a maximised browser counts as hiding your widget.
 - **It stays where you put it.** Positions are clamped to the monitor the widget is on, in physical pixels end to end, so mixed-DPI setups do not lose cards off-screen or shrink them by half.
@@ -164,7 +173,7 @@ Every capability is a permission, and every permission is a gate in `runtime/bri
 | Permission | What it unlocks | Asked for by |
 | --- | --- | --- |
 | `clock` | The system clock, as an absolute instant | Clock, Countdown |
-| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 10 of the 14 |
+| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 12 of the 17 |
 | `clipboard:write` | Put text on the clipboard | Calculator |
 | `network` | HTTP requests to the hosts listed in the manifest | Weather |
 | `system:monitor` | CPU, memory, disk, network, uptime | System monitor |
@@ -173,13 +182,14 @@ Every capability is a permission, and every permission is a gate in `runtime/bri
 | `shell:open` | Hand an http/https URL to the default browser | Bookmarks |
 | `agent:activity` | Read the agent's audit log | Nothing built in — third-party only |
 | `llm:chat` | Send a conversation to the assistant's model, get text back | Desktop pet |
+| `agent:tools` | Declare the widget's own capabilities as tools the assistant can call | Diagram |
 | `desktop:control` | Borrow the assistant's hands for one turn — rearrange widgets, never remove them | Desktop pet |
 
 <p align="center"><a href="docs/screenshot-permission.png"><img src="docs/screenshot-permission.png" width="380" alt="A card asking for a permission it was not granted"></a></p>
 
 <p align="center"><sub>A widget that reaches for a capability it was not granted says so on the card, by name; one <code>Grant</code> covers the set, and the widget re-initialises.</sub></p>
 
-Five of those deserve their own paragraph, because "it has the permission" is never the whole story.
+Six of those deserve their own paragraph, because "it has the permission" is never the whole story.
 
 **`network` is an allowlist, not a switch.** A request passes three gates in a fixed order: the permission exists → the target host is listed in `manifest.network.hosts` → the request shape is legal (method, header count, body size). There are no wildcards, on purpose: `*.example.com` turns "I allowed this one endpoint" into "I allowed the whole domain", and the permission panel only shows one line — the user could not review what they approved. A port is part of the host's identity, and redirects are never followed: following a 302 from an allowed host to an unfriendly one would hand the allowlist to whoever controls the first hop. Requests travel over IPC rather than a local HTTP proxy, because a proxy port would be a second, unaudited way out.
 
@@ -188,6 +198,8 @@ Five of those deserve their own paragraph, because "it has the permission" is ne
 **`audio:level` is one number.** A background thread captures the default output device with WASAPI loopback and computes RMS → decibels → a `0..1` envelope with a release curve. The command only reads the latest value. No buffer, no audio content, nothing to reconstruct — the only version of "show me the sound" that is safe to ship.
 
 **`llm:chat` is a mouth, not hands.** A widget can hold a conversation with the model you configured, and that is all: the bridge calls `llm.chat` with `tools: null` every time, and a reply that asks for a tool call comes back as an `internal` error instead of being executed. The key never enters the renderer — Rust reads it, attaches it, and returns text plus a masked hint — so a compromised widget has nothing to steal and nothing to move. Changing the desktop stays with the platform's own assistant, which is the thing *you* are talking to.
+
+**`agent:tools` is the one permission where the widget talks to the model first.** A widget declares tools in its manifest and they surface to the assistant as `widget.<id>.<tool>` — one entry however many copies are placed, and the copy that answers is the one on the canvas. A reply longer than 4 000 characters is rejected rather than truncated, on the same principle as `say`.
 
 **A widget can borrow hands, never grow its own.** `desktop:control` → `assistant.ask` runs one assistant turn on a widget's behalf: the same loop, the same executor, the same audit log, but a tool table with `placement.remove` cut out — a misunderstood sentence can never delete a widget you placed. The loop itself still runs in the main window (the desktop host does not even have the store), and the widget gets back only a sentence and a list of what actually happened. One turn at a time, and the timeout is 180 seconds, because six model round-trips do not fit in eight.
 
@@ -228,6 +240,10 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 
 The client is a couple hundred lines of zero-dependency Node: it reads that endpoint file and nothing else. `npm run agent -- state` prints what the agent can see, `-- act …` makes it do something, `-- say "…"` leaves a note in the log — you can watch what the machine did on your behalf without opening a terminal, and without a widget sitting on your desktop.
 
+**Two modes, not a countdown.** The assistant is the same executor wearing one of two personalities. *Internal* is the desktop: move widgets, set the theme, call the tools widgets declare, plus whatever hand groups you have opened — it has no business reading arbitrary files off `C:\`. *Full access* is everything: all six groups on, no prompts, behind a confirmation that spells out what it can now do and makes you tick that you understand. The mode is a persisted switch rather than a timed grant, because a half-hour grant answers "I forgot to turn it off" by interrupting a long job every half hour; what replaces the interruption is a marker that stays visible and an audit log that fails closed.
+
+**Skills are documentation, not permission.** A skill is a folder with a `SKILL.md` in it: text injected into the prompt, capped at 8 000 characters, switched on one skill at a time. It tells the model how you want something done and grants it nothing. The workspace is the mirror image — it stopped being a default path and became an exemption zone, and that exemption covers `file.write` only: running a command from inside it still asks.
+
 ## Writing a widget
 
 Four files and no build step:
@@ -241,7 +257,7 @@ demo.mine/
 ```
 
 ```js
-import { createLattice } from "./sdk/lattice.js";
+import { createLattice } from "./lattice.js";
 
 const lattice = createLattice();
 
@@ -258,7 +274,7 @@ lattice.on("theme", () => render());   // tokens are already applied to :root
 Three habits the platform will punish you for skipping:
 
 - **Use `schedule.every`, never `setInterval`.** A raw timer keeps ticking while the widget is invisible, which defeats the whole pause story, and the schedule is the only thing that knows about visibility.
-- **Respect the chrome budget.** The pill floats over your content and is clickable. Reserve `padding-right: 96px` (or a 24 px status strip) or your first line goes under the close button.
+- **Respect the chrome budget.** The pill floats over your content and is clickable. Reserve `padding-right: 120px` (or a 24 px status strip) or your first line goes under the close button.
 - **Declare your options in the manifest.** The inspector renders them per instance; a settings UI drawn inside the card is a settings UI nobody can use.
 
 ```bash
@@ -266,7 +282,7 @@ npm run create:widget -- demo.mine    # scaffold, already chrome-aware
 npm run pack:widget -- demo.mine      # folder → .lattice, drag straight into the window
 ```
 
-[`examples/counter`](./examples/counter) is the reference implementation. [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) is the contract: the full method table, the config field types, the manifest rules, and the traps that only show up once a widget is real — native form controls, a transparent background, the space the chrome eats. The SDK source and its one-page manual live in [`packages/sdk`](./packages/sdk); every widget carries a copy at `sdk/lattice.js`, kept in sync by `npm run sdk:sync` and checked by `npm run test:sdk`.
+[`examples/counter`](./examples/counter) is the reference implementation. [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) is the contract: the full method table, the config field types, the manifest rules, and the traps that only show up once a widget is real — native form controls, a transparent background, the space the chrome eats. The SDK source and its one-page manual live in [`packages/sdk`](./packages/sdk); `examples/counter` carries a copy as `lattice.js` beside its own code, kept in sync by `npm run sdk:sync` and checked by `npm run test:sdk`. The official widgets deliberately do not use it — they are the proof that a widget needs nothing but the bridge.
 
 ## Install and build
 
@@ -308,7 +324,7 @@ Release: push a `v*` tag. Actions builds on `windows-latest`, signs the updater 
 ```
 src/                 React shell, canvas, inspector, settings, store
   runtime/           manifest · config · bridge · schedule · catalogue · agent · guides (pure logic)
-public/widgets/      the 14 official packages
+public/widgets/      the 17 official packages
 public/store/        the bundled catalogue (generated, not committed)
 packages/sdk/        @lattice/sdk — the single source of truth for the widget API
 examples/counter/    a drag-and-drop sample widget
@@ -322,12 +338,12 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 11 500 lines |
-| CSS | 5 592 lines |
-| Rust | 11 108 lines |
-| SDK | 742 lines |
-| Widgets + example | 14 933 lines |
-| Scripts | 2 352 lines |
+| TypeScript | 21 251 lines |
+| CSS | 5 671 lines |
+| Rust | 22 796 lines |
+| SDK | 801 lines |
+| Widgets + example | 23 770 lines |
+| Scripts | 4 846 lines |
 
 **Read next**
 

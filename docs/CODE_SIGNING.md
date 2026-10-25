@@ -4,6 +4,20 @@
 
 这份文档存在的原因：v0.7 那条 `[ ] 代码签名证书` 原本写着"要花钱买 OV/EV 证书"，这句话在 2026 年是错的 —— 付费买不到当初以为能买到的东西，而免费那条路正好对我们开着。下次想改回去之前，先把下面三节读完。
 
+## 零、先说清楚：这个项目里有三个"签名"，只有一个缺
+
+读到"签名"两个字就往下对号入座，是这个话题最容易犯的错 —— 尤其是 release 页面里明明白白躺着一个 `.sig` 文件。
+
+| 签什么 | 用什么 | 现状 | 谁来验 |
+| --- | --- | --- | --- |
+| **组件包**（`.lattice` zip） | ed25519，作者的私钥 | **已实现**，发布必签（`npm run sign:widget`） | Rust 的 `signature.rs`，公钥钉在目录里的 `publisher.key` |
+| **更新产物**（`latest.json` + 安装包） | Tauri updater 的 minisign | **已实现**，`createUpdaterArtifacts: true`，每次 `tauri:build` 自动生成 `.sig` | 更新插件，公钥在 `tauri.conf.json` 的 `plugins.updater.pubkey` |
+| **安装包本体**（Authenticode） | OV/EV 证书 | **没有** | Windows / SmartScreen |
+
+**看到 release 里那个 `.sig`，不要以为安装包签过了。** 它证明的是"这个包是持有 minisign 私钥的人为自动更新发出来的"，验它的是更新插件 —— 而用户双击安装包时，SmartScreen 根本不看那个文件，它看的是 Authenticode，那一栏现在是空的。所以"更新链路是签过名的"和"第一次安装会被拦"这两句话同时成立，不矛盾。
+
+下面五节全部在讲第三行，也就是**唯一缺的那一个**。
+
 ## 一、付费这条路比看上去更不值
 
 三个事实，都来自微软自己的文档（`learn.microsoft.com/windows/apps/package-and-deploy/code-signing-options`，2026-09 版）：
@@ -28,7 +42,7 @@
 ### 它的代价（这几条才是真正要想清楚的）
 
 - **证书主体是 SignPath Foundation，不是我们。** 用户在"数字签名"里看到的发布者名字是 SignPath Foundation。这是这个模式的本质 —— 它替你背书，所以签的是它的名字。介意这一点的话，免费的替代方案不存在
-- **构建必须跑在 CI 里，而且他们能看见。** 本地 `npm run tauri:build` 出来的 exe 签不了，因为那证明不了来源。**我们这条已经满足了**：`.github/workflows/release.yml` 从 `v0.1.0` 起就在 `windows-latest` 上全自动构建，产物是 NSIS 安装包 + `.sig` + `latest.json`
+- **构建必须跑在 CI 里，而且他们能看见。** 本地 `npm run tauri:build` 出来的 exe 签不了，因为那证明不了来源。**我们这条已经满足了**：`.github/workflows/release.yml` 从 `v0.1.0` 起就在 `windows-latest` 上全自动构建，产物是 NSIS 安装包 + `latest.json` + 更新器那个 `.sig`（minisign，见第零节 —— 它跟本文要的 Authenticode 是两件事）
 - **每次发版要人工批准一次签名请求。** 这是他们的策略，也是他们的风控。一年发几次版的项目，代价可以忽略
 - **项目要已经发过版、在维护、有 OSI 许可、GitHub 和 SignPath 账号都开 MFA。** 四条我们现在都满足：MIT（`LICENSE`）、公开仓库、`v0.1.0` 起有 release、持续在改
 

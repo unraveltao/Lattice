@@ -18,7 +18,7 @@ npm run create:widget -- demo.weather --name "Weather" --permissions network
 - 默认生成到 `public/widgets/<id>/`；`--out` 换目录，`--layer desktop|top` 选贴桌面还是置顶，`--interactive` 用于需要键盘输入的组件。
 - 生成的是**会动的真组件**（跳秒 + 一个能在属性面板改的标题），不是空壳。先跑起来看，再改。
 
-四个文件：`manifest.json` / `index.html`（名字与 `manifest.entry` 一致）/ `widget.js` / `style.css`，`icon.svg` 可选但内置组件都带。
+手写一个组件最少四个文件：`manifest.json` / `index.html`（名字与 `manifest.entry` 一致）/ `widget.js` / `style.css`。脚手架实际生成**八个** —— 另加 `icon.svg`（内置组件都带）、`README.md`，以及 SDK 副本 `lattice.js` + `lattice.d.ts`（生成的 `widget.js` 里写着 `import "./lattice.js"`，删了它组件直接起不来）。官方组件**不用 SDK**，所以它们身上确实只有前四个加图标。
 
 ## 2. 写之前先对一遍这七条硬约束
 
@@ -27,7 +27,7 @@ npm run create:widget -- demo.weather --name "Weather" --permissions network
 3. **存档迟到时用 `touched` 闸门挡住**：桥回来之前用户可能已经点过分类，这时再盖存档等于撤销他的操作。宁可这次不恢复。
 4. **定时器一律 `schedule.every({ every })`，不要 `setInterval`。** 最小间隔 250ms（刷百分秒会每帧跳 25 个数）。`tick` 消息带订阅号，认准自己那条；卸载 / 重载时 `schedule.clear(id)`。靠两次采样做差的（速率类）在 `every()` 之后自己先调一次建基线——Rust 第一次采样返回 0 是设计。
 5. **不要用原生表单控件。** 沙箱文档的 `color-scheme` 被强制成 `normal`，原生 checkbox 会按浅色主题画。用 `appearance: none` 自绘。
-6. **卡片顶上给窗饰让位。** 桌面窗口右上角那排按钮浮在内容之上且能点：标题栏留 `padding-right: 96px`（待办），或顶上一条 24px 状态条（便签）。
+6. **卡片顶上给窗饰让位。** 桌面窗口右上角那排按钮浮在内容之上且能点：标题栏留 `padding-right: 120px`（待办 / 便签 / 音乐都是这个数，胶囊占的就是 120×28），或顶上一条 24px 状态条。写 96px 是旧值，会让第一行字压在关闭按钮底下。
 7. **组件拿不到 `localStorage`、读不到 `parent` 的 DOM，一切能力走桥。** 落盘全部走 `storage`（`widget-data/<widgetId>.json`，写入经过 `write_atomic`，每次写完平台推 `store-changed`）。
 
 "整行可拖"和"整行可点"要分得开：4px 阈值 + 吃掉抬手那次补发的 `click`（`setTimeout(…, 0)` 复位）。别用 HTML5 拖放——沙箱是不透明源，跨文档 `dataTransfer` 靠不住。
@@ -54,7 +54,15 @@ npm run create:widget -- demo.weather --name "Weather" --permissions network
 - **改了行为，同一次提交里补当前版本那条 changelog**（`version === manifest.version`），写用户能看懂的话。
 - **改了组件就要抬 `version`**（三段，`1.2` 会被拒）。`planInstall` 判的是版本号不是文件内容——忘了抬，商店里永远显示"已是最新"。
 
-## 6. 生成索引 / 打包 / 签名
+## 6. 让 assistant 能调你的组件（`agent.tools`）
+
+组件可以在清单里声明工具，让平台的 assistant 直接调它 —— `lattice.diagram` 就是这么画图的（模型说一句 `Api -> Db`，组件自己画）。完整契约在 [WIDGET_SPEC §3.6](../../../docs/WIDGET_SPEC.md)，这里只记三件最容易漏的：
+
+- **`agent:tools` 是独立的一根授权轴**，和 `network` 无关：没授这条，声明的工具**一条都不会**出现在模型那一侧。授权界面上那行字是 "Agent tool calls"。
+- **收消息得自己听**。SDK 目前**没有** `agentTools()` 包装（v0.11 留下的三处缺口之一，见 [AGENTS.md](../../../AGENTS.md) 第 8 节），要自己 `window.addEventListener("message", …)` 认 `type === "agent-call"`，并且**一定回一条 `agent-result` 带同一个 `callId`** —— 不回的那一次平台等 8 秒，然后回去告诉模型"它没应"。
+- **参数只能是 `string` / `number` / `boolean`，最多 6 个**，所以"画一张图"这种活得压成一行文本（`"Api -> Db"`、`"Cache:circle"`），而不是传一个对象进来。回话上限 4000 字符，超了是**拒绝**不是截断。
+
+## 7. 生成索引 / 打包 / 签名
 
 ```bash
 npm run widgets:index    # 写 public/widgets/index.json（dev / build 会自动跑）
@@ -67,7 +75,7 @@ npm run pack:widget -- examples/counter   # 单个目录 → dist-packs/<id>.lat
 - 内置目录是 `npm run dev` / `build` 现场用仓库里那把**公开**的 `scripts/dev-publisher.key` 签的——这把钥匙**故意进仓库**，别当身份。`isDemoPublisherKey` 把它排除在钉子之外。
 - 图标只当形状用（CSS 遮罩 + `currentColor`），所以 SVG 里写什么色都行。**永远不要**把组件的 SVG 内容直接塞进主窗口 DOM。
 
-## 7. 验收
+## 8. 验收
 
 ```bash
 npm run typecheck

@@ -5,6 +5,12 @@
 > 这份清单回答一个问题：**它的哪些东西能拿到 Lattice 用，以什么形式用。**
 >
 > 读的版本：本地工作区，2026-10-24。行数用 `wc -l` 实测。
+>
+> **左边那一列（vela）是冻结的，右边那一列（lattice）会过期。** 这份清单是 2026-10-24 那天
+> 两边状态的对照，不是 lattice 现状的说明：那天之后又长出来十来个组件，"需要的新平台能力"
+> 一栏里写着"无"的，有些已经做完了；写着某个桥方法名的，有些已经改名。**判断"这件事现在做了
+> 没有"要看 [`public/widgets/index.json`](../public/widgets/index.json) 和 `docs/ROADMAP.md`，
+> 不要看这里。** 下面凡是已确认落地的都标了 ✅ 和落地后的真实名字。
 
 ---
 
@@ -15,7 +21,7 @@
 | | vela-cleanroom | lattice |
 | --- | --- | --- |
 | 组件是什么 | 应用内的 React 组件，编译进 bundle（懒加载分 chunk） | 独立静态目录（HTML/CSS/JS），签名后可分发 |
-| 组件从哪来 | 只有内置的 34 种 | 内置 8 个 + 目录安装 + 拖文件夹安装 |
+| 组件从哪来 | 只有内置的 34 种 | 内置 16 个 + 目录安装 + 拖文件夹安装 |
 | 依赖 | zustand / zod / lucide-react / motion / SQLite | 组件零依赖；平台不引 UI 库 |
 | 持久化 | localStorage + SQLite | 纯文件（`state.json` / `widget-data/*.json`） |
 | 权限 | 没有（组件即应用代码） | 按组件授权，桥上一道道闸 |
@@ -96,14 +102,14 @@
 | `calculator`（649 行） | ✅ `lattice.calculator` | 三个页签：计算 / 编解码（Base64、URL…）/ 哈希（文本走 JS MD5，文件走 Rust 流式） | 无 | ★ |
 | `unitconverter`（706 行） | ✅ `lattice.convert` | 长度 / 重量 / 温度 / 数据量；换算表是纯数据 | 无 | ★ |
 | `stopwatch`（286 行） | ✅ `lattice.stopwatch` | 正计时 + 计次（lap）；和 Focus 反过来——它数的是"已经过去多久" | 无（**连心跳都不用**：存起点 + rAF 刷显示，见下） | ★ |
-| `bookmarks`（685 行） | `lattice.links` | 分组 + 图标 + 点击用系统浏览器打开 | `open.url`（桥方法 + `tauri-plugin-opener` 已经在依赖里） | ★ |
+| `bookmarks`（685 行） | ✅ `lattice.bookmarks` | 分组 + 图标 + 点击用系统浏览器打开 | **`shell:open`**（当初这里写的是 `open.url`；落地时 v0.9 把它做成了 `shell.open` 桥方法 + `shell:open` 权限，用 `tauri-plugin-opener`） | ★ |
 | `habit`（638 行） | `lattice.habit` | 每日打卡 + 连续天数（streak）+ 月历热图 | 无（`storage` 就够） | ★★ |
 | `calendar`（1783 行） | ✅ `lattice.calendar` | 月视图 + 事件编辑；**ICS 订阅还没做**（`lib/ics.ts` 544 行仍可用，要 `network` + 白名单） | `storage`（订阅要 `network`） | ★★ |
 | `todayoverview`（627 行） | `lattice.today` | 一屏聚合"今天"：待办未完成数 + 最近截止 + 今日课程 | 无，但要**跨组件读数据**（见下方"一个硬问题"） | ★★ |
 | `analytics` | 并进 `lattice.focus` | 专注时长趋势、热图、打断分解 | 无，但同样卡在跨组件数据 | ★★ |
 | `hardware`（558 行） | `lattice.hardware` | GPU / 电池 / 温度 / 磁盘分区（Lattice 的 sysmon 只有 CPU/内存/系统盘/网络） | 扩 `metrics.rs`（现在手搓 Win32，没有 sysinfo） | ★★★ |
 | `timetable`（1248 行 + `excel.rs` 267 行） | ✅ `lattice.timetable` | 周视图 + 点击空白加课 + 重叠并排 + 奇偶周；**Excel / CSV 导入还没做**（要文件选择 + `calamine`） | 导入才需要（文件对话框 + xlsx 解析） | ★★★（导入）/ ★★（本体） |
-| `sketch`（887 行） | `lattice.sketch` | 画布手写，存成图片 | 组件里存图要么走 `storage`（JSON 里塞 base64，有上限），要么加 `file.save` | ★★★ |
+| `sketch`（887 行） | 改了方向：落地的是 `lattice.diagram` | vela 那版是**手写画布、存成图片**，没照搬 —— 存图要么把 base64 塞进 `storage`（有上限）、要么加一个 `file.save`，两条都不划算。真正做出来的是"架构图"：可平移缩放的图面，矩形 / 圆 / 菱形 / 文本 / 曲线箭头，拖框线跟着走，`agent:tools` 让 assistant 能往里加框（它是 v0.11 数据平面的第一个样本） | 落地时**没有**新增平台能力（`storage` + `agent:tools` 就够），所以这条从 ★★★ 变成 ★★ | ★★ |
 | `colorpicker`（490 行） | `lattice.pick` | 全屏取色 + 调色板 | 一个全屏覆盖窗口 + `color.rs`（80 行） | ★★★ |
 | `recycle`（398 行） | 平台功能，不是组件 | **组件回收站**：删掉的组件进回收站，可单条/批量恢复、彻底删除、保留期可配 | 无——Lattice 已有 `lastClosed` + 8 秒撤销，把它扩成列表即可（见 §3.3） | ★★ |
 | `clipboard`（559 行） | `lattice.clipboard` | 剪贴板历史，点击即再次复制 | `clipboard.rs` 2139 行 + 常驻监听 + 缩略图 | ★★★★ |
@@ -173,7 +179,7 @@ Lattice 现在没有任何提醒通道。要做的话，这两条判定必须一
 | **任务栏 / 超管面板 / 全屏视图** | 要么改 Explorer（`taskbar/` 一整个模块），要么是另一个产品形态 |
 | **SQLite（`rusqlite`）** | Lattice 的全部持久化是文件 + 原子替换，而且"用户能直接看 `state.json`"是它的一个卖点。引入数据库会同时破坏可读性和单实例假设 |
 | **zustand / zod / lucide-react / motion** | 组件侧零依赖是硬约束（组件要能离线、能第三方写、能不构建）；平台侧也刻意不引 UI 库（`icons.tsx` 是手写 SVG path）。要图标就从 `lucide` 的源码里抄那个 path |
-| **i18n-lite** | Lattice 的界面文案统一英文（组件也是），没有多语言需求 |
+| **i18n-lite** | 不是"没有多语言需求"，而是**Lattice 已经自己长了一套**，形状还不一样：平台文案用英文原句当 key（`runtime/i18n/*`，缺翻译就退化成英文），组件文案写在清单里（`{ zh, en }`，`pickText` 按界面语言挑）+ 卡片里 `call("lang.get")` 拿初值、收 `language` 推送重画。vela 那套是"一个字典 + 一个 `t()`"，搬过来会和现有两条路并存，等于第三个真源 |
 | **主题引擎（`theme-engine.ts` 840 行 + `theme-ink.ts` 400 行）** | vela 支持完整主题包、壁纸取色、明暗自动切换。Lattice 只有"暗 / 亮 + 底板浓度 + 磨砂"，把 1200 行主题引擎搬进来是另一种产品 |
 | **邮件（IMAP）/ 云同步 / 账号** | 要存凭据、要服务端，和 Lattice "没有服务端、包是静态文件"的前提直接冲突 |
 
@@ -190,7 +196,7 @@ Lattice 现在没有任何提醒通道。要做的话，这两条判定必须一
 | `useEffect` + `setInterval` 轮询 | `schedule.every` + `tick` 推送 | **不许自己 `setInterval`**（不变量 10）：窗口藏起来要停 |
 | `invoke("cmd", args)` | 桥方法 `defineMethod` + 权限闸门 | 权限没给要返回结构化错误，组件自己降级 |
 | `zod` schema 校验配置 | `manifest.json` 的 `config`（5 类字段） | 组件不画设置 UI，属性面板渲染 |
-| `t("中文")` | 直接写英文串 | |
+| `t("中文")` | 清单里写 `{ "zh": …, "en": … }`，卡片里 `call("lang.get")` 拿初值 + 收 `language` 推送重画 | **别在组件里自建字典** —— 两门文案的家是清单和 `runtime/i18n/`，见 `WIDGET_SPEC` §2.7 |
 | `lucide-react` 图标 | 内联 `<svg><path d="…"/></svg>` | 别引图标库 |
 | `--vela-*` CSS 变量 | `--lattice-*` 令牌（`surface` / `text` / `muted` / `accent` / `border` / `radius` / `font`） | **不许写死颜色**（不变量 6），底板一变浅平台会整体翻 |
 | `.test.ts`（vitest） | `tests/*.html` 浏览器断言 | Lattice 不引测试框架，断言写进 `#out` |

@@ -26,7 +26,7 @@ TypeScript 6 + React 19。它不检查 `.html` 里的断言，也不碰 Rust。
 
 ## 2. 按改动挑断言页（不要每次都跑全量）
 
-全量是 40 页 / 1709 条，慢；先用 `--filter` 命中相关页，交付前再考虑全量。
+全量是 50 页 / 2 325 条，慢；先用 `--filter` 命中相关页，交付前再考虑全量。
 
 ```bash
 npm run dev                                   # 另一个终端；断言页要 dev server 才能 import .ts/.tsx
@@ -43,7 +43,9 @@ npm run test:browser                          # 全量
 | 跨屏夹紧、缺组件占位 | `screen-fit` |
 | 桥 / 组件存储 | `bridge-storage`（并发写不丢键、跨窗口读到最新）、`note-save`（保存顺序与载入竞态） |
 | 每实例配置 | `config`（归一化、默认值、夹紧、未知键、`config.get`）、属性面板 |
-| agent 动作 / assistant 工具 | `agent`（57 条）、`assistant`（114 条，名字集合与 `EXECUTOR_KEYS` 对比） |
+| agent 动作 / assistant 工具 | `agent`（57 条）、`assistant`（名字集合与 `EXECUTOR_KEYS` 对比） |
+| assistant 的手 / 技能 / 组件工具 | `hands`、`skills`、`widget-tools`（`agent.tools` 归一化、全局 32 条上限、4000 字拒绝） |
+| 画图组件 | `diagram`（`lattice.diagram` 的图形 / 连接线 / 文本规格） |
 | 商店 / 签名 / 更新 | `semver`、`catalogue`、`store-ui`、`catalogue-cache`、`updater` |
 | 界面文案 / 双语 | `i18n`（同一句只有一种译法）、`widget-text`、`help`（内置组件两门齐全 + 源码里既要 `lang.get` 又要 `language` 推送） |
 | 错误通道 / 兜底页 | `diagnostics`（识别边界、两条通道不撞、去重指纹） |
@@ -81,7 +83,7 @@ rustc --edition 2024 --test 壳子.rs -o 壳子.exe && ./壳子.exe
 - `csp.rs` 的壳子要把 `protocol::SCHEME` 桩成 `"lattice-widget"`（不是 `"lattice"`）。
 - 断言只有一份（模块内的 `#[cfg(test)] mod tests`），壳子不许复制断言。
 
-能这么跑的是 136 条；剩下 21 条（`protocol.rs`、`widget_store.rs`、`backup.rs`、`egress.rs`、`media.rs`、`store.rs`）只有 review + 真机。
+能这么跑的是 363 条；剩下 50 条（`protocol.rs`、`llm.rs`、`widget_store.rs`、`hands.rs`、`mcp.rs`、`backup.rs`、`egress.rs`、`media.rs`、`store.rs`）只有 review + 真机。
 
 改了 **window / tray / 注入 / 协议 / 安装** 这些带 `tauri` 依赖的模块，壳子编不进来——直接说"只能真机验"，别假装跑过。
 
