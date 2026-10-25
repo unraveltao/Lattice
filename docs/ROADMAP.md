@@ -45,7 +45,7 @@
 | Rust 单测 | 416 条 | 365 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 50 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 94 个 | |
 | 权限 | 12 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐 |
-| 踩过的坑 | 85 条 | [`PITFALLS.md`](./PITFALLS.md) |
+| 踩过的坑 | 86 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
 ---
 
@@ -373,7 +373,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **增量只用来画**：`lattice:llm-delta` 带 `requestId`（广播，不变量 9），前端只在气泡里滚字；权威结果是命令的返回值，最后覆盖整条气泡。所以"拼增量拼错了"最多闪一下，不会留下一句错话。
   - **工具参数按 `index` 累加**，拼完整才解析；用户按停止时**不再执行任何工具** —— 半截参数要么解析失败，要么更糟：解析成功但少一个字段，模型会拿错的值去改桌面。
   - 代价照旧：分片节奏只有真机算数（`cargo test` 在本机跑不了），所以纯逻辑先在 `llm_policy.rs` 钉住 23 条（半包 / 多字节 / `[DONE]` / 坏帧 / 多档位累加），传输层靠真机验一次。
-- [ ] **agent 加纪律，手不扩**（[`design/0003-agent-discipline.md`](./design/0003-agent-discipline.md)）—— 会话落 `assistant-sessions/`（关掉应用还能接着聊）、审批默认 `ask` 只拦不可逆动作、每轮 token / 墙钟上限、提示词补一段"装了哪些组件、它们怎么用"。**装组件、卸组件、授权、写存储仍然不进工具表**：那等于让一段提示词替用户点"信任这把新钥匙"（不变量 15 / 8）。**这一版只落了一半**：审批档与三道预算被下面 0004 的 P1 吸收并扩成"按能力组开关 + 写/跑必问"；**会话与观察已于 2026-10-25 落地**（`assistant-sessions/<id>.json` 一条会话一个文件、面板顶部那条会话条、提示词里组件说明首句与商店一段），题面里的"审批默认 `ask`"由 0003 §3 的 `approvalMode` 三档接上（`ask` / `auto` / `readonly`，默认 `ask`）。
+- [x] **agent 加纪律，手不扩**（[`design/0003-agent-discipline.md`](./design/0003-agent-discipline.md)）—— 会话落 `assistant-sessions/`（关掉应用还能接着聊）、审批默认 `ask` 只拦不可逆动作、每轮 token / 墙钟上限、提示词补一段"装了哪些组件、它们怎么用"。**装组件、卸组件、授权、写存储仍然不进工具表**：那等于让一段提示词替用户点"信任这把新钥匙"（不变量 15 / 8）。**题面四件现在全落了**：审批档与三道预算被下面 0004 的 P1 吸收并扩成"按能力组开关 + 写/跑必问"；**会话与观察已于 2026-10-25 落地**（`assistant-sessions/<id>.json` 一条会话一个文件、面板顶部那条会话条、提示词里组件说明首句与商店一段），题面里的"审批默认 `ask`"由 0003 §3 的 `approvalMode` 三档接上（`ask` / `auto` / `readonly`，默认 `ask`），每轮的 token 与墙钟两道额度落成 `runtime/hands.ts::overBudget`。
 - [x] **给 assistant 一双手，落 P1–P6**（[`design/0004-agent-hands.md`](./design/0004-agent-hands.md)）—— 用户要的是"和其他 agent 一样：读文件、跑代码、上网、调外部服务、动屏幕"。六期全落地（纪律 / 文件 / 命令 / 网页 / 屏幕与键鼠 / MCP）—— 最后那期"调各种外部服务"就是 P6，`mcp.json` 里配一条服务，它的工具就出现在工具表里：
   - **两条执行器通道，永不合并**：桌面动作仍是 `AGENT_ACTIONS` + `runAgentAction`（8 个别名），新的手走 `runtime/hands.ts` → Rust `assistant_tool`；`handGroup(name)` 非空就是后者。`toolsFor("widget")` 里一条新手都没有 —— 组件那侧的手不扩。
   - **能力组默认全关**，`assistant.json` 升 v3（`{version: 3, activeId, hands, workspace, profiles[]}`），v1 就地升级成一条档、**手落成全关**。开一组 = 把那一组的 schema 递给模型，同时 Rust 独立再判一次（前端开关不是安全边界）。
