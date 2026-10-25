@@ -122,13 +122,27 @@ function countCommands() {
   return total;
 }
 
+/** 坑的条数不用人数：数 PITFALLS.md 里的表行，顺带和它自己开头那句对账。 */
+function countPitfalls() {
+  const source = fs.readFileSync(path.join(ROOT, "docs", "PITFALLS.md"), "utf8");
+  const rows = source
+    .split("\n")
+    .filter((line) => line.startsWith("|") && !/^\|\s*-{3,}/.test(line) && !line.startsWith("| 症状"));
+  const claimed = source.match(/现在 \*\*(\d+) 条\*\*/);
+  if (!claimed) throw new Error("docs/PITFALLS.md 里找不到「现在 **N 条**」这句");
+  if (Number(claimed[1]) !== rows.length) {
+    throw new Error(`docs/PITFALLS.md 开头写 ${claimed[1]} 条，表里实际 ${rows.length} 行`);
+  }
+  return rows.length;
+}
+
 const METRICS = [
   { key: "widgets", en: "Official widgets", zh: "官方组件", derive: countTrackedWidgets },
   { key: "permissions", en: "Permissions", zh: "权限", derive: countPermissions },
   { key: "commands", en: "Tauri commands", zh: "Tauri 命令", derive: countCommands },
   { key: "assertions", en: "Browser assertions", zh: "浏览器断言", derive: null },
   { key: "rustTests", en: "Rust tests", zh: "Rust 单测", derive: null },
-  { key: "pitfalls", en: "Documented pitfalls", zh: "记下来的坑", derive: null },
+  { key: "pitfalls", en: "Documented pitfalls", zh: "记下来的坑", derive: countPitfalls },
 ];
 
 function checkNumbers() {
@@ -161,7 +175,17 @@ function checkNumbers() {
     }
 
     if (metric.derive) {
-      const actual = metric.derive();
+      let actual = null;
+      try {
+        actual = metric.derive();
+      } catch (error) {
+        // 派生失败本身就是一处要修的文档问题（比如 PITFALLS 开头那句和表对不上），
+        // 不该让整个脚本带着堆栈崩掉 —— 那样人只会看到「脚本坏了」。
+        row.ok = false;
+        row.note = error.message;
+        rows.push(row);
+        continue;
+      }
       row.actual = actual;
       if (!enNums.includes(actual)) {
         row.ok = false;
@@ -206,7 +230,7 @@ for (const row of rows) {
 
 const failed = rows.filter((row) => !row.ok);
 if (VERBOSE) {
-  console.log(`\n  能自动数的三项：组件 ${countTrackedWidgets()} / 权限 ${countPermissions()} / 命令 ${countCommands()}`);
+  console.log(`\n  能自动数的四项：组件 ${countTrackedWidgets()} / 权限 ${countPermissions()} / 命令 ${countCommands()} / 坑 ${countPitfalls()}`);
 }
 
 if (broken.length || failed.length) {
