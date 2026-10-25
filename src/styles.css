@@ -3707,12 +3707,61 @@ button.lattice-chip[aria-pressed="true"] {
   align-items: center;
 }
 
-/* 元信息占左边，按钮被推到右边（`margin-right: auto` 在这个方向上就是"往右顶"） */
+/* 元信息占左边，按钮被推到右边（`margin-right: auto` 在这个方向上就是"往右顶"）。
+ * 它左边还坐着完全访问那颗药丸，所以自己得能让位：缩到没有就省略号，
+ * 别把「发送」挤到第二行去 */
 .lattice-assistant-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   margin-right: auto;
   font-family: var(--lattice-mono);
   font-size: 11px;
   color: var(--lattice-text-faint);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---- 完全访问那颗药丸（0009 的入口，常驻输入框左下）
+ *
+ * 形状照用户给的参考图：圆圈叹号 + 一句话 + 一个箭头，整颗是警示色。
+ * **它不是普通按钮**：按下去等于让它不再逐条问话，长得中性才是错的。
+ * 底色用 `danger-soft` 而不是实心危险色 —— 它常驻，实心大色块会让人学会无视它，
+ * 真正该拦住的那一下（切过去时的确认）反而没人看。
+ */
+.lattice-assistant-grant {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--lattice-danger);
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--lattice-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--lattice-danger) 34%, transparent);
+  border-radius: 999px;
+}
+
+.lattice-assistant-grant:hover {
+  background: color-mix(in srgb, var(--lattice-danger) 18%, transparent);
+  border-color: color-mix(in srgb, var(--lattice-danger) 55%, transparent);
+}
+
+/* 已经开着完全访问：边框实心，扫一眼就知道这颗现在是「关掉」 */
+.lattice-assistant-grant[data-on="1"] {
+  border-color: var(--lattice-danger);
+}
+
+.lattice-assistant-grant-chevron {
+  transition: transform 120ms ease;
+}
+
+/* 确认面板展开时箭头翻过来 —— 它指的就是"面板在下面那块" */
+.lattice-assistant-grant[data-open="1"] .lattice-assistant-grant-chevron {
+  transform: rotate(180deg);
 }
 
 /* 审批确认条：贴在输入框上面，**不会自己消失** —— 它阻塞着这一轮 */
@@ -4811,17 +4860,11 @@ button.lattice-chip[aria-pressed="true"] {
 .lattice-assistant-mode {
   display: grid;
   flex: none;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--lattice-border);
-}
-
-/* 只有两格（内部模式：名字 + 按钮）时按钮落在 1fr 那列，`justify-self` 把它顶到右边 */
-.lattice-assistant-mode > .lattice-btn {
-  align-self: center;
-  justify-self: end;
 }
 
 .lattice-assistant-mode-name {

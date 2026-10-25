@@ -263,11 +263,12 @@ export const ASSISTANT_ZH: Record<string, string> = {
   // "六只手一只都不开"，和代码对不上，用户于是以为内部模式不能用工具
   "Manages Lattice, plus whichever hands you switch on. Approvals follow the mode you picked.":
     "管棂自己，加上你拨开的那几组手。要不要问由审批档决定。",
+  "Only the hands you switched on.": "只有你拨开的那几组手。",
   "Internal mode gives the agent exactly the groups you switch on here. Full access switches them all on and stops asking.":
     "内部模式给它的正是你在这里拨开的那几组；完全访问六组全开，并且一律不问。",
   // 启用完全访问那一道确认（DSH 那一套形状：标题 + 风险段 + 硬线 + 必须勾的框 + 两颗按钮）
   "Enable Full access": "启用完全访问",
-  "Turn off": "关掉",
+  "Turn off full access": "关掉完全访问",
   "Enable Full access?": "启用完全访问？",
   "Confirmation prompts go away: it reads and writes files anywhere, runs commands, fetches pages, screenshots, moves the mouse and types, and calls the MCP servers you added — without asking. The six groups below all switch on, so you can see what it got.":
     "确认条不再出现：它会读写任何地方的文件、跑命令、取网页、截屏、动鼠标、敲键盘、调你加的 MCP 服务 —— 都不再问一句。下面那六组会一起拨开，你能看见它到底拿到了什么。",

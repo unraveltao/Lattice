@@ -155,7 +155,39 @@ export interface AssistantPanelProps {
   variant?: "drawer" | "window";
 }
 
-/** 鉴权形状的中文/英文标签。三种，和 Rust 的 `normalize_auth` 一一对应 */
+/** 圆圈叹号：完全访问那颗药丸的图标。跟着 `currentColor` 走，颜色交给 CSS */
+function AlertIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      <circle cx="6" cy="6" r="4.55" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M6 3.7v2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="6" cy="8.35" r="0.7" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** 那颗药丸右边的箭头：确认面板展开时由 CSS 转 180°，指着下面那块 */
+function ChevronIcon() {
+  return (
+    <svg
+      className="lattice-assistant-grant-chevron"
+      width="8"
+      height="8"
+      viewBox="0 0 8 8"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M1.6 3.1 4 5.5 6.4 3.1"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export function AssistantPanel({ open, onClose, records, catalogue, variant = "drawer" }: AssistantPanelProps) {
   /** 语言一变就重渲染 —— 面板和小窗共用同一套文案 */
@@ -982,6 +1014,60 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     return t("Assistant · {model}", { model: active.model || active.label });
   }, [active, t]);
 
+  /**
+   * 启用完全访问那一次确认（DSH 那一套形状）：标题 + 风险段 + 四条硬线 +
+   * 一句"怎么收回" + 必须勾的那一框 + Cancel / Enable。**只往提权的方向问**。
+   *
+   * 两个入口共用这一份，位置跟着入口走：设置态贴在手那一段上方（那颗按钮在
+   * 手那一段的头里），对话态贴在输入框上面（那颗药丸就在这一行）。**一个状态、
+   * 一份 JSX** —— 抄两份就会有两种说法，而只有一处会被真的改。
+   */
+  const modeConfirmPanel = (
+    <div
+      className="lattice-assistant-mode-confirm"
+      role="alertdialog"
+      aria-label={t("Enable Full access?")}
+    >
+      <span className="lattice-assistant-mode-confirm-title">{t("Enable Full access?")}</span>
+      <p className="lattice-assistant-hint">
+        {t("Confirmation prompts go away: it reads and writes files anywhere, runs commands, fetches pages, screenshots, moves the mouse and types, and calls the MCP servers you added — without asking. The six groups below all switch on, so you can see what it got.")}
+      </p>
+      <ul>
+        <li>{t("It still cannot install, uninstall or grant widgets.")}</li>
+        <li>{t("Editing Lattice's own settings always asks.")}</li>
+        <li>{t("Widgets cannot borrow it, and agent calls are unaffected.")}</li>
+        <li>{t("The budget does not change: 24 steps, 5 minutes, 200k tokens.")}</li>
+      </ul>
+      <p className="lattice-assistant-hint">
+        {t("Turning it off again takes one click, and turning it off never asks.")}
+      </p>
+      {fullAccessBlocked && (
+        <p className="lattice-assistant-hint">
+          {t("Read-only mode is on and wins — switch approvals to Ask or Automatic first.")}
+        </p>
+      )}
+      <label className="lattice-hand-row">
+        <input type="checkbox" checked={riskAck} onChange={(event) => setRiskAck(event.target.checked)} />
+        <span className="lattice-hand-copy">
+          <span className="lattice-hand-name">{t("I understand the risks and want to continue")}</span>
+        </span>
+      </label>
+      <span className="lattice-assistant-mode-confirm-actions">
+        <button type="button" className="lattice-btn is-small" onClick={() => setModeConfirm(false)}>
+          {t("Cancel")}
+        </button>
+        <button
+          type="button"
+          className="lattice-btn is-small is-primary"
+          disabled={!riskAck || fullAccessBlocked}
+          onClick={() => void confirmEverything()}
+        >
+          {t("Enable Full access")}
+        </button>
+      </span>
+    </div>
+  );
+
   if (!open) return null;
 
   return (
@@ -1037,24 +1123,20 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       >
         <span className="lattice-assistant-mode-name">{fullAccess ? t("Full access") : t("Internal")}</span>
         {/*
-          那段解释**只在完全访问时写**。它是警告，警告要一直在、但不能占着
-          三行常驻 —— 内部模式是默认态，模式名本身就说完了，多写一句的代价是
-          400 宽的小窗里对话区少两行。0009 记的也是"一行"。
+          那段解释**只在完全访问时写全**。它是警告，警告要一直在、但不能占着
+          三行常驻 —— 内部模式是默认态，一句短的就说完了（那句长的挂 tooltip），
+          多写几行的代价是 400 宽的小窗里对话区少两行。0009 记的也是"一行"。
+
+          内部那一句不是凑数：0009 的失败表里第一条误解就是"内部 = 一只新手都
+          没有"，而这行字是唯一常驻在眼前的地方。
         */}
-        {fullAccess && (
-          <span className="lattice-assistant-mode-hint">
-            {modeEffective
+        <span className="lattice-assistant-mode-hint">
+          {fullAccess
+            ? modeEffective
               ? t("Files, commands, the web, the screen, input and MCP servers. Approvals are not asked.")
-              : t("Held back by read-only mode — nothing can be changed.")}
-          </span>
-        )}
-        <button
-          type="button"
-          className="lattice-btn is-small"
-          onClick={() => changeMode(fullAccess ? "internal" : "everything")}
-        >
-          {fullAccess ? t("Turn off") : t("Enable Full access")}
-        </button>
+              : t("Held back by read-only mode — nothing can be changed.")
+            : t("Only the hands you switched on.")}
+        </span>
       </div>
 
       {/* 存的就是完全访问：启动之后第一次开面板提示一次，之后靠上面那条 */}
@@ -1068,55 +1150,11 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       )}
 
       {/*
-        启用完全访问那一次确认（DSH 那一套形状）：标题 + 风险段 + 四条硬线 +
-        一句"怎么收回" + 必须勾的那一框 + Cancel / Enable。**只往提权的方向问**。
-        两条入口（模式条那颗、手那一段那颗）都走这里 —— 一个状态，一个确认。
+        启用完全访问那一次确认。设置态里那颗按钮在手那一段的头里，所以它贴在
+        模式条下面（`view === "setup"`）；对话态那颗药丸在输入框左下，那一份
+        在下面贴着输入框渲染 —— 面板出现在按它的地方旁边，不在屏的另一头。
       */}
-      {modeConfirm && (
-        <div
-          className="lattice-assistant-mode-confirm"
-          role="alertdialog"
-          aria-label={t("Enable Full access?")}
-        >
-          <span className="lattice-assistant-mode-confirm-title">{t("Enable Full access?")}</span>
-          <p className="lattice-assistant-hint">
-            {t("Confirmation prompts go away: it reads and writes files anywhere, runs commands, fetches pages, screenshots, moves the mouse and types, and calls the MCP servers you added — without asking. The six groups below all switch on, so you can see what it got.")}
-          </p>
-          <ul>
-            <li>{t("It still cannot install, uninstall or grant widgets.")}</li>
-            <li>{t("Editing Lattice's own settings always asks.")}</li>
-            <li>{t("Widgets cannot borrow it, and agent calls are unaffected.")}</li>
-            <li>{t("The budget does not change: 24 steps, 5 minutes, 200k tokens.")}</li>
-          </ul>
-          <p className="lattice-assistant-hint">
-            {t("Turning it off again takes one click, and turning it off never asks.")}
-          </p>
-          {fullAccessBlocked && (
-            <p className="lattice-assistant-hint">
-              {t("Read-only mode is on and wins — switch approvals to Ask or Automatic first.")}
-            </p>
-          )}
-          <label className="lattice-hand-row">
-            <input type="checkbox" checked={riskAck} onChange={(event) => setRiskAck(event.target.checked)} />
-            <span className="lattice-hand-copy">
-              <span className="lattice-hand-name">{t("I understand the risks and want to continue")}</span>
-            </span>
-          </label>
-          <span className="lattice-assistant-mode-confirm-actions">
-            <button type="button" className="lattice-btn is-small" onClick={() => setModeConfirm(false)}>
-              {t("Cancel")}
-            </button>
-            <button
-              type="button"
-              className="lattice-btn is-small is-primary"
-              disabled={!riskAck || fullAccessBlocked}
-              onClick={() => void confirmEverything()}
-            >
-              {t("Enable Full access")}
-            </button>
-          </span>
-        </div>
-      )}
+      {view === "setup" && modeConfirm && modeConfirmPanel}
 
       {view === "setup" ? (
         <div className="lattice-assistant-body">
@@ -1540,6 +1578,9 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
             {busy && !streaming && <p className="lattice-assistant-hint">{t("Thinking…")}</p>}
           </div>
 
+          {/* 对话态那道确认贴着输入框（药丸就在下面那一行） */}
+          {modeConfirm && modeConfirmPanel}
+
           {approval && (
             <div className="lattice-assistant-approval" role="group" aria-label={t("Approve this action")}>
               <p className="lattice-assistant-approval-text">{approval.detail}</p>
@@ -1573,6 +1614,37 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
               disabled={busy}
             />
             <div className="lattice-assistant-foot">
+              {/*
+                完全访问的开关在**输入框左下角**：它和「发送」同一行，属于"我要让
+                它放手干"那一下，不该占标题区。整颗用警示色 —— 它开的是一个不再
+                逐条问话的开关，长得像个普通按钮才是错的。开着的时候同一颗变成
+                「关掉」，关掉不问（0009）。
+              */}
+              <button
+                type="button"
+                className="lattice-assistant-grant"
+                data-on={fullAccess ? "1" : "0"}
+                data-open={modeConfirm ? "1" : "0"}
+                onClick={() => {
+                  if (fullAccess) {
+                    changeMode("internal");
+                  } else if (modeConfirm) {
+                    setModeConfirm(false);
+                  } else {
+                    requestFullAccess();
+                  }
+                }}
+                title={
+                  fullAccess
+                    ? t("Turning it off again takes one click, and turning it off never asks.")
+                    : undefined
+                }
+                aria-expanded={fullAccess ? undefined : modeConfirm}
+              >
+                <AlertIcon />
+                <span>{fullAccess ? t("Turn off full access") : t("Enable Full access")}</span>
+                {!fullAccess && <ChevronIcon />}
+              </button>
               {/* 元信息在左、按钮在右：按钮固定在右下角，用户按回车之前手就在那儿 */}
               <span className="lattice-assistant-meta">
                 {usage ? `${usage.prompt} → ${usage.completion} tokens` : ""}

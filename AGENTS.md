@@ -73,7 +73,7 @@ src/
     hands.ts              assistant 的手的 IPC 面：`assistant_tool` / `hands_cancel` / 开关读写（`assistant_hands*`）/ 模式（`assistant_mode*`）/ 技能包四条；参数序列化成字符串递过去，返回 `AgentReply` 形状
     agent.ts              agent 动作执行器：白名单动作走真 store，回快照（带每个组件的说明首句 `about`，没写说明就是空串）（`tests/agent.html` 59 条）
     widget-tools.ts       数据平面的执行面：画布实例的登记表（一个 instanceId 一个「能答话的 iframe」）+ `callWidgetTool`（8 秒超时、回话归一化、`not-running`）；纯逻辑在 runtime/widget-tools.ts
-    AssistantPanel.tsx    assistant 的面板：一列模型档 + 表单 + **常驻模式条**（内部 / 完全访问，0009；`mode` 的值仍叫 `internal` / `everything`）+ 六组能力开关（主入口是手那一段头上一颗「Enable Full access」，走 `requestFullAccess` 的统一确认：勾「我明白风险」才能按、确认时顺手把六组拨开、只读档压住时按钮是灰的；完全访问期间六组画成勾且锁上）+ **审批档三选一**（Ask / Automatic / Read-only，`APPROVAL_LABELS`）+ 审批确认条 + 对话（顶上一行会话列表：挑回 / 新开 / 删），工具结果一行一个（抽屉与小窗共用这一个组件）
+    AssistantPanel.tsx    assistant 的面板：一列模型档 + 表单 + **常驻模式条**（内部 / 完全访问，0009；`mode` 的值仍叫 `internal` / `everything`；**只有状态，没有按钮**）+ **输入框左下那颗警示色药丸**（完全访问的入口/出口：`Enable Full access` ↔ `Turn off full access`，0009 §7）+ 六组能力开关（设置态那个入口是手那一段头上一颗「Enable Full access」，和药丸走同一个 `requestFullAccess` 的统一确认：勾「我明白风险」才能按、确认时顺手把六组拨开、只读档压住时按钮是灰的；完全访问期间六组画成勾且锁上）+ **审批档三选一**（Ask / Automatic / Read-only，`APPROVAL_LABELS`）+ 审批确认条 + 对话（顶上一行会话列表：挑回 / 新开 / 删），工具结果一行一个（抽屉与小窗共用这一个组件）
     AssistantWindow.tsx   assistant 小窗的壳：标题栏（底板 / 锁 / 浮窗↔桌面 / 藏）+ 面板 + 底板三层（canvas 壁纸 / veil 底色 / 内容）+ 三个缩放手柄；**没有 store**，动作走 `remoteSurface()`，窗口自己的状态走 `assistant-window.json` v2（0007）
   runtime/
     manifest.ts           清单校验与归一化；Permission 类型与中文标签（唯一真源）；`agent.tools`（组件声明的工具，规则在 runtime/widget-tools.ts）
