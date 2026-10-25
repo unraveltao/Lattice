@@ -334,7 +334,7 @@ pub async fn llm_chat(app: AppHandle, messages: String, tools: Option<String>) -
 
     let reply = llm_policy::parse_chat(&text)?;
     /*
-     * 写一行审计：看板组件（`lattice.agent`）读的就是这份日志。
+     * 写一行审计：`npm run agent -- state` 和第三方看板读的就是这份日志。
      *
      * 只记"模型说了几个字 / 要做几件事"，**不记内容** —— 用户的对话不该
      * 因为开了个审计开关就变成一份可读的聊天记录。工具的每一步由前端在

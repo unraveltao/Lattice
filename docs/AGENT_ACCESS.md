@@ -14,7 +14,7 @@
 | --- | --- | --- | --- |
 | **A 控制平面** | 外部 agent 摆组件、改布局、换主题、暂停 | `[已实现]` | 一条通道 + 一个新身份 + 审计 |
 | **B 数据平面** | agent 读待办、加日历事件、查天气 | `[设计]` | 组件清单加一节 `agent.tools`，**所有组件作者要跟着改** |
-| **C agent 当组件** | 一块看板：agent 刚才说了什么、改了什么 | `[已实现]` | 一个官方组件 + 一条 `say` 通道 + 一项新权限 |
+| **C agent 当组件** | 一块看板：agent 刚才说了什么、改了什么 | `[已实现，组件在 v0.10 删了]` | 一个官方组件 + 一条 `say` 通道 + 一项新权限（桥与权限留着，第三方仍可自己画一块） |
 | **D 内置 assistant** | 平台自己带模型（用户填地址 / 模型 / key），Ctrl+K 说话，它照着改桌面 | `[已实现]`（第 4 节） | 传输层 + key 落盘 + 工具循环 + 抽屉 |
 
 顺序不能倒。B 要改组件规范（波及所有作者），C 依赖 A 已经能用；A 是地基；D 复用 A 的
@@ -183,7 +183,9 @@ npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 没有 schema，agent 读了也只能瞎猜。要数据就走组件自己声明的工具 —— 由组件的代码决定
 暴露什么、怎么解释。平台不当数据出口。
 
-## 3. C agent 当组件 `[已实现]`
+## 3. C agent 当组件 `[已实现，组件后来删了]`
+
+> **v0.10 末尾把这块看板连包删了**（用户原话："widgets 里的 now playing 和 agent 没有什么作用"）。删掉的是组件包，**不是这条口子**：`agent.activity` 与 `agent:activity` 权限还在 `WIDGET_SPEC` 的方法表里，第三方组件想自己画一块日志看板随时能接。读日志的默认姿势于是回到终端：`npm run agent -- state`。下面几节记的是当初为什么不做聊天窗 —— 那条判断不受影响。
 
 一个官方组件 `lattice.agent`，但它**不是聊天窗，也不带模型**。
 
@@ -340,7 +342,6 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 | `agent_policy.rs`（HTTP 解析 / 令牌 / 白名单 / `say`） | 26 条 `rustc --test`，见 `.scratch/agent-test.rs` |
 | `platform/agent.ts`（动作执行器） | `tests/agent.html` 57 条，跑的是**真 store** |
 | `scripts/lattice-agent.mjs`（客户端） | `npm run test:agent`，14 条，起假端点测请求形状、`say` 的整句传递与退出码 |
-| `lattice.agent`（看板组件） | `tests/agent-widget.html` 57 条，iframe 里加载真组件，调 `window.__latticeAgentFeed`；含"内置 assistant 那几轮在日志里怎么显示" |
 | `llm_policy.rs`（地址 / 请求体 / 响应 / 工具调用 / 错误翻译） | 21 条 `rustc --test`，见 `.scratch/llm-test.rs` |
 | `runtime/assistant.ts`（工具表 / 历史裁剪 / 快照预算） | `tests/assistant.html` 83 条 |
 | `assistant_window.rs` + 小窗那条转发 | **2026-10-25 实机验过**：`assistant_window_toggle` 回 `true`，CDP 查到 `assistant.html` 的 DOM（标题栏、面板、`Assistant · deepseek-v4.1-flash`、跟随主题），窗口里说一句 → 工具真的挪了桌宠（`lattice.pet#demo01` → 60,80）并回话；藏起来再叫回来还是同一个 webview、同一轮对话；拖完 `assistant-window.json` 落成 `{x:1300.0,y:444.0}` |

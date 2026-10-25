@@ -42,9 +42,8 @@
 | 知道机器现在怎么样 | 系统监控 | CPU 与内存带一分钟曲线、每核负载、提交内存、磁盘、网络、开机时长 |
 | 专心干一会儿活 | 专注 · 秒表 | 番茄钟 —— 合上盖子再回来，时间还是对的；计时 |
 | 顺手算一下 | 计算器 · 单位换算 | 四则运算，结果能一键复制；长度 / 质量 / 温度 / 数据 / 时间 / 速度双向换算 |
-| 桌面跟着音乐动 | 音乐 | 在放什么、能切歌、能跟着声音起伏 |
 | 出门前看一眼 | 天气 | 一个城市的当前天气，定时刷新，断网时也读得出来 |
-| 让 AI 替你动手 | Agent 看板 + `Ctrl+K` assistant | 看它在这台机器上做了什么；模型你自己配，key 不离开 Rust |
+| 让 AI 替你动手 | `Ctrl+K` assistant + `npm run agent` | 模型你自己配，key 不离开 Rust；手是同样的 8 个白名单动作，CLI 让你看见它做了什么 |
 | 上面这些都不够 | 自己写一个 | 见 [写一个组件](#写一个组件) |
 
 ## 它不是什么
@@ -84,7 +83,7 @@
 | **v0.7** | 交付：NSIS 安装包、应用内更新、先出草稿的发布流程，以及把 SmartScreen 这件事写下来而不是藏起来 |
 | **v0.8** | Agent 接入：默认关的回环 HTTP 端点、令牌、审计日志、8 个白名单动作，以及一块看板组件 |
 | **v0.9** | `lattice.music`、`audio:level`、`lattice.bookmarks`、`shell:open` |
-| **v0.10** | 平台自带 assistant：自备 OpenAI 兼容地址与 key，key 留在 Rust 里，工具调用只走那 8 个动作，组件那侧是 `llm:chat` |
+| **v0.10** | 平台自带 assistant：自备 OpenAI 兼容地址与 key，key 留在 Rust 里，工具调用只走那 8 个动作，组件那侧是 `llm:chat`；音乐与 Agent 看板两块组件在这一版被删掉 |
 
 **几个数字**
 
@@ -153,14 +152,14 @@
 | 权限 | 换到什么 | 谁在用 |
 | --- | --- | --- |
 | `clock` | 系统时钟，给的是绝对时刻 | 时钟、倒计时 |
-| `storage` | 一份私有的键值文件 `widget-data/<widgetId>.json` | 15 个里的 10 个 |
+| `storage` | 一份私有的键值文件 `widget-data/<widgetId>.json` | 13 个里的 10 个 |
 | `clipboard:write` | 往剪贴板写文本 | 计算器 |
 | `network` | 向清单里列出的主机发 HTTP 请求 | 天气 |
 | `system:monitor` | CPU、内存、磁盘、网络、开机时长 | 系统监控 |
-| `media:control` | 读并驱动 Windows 媒体会话（SMTC） | 音乐 |
-| `audio:level` | 一个 `0..1` 的数：输出有多响 | 音乐 |
+| `media:control` | 读并驱动 Windows 媒体会话（SMTC） | 没有内置组件用 —— 只给第三方 |
+| `audio:level` | 一个 `0..1` 的数：输出有多响 | 没有内置组件用 —— 只给第三方 |
 | `shell:open` | 把 http/https 地址交给默认浏览器 | 书签 |
-| `agent:activity` | 读 agent 的审计日志 | Agent 看板 |
+| `agent:activity` | 读 agent 的审计日志 | 没有内置组件用 —— 只给第三方 |
 | `llm:chat` | 把一段对话交给 assistant 的模型，换回文字 | 桌宠 |
 
 <p align="center"><a href="docs/screenshot-permission.png"><img src="docs/screenshot-permission.png" width="380" alt="卡片在要一项没被授予的权限"></a></p>
@@ -212,7 +211,7 @@ npm run agent -- act theme.set --args '{"theme":"dark"}'
 npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 ```
 
-客户端是两百来行零依赖 Node：只读那个端点文件，别的不碰。`lattice.agent` 组件是读的那一侧 —— 它调 `agent.activity`，把日志里最近的动作画出来，所以不用开终端也能看见这台机器替你做了什么。
+客户端是两百来行零依赖 Node：只读那个端点文件，别的不碰。`npm run agent -- state` 打印它现在能看见什么，`-- act …` 让它做一件事，`-- say "…"` 在日志里留一句 —— 不用在桌面上摆一块看板，也能看见这台机器替你做了什么。
 
 ## 写一个组件
 

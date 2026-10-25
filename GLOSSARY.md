@@ -75,7 +75,7 @@ Windows 真实桌面。组件投放后成为真正的桌面窗口。
 组件运行的隔离环境：独立文档、受限 CSP，只能通过桥与宿主说话。
 
 **看板**:
-展示 agent 审计日志的那个内置组件。
+agent 审计日志的展示面。曾经是一个内置组件（`lattice.agent`），v0.10 连包删了：现在读日志用 `npm run agent -- state`，第三方组件仍可凭 `agent.activity` 自己画一块。
 
 **assistant**:
 内置的 `Ctrl+K` 助手，自备 OpenAI 兼容地址与 key，工具调用只走那 8 个白名单动作。

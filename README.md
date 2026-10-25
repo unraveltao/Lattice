@@ -42,9 +42,8 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 | To know what the machine is doing | System | CPU and memory with a one-minute trace, per-core load, commit charge, disk, network, uptime |
 | To work for a stretch | Focus · Stopwatch | A pomodoro that is still right after you close the lid and come back; a stopwatch |
 | A quick sum | Calculator · Convert | Arithmetic you can copy out; two-way conversion for length / mass / temperature / data / time / speed |
-| The desktop to move with the music | Music | What is playing, skip and pause, a level that follows the sound |
 | One look before you go out | Weather | Current conditions for one city, refreshed on a timer, still readable when the network is gone |
-| To let a model do the clicking | Activity board + `Ctrl+K` assistant | See what it did on this machine; you bring the model, the key never leaves Rust |
+| To let a model do the clicking | `Ctrl+K` assistant + `npm run agent` | You bring the model, the key never leaves Rust; the hands are the same 8 allowlisted actions, and the CLI shows you what they did |
 | None of the above | Write one | See [Writing a widget](#writing-a-widget) |
 
 ## What it is not
@@ -84,7 +83,7 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | **v0.7** | Delivery: NSIS installer, in-app updater, draft-first releases, and the SmartScreen problem written down instead of hidden |
 | **v0.8** | Agent access: an opt-in loopback HTTP endpoint, a token, an audit log, 8 allowlisted actions, and an activity board widget |
 | **v0.9** | `lattice.music`, `audio:level`, `lattice.bookmarks`, `shell:open` |
-| **v0.10** | The built-in assistant: your own model behind an OpenAI-compatible URL, the key kept in Rust, tool calling over the same 8 actions, `llm:chat` for widgets |
+| **v0.10** | The built-in assistant: your own model behind an OpenAI-compatible URL, the key kept in Rust, tool calling over the same 8 actions, `llm:chat` for widgets. The Music and Agent-board widgets were dropped in this version |
 
 **By the numbers**
 
@@ -153,14 +152,14 @@ Every capability is a permission, and every permission is a gate in `runtime/bri
 | Permission | What it unlocks | Asked for by |
 | --- | --- | --- |
 | `clock` | The system clock, as an absolute instant | Clock, Countdown |
-| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 10 of the 15 |
+| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 10 of the 13 |
 | `clipboard:write` | Put text on the clipboard | Calculator |
 | `network` | HTTP requests to the hosts listed in the manifest | Weather |
 | `system:monitor` | CPU, memory, disk, network, uptime | System monitor |
-| `media:control` | Read and drive the Windows media session (SMTC) | Music |
-| `audio:level` | One number in `0..1`: how loud the output is | Music |
+| `media:control` | Read and drive the Windows media session (SMTC) | Nothing built in — third-party only |
+| `audio:level` | One number in `0..1`: how loud the output is | Nothing built in — third-party only |
 | `shell:open` | Hand an http/https URL to the default browser | Bookmarks |
-| `agent:activity` | Read the agent's audit log | Agent board |
+| `agent:activity` | Read the agent's audit log | Nothing built in — third-party only |
 | `llm:chat` | Send a conversation to the assistant's model, get text back | Desktop pet |
 
 <p align="center"><a href="docs/screenshot-permission.png"><img src="docs/screenshot-permission.png" width="380" alt="A card asking for a permission it was not granted"></a></p>
@@ -212,7 +211,7 @@ npm run agent -- act theme.set --args '{"theme":"dark"}'
 npm run agent -- act placement.add --args '{"widgetId":"lattice.clock"}'
 ```
 
-The client is a couple hundred lines of zero-dependency Node: it reads that endpoint file and nothing else. The `lattice.agent` widget is the read side — it calls `agent.activity` and renders the latest actions from the log, so you can see what the machine did on your behalf without opening a terminal.
+The client is a couple hundred lines of zero-dependency Node: it reads that endpoint file and nothing else. `npm run agent -- state` prints what the agent can see, `-- act …` makes it do something, `-- say "…"` leaves a note in the log — you can watch what the machine did on your behalf without opening a terminal, and without a widget sitting on your desktop.
 
 ## Writing a widget
 

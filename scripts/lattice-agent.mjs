@@ -110,7 +110,7 @@ if (!args.command || args.command === "help" || args.command === "--help") {
       "用法：",
       "  lattice-agent ping                      端点还活着吗",
       "  lattice-agent state                     桌面现在长什么样",
-      "  lattice-agent say \"<一句话>\"             在 agent 看板上留一行（必须加引号）",
+      "  lattice-agent say \"<一句话>\"             在审计日志里留一行（必须加引号）",
       "  lattice-agent act <动作> [--args JSON]   改点什么",
       "",
       "动作（只有这些，别的会被拒）：",
