@@ -285,7 +285,11 @@ fn migrate_legacy(value: &serde_json::Value) -> AssistantConfig {
     // 迁成 `none` 而不是 `bearer`：本机模型挂一个空 Bearer 只会换来 401
     let auth = if old.api_key.trim().is_empty() { "none" } else { "bearer" };
     let profile = Profile {
-        id: "p-legacy".to_string(),
+        // 不能写 "p-legacy"：`profile_id_ok` 只认 `p-` 后面跟小写十六进制 /
+        // 数字 / 短横线，而 `l` `g` `y` 不在里面 —— 迁移出来的那一档会被
+        // `normalize` 当成坏档丢掉，用户的老配置直接消失（CI 上就是这么红的）。
+        // 这串是 "legacy" 的十六进制写法，读起来还是那个意思。
+        id: "p-1e9ac1".to_string(),
         label: llm_policy::profile_label(&base),
         base_url: base,
         auth: auth.to_string(),
@@ -995,7 +999,7 @@ pub fn llm_chat_cancel(request_id: String) -> bool {
 #[cfg(test)]
 mod tests {
     /*
-     * 这几条要 `cargo test`（`llm_policy.rs` 那 25 条才能用 `rustc --test` 单跑）：
+     * 这几条要 `cargo test`（`llm_policy.rs` 那 48 条才能用 `rustc --test` 单跑）：
      * 迁移与归一化要读 JSON，而那一层刻意不引 serde。本机跑不了 `cargo test`
      * 的机器上，这里靠"读代码 + 真机验"兜着（见 AGENTS §11）。
      */
@@ -1009,7 +1013,7 @@ mod tests {
         );
         assert_eq!(config.version, 2);
         assert_eq!(config.profiles.len(), 1);
-        assert_eq!(config.active_id, "p-legacy");
+        assert_eq!(config.active_id, "p-1e9ac1");
         let profile = &config.profiles[0];
         assert_eq!(profile.base_url, "https://api.deepseek.com/v1");
         assert_eq!(profile.model, "deepseek-chat");
