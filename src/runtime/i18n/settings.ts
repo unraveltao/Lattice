@@ -58,6 +58,15 @@ export const SETTINGS_ZH: Record<string, string> = {
   "About Lattice": "关于棂",
   "local-first": "本地优先",
   "Check for updates": "检查更新",
+  Version: "版本",
+  "Update Channel": "更新通道",
+  Stable: "稳定版",
+  "Only one channel today — the update feed skips pre-releases, so a beta never arrives on its own.":
+    "目前只有一条通道：更新源会跳过预发布版，beta 不会自动送达。",
+  "Open source": "开源",
+  "Star on GitHub": "去 GitHub 点星",
+  "Open source and local-first: no account, no server of ours.":
+    "开源、本地优先：没有账号，也没有我们的服务端。",
   "Sign out": "退出登录",
   "Quit Lattice": "退出棂",
 

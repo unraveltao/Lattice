@@ -44,6 +44,7 @@ import { Avatar } from "./Avatar";
 import { openConfigFile } from "./assistant";
 import { ModelProfiles } from "./ModelProfiles";
 import { ProfilePanel } from "./ProfilePanel";
+import { openRepo, REPO, REPO_URL } from "./repo";
 
 type Section = "account" | "models" | "appearance" | "language" | "desktop" | "widgets" | "assistant" | "about";
 
@@ -354,7 +355,9 @@ export function SettingsMenu({
             ? `${update.percent}%`
             : update.status === "error"
               ? t("Failed")
-              : t("Check");
+              // 空闲时右边**什么都不写**：按钮上已经写着「检查」，
+              // 再在它左边放一个「检查」就是同一句话说两遍
+              : "";
 
   const updateHint =
     update.status === "error"
@@ -830,27 +833,76 @@ export function SettingsMenu({
                     </div>
                   )}
 
+                  {/*
+                    About 用的是"标签在左、值和动作在右"的竖排（`.lattice-settings-row`
+                    和外观 / 语言那两页同一套），不是菜单行。这一页要回答的是
+                    "这是哪个版本、跟谁要新的、源码在哪" —— 全是**读一眼**的
+                    东西，没有一个是"进入下一层"，所以不该长得像可以点进去。
+                  */}
                   {section === "about" && (
-                    <div className="lattice-settings-list">
-                      <div className="lattice-menu-row is-static">
-                        <Glyph d={ICON.info} />
-                        <span className="lattice-menu-label">{t("About Lattice")}</span>
-                        <span className="lattice-menu-note">
-                          {version ? `v${version}` : "…"} · {t("local-first")}
-                        </span>
+                    <div className="lattice-settings-form">
+                      <div className="lattice-settings-row">
+                        <span className="lattice-settings-label">{t("Version")}</span>
+                        {/* 不补 `v` 前缀：`getVersion()` 回的就是 "0.1.1"，
+                            预览里回 "dev" —— 补上去会变成 "vdev" */}
+                        <span className="lattice-about-value">{version || "…"}</span>
                       </div>
 
-                      <button
-                        type="button"
-                        className="lattice-menu-row"
-                        onClick={() => void runUpdate()}
-                        disabled={update.status === "checking" || update.status === "downloading"}
-                        title={updateHint}
-                      >
-                        <Glyph d={ICON.refresh} />
-                        <span className="lattice-menu-label">{t("Check for updates")}</span>
-                        <span className="lattice-menu-note">{updateNote}</span>
-                      </button>
+                      <div>
+                        <div className="lattice-settings-row">
+                          <span className="lattice-settings-label">{t("Update Channel")}</span>
+                          <span className="lattice-about-value">{t("Stable")}</span>
+                        </div>
+                        {/*
+                          不画成一个只有一项的下拉框：能选的东西只有一样时，
+                          那个箭头就是在骗人。真要有 beta 通道，先得有一条
+                          能发预发布版的流水线，再说这个控件。
+                        */}
+                        <p className="lattice-settings-hint">
+                          {t("Only one channel today — the update feed skips pre-releases, so a beta never arrives on its own.")}
+                        </p>
+                      </div>
+
+                      <div>
+                        <div className="lattice-settings-row">
+                          <span className="lattice-settings-label">{t("Check for updates")}</span>
+                          <span className="lattice-about-actions">
+                            <span className="lattice-about-value">{updateNote}</span>
+                            <button
+                              type="button"
+                              className="lattice-btn is-small"
+                              onClick={() => void runUpdate()}
+                              disabled={update.status === "checking" || update.status === "downloading"}
+                              title={updateHint}
+                            >
+                              {update.status === "available" ? t("Install") : t("Check")}
+                            </button>
+                          </span>
+                        </div>
+                        {update.status === "error" && (
+                          <p className="lattice-settings-hint">{update.message}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="lattice-settings-row">
+                          <span className="lattice-settings-label">{t("Open source")}</span>
+                          <span className="lattice-about-actions">
+                            <span className="lattice-about-value is-mono">{`github.com/${REPO}`}</span>
+                            <button
+                              type="button"
+                              className="lattice-btn is-small"
+                              onClick={() => void openRepo()}
+                              title={REPO_URL}
+                            >
+                              {t("Star on GitHub")}
+                            </button>
+                          </span>
+                        </div>
+                        <p className="lattice-settings-hint">
+                          {t("Open source and local-first: no account, no server of ours.")}
+                        </p>
+                      </div>
 
                       <div className="lattice-settings-danger">
                         <button
