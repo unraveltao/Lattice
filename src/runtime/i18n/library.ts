@@ -9,7 +9,8 @@ export const LIBRARY_ZH: Record<string, string> = {
   // —— 组件库面板：标题行、搜索、空态 ——
   Widgets: "组件",
   "Show the widget library": "展开组件库",
-  "Collapse the widget library": "收起组件库",
+  /* 顶栏左上那颗三线：它开合的就是这一栏（按钮在 `App.tsx`，措辞归这一档） */
+  "Toggle the widget library": "开合组件库",
   "Open the widgets folder in Explorer": "在资源管理器里打开组件文件夹",
   "Open widgets folder": "打开组件文件夹",
   "Dismiss notice": "关闭提示",

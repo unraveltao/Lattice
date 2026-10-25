@@ -678,6 +678,33 @@ async function main() {
     log(false, "找不到搜索框");
   }
 
+  /*
+   * ---- 10. 左栏的开合入口只剩一个，而且收起后整条竖条都能点 ----
+   *
+   * 三线在顶栏（`App.tsx`），所以这里验的是这一栏的两端：标题行不许再有
+   * 第二颗"收起"，收起之后也不许只剩一个 16px 的箭头让人去瞄。
+   */
+  render();
+  await sleep(60);
+  eq(
+    [...document.querySelectorAll<HTMLElement>(".lattice-panel-left .lattice-panel-head button")].map(
+      (node) => node.getAttribute("aria-label"),
+    ),
+    ["Open widgets folder"],
+    "标题行只剩打开文件夹一颗（收起挪去顶栏三线，同一件事不说两遍）",
+  );
+
+  render({ open: false });
+  await sleep(60);
+  const rail = document.querySelector<HTMLElement>(".lattice-panel-left.is-collapsed .lattice-panel-rail");
+  log(
+    rail !== null &&
+      rail.tagName === "BUTTON" &&
+      (rail.textContent ?? "").includes("Widgets") &&
+      rail.getBoundingClientRect().height > 100,
+    "收起后整条竖条就是那颗按钮（命中区是 40px × 面板高，不是一个 16px 的箭头）",
+  );
+
   document.getElementById("out")!.innerHTML = lines
     .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
     .join("\n");

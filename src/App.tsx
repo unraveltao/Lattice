@@ -1067,6 +1067,28 @@ export default function App() {
     <div className="lattice-shell">
       <header className="lattice-topbar">
         <div className="lattice-brand">
+          {/*
+            左上那颗三线：开合组件库那一栏，和 Claude / VS Code 那颗同一个意思
+            —— 它管的是**侧栏**，不是一个什么都装的抽屉菜单。
+
+            三条规矩：
+              · **放在最左、品牌标记之前**。它是"窗口的开关区"，先定位再读名字；
+                窗饰那排按钮在右上角（`padding-right: 108px`），左边全空着。
+              · **它是左栏唯一的命名入口**。左栏标题行那颗"收起"已经删掉 ——
+                同一个开关同时出现在两头，等于告诉用户这里有两个东西。
+              · **收起之后那条 40px 竖条整条都能点**（见 `.lattice-panel.is-collapsed`），
+                所以从窄条回来不用先跑回顶栏；那颗三线的 `aria-expanded` 跟着状态走。
+          */}
+          <button
+            type="button"
+            className="lattice-icon-btn is-large"
+            onClick={() => setPanelOpen("library", !libraryOpen)}
+            aria-expanded={libraryOpen}
+            title={t("Toggle the widget library")}
+            aria-label={t("Toggle the widget library")}
+          >
+            <Glyph d={ICON.menu} />
+          </button>
           <span className="lattice-brand-mark" aria-hidden />
           <span className="lattice-brand-name">Lattice</span>
         </div>

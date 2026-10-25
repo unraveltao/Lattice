@@ -330,6 +330,55 @@ button {
   padding: 10px 0;
 }
 
+/*
+ * 左栏收起之后，**整条竖条本身就是那颗按钮**：40px × 全高，图标只是"这是一栏"
+ * 的说明，不是唯一的命中区。从窄条回来时鼠标已经在左边了，没必要先精确点中
+ * 一个 16px 的箭头。右栏还是老的"小按钮 + 竖排字"，两边不共用这套。
+ */
+.lattice-panel-left.is-collapsed {
+  gap: 0;
+  padding: 0;
+}
+
+.lattice-panel.is-collapsed .lattice-panel-rail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 0;
+  padding: 10px 0;
+  border: 0;
+  background: none;
+  color: var(--lattice-text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+/* 命中区是整条，不该在 40px 宽的条里还留一圈向外的光圈 */
+.lattice-panel.is-collapsed .lattice-panel-rail:focus-visible {
+  outline-offset: -3px;
+}
+
+.lattice-panel.is-collapsed .lattice-panel-rail:hover {
+  background: var(--lattice-surface-2);
+}
+
+.lattice-panel.is-collapsed .lattice-panel-rail:hover,
+.lattice-panel.is-collapsed .lattice-panel-rail:hover .lattice-panel-rail-label {
+  color: var(--lattice-text);
+}
+
+/* 图标仍然占一个 30px 的方格子：和展开时的 `.lattice-icon-btn.is-large` 同一个尺寸 */
+.lattice-panel.is-collapsed .lattice-panel-rail .lattice-glyph {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 7px;
+}
+
 .lattice-panel-rail-label {
   writing-mode: vertical-rl;
   font-size: 11px;

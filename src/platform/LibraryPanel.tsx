@@ -345,17 +345,22 @@ export function LibraryPanel({
   if (!open) {
     return (
       <aside className="lattice-panel lattice-panel-left is-collapsed">
+        {/*
+          收起之后，**整条 40px 竖条就是那颗按钮** —— 不是一个 30px 的图标
+          挂在一根只会反光的条上。要从窄条回来时，鼠标已经在左边了，没必要
+          先精确点中一个 16px 的箭头。
+        */}
         <button
           type="button"
-          className="lattice-icon-btn is-large"
+          className="lattice-panel-rail"
           onClick={onToggle}
           title={t("Show the widget library")}
           aria-label={t("Show the widget library")}
           aria-expanded={false}
         >
           <PanelGlyph side="left" />
+          <span className="lattice-panel-rail-label">{t("Widgets")}</span>
         </button>
-        <span className="lattice-panel-rail-label">{t("Widgets")}</span>
       </aside>
     );
   }
@@ -365,6 +370,12 @@ export function LibraryPanel({
       <header className="lattice-panel-head">
         <h2 className="lattice-panel-title">{t("Widgets")}</h2>
         <span className="lattice-panel-count">{installed.length}</span>
+        {/*
+          标题行只剩"打开组件目录"这一颗。**"收起"不在这儿** ——
+          它挪到了顶栏左上角那颗三线（`App.tsx` 的 `.lattice-brand`）：
+          同一个开关同时出现在两头，用户会以为这里是两件事，而且
+          "收起这一栏"和"打开这个文件夹"本来就不同类。
+        */}
         <div className="lattice-panel-actions">
           <button
             type="button"
@@ -374,16 +385,6 @@ export function LibraryPanel({
             aria-label={t("Open widgets folder")}
           >
             <Glyph d={ICON.folder} />
-          </button>
-          <button
-            type="button"
-            className="lattice-icon-btn"
-            onClick={onToggle}
-            title={t("Collapse the widget library")}
-            aria-label={t("Collapse the widget library")}
-            aria-expanded
-          >
-            <PanelGlyph side="left" />
           </button>
         </div>
       </header>
