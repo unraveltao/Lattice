@@ -79,6 +79,8 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_System_IO",
   # GetModuleHandleW：参考线叠层窗口要注册一个自己的窗口类
   "Win32_System_LibraryLoader",
+  # GetSystemPowerStatus：电量、交流电、节电模式（lattice.battery 那条命令）
+  "Win32_System_Power",
   # GetPerformanceInfo：提交量、进程/线程/句柄计数
   "Win32_System_ProcessStatus",
   "Win32_System_Registry",

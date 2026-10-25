@@ -21,7 +21,7 @@
 | v0.3 | 平台能力 | ✅ 完成 | 调度器、系统指标、落盘备份、关闭撤销、CSP 锁定、出网闸门、每实例配置、网络白名单代理、托盘/自启、目录监听、崩溃隔离、双屏边界夹紧全部落地 |
 | v0.4 | 开发体验 | ✅ 完成 | SDK、脚手架、打包工具、媒体控制、调试面板 |
 | v0.5 | 分发 | ✅ 完成 | 目录是一份静态 JSON：装、更新、回滚、举报、新权限复核全部落地 |
-| v0.6 | 生态 | 🟡 进行中 | 目录上线（Pages 已开）+ 目录缓存/断网兜底 + **多源列表**落地（`sources: [...]`，合并成一张表、每源一行读况，见 [design/0010](./design/0010-multi-source-catalogue.md)）；剩首次引导、第三方作者的发布流程、真机验收 |
+| v0.6 | 生态 | 🟡 进行中 | 目录上线（Pages 已开）+ 目录缓存/断网兜底 + **多源列表**落地（`sources: [...]`，合并成一张表、每源一行读况，见 [design/0010](./design/0010-multi-source-catalogue.md)）；剩真机验收与官方组件继续补 |
 | v0.7 | 交付 | 🟡 进行中 | NSIS 安装包 + 自动更新（见 v0.7 一节） |
 | v0.8 | Agent 接入 | 🟡 进行中 | 默认关的回环端点：只绑 127.0.0.1、令牌、审计日志、8 个白名单动作（读日志用 `npm run agent -- state`）；还差一次 CLI 往返的真机验收 |
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
@@ -34,16 +34,16 @@
 
 | 指标 | 数值 | 备注 |
 | --- | --- | --- |
-| 前端 TS/TSX | 23 321 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
+| 前端 TS/TSX | 23 337 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
 | 样式 CSS | 6 103 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css` + `assistant-window.css`） |
-| Rust | 22 995 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
+| Rust | 23 229 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、电源读数、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务） |
 | 组件 SDK | 943 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
-| 官方组件 + 示例 | 24 866 行 | 18 个官方包 + 1 个示例（含每个包里的 SDK 副本） |
+| 官方组件 + 示例 | 25 586 行 | 19 个官方包 + 1 个示例（含每个包里的 SDK 副本） |
 | 构建脚本 | 5 047 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、样式与文档的守门人 |
-| 浏览器断言 | 2 555 条 | 53 个自检页，跑一遍的真实计数（0 failed） |
+| 浏览器断言 | 2 645 条 | 54 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 61 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + 浏览器预览那条通道 28 条，都不依赖 dev server。**CI 只跑前四条（33 条）**，`test:llm-proxy` 还没进 workflow |
-| Rust 单测 | 416 条 | 365 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 50 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
-| Tauri 命令 | 94 个 | |
+| Rust 单测 | 422 条 | 371 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 50 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `power_policy` 6 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
+| Tauri 命令 | 95 个 | |
 | 权限 | 12 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐 |
 | 踩过的坑 | 86 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
@@ -241,7 +241,13 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **连续天数从今天或昨天起算，没有宽限日**：今天还没记就从昨天数（一天还没过完），昨天也没记就是 0。给它「上周五还算数」这种宽容，只会让用户以为自己在坚持。
     - **上限写在常量里**：6 个习惯、每个留 400 天、名字 ≤40 码点。删掉没有撤销 —— 列表短，重新输一个名字比每次删都弹一次确认便宜。
     - **一份列表，多个视图**：数据按 `widgetId` 存，桌面上摆两份卡片是同一张清单的两个视图（日历 / 待办 / 课程表都是这个形状）；`store-changed` 到了先比 `revision`，正在改名时不重载，否则编辑框会被远端那次写入清掉。
-  - **本地目录和公开目录还差四个**：本地 18 个官方包，`unraveltao/lattice-registry` 上是 14 个 —— 少 `lattice.anki`、`lattice.diagram`、`lattice.pet`、`lattice.habit`（四个都是后加的）。发上去就走 `npm run publish:widget -- public/widgets/<id> --key <私钥>` 再提 PR，流程与判据在 [`reference/build.md`](./reference/build.md) 第四节。
+  - [x] **电池（`lattice.battery`，19 个官方组件）** —— 插没插电、电量、还能撑多久、省电模式；权限只有 `system:monitor`（和系统监控共用一项），桥上加一条 `power.status`，Rust 侧是新命令 `system_power`。默认 240×146，最小 208×132；`tests/battery.html` 90 条、`power_policy.rs` 6 条 `rustc --test`。
+    - **电源是新的一个轴，但不值得新开一项权限**：一个指标一项权限会把属性面板变成一排读不完的开关，而「这台机器现在怎么样」本来就是同一件事 —— 系统监控读 CPU / 内存 / 磁盘 / 网络，电池读电源，两个都拿 `system:monitor`。
+    - **`minutesLeft` 只在放电时有值**：插着电时系统给的是「充满还要多久」，和用户想看的「还能撑多久」正好相反；交流供电、255 哨兵值、超过一周的读数一律 `null`，界面就不画那一行。
+    - **百分比不夹紧**：>100 当成读不到（`null`），不画成满格 —— 坏读数装成满电比不显示更糟。
+    - **不做平台侧缓存**：节流交给组件的 `schedule.every`（30 秒一拍，卡片藏起来就停），平台每秒问一次只是空转。
+    - **单独一条命令，没折进 `system_metrics`**：两条命令读两套 Win32 API，失败模式也不同 —— 台式机没有电池是「正常但没有电池」，不是错误。
+  - **本地目录和公开目录还差五个**：本地 19 个官方包，`unraveltao/lattice-registry` 上是 14 个 —— 少 `lattice.anki`、`lattice.battery`、`lattice.diagram`、`lattice.pet`、`lattice.habit`（五个都是后加的）。发上去就走 `npm run publish:widget -- public/widgets/<id> --key <私钥>` 再提 PR，流程与判据在 [`reference/build.md`](./reference/build.md) 第四节。
 
 **明确不做**：账号、云端评分、下载计数、组件市场首页。这些全都要服务端，而 v0.5 的整个前提是"没有服务端"。评分和举报继续落本地文件（`reports/*.json`），作者自己收 —— 假装有云端比没有更糟。
 

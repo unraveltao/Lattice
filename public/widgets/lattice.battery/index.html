@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>电池</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="battery" id="card">
+      <header class="battery-head">
+        <span class="battery-title" id="title">电池</span>
+        <span class="battery-tag" id="saver" hidden>省电模式</span>
+      </header>
+      <div class="battery-readout">
+        <span class="battery-percent" id="percent">—</span>
+        <span class="battery-unit" id="unit">%</span>
+      </div>
+      <div
+        class="battery-bar"
+        id="bar"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-labelledby="title"
+      >
+        <span class="battery-fill" id="fill"></span>
+      </div>
+      <p class="battery-state" id="state">没有读数</p>
+      <p class="battery-detail" id="detail"></p>
+    </main>
+    <script src="widget.js"></script>
+  </body>
+</html>

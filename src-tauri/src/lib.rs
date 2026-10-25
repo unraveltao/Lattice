@@ -49,6 +49,8 @@ pub mod occlusion;
 pub mod occlusion_policy;
 pub mod open;
 pub mod open_policy;
+pub mod power;
+pub mod power_policy;
 pub mod protocol;
 pub mod runner;
 pub mod screen_policy;
@@ -168,6 +170,7 @@ pub fn run() {
             open::open_external,
             wallpaper::widget_wallpaper,
             metrics::system_metrics,
+            power::system_power,
             media::media_session,
             media::media_control,
             audio::audio_level,

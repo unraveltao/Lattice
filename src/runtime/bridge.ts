@@ -425,6 +425,22 @@ defineMethod("system.metrics", "system:monitor", async () => {
   return await invoke("system_metrics");
 });
 
+/*
+ * 电源状态（`lattice.battery`）：`{ ac, percent, charging, noBattery, critical,
+ * saver, minutesLeft }`，字段是**已经解释好的事实** —— 位掩码与"255 = 未知"
+ * 全在 `power_policy.rs` 里判，组件不认那两个哨兵。
+ *
+ * 和 `system.metrics` 同一个权限：知道 CPU 占用和知道还剩多少电是同一类同意
+ * （"让我看看这台机器的状态"）。每个指标开一条权限，权限面板会变成一张读不懂的清单。
+ *
+ * 浏览器预览里没有 Rust，回 `null` 而不是抛错：卡片据此画"读不出来"，
+ * 这比一张红着脸的错误卡更接近它真正知道的事 —— 而且预览里本来就没有电池。
+ */
+defineMethod("power.status", "system:monitor", async () => {
+  if (!bridgeInTauri()) return null;
+  return await invoke("system_power");
+});
+
 defineMethod("window.close", null, (_params, ctx) => {
   ctx.close();
   return { ok: true };

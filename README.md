@@ -29,7 +29,7 @@ at 2× and placed on a plain wallpaper. Nothing from a real desktop is in the fr
 
 Those windows have no frame, stay out of the taskbar, and do not steal focus from whatever you are typing into. They can be pinned above everything else, or tucked under ordinary windows against the wallpaper. Position is remembered per monitor, so a mix of display scalings will not fling a card off the edge; data lives on disk and everything is back where it was after a restart.
 
-The difference from other desktop toys: **widgets are not built in, they are installed.** The 18 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
+The difference from other desktop toys: **widgets are not built in, they are installed.** The 19 official widgets go through the same install path as any third-party one — the platform itself ships with none. So there is no ceiling on what widgets can exist: if you can write HTML, you can add one. Four files, no build step.
 
 **It speaks Chinese and English, all the way down.** The shell switches language in settings, and so do the things you would not expect it to reach: each official widget's name, its options and its how-to text in the inspector come out of the manifest in the language you picked, and the words drawn *inside* the cards (weekdays, "2 left", Start/Pause) follow through one `language` push to every open window. No restart, no reload.
 
@@ -41,7 +41,7 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 | --- | --- | --- |
 | A glance at the time, and how long is left | Clock · Calendar · Timetable · Countdown | The current time; a month view with your own events; this week's classes with a live now line; a countdown to a date |
 | Nothing slipping through | Todo · Note · Bookmarks | A list on the desktop; a scratch note that saves itself; the links you keep coming back to |
-| To know what the machine is doing | System | CPU and memory with a one-minute trace, per-core load, commit charge, disk, network, uptime |
+| To know what the machine is doing | System · Battery | CPU and memory with a one-minute trace, per-core load, commit charge, disk, network, uptime; charge, whether it is plugged in, and how long is left |
 | To work for a stretch | Focus · Stopwatch | A pomodoro that is still right after you close the lid and come back; a stopwatch |
 | To not lose the words you looked up | Word Drill | One card per line pasted in, four grades, and the next review scheduled in days |
 | A quick sum | Calculator · Convert | Arithmetic you can copy out; two-way conversion for length / mass / temperature / data / time / speed |
@@ -67,7 +67,7 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 
 The important part is that a widget *becomes a window* while never touching Windows. It runs in a sandboxed iframe with `sandbox="allow-scripts allow-forms"`, an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge — `clock` for the time, `storage` for its own little database, `network` for an allowlist of hosts you can read, and so on. There are twelve permissions in total. Nothing is granted by default, and installing a widget does not grant it anything: you approve each capability once per widget, and revoking one takes effect in the windows that are already open.
 
-**The platform ships empty.** The 18 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
+**The platform ships empty.** The 19 official widgets are ordinary packages that you install from the library like any third-party one — they are not compiled into the app, and nothing is auto-installed. That is the difference between an extension platform and a desktop toy, and it is invariant #1 in [AGENTS.md](./AGENTS.md).
 
 So is the absence of a server. The catalogue is a static `registry.json`, the packages are signed files, the hosting is GitHub Pages, and updates are a release asset. When a design starts to need a backend, the design is wrong — that constraint is argued out in [docs/ROADMAP.md](./docs/ROADMAP.md), not assumed.
 
@@ -110,14 +110,14 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 
 | Metric | Value |
 | --- | --- |
-| Official widgets | 18 |
+| Official widgets | 19 |
 | Permissions | 12 |
-| Tauri commands | 94 |
-| Browser assertions | 2 555 over 53 pages |
-| Rust tests | 416 |
+| Tauri commands | 95 |
+| Browser assertions | 2 645 over 54 pages |
+| Rust tests | 422 |
 | Documented pitfalls | 86 |
 
-Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 365 `rustc --test` pure-logic cases plus 51 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
+Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 371 `rustc --test` pure-logic cases plus 51 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
 ## Two hosts, one bridge
 
@@ -173,10 +173,10 @@ Every capability is a permission, and every permission is a gate in `runtime/bri
 | Permission | What it unlocks | Asked for by |
 | --- | --- | --- |
 | `clock` | The system clock, as an absolute instant | Clock, Countdown |
-| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 13 of the 18 |
+| `storage` | A private key-value file, `widget-data/<widgetId>.json` | 13 of the 19 |
 | `clipboard:write` | Put text on the clipboard | Calculator |
 | `network` | HTTP requests to the hosts listed in the manifest | Weather |
-| `system:monitor` | CPU, memory, disk, network, uptime | System monitor |
+| `system:monitor` | CPU, memory, disk, network, uptime, battery | System · Battery |
 | `media:control` | Read and drive the Windows media session (SMTC) | Music |
 | `audio:level` | One number in `0..1`: how loud the output is | Music |
 | `shell:open` | Hand an http/https URL to the default browser | Bookmarks |
@@ -312,7 +312,7 @@ npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
 npm run test:tokens      # the three scales' rules themselves (half-pixels, exemptions, font shorthand)
 npm run check:tokens     # the repo actually obeys them: sizes, radii, 2 px spacing grid
-npm run test:browser     # 2 450 assertions over 52 pages, real Chrome, real dev server
+npm run test:browser     # 2 645 assertions over 54 pages, real Chrome, real dev server
 ```
 
 The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.
@@ -324,7 +324,7 @@ Release: push a `v*` tag. Actions builds on `windows-latest`, signs the updater 
 ```
 src/                 React shell, canvas, inspector, settings, store
   runtime/           manifest · config · bridge · schedule · catalogue · agent · guides (pure logic)
-public/widgets/      the 18 official packages
+public/widgets/      the 19 official packages
 public/store/        the bundled catalogue (generated, not committed)
 packages/sdk/        @lattice/sdk — the single source of truth for the widget API
 examples/counter/    a drag-and-drop sample widget
@@ -338,11 +338,11 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 23 321 lines |
+| TypeScript | 23 337 lines |
 | CSS | 6 103 lines |
-| Rust | 22 995 lines |
+| Rust | 23 229 lines |
 | SDK | 943 lines |
-| Widgets + example | 24 866 lines |
+| Widgets + example | 25 586 lines |
 | Scripts | 5 047 lines |
 
 **Read next**

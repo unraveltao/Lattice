@@ -1,0 +1,166 @@
+:root {
+  --bg: transparent;
+  --fg: #ecebe6;
+  --muted: #97978f;
+  --accent: #5dcaa5;
+  --border: rgba(255, 255, 255, 0.12);
+  --radius: 10px;
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  /*
+   * 警示色是**写死的**，和其它官方组件同一条取舍：平台推下来的令牌里没有
+   * `--lattice-danger`（`bridge.ts::readThemeTokens` 只送七个），所以
+   * 便签 / 待办 / 音乐用的也是这一个值。别在这里换成 `--lattice-danger` ——
+   * 那个变量在组件文档里根本不存在，`var()` 会静默落回透明。
+   */
+  --danger: #f09595;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  overflow: hidden;
+}
+
+.battery {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 8px 12px 8px;
+  gap: 2px;
+}
+
+/*
+ * 顶上这条 24px 给窗饰让位：桌面窗口右上角那排按钮浮在 6px 处、约 120×28，
+ * 指针一进窗口就现身。这一行只有字，所以右边 120px 整段留空。
+ */
+.battery-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding-right: 120px;
+}
+
+.battery-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.battery-tag {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--muted);
+}
+
+.battery-readout {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+/*
+ * 百分数是大字，等宽数字必须开：比例字体里 18% 和 11% 宽度不同，电量一动
+ * 整行就跟着抖。tabular-nums 让每一位一样宽。
+ */
+.battery-percent {
+  font-size: 34px;
+  line-height: 1.1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+
+.battery-unit {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.battery-bar {
+  flex: none;
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.battery-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  /* 电量这样慢慢变的数不要动画：一拍跳 5% 就够了，补间反而像在"充" */
+  transition: none;
+}
+
+.battery-state {
+  flex: none;
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.battery-detail {
+  flex: none;
+  margin: 1px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 充电中：整条读数是强调色 —— 和"电量低"不看字也分得开 */
+.battery.is-charging .battery-percent {
+  color: var(--accent);
+}
+
+/* 电量低 / 系统说快没电了：警示色。低于阈值和"系统报 critical"用同一个色，
+   区别在文字那一行（"该插电了" / "马上就要关机"） */
+.battery.is-low .battery-percent,
+.battery.is-low .battery-state,
+.battery.is-critical .battery-percent,
+.battery.is-critical .battery-state {
+  color: var(--danger);
+}
+
+.battery.is-low .battery-fill {
+  background: var(--danger);
+}
+
+.battery.is-critical .battery-fill {
+  background: var(--danger);
+}
+
+/* 读不出来 / 没有电池：整块退成灰的，别让一个 0% 看起来像"没电了" */
+.battery.is-muted .battery-percent,
+.battery.is-muted .battery-state {
+  color: var(--muted);
+}

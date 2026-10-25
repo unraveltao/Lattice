@@ -281,14 +281,14 @@ void call("window.moveBy", { dx: speed * dt, dy: 0 });
 和 §2.4「坏条目逐条丢」同一条规矩。
 
 **卡片里的字（HTML 里写的那些）平台一点都管不着** —— 那是组件自己的文档。
-组件要跟着界面语言走，就自己读：`lang.get` 拿初值、`language` 推送跟着变（§4.3），
+组件要跟着界面语言走，就自己读：`lang.get` 拿初值、`language` 推送跟着变（§4.4），
 包里各留一份文案自己挑。SDK 把这两件事包成了 `lattice.language` + `lattice.on("language")`。
 
 **官方组件全部是双语的，写法就是上面那两条**，另外加一条首帧规矩：
 
 - **HTML 里写死中文那份**，`lang` 默认 `"zh"`，`lang.get` 回来再翻。中文界面上
   看到的直接就是最终样子；英文界面上会有一帧中文（几十毫秒），换来的是不用先画
-  一遍"加载中"（§4.7 第一条）。反过来写（默认英文）只是把这一帧换个方向 ——
+  一遍"加载中"（§4.8 第一条）。反过来写（默认英文）只是把这一帧换个方向 ——
   中文是这个产品的主要语言，就按中文写死。
 - **`lang.get` 别塞进首屏那条链**（`config.get` → `schedule.every` → `ready`）：
   问语言慢一拍不该拖住第一帧。它自己一条 `call("lang.get").then(applyLanguage)`。
@@ -472,10 +472,10 @@ if (data.type === "config-changed") {
 | `clock` | `clock.now` | 可用 |
 | `storage` | `storage.get` / `storage.set` / `storage.remove` | 可用 |
 | `clipboard:write` | `clipboard.write` | 可用 |
-| `system:monitor` | `system.metrics` | 可用 |
+| `system:monitor` | `system.metrics` / `power.status` | 可用 |
 | `network` | `network.fetch`（还要求清单里列了目标主机） | 可用 |
-| `media:control` | `media.get` / `media.control`（系统媒体会话，见 §4.4） | 可用 |
-| `audio:level` | `audio.level`（扬声器现在的响度，见 §4.5） | 可用 |
+| `media:control` | `media.get` / `media.control`（系统媒体会话，见 §4.5） | 可用 |
+| `audio:level` | `audio.level`（扬声器现在的响度，见 §4.6） | 可用 |
 | `shell:open` | `shell.open`（用系统默认浏览器打开 http/https 链接，见 §3.3） | 可用 |
 | `agent:activity` | `agent.activity`（本机 agent 做过的操作，读的是审计日志） | 可用 |
 | `llm:chat` | `llm.chat`（用**用户自己配的**模型说一句话，花的是用户的额度，见 §3.4） | 可用 |
@@ -734,15 +734,16 @@ parent.postMessage(
 | `storage.remove` | `storage` | `{ key }` | `{ ok: true }` |
 | `clipboard.write` | `clipboard:write` | `{ text }` | `{ ok: true }` |
 | `system.metrics` | `system:monitor` | — | `{ cpu, memory, disk, network, system, sampledAt }`，见 4.2 |
+| `power.status` | `system:monitor` | — | `{ ac, percent, charging, noBattery, critical, saver, minutesLeft }`，没有电池的机器照样回（`noBattery: true`），见 §4.3 |
 | `schedule.every` | — | `{ every }` | `{ id, every }`；`every` 会被夹到 250ms–24h，订阅满 8 条返回 `bad_params` |
 | `schedule.clear` | — | `{ id }` | `{ ok: true }` |
 | `config.get` | — | — | 这个实例的配置，已按清单 schema 合并出厂值，见 §2.3 |
 | `theme.get` | — | — | CSS 变量字典，见下 |
-| `lang.get` | — | — | `{ lang: "zh" \| "en", locale }`；平台当前界面语言，见 §2.7 与 §4.3 |
+| `lang.get` | — | — | `{ lang: "zh" \| "en", locale }`；平台当前界面语言，见 §2.7 与 §4.4 |
 | `network.fetch` | `network` | `{ url, method?, headers?, body? }` | `{ status, ok, headers, body, truncated }`，见 §3.2 |
-| `media.get` | `media:control` | — | 当前媒体会话，没有播放器时返回 `null`（不是错误），见 §4.4 |
+| `media.get` | `media:control` | — | 当前媒体会话，没有播放器时返回 `null`（不是错误），见 §4.5 |
 | `media.control` | `media:control` | `{ action }` | `{ ok }`；`action` 是 `playPause` / `next` / `previous` / `stop` |
-| `audio.level` | `audio:level` | — | `{ level, running }`；`level` 是 0..1，没有设备时 `running: false`，见 §4.5 |
+| `audio.level` | `audio:level` | — | `{ level, running }`；`level` 是 0..1，没有设备时 `running: false`，见 §4.6 |
 | `shell.open` | `shell:open` | `{ url }` | `{ ok: true }`；只收 http/https（`github.com` 这类会补成 https），见 §3.3 |
 | `agent.activity` | `agent:activity` | `{ limit? }` | `{ enabled, entries }`；`entries` 是审计日志最后几条，新的在**后**（组件自己倒序） |
 | `llm.status` | — | — | `{ configured, model }`；只是"用户配没配模型"，拿不到 key，见 §3.4 |
@@ -811,7 +812,29 @@ await call("schedule.clear", { id: grant.id });
 - `disk` 只有**系统盘**（`%SystemDrive%`），`mount` 是盘符（`C:`），别的盘不算。
 - 平台在 Rust 侧有 1 秒缓存，几个组件在同一秒里轮询只会真采一次 —— 但别指望它，心跳间隔比采样间隔更细是没意义的。
 
-### 4.3 宿主 → 组件的推送
+### 4.3 `power.status`：电池读数
+
+```json
+{
+  "ac": true,
+  "percent": 87,
+  "charging": true,
+  "noBattery": false,
+  "critical": false,
+  "saver": false,
+  "minutesLeft": null
+}
+```
+
+- **权限是 `system:monitor`，没有单独的电源权限。** 知道 CPU 占用和知道还剩多少电是同一类同意（"让我看看这台机器的状态"）；每个指标一条权限，属性面板会变成一张读不懂的清单。
+- **字段是已经解释好的事实**，不用认 `255` / `u32::MAX` 那两个哨兵 —— Rust 那半已经翻过了，判据在 `power_policy.rs`（6 条 `rustc --test`）。
+- `ac` 三值：`true` 接着电、`false` 用电瓶、`null` 读不出来。`percent` 读不出来就是 `null`：**别把它夹到 100**，那会把"读坏了"画成"满电"。
+- `minutesLeft` 只在**用电瓶**、且系统估得出来时才有值。插着电谈"还能用多久"没有意义，所以那时是 `null` 而不是一个大数字；超过一周的读数按坏读数处理。
+- `noBattery` 是台式机：卡片该说"没有电池"，而不是画一个 0%。`saver` 是 Windows 的节电模式，`critical` 是"马上就要关机"。
+- **平台不缓存这条**：一次调用就是一次 `GetSystemPowerStatus`。电量变得慢，节流放在组件那一侧（`schedule.every`，窗口不可见时整条停摆）。
+- 浏览器预览里没有系统调用，这条方法回 `null`（不是抛错），卡片据此画"没有读数"。
+
+### 4.4 宿主 → 组件的推送
 
 | 消息 | 时机 | 载荷 |
 | --- | --- | --- |
@@ -860,7 +883,7 @@ if (data.type === "language") {
 `lang` 只有 `zh` / `en` 两种 —— "跟随系统"是**平台**在设置里解析掉的，组件不用管
 系统区域设置。`locale`（`zh-CN`、`en-US`）只在要排版日期、数字的时候用。
 
-### 4.4 `media.get`：系统媒体会话
+### 4.5 `media.get`：系统媒体会话
 
 Windows 的 SMTC（System Media Transport Controls）—— 就是按音量键时左上角那个浮层背后的那套东西。凡是往它注册过的播放器（Spotify、浏览器里的 YouTube、系统播放器）都能读到。
 
@@ -895,7 +918,7 @@ if (!session) return render("Nothing playing");
 
 `positionMs` 是"上次报告的位置"。播放中它会自己往前走，但不会实时更新 —— 要画连续进度条的话，拿到位置的那一刻记下时间戳，之后按经过的毫秒自己插值。
 
-### 4.5 `audio.level`：扬声器现在有多响
+### 4.6 `audio.level`：扬声器现在有多响
 
 SMTC 只有歌名歌手，**没有音量** —— 想知道"现在有多响"，唯一的办法是自己去听输出设备在放什么。`audio.level` 走的是 WASAPI 的**回环采集**（把正在播给扬声器的那一路复制一份出来），每块只算一个 RMS 就把采样丢掉。
 
@@ -910,7 +933,7 @@ const { level, running } = await lattice.audio.level();   // 需要 audio:level
 
 后端只保留一个 `f32`：不缓存音频、不落盘、不出进程。所以它不需要任何系统级授权，也不会弹"允许录音"，更拿不到单个应用的音轨。
 
-### 4.6 用 `@lattice/sdk` 少写点样板
+### 4.7 用 `@lattice/sdk` 少写点样板
 
 上面这套 `postMessage` + 自增 id + 超时 + 权限判断，手写一遍大概六十行。`@lattice/sdk` 把它封好了：
 
@@ -936,7 +959,7 @@ const session = await lattice.media.get();
 
 细节见 `packages/sdk/README.md`。
 
-### 4.7 启动顺序：先画，再问
+### 4.8 启动顺序：先画，再问
 
 `config.get` 和 `storage.get` 都是**往返**，宿主忙的时候要几十毫秒，宿主不在（比如你直接双击打开组件页调样式）要等到超时——`config.get` 3 秒、`storage.get` 3 秒，加起来 6 秒。如果第一帧画在它们后面，卡片就是一块空白，而且空多久由宿主决定。
 
