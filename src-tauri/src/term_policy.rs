@@ -147,9 +147,15 @@ pub fn normalize_lines(text: &str) -> String {
 
 /// 缓冲区前面有多少字节可以安全地当成"这一段的输出"发出去。
 ///
-/// 留住的尾巴有两种：可能是一段哨兵的**开头**（`\x1eLATTI…`），或者是一个
-/// 从中间被切断的 UTF-8 字符。两者都可能在下一次 read 里补齐 —— 提前发出去
-/// 就会看到替换符，或者把哨兵拆成两段谁都不认。
+/// 留住的尾巴有三种：可能是一段哨兵的**开头**（`\x1eLATTI…`）、一个**整段**
+/// 已经进来但还没等到换行的哨兵，或者一个从中间被切断的 UTF-8 字符。三者都
+/// 可能在下一次 read 里补齐 —— 提前发出去就会看到替换符，或者把哨兵拆成两段
+/// 谁都不认。
+///
+/// 中间那条是拿真机换来的：PowerShell 把一行字和它的换行分成两次写，于是
+/// `\x1eLATTICE:c1:0:C:\…` 会先单独到达。只看"尾巴是不是半个哨兵"的话，整行
+/// 都算安全前缀，用户在自己的输出里看见一行 `\x1eLATTICE…`，而 `find_done`
+/// 从此再也没机会收下它 —— 那条命令永远不会结束，后面的命令全堵在队列里。
 pub fn safe_prefix_len(buf: &[u8], marker: &[u8]) -> usize {
     let max = marker.len().min(buf.len());
     let mut keep = 0usize;
@@ -160,6 +166,12 @@ pub fn safe_prefix_len(buf: &[u8], marker: &[u8]) -> usize {
         }
     }
     let mut end = buf.len() - keep;
+    // 这一条的哨兵整段已经在缓冲区里（只是这一行还没换行）：从标记那里起一律留住。
+    // 只认**当前这一条**的 marker —— 别人的哨兵认不出来，宁可当普通输出发掉，
+    // 也不能把缓冲区永远卡在那里。
+    if let Some(start) = find_bytes(&buf[..end], marker) {
+        end = start;
+    }
     // 退到字符边界：`end` 指着的那一字节如果是续字节，说明这个字符从前面开始。
     // 只在字符中间时才退 —— `end == buf.len()` 是"后面没有东西"，
     // 它到底完不完整由下面那次解码判断
@@ -354,6 +366,22 @@ mod tests {
         assert_eq!(safe_prefix_len(&buf, &marker), 5);
         // 纯输出：全发
         assert_eq!(safe_prefix_len(b"hello", &marker), 5);
+    }
+
+    #[test]
+    fn a_whole_sentinel_without_its_newline_is_not_output() {
+        let marker = b"\x1eLATTICE:c1:";
+        // 真机上的到达顺序：先是 `cwd=C:\Windows\r\n`，然后哨兵整行，换行下一次才来
+        let mut buf = b"cwd=C:\\Windows\r\n\x1eLATTICE:c1:0:C:\\Windows".to_vec();
+        // 换行还没到：哨兵一个字都不许发，只发它前面那 16 个字节
+        assert_eq!(safe_prefix_len(&buf, marker), 16);
+        // 换行补齐之后 find_done 就能收下整行，而且正文只剩前面那段
+        buf.extend_from_slice(b"\r\n");
+        let (start, end, done) = find_done(&buf, "c1").expect("whole sentinel should parse");
+        assert_eq!(start, 16);
+        assert_eq!(end, buf.len());
+        assert_eq!(done.code, Some(0));
+        assert_eq!(done.cwd, "C:\\Windows");
     }
 
     #[test]

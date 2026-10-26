@@ -1015,6 +1015,15 @@ const { id } = await call("term.write", { command: "ping -n 10 127.0.0.1" });
 
 **`lost` 不是错误，是事实**：shell 自己 `exit` 了、被杀软干掉了、用户按了停。组件该做的是说清楚，然后让下一条命令起一条新的（平台就是这么做的，不需要额外调用）。
 
+**回话可能比输出晚 —— 编号要从事件里认领。** Rust 是先把命令写进 shell 的 stdin、再把编号回给组件，所以快命令（`cd C:\Windows`、`echo hi`）的 `chunk` 可以比 `term.write` 的返回值**先到**（真机上量到早 5ms）。组件此刻还不知道 `id`，如果按"先拿到返回值再挂监听"的写法，那条命令的事件就会被当成"不认识的主人"整段丢掉 —— 卡片上一个字都没有，而 shell 明明跑完了。正确写法是**从第一条事件里认领编号**：
+
+```js
+// 事件处理里：还没有在飞的命令，就把这一条的编号认下来
+if (event.id && !state.active) state.active = event.id;
+// 回话到达时：只在还空着的时候才填，别覆盖已经认领的
+if (reply && typeof reply.id === "string" && !state.active) state.active = reply.id;
+```
+
 **`term.state` 的 `since` 用来补齐。** 窗口藏起来回来、权限变更导致 iframe 重载，中间那段事件可能没画上；带上手里最后那个 `seq`，平台会把之后缓冲的事件重发一遍（环形缓冲，最多 512 条 / 200KB）。
 
 **能力边界要写在组件自己的说明里**，别让用户以为这是 Windows Terminal：没有 ANSI 颜色、没有补全、没有多标签、跑不了交互式程序。

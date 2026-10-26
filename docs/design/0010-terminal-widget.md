@@ -124,13 +124,15 @@ term.state     权限 terminal:exec
 | 删掉组件之后任务管理器里还有 `powershell.exe` | 没挂 `Drop`，或者没在 `RunEvent::Exit` 里杀 | 实例销毁、应用退出两条路都要杀；真机数一遍 |
 | 窗口藏起来之后输出不动了 | 组件被 `visibility` 停摆，事件在 iframe 里排队 | Rust 侧持续缓冲，重新可见时按 `seq` 补齐（`term.state` 里带 `seq`） |
 | 画布上一份、桌面上一份 | 两个宿主，两个 `instanceId` | 一个 `instanceId` 一条 shell，不共享 |
+| 某一条命令开始，卡片**再也不动**：没有输出、停止按钮一直转，而 shell 还活着（`term.state.running: true`、`seq` 冻住不动），正文里还冒出一行 `LATTICE:c3:0:C:\Windows` | PowerShell 把"一行字 + 它的 `\r\n`"**分两次写**。于是缓冲里第一次只有整行哨兵、没有换行：`find_done` 要同一段缓冲里有 `\n` 才认，而 `safe_prefix_len` 当时只留"**半个**哨兵"的尾巴 —— 整行都算安全前缀，被当输出发了出去，哨兵从此离开缓冲区 | `safe_prefix_len` 里补一条：缓冲里出现**整段**这一条自己的 marker（`\x1eLATTICE:<id>:`，只认当前这条，别人的照旧当输出发掉，免得永远卡住）就从 marker 起留住，等下一次 read 把换行补齐（`term_policy` 的 `a_whole_sentinel_without_its_newline_is_not_output` 钉着这个到达顺序） |
+| 组件里"发一条命令、等结果"的写法偶尔整条命令**一个字都没显示**（那条的事件全被当成"不认识的主人"丢掉），换个命令又好了 | `term.write` 的**回话比输出慢**：Rust 先写 stdin 再回编号，真机上快命令（`cd C:\Windows`）的输出比回话早到 5ms，组件那一刻还不知道 `id` | 组件必须**从第一条事件里认领编号**（`if (event.id && !next.active) next.active = event.id`），回话只在 `active` 还空着时填。别把"先拿到 id 再挂监听"当成契约 |
 
 ## 6. 验收
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/term.html` | ~30 | 哨兵切分、多段 chunk 拼接、截断标记、历史去重与上限、提示符渲染、`\r` 归一 |
-| `src-tauri/src/term_policy.rs` | ~12 | 同上（Rust 侧那一份）；命令形状复用 `shell_policy::command_ok`，不另写一套 |
+| `tests/term.html` | 70 | 哨兵切分、多段 chunk 拼接、截断标记、历史去重与上限、提示符渲染、`\r` 归一、**回话没到也要从事件里认领编号** |
+| `src-tauri/src/term_policy.rs` | 16 | 同上（Rust 侧那一份）；命令形状复用 `shell_policy::command_ok`，不另写一套。含**整行哨兵等到换行再切**（`a_whole_sentinel_without_its_newline_is_not_output`） |
 
 **手工验一次**（自动化测不到的那部分）：
 
@@ -139,3 +141,5 @@ term.state     权限 terminal:exec
 3. 敲一条不存在的命令：stderr 是红的、退出码非 0
 4. 任务管理器：删掉组件后 `powershell.exe` 少一个；退出应用后一个不剩
 5. 把卡片拉到最宽：长行折行、不横向滚动；拉到 `minW` 时不出现横向滚动条
+
+**2026-10-26 真机走到的位置**（探针组件摆在桌面上，把每条事件与时刻写进组件 `storage`，所以不用盯屏幕也能对账）：第 1 条里"`cd` 保留"与第 3 条已经验过（`cd C:\Windows; Get-Location` 回出 `C:\Windows`、`term.state.cwd` 也是它；不存在的命令三段 stderr + `code=1`），逐行流也验过（四次 350ms 的 tick 到齐在 322 / 696 / 1053 / 1416 / 1775ms），中文、哨兵不外泄、`term.state { since }` 重放、`term.stop` 之后 id 从 `c1` 重数、退出应用后进程没了 —— 都过了。**还差四处**：点一次卡片上的 Stop 按钮本身、删掉卡片（`term_dispose` / `WindowEvent::Destroyed` 这两条收尸路）、`dir` 那种长输出与 240px 窄卡的折行、`ping` 的真实节奏（这次用 `Start-Sleep` 循环代替）。

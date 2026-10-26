@@ -243,6 +243,17 @@ async function main(): Promise<void> {
   eq(lost.status, "lost", "lost 之后状态是 lost");
   eq(lost.active, null, "lost 也要把在飞的那条放掉");
 
+  // 快命令的输出可以比 `term.write` 的回话先到（真机上量到 5ms）：
+  // 那时候 `active` 还是空的，编号只能从事件里认领
+  const early = logic.feed(blank, { kind: "chunk", id: "c7", seq: 2, stream: "stdout", text: "C:\\Windows\n" });
+  eq(early.active, "c7", "回话还没到，从第一条事件里认领编号");
+  eq(early.lines.map((line) => line.text), ["C:\\Windows"], "这一段的正文照样进到行里");
+  eq(
+    logic.feed(early, { kind: "done", id: "c7", seq: 3, code: 0 }).active,
+    null,
+    "认领来的编号照样会被 done 放掉",
+  );
+
   // ---- E. 历史 ----
   eq(logic.historyPush([], "  "), [], "空命令不记");
   eq(logic.historyPush(["a"], "a"), ["a"], "连敲两次同一条只留一条");

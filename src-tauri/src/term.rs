@@ -632,7 +632,7 @@ fn state_of(instance: &str, since: Option<u64>) -> Value {
 #[cfg(test)]
 mod tests {
     //! 这一层要真起进程，`cargo test` 在 CI 上跑；本机的 `rustc --test` 只跑
-    //! `term_policy.rs`（那 14 条不需要进程）。这里留了一条只依赖纯逻辑的断言，
+    //! `term_policy.rs`（那 16 条不需要进程）。这里留了一条只依赖纯逻辑的断言，
     //! 免得整个文件看起来像"一行测试都没有"。
 
     use crate::term_policy;
