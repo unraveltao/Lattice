@@ -1,8 +1,8 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-25
 supersedes:
-code:
+code: public/widgets/lattice.mindmap/{manifest.json,index.html,style.css,widget.js,mindmap-core.js,icon.svg}, tests/mindmap.html, docs/ROADMAP.md
 ---
 
 # 0022 —— 在组件里写一张思维导图（`lattice.mindmap`）
@@ -109,13 +109,14 @@ Project
 
 ```
 layout(root, { measure, row = 28, colGap = 40, pad = 16 })
-  → { nodes: [{ id, x, y, w, h, text, depth, hasHidden }], links: [{ from, to, d }], bounds }
+  → { nodes: [{ id, text, tone, depth, x, y, w, h, center, hidden, hasChildren }],
+      links: [{ from, to, d }], bounds: { w, h }, rows }
 ```
 
 - 每个叶子占一行 28px；父节点的 `y` 是子树跨度的中点；`x = pad + Σ(每层最宽节点 + colGap)`。
 - 节点宽度 = `clamp(measure(text) + 16, 64, 220)`。`measure` 由调用方传（真机用 canvas `measureText`，测试传桩）—— 纯逻辑里不碰 DOM，也不用猜"中文 14px、英文 8px"。
 - 连线是父节点右边缘到子节点左边缘的贝塞尔，控制点落在水平中点。
-- 折叠的节点画一个 `+N` 角标，子树只占一行。
+- 折叠的节点画一个 `+N` 角标（`hidden` 就是 N），子树只占一行。
 
 **要改的文件**
 
@@ -146,7 +147,9 @@ layout(root, { measure, row = 28, colGap = 40, pad = 16 })
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/mindmap.html` | ~70（实测填这里） | 大纲解析（步长 / tab / 多顶层 / 上限拒绝）、三种导出的转义、布局的确定性与折叠后的行数、命中检测、`Tab` / `Shift+Tab` / `Alt+↑↓` 的结构操作、`version` 不认识时不落盘 |
-| `.scratch/mindmap-probe.html` | 布局探针 | 420×300 与 280×200 下不溢出，右上角 120×28 窗饰不压内容（`padding-right: 120px` 那条标题栏） |
+| `tests/mindmap.html` | 145 | 大纲解析（步长 / tab / 多顶层 / 上限拒绝）、三种导出的转义、布局的确定性与折叠后的行数、命中检测、`Tab` / `Shift+Tab` / `Alt+↑↓` 的结构操作、`version` 不认识时不落盘 |
+| `.scratch/mindmap-probe.html` | 两种尺寸 × 两档配置 | 420×300 与 280×200 下不溢出（`scrollWidth/Height` 归零、头 + 舞台 + 底栏正好等于卡片高），右上角 120×28 窗饰不压内容（`padding-right: 120px`，状态行右边缘 54px），长文本不溢出节点框，`+N` 角标在折叠的节点上，`hideExports` 拨开之后三颗按钮真的 `display: none` 且底栏还装得下 |
+| `.scratch/mindmap-interact.html` | 20 | 真点真按键：双击开编辑框拿到全文、回车改名**并**加兄弟、`Tab` 加的子节点挂对父节点、`Shift+Tab` 提一级、`Delete` 连子树一起删、三颗复制按钮各自走 `clipboard.write`、`Ctrl+Z` 退回来 |
+| `.scratch/mindmap-agent.html` | 24 | agent 那条路：`draw` 整张替换并回 `{nodes, depth, roots}`、**一次 `Ctrl+Z` 退回整份旧图**、`append` 挂到 `under` 指的节点且重新编号不撞、`read` 回缩进小纲、超限 / 不认识的目标 / 不认识的工具都是 `ok: false` 且**图没被换掉** |
 
-**手工验一次**：桌面上建一张（打字 → `Tab` 加子节点 → `Shift+Tab` 提一级 → `Alt+↓` 换位置 → 折叠 → 关窗重开还在）；三种格式各复制一次，分别粘进 Markdown 编辑器、Mermaid Live、XMind；让 assistant 说"把发布流程拆成五步"，同一句话跑两次必须一模一样（确定性）；最后在两个宿主里同时开，确认"有未落盘改动时不会被另一边拽回去"。
+**手工验一次**（浏览器里那部分已经被上面三个探针顶掉了，剩下的是只有真机才有的东西）：桌面上建一张（打字 → `Tab` 加子节点 → `Shift+Tab` 提一级 → `Alt+↓` 换位置 → 折叠 → 关窗重开还在）；三种格式各复制一次，分别粘进 Markdown 编辑器、Mermaid Live、XMind；让 assistant 说"把发布流程拆成五步"，同一句话跑两次必须一模一样（确定性）；最后在两个宿主里同时开，确认"有未落盘改动时不会被另一边拽回去"。

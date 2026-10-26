@@ -1,0 +1,159 @@
+{
+  "id": "lattice.mindmap",
+  "name": { "zh": "思维导图", "en": "Mind map" },
+  "version": "0.1.0",
+  "description": {
+    "zh": "树形结构的一张图：位置自动排，能折叠、能缩放，能一键复制成 Markdown / Mermaid / OPML",
+    "en": "A tree laid out for you: collapse, pan, zoom, and copy the whole thing as Markdown, Mermaid or OPML"
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 420, "h": 300, "minW": 280, "minH": 200 },
+  "layer": "desktop",
+  "interactive": true,
+  "permissions": ["storage", "agent:tools", "clipboard:write"],
+  "config": [
+    {
+      "key": "hideExports",
+      "type": "toggle",
+      "label": { "zh": "收起复制按钮", "en": "Hide the copy buttons" },
+      "default": false,
+      "help": {
+        "zh": "底栏那三颗复制按钮占地方。卡片很窄的时候先把它们收起来，需要复制了再回来取消这个开关。",
+        "en": "The three copy buttons take up room in the bottom bar. Hide them when the card is narrow, and turn this back off when you want to copy again."
+      }
+    }
+  ],
+  "agent": {
+    "tools": [
+      {
+        "name": "draw",
+        "description": "Replace the whole map with an indented outline: one node per line, leading spaces set the depth.",
+        "params": { "outline": "string" },
+        "required": ["outline"]
+      },
+      {
+        "name": "append",
+        "description": "Attach an indented outline under a node. `under` is an exact node text; leave it out to hang the outline off the root.",
+        "params": { "outline": "string", "under": "string" },
+        "required": ["outline"]
+      },
+      {
+        "name": "read",
+        "description": "Report the node count, the depth, and the outline itself when it is short enough to return.",
+        "params": {}
+      }
+    ]
+  },
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "一行字就够开始了", "en": "One line is enough to start" },
+        "items": [
+          {
+            "zh": "空卡片中间那颗按钮建出根节点，光标直接落在里面。打完按回车就存下。",
+            "en": "The button in the middle of an empty card creates the root and puts the cursor in it. Enter keeps what you typed."
+          },
+          {
+            "zh": "回车会顺手加一个兄弟节点，所以一路回车就能列下去；Tab 是往下一层，Shift+Tab 提回来。",
+            "en": "Enter also adds a sibling, so you can keep typing down the list; Tab goes one level deeper and Shift+Tab comes back up."
+          },
+          {
+            "zh": "节点没有坐标——位置是排出来的。改从属关系不用挪任何东西，整张图自己重排。",
+            "en": "Nodes have no coordinates — the layout places them. Change what hangs off what and the whole map reflows by itself."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "键盘", "en": "The keyboard" },
+        "items": [
+          {
+            "zh": "方向键上下在树里前后走，← 折叠（已经折叠了就回父节点），→ 展开（已经展开了就进第一个孩子）。",
+            "en": "Up and down walk the tree; Left collapses (or goes to the parent when already collapsed), Right expands (or enters the first child)."
+          },
+          {
+            "zh": "Tab 加子节点、Shift+Tab 把这一支提一级、Alt+↑↓ 和旁边的兄弟换位置、Delete 删掉整棵子树。",
+            "en": "Tab adds a child, Shift+Tab promotes the branch, Alt+Up/Down swaps it with a sibling, Delete removes the subtree."
+          },
+          {
+            "zh": "F2 或回车改名字，Esc 退出编辑。中文输入法选词时按回车不会多出一个节点。",
+            "en": "F2 or Enter renames, Esc leaves editing. Typing with an IME: Enter picks the word instead of adding a node."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "看大图", "en": "Seeing the whole map" },
+        "items": [
+          {
+            "zh": "叶子多了图会很高，这是右向生长的代价。折叠是最快的解法：选一支，按一下 ←。",
+            "en": "Many leaves make a tall map — that is the price of growing rightwards. Collapsing is the quickest fix: select a branch, press Left."
+          },
+          {
+            "zh": "空白处拖动是平移，滚轮也是；Ctrl 加滚轮（或触控板捏合）是缩放。底栏那颗方框按钮把整张图装回卡片。",
+            "en": "Drag empty space to pan, or use the wheel; Ctrl with the wheel (or a pinch) zooms. The square button in the bar fits the whole map back in."
+          },
+          {
+            "zh": "折叠的节点右边会写一个 +N，那是它底下藏了多少个。折叠只影响看，不影响导出。",
+            "en": "A collapsed node shows +N for how much it is hiding. Collapsing changes the view, never the export."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "复制到别处", "en": "Copying it somewhere else" },
+        "items": [
+          {
+            "zh": "底栏三颗按钮把整张图复制成 Markdown 大纲 / Mermaid / OPML，粘到你想要的地方就行。卡片里没有「另存为」——沙箱不让下载文件。",
+            "en": "The three buttons copy the map as a Markdown outline, Mermaid or OPML; paste it wherever you need it. There is no Save as here — the sandbox does not allow downloads."
+          },
+          {
+            "zh": "复制需要「写入剪贴板」这一项权限。没授权的时候按钮点了会明说「没复制成功：剪贴板权限没开」，不会默默没反应。",
+            "en": "Copying needs the write-clipboard permission. Without it the card says the copy failed and names the permission instead of silently doing nothing."
+          },
+          {
+            "zh": "长节点在卡片里会被省略号截断，但复制出去的是全文。",
+            "en": "Long nodes get an ellipsis in the card; what you copy is the whole text."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "让 assistant 画一张", "en": "Letting the assistant draw" },
+        "items": [
+          {
+            "zh": "跟它说「把发布流程拆成五步」，它按缩进文本一次画出来。同一句话跑两次，排出来的一模一样。",
+            "en": "Ask it to break a release flow into five steps and it draws them from an indented outline. The same sentence twice gives the same map."
+          },
+          {
+            "zh": "它要么整张替换，要么往某个节点下面挂一支；两种情况 Ctrl+Z 都是一步退回。",
+            "en": "It either replaces the whole map or hangs a branch under a node; either way one Ctrl+Z takes it back."
+          },
+          {
+            "zh": "这条能力要单独授权（属性面板里那行 Agent tool calls）。不给它，它画不进来。",
+            "en": "This needs its own permission — the Agent tool calls row in the inspector. Without it, nothing can be drawn in."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "date": "2026-10-25",
+      "changes": [
+        {
+          "zh": "第一个版本：缩进大纲画成右向生长的树，位置自动排、改结构不用挪框。",
+          "en": "First release: an indented outline becomes a rightward-growing tree, laid out automatically."
+        },
+        {
+          "zh": "折叠、平移、缩放；键盘两态（编辑 / 选中），中文输入法选词时的回车不算提交。",
+          "en": "Collapse, pan and zoom; two keyboard modes (editing and selected), and an IME's Enter does not count as a commit."
+        },
+        {
+          "zh": "整张图能复制成 Markdown / Mermaid / OPML；assistant 能一句话生成，一次调用算一步撤销。",
+          "en": "The whole map copies out as Markdown, Mermaid or OPML; the assistant can draw one in a sentence, one undo step per call."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

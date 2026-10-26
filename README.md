@@ -31,7 +31,7 @@ Nothing from a real desktop is in the frame.</sub></p>
 
 Lattice puts small windows on your Windows desktop: a clock, a to-do list, system stats, whatever is playing. They are not pictures of widgets — they are real frameless windows, absent from the taskbar, that never steal focus from what you are typing into. Pin them above everything or tuck them under your ordinary windows; position is remembered per monitor, and everything is back where it was after a restart.
 
-The difference from other desktop toys: **widgets are not built in, they are installed.** All 20 official widgets go through the same install path as any third-party one — the platform ships empty, so the ceiling is what you can write in HTML.
+The difference from other desktop toys: **widgets are not built in, they are installed.** All 21 official widgets go through the same install path as any third-party one — the platform ships empty, so the ceiling is what you can write in HTML.
 
 It speaks Chinese and English all the way down: the shell, each widget's name and options, and the words drawn *inside* the cards. No restart, no reload.
 
@@ -48,6 +48,7 @@ The name is 棂 (*líng*) — the wooden lattice inside a window pane, the frame
 | To not lose the words you looked up | Word Drill | One card per line pasted in, four grades, next review scheduled in days |
 | A quick sum | Calculator · Convert | Arithmetic you can copy out; two-way conversion for length, mass, temperature, data, time and speed |
 | To draw it, not describe it | Diagram | Boxes, circles and arrows on a canvas you can pan and zoom — and the assistant can draw the whole thing from a sentence |
+| To structure it, not describe it | Mind map | An indented outline becomes a rightward tree that lays itself out — collapse, pan, zoom, and copy the whole thing out as Markdown, Mermaid or OPML |
 | Music, weather, and a fish | Music · Weather · Big Fishy | What is playing with a level that follows the sound; one city, refreshed on a timer and still readable offline; a pet that walks along the bottom of your screen |
 | To let a model do the clicking | `Ctrl+K` assistant | You bring the model; the key never leaves Rust; it can drive the desktop and call the tools your widgets declare. A script can do the same over a loopback endpoint — `npm run agent` |
 | None of the above | Write one | Four files, no build step — [see below](#write-a-widget) |
@@ -161,10 +162,10 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 
 | Metric | Value |
 | --- | --- |
-| Official widgets | 20 |
+| Official widgets | 21 |
 | Permissions | 13 |
 | Tauri commands | 99 |
-| Browser assertions | 2 816 over 56 pages |
+| Browser assertions | 2 961 over 57 pages |
 | Rust tests | 439 |
 | Documented pitfalls | 98 |
 
@@ -178,7 +179,7 @@ Every one of those is enforced by something. The browser assertions run a real d
 | CSS | 6 206 lines |
 | Rust | 24 353 lines |
 | SDK | 961 lines |
-| Widgets + example | 27 046 lines |
+| Widgets + example | 29 368 lines |
 | Scripts | 5 614 lines |
 
 </details>

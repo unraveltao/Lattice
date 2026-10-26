@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>mindmap test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.mindmap/mindmap-core.js"></script>
+    <script>
+      /*
+       * 思维导图的纯逻辑。
+       *
+       * 这一层坏了不会报错：大纲会被解析成另一个形状、父节点会落在孩子外面、
+       * 导出会把 Mermaid 弄成渲染不出来的东西、或者一次"读失败"把用户的图
+       * 换成空图。所以逐条钉住。
+       *
+       * 用普通 `<script src>` 同步加载真身（`mindmap-core.js`），不复制一份
+       * 逻辑来测 —— 复制的那份永远是对的。
+       */
+      var C = window.__latticeMindmapCore;
+      var lines = [];
+      function log(pass, text) {
+        lines.push((pass ? "PASS " : "FAIL ") + text);
+      }
+      function eq(actual, expected, text) {
+        log(JSON.stringify(actual) === JSON.stringify(expected), text + "（得到 " + JSON.stringify(actual) + "）");
+      }
+      function flush() {
+        var out = document.getElementById("out");
+        out.textContent = lines.join("\n");
+        out.className = lines.some(function (line) {
+          return line.indexOf("FAIL") === 0;
+        })
+          ? "bad"
+          : "ok";
+      }
+
+      if (!C) {
+        log(false, "拿不到 window.__latticeMindmapCore");
+        flush();
+      } else {
+        // ---- 1. 读盘 ----
+        var blank = C.normalizeDoc(null);
+        eq(blank.trusted, true, "没有数据可以种一份空图");
+        eq(blank.doc.root, null, "空图没有根");
+        eq(blank.doc.version, 1, "空图带版本号");
+        eq(blank.doc.view.zoom, 1, "空图的视图是出厂值");
+
+        eq(C.normalizeDoc("nonsense").trusted, false, "不是对象 → 不可信，别写盘");
+        eq(C.normalizeDoc({ root: {} }).trusted, false, "缺版本号 → 不可信");
+        eq(C.normalizeDoc({ version: 99, root: {} }).trusted, false, "版本不认识 → 不可信");
+        eq(C.normalizeDoc({ version: 1, root: { id: "n1", text: "A", children: [] } }).trusted, true, "版本对就是可信的");
+
+        var messy = C.normalizeDoc({
+          version: 1,
+          root: {
+            id: "n1",
+            text: "  Root  ",
+            tone: "purple",
+            collapsed: "yes",
+            children: [
+              { id: "n1", text: "dup" },
+              { id: "", text: "noid" },
+              { id: "n3", text: "x".repeat(120) },
+              42,
+            ],
+          },
+          view: { x: 10, y: 20, zoom: 99 },
+        });
+        eq(messy.trusted, true, "结构认识就认");
+        eq(messy.doc.root.text, "Root", "文本去首尾空白");
+        eq(messy.doc.root.tone, undefined, "不认识的色调不保留");
+        eq(messy.doc.root.collapsed, false, "collapsed 只认 true");
+        eq(messy.doc.root.children.length, 3, "重复 id 换一个、空 id 补一个、非对象丢掉");
+        eq(C.points(messy.doc.root.children[2].text).length, 80, "落盘文本按码点截到 80");
+        eq(messy.doc.view.x, 10, "视图位置照存的来");
+        eq(messy.doc.view.zoom, 2.5, "缩放夹在上限内");
+
+        eq(C.cloneDoc(blank.doc).root, null, "克隆空图不出错");
+        var forClone = C.normalizeDoc({ version: 1, root: { id: "n1", text: "A", children: [{ id: "n2", text: "B" }] } }).doc;
+        var cloned = C.cloneDoc(forClone);
+        cloned.root.text = "changed";
+        eq(forClone.root.text, "A", "克隆是深拷贝");
+
+        // ---- 2. 大纲解析 ----
+        var basic = C.parseOutline("Project\n  Design\n    Layout\n  Build");
+        eq(basic.ok, true, "四行能解析");
+        eq(basic.nodes, 4, "一共四个节点");
+        eq(basic.depth, 2, "层级是 0/1/2");
+        eq(basic.roots, 1, "只有一个顶层行");
+        eq(basic.root.text, "Project", "第一行当根");
+        eq(basic.root.children.length, 2, "根有两个孩子");
+        eq(basic.root.children[0].children[0].text, "Layout", "缩进更深的那行挂在上一行下面");
+        eq(basic.root.id, "n1", "根是 n1");
+        eq(basic.root.children[1].id, "n4", "id 按前序长出来");
+
+        var three = C.parseOutline("A\n   B");
+        eq(three.root.children.length, 1, "三空格也算一层（不猜步长）");
+        var four = C.parseOutline("A\n    B");
+        eq(four.root.children.length, 1, "四空格也认");
+        var tabbed = C.parseOutline("A\n\tB");
+        eq(tabbed.root.children.length, 1, "一个 tab 当两个空格");
+        var mixed = C.parseOutline("A\n  B\n     C");
+        eq(mixed.depth, 2, "混用 2 和 5 空格：5 > 2，所以 C 挂在 B 下面");
+        eq(mixed.root.children[0].children[0].text, "C", "C 是 B 的孩子");
+
+        var bullets = C.parseOutline("- A\n  * B\n    + C\n# D");
+        eq(bullets.root.text, "A", "行首的 - 剥掉");
+        eq(bullets.roots, 2, "- A 和 # D 都是顶层行");
+        eq(bullets.root.children.length, 2, "其余顶层行收成根的子节点");
+        eq(bullets.root.children[0].text, "B", "行首的 * 剥掉");
+        eq(bullets.root.children[0].children[0].text, "C", "行首的 + 剥掉");
+
+        var headings = C.parseOutline("## Sub\n  deep");
+        eq(headings.root.text, "Sub", "多级 # 也剥掉");
+
+        var blanks = C.parseOutline("\n\n  A  \n\n  B\n\n");
+        eq(blanks.nodes, 2, "空行忽略");
+        eq(blanks.root.text, "A", "行尾空白去掉");
+        eq(blanks.roots, 2, "去掉空行后仍是两个顶层行");
+
+        var flat = C.parseOutline("A\nB\nC");
+        eq(flat.nodes, 3, "三行平铺 = 三个节点");
+        eq(flat.roots, 3, "三个顶层行都数进去");
+        eq(flat.root.children.length, 2, "后两个收成根的子节点");
+        eq(flat.depth, 1, "收进来之后是两层");
+
+        eq(C.parseOutline("").ok, false, "空大纲拒绝");
+        eq(C.parseOutline("  \n\t\n").ok, false, "只有空白的也拒绝");
+        eq(C.parseOutline(42).ok, false, "不是字符串拒绝");
+        log(/empty/.test(C.parseOutline("  ").error), "拒绝时说清楚是大纲空的");
+
+        var tooMany = [];
+        for (var i = 0; i < 201; i += 1) tooMany.push("N" + i);
+        var overflow = C.parseOutline(tooMany.join("\n"));
+        eq(overflow.ok, false, "超过 200 个节点拒绝");
+        log(/200/.test(overflow.error), "拒绝时把上限说出来");
+        eq(C.parseOutline(tooMany.slice(0, 200).join("\n")).ok, true, "正好 200 个可以");
+
+        var deepLines = ["A"];
+        for (var d = 1; d <= 13; d += 1) deepLines.push(new Array(d + 1).join(" ") + "L" + d);
+        var tooDeep = C.parseOutline(deepLines.join("\n"));
+        eq(tooDeep.ok, false, "深度超过 12 拒绝");
+        log(/deeper/.test(tooDeep.error), "拒绝时说清楚是太深了");
+        eq(C.parseOutline(deepLines.slice(0, 13).join("\n")).ok, true, "正好 12 层可以");
+
+        var longLine = C.parseOutline("x".repeat(81));
+        eq(longLine.ok, false, "单行超过 80 码点拒绝");
+        eq(C.parseOutline("x".repeat(80)).ok, true, "正好 80 码点可以");
+        eq(C.parseOutline("😀".repeat(80)).ok, true, "按码点算：80 个 emoji 也行");
+        eq(C.parseOutline("😀".repeat(81)).ok, false, "81 个 emoji 拒绝");
+        log(C.parseOutline("y".repeat(81)).error !== tooDeep.error, "两种拒绝各有各的话");
+
+        // ---- 3. 布局 ----
+        var measure = function (text) {
+          return C.points(text || "").length * 7;
+        };
+        var tree = C.parseOutline("Root\n  A\n  B\n  C").root;
+
+        var first = C.layout(tree, { measure: measure });
+        var second = C.layout(tree, { measure: measure });
+        eq(JSON.stringify(first), JSON.stringify(second), "同一棵树排两次逐字段一样");
+
+        eq(first.rows, 3, "三个叶子占三行");
+        eq(first.nodes.length, 4, "四个节点都在");
+        eq(first.nodes[0].id, "n1", "根排在最前");
+        eq(first.nodes[0].x, 16, "根在第 0 列（左边留 16）");
+        eq(first.nodes[1].x, 16 + first.nodes[0].w + 40, "子节点在第 1 列：上一层最宽 + 40");
+        eq(first.nodes[1].x, first.nodes[3].x, "同一层的左边缘对齐");
+        eq(first.nodes[0].center, (first.nodes[1].center + first.nodes[3].center) / 2, "父节点的纵坐标是子树跨度的中点");
+        eq(first.nodes[1].center, 14, "第一个叶子落在第一行中间");
+        eq(first.nodes[3].center, 14 + 28 * 2, "第三个叶子往下两行");
+        eq(first.nodes[0].w, 64, "宽度有下限 64");
+        eq(C.nodeWidth("x".repeat(80), measure), 220, "宽度有上限 220");
+        eq(C.nodeWidth("", measure), 64, "空文本也占一个能点的宽度");
+        eq(first.links.length, 3, "三条连线");
+        log(/^M /.test(first.links[0].d) && first.links[0].d.indexOf(" C ") > 0, "连线是一条三次贝塞尔");
+        log(first.bounds.w > 0 && first.bounds.h > 0, "包围盒不为空");
+        // 三行叶子的中心在 14 / 42 / 70，节点高 20 → 下沿到 80（不是 84：包围盒量的是节点，不是行带）
+        eq(first.bounds.h, 80, "包围盒高度到最后一个节点的下沿");
+        eq(first.bounds.w, first.nodes[1].x + first.nodes[1].w, "包围盒宽度到最右那个节点的右沿");
+
+        var collapsed = C.setCollapsed(tree, "n1", true);
+        var folded = C.layout(collapsed.root, { measure: measure });
+        eq(folded.rows, 1, "折叠之后只占一行");
+        eq(folded.nodes.length, 1, "子树不参与布局");
+        eq(folded.links.length, 0, "折叠的节点没有连线");
+        eq(folded.nodes[0].hidden, 3, "隐藏了几个写在节点上");
+
+        var tall = C.parseOutline("R\n" + "  A\n  B\n  C\n  D\n  E").root;
+        var tallLayout = C.layout(tall, { measure: measure });
+        eq(tallLayout.rows, 5, "五个叶子五行");
+        eq(tallLayout.bounds.h, 136, "5 行：最后一行中心 126，下沿 136");
+
+        // ---- 4. 命中 ----
+        var hitLayout = C.layout(C.parseOutline("Root\n  A").root, { measure: measure });
+        var rootNode = hitLayout.nodes[0];
+        eq(C.hitTest(hitLayout, { x: 0, y: 0, zoom: 1 }, rootNode.x + 2, rootNode.center).kind, "node", "点在节点里就命中");
+        eq(C.hitTest(hitLayout, { x: 0, y: 0, zoom: 1 }, rootNode.x + 2, rootNode.center).id, "n1", "命中的是那个 id");
+        eq(C.hitTest(hitLayout, { x: 0, y: 0, zoom: 1 }, 600, 600).kind, null, "空白处什么都不是");
+        var zoomedView = { x: 100, y: 40, zoom: 2 };
+        eq(
+          C.hitTest(hitLayout, zoomedView, (rootNode.x + 2) * 2 + 100, rootNode.center * 2 + 40).id,
+          "n1",
+          "带平移缩放时按屏幕坐标命中",
+        );
+
+        // ---- 5. 结构操作 ----
+        var base = C.parseOutline("Root\n  A\n    A1\n  B").root;
+        eq(C.countNodes(base), 4, "数节点");
+        eq(C.depthOf(base), 3, "最深三层");
+        eq(C.nextIdFor(base), "n5", "下一个 id 是 n5");
+
+        var added = C.addChild(base, "n2", "new");
+        eq(base.children[0].children.length, 1, "加子节点不改入参（撤销栈靠这个）");
+        eq(added.root.children[0].children.length, 2, "新树多了一个孩子");
+        eq(added.id, "n5", "新节点拿下一个 id");
+        eq(C.findNode(added.root, "n5").text, "new", "新节点挂对了位置");
+
+        var sibling = C.addSibling(base, "n2", "sib");
+        eq(sibling.root.children.length, 3, "加兄弟挂在同一个父节点下");
+        eq(sibling.root.children[1].text, "sib", "兄弟排在它后面");
+        eq(C.addSibling(base, "n1", "x").id, null, "根没有兄弟可加");
+
+        var promoted = C.promote(base, "n3");
+        eq(promoted.moved, true, "提一级成功");
+        eq(promoted.root.children[1].text, "A1", "提上来之后是父节点的下一个兄弟");
+        eq(promoted.root.children[0].children.length, 0, "原来的位置上没有了");
+        eq(C.promote(base, "n1").moved, false, "根提不动");
+
+        var swapped = C.reorder(base, "n2", 1);
+        eq(swapped.root.children[0].text, "B", "往下换位置");
+        eq(C.reorder(base, "n2", -1).moved, false, "已经是第一个，换不动");
+        eq(base.children[0].text, "A", "换位置不改入参");
+
+        var removed = C.removeNode(base, "n2");
+        eq(removed.removed, true, "删掉一支");
+        eq(removed.root.children.length, 1, "那一支整棵没了");
+        eq(C.removeNode(base, "n1").root, null, "删掉根 = 整张图没了");
+        eq(C.removeNode(base, "nope").removed, false, "删不存在的节点什么都不做");
+
+        var renamed = C.setText(base, "n2", "  A  ");
+        eq(renamed.changed, false, "文本没变就不算改动");
+        eq(C.setText(base, "n2", "Renamed").root.children[0].text, "Renamed", "改名");
+        eq(C.setText(base, "n2", "z".repeat(120)).root.children[0].text.length, 80, "改名也截到 80 码点");
+
+        var foldedBase = C.setCollapsed(base, "n2", true);
+        eq(foldedBase.changed, true, "折叠一次是改动");
+        eq(C.setCollapsed(foldedBase.root, "n2", true).changed, false, "折叠状态没变就不算改动");
+        eq(foldedBase.root.children[0].collapsed, true, "折叠写进去了");
+
+        var flatOrder = C.flatten(base);
+        eq(flatOrder.length, 4, "前序遍历走完所有可见节点");
+        eq(flatOrder[0].id, "n1", "第一个是根");
+        eq(flatOrder[2].id, "n3", "第三个是 A1（前序）");
+        eq(C.flatten(C.setCollapsed(base, "n2", true).root).length, 3, "折叠的子树不走进遍历");
+
+        var attached = C.attachSubtree(base, "n2", C.parseOutline("X\n  Y").root);
+        eq(attached.added, 2, "挂进去两个节点");
+        eq(C.countNodes(attached.root), 6, "总数对得上");
+        var ids = {};
+        (function walkIds(node) {
+          ids[node.id] = (ids[node.id] || 0) + 1;
+          node.children.forEach(walkIds);
+        })(attached.root);
+        log(
+          Object.keys(ids).every(function (id) {
+            return ids[id] === 1;
+          }),
+          "挂进来的子树重新编号，不和已有的撞",
+        );
+
+        // ---- 6. 导出 ----
+        var outline = C.parseOutline("Project\n  Design\n    Layout\n  Build").root;
+        eq(C.toOutline(outline), "Project\n  Design\n    Layout\n  Build", "大纲导出两空格一层");
+        eq(C.toMarkdown(outline), "- Project\n  - Design\n    - Layout\n  - Build", "Markdown 带列表符号");
+        eq(C.toMarkdown(null), "", "空图导出空串");
+        eq(C.toOutline(null), "", "空图的大纲也是空串");
+
+        var hidden = C.setCollapsed(outline, "n2", true).root;
+        eq(C.toMarkdown(hidden).split("\n").length, 4, "折叠的子树照样导出（导出的是内容，不是视图）");
+        eq(C.toOutline(hidden).split("\n").length, 4, "大纲也一样");
+
+        var mermaid = C.toMermaid(outline);
+        eq(mermaid.split("\n")[0], "mindmap", "Mermaid 以 mindmap 开头");
+        eq(mermaid.split("\n").length, 5, "一行一个节点");
+        eq(C.mermaidText("Design (v2): now"), "Design -v2-- now", "括号和冒号换成 -");
+        eq(C.mermaidText("a[b]{c}"), "a-b--c-", "方括号和花括号也换");
+        eq(C.mermaidText("  "), "-", "空文本给一个占位，别写出空行");
+        log(C.toMermaid(outline).indexOf("(") === -1, "整份 Mermaid 里不出现左括号");
+        log(C.toMermaid(outline).indexOf(":") === -1, "整份 Mermaid 里不出现冒号");
+
+        var opml = C.toOpml(outline);
+        eq(opml.split("\n")[0], '<?xml version="1.0" encoding="UTF-8"?>', "OPML 第一行是 XML 声明");
+        log(opml.indexOf("<opml") > 0 && opml.indexOf("</opml>") > 0, "有 opml 根元素");
+        eq(C.escapeXml('a & b < c > d "e"'), "a &amp; b &lt; c &gt; d &quot;e&quot;", "XML 转义四个字符");
+        log(C.toOpml(C.parseOutline('A & B <c> "d"').root).indexOf("&amp;") > 0, "导出时真的用了转义");
+        eq(C.escapeXml(null), "", "null 转义成空串");
+
+        // ---- 7. 视图 ----
+        var fitted = C.fitView({ w: 400, h: 200 }, 400, 300);
+        log(fitted.zoom > 0 && fitted.zoom <= 1, "适应窗口时不放大");
+        eq(C.fitView({ w: 0, h: 0 }, 400, 300).zoom, 1, "空图不缩放");
+        eq(C.clampZoom(99), 2.5, "缩放上限");
+        eq(C.clampZoom(0.01), 0.4, "缩放下限");
+        var before = { x: 10, y: 10, zoom: 1 };
+        var afterZoom = C.zoomAt(before, 100, 100, 2);
+        var worldBefore = C.screenToWorld(before, 100, 100);
+        var worldAfter = C.screenToWorld(afterZoom, 100, 100);
+        log(Math.abs(worldAfter.x - worldBefore.x) < 0.01 && Math.abs(worldAfter.y - worldBefore.y) < 0.01, "缩放时那一点不动");
+
+        flush();
+      }
+    </script>
+  </body>
+</html>

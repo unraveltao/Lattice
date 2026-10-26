@@ -1,0 +1,300 @@
+/*
+ * 思维导图的样式。
+ *
+ * 颜色全部走平台的 `--lattice-*` 令牌（`theme.get` 推过来时写在 :root 上），
+ * 所以切浅色 / 深色不用改这里一行。唯一的例外是 `warn` 色调那支暖色 —— 平台
+ * 没有"警告"令牌，而纯 accent 表达不了"这一支有问题"。
+ *
+ * 字号只用 11 / 12 / 13 / 15 / 20，圆角只用 6 / 10 / 12 / 14（和平台同一套）。
+ */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  color: var(--lattice-text, #e6e6e6);
+  font-family: var(--lattice-font, system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mm {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 顶上这条：22px 高，右侧 120px 是窗饰的地盘（WIDGET_SPEC §5.1） */
+.mm-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 120px 0 10px;
+}
+
+.mm-state {
+  font-size: 11px;
+  color: var(--lattice-text-muted, #9aa0a6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mm-state[data-bad="true"] {
+  color: #d9924a;
+}
+
+.mm-state[data-good="true"] {
+  color: var(--lattice-accent, #6ea8fe);
+}
+
+.mm-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mm-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.mm-stage.is-panning .mm-svg {
+  cursor: grabbing;
+}
+
+/* ---- 节点 ---- */
+
+.mm-nodes .mm-node .shape {
+  fill: var(--mm-fill);
+  stroke: var(--mm-stroke);
+  stroke-width: 1.2;
+}
+
+.mm-nodes .mm-node[data-tone="neutral"] {
+  --mm-fill: color-mix(in srgb, var(--lattice-surface, #1c1e22) 90%, var(--lattice-text, #e6e6e6));
+  --mm-stroke: var(--lattice-border, #3a3d44);
+}
+
+.mm-nodes .mm-node[data-tone="accent"] {
+  --mm-fill: color-mix(in srgb, var(--lattice-accent, #6ea8fe) 18%, var(--lattice-surface, #1c1e22));
+  --mm-stroke: color-mix(in srgb, var(--lattice-accent, #6ea8fe) 55%, transparent);
+}
+
+.mm-nodes .mm-node[data-tone="warn"] {
+  --mm-fill: color-mix(in srgb, #d9924a 20%, var(--lattice-surface, #1c1e22));
+  --mm-stroke: #d9924a;
+}
+
+.mm-nodes .mm-node.is-selected .shape {
+  stroke: var(--lattice-accent, #6ea8fe);
+  stroke-width: 2;
+}
+
+/* 根节点给一点分量：它只有一个，而且通常是最短的那个 */
+.mm-nodes .mm-node[data-depth="0"] .shape {
+  stroke-width: 1.6;
+}
+
+.mm-nodes .mm-node text {
+  fill: var(--lattice-text, #e6e6e6);
+  font-size: 13px;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+/* 空文本的节点显示占位词，颜色淡一档 —— 它不是内容，是"这里还空着" */
+.mm-nodes .mm-node text.is-placeholder {
+  fill: var(--lattice-text-muted, #9aa0a6);
+}
+
+.mm-nodes .mm-badge {
+  fill: var(--lattice-text-muted, #9aa0a6);
+  font-size: 11px;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+/* ---- 连线 ---- */
+
+.mm-links .mm-link {
+  fill: none;
+  stroke: var(--lattice-text-muted, #9aa0a6);
+  stroke-width: 1.2;
+  stroke-opacity: 0.55;
+}
+
+/* ---- 空态 ---- */
+
+.mm-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.mm-empty[hidden] {
+  display: none;
+}
+
+.mm-empty-text {
+  margin: 0;
+  font-size: 12px;
+  color: var(--lattice-text-muted, #9aa0a6);
+}
+
+.mm-start {
+  padding: 5px 12px;
+  border: 1px solid var(--lattice-border, #3a3d44);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--lattice-accent, #6ea8fe) 14%, transparent);
+  color: var(--lattice-text, #e6e6e6);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mm-start:hover {
+  border-color: var(--lattice-accent, #6ea8fe);
+}
+
+.mm-start:focus-visible {
+  outline: 1.5px solid var(--lattice-accent, #6ea8fe);
+  outline-offset: 1px;
+}
+
+/* ---- 底栏 ---- */
+
+.mm-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  padding: 0 8px;
+  border-top: 1px solid var(--lattice-border, #3a3d44);
+  overflow: hidden;
+}
+
+.mm-tool {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lattice-text-muted, #9aa0a6);
+  cursor: pointer;
+}
+
+.mm-tool svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mm-tool:hover {
+  background: color-mix(in srgb, var(--lattice-text, #e6e6e6) 10%, transparent);
+  color: var(--lattice-text, #e6e6e6);
+}
+
+.mm-tool:focus-visible {
+  outline: 1.5px solid var(--lattice-accent, #6ea8fe);
+  outline-offset: 1px;
+}
+
+.mm-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+  color: var(--lattice-text-muted, #9aa0a6);
+}
+
+.mm-copy {
+  /* 能缩：卡片窄的时候先挤掉右边的百分比，别把按钮顶出卡片 */
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lattice-text-muted, #9aa0a6);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.mm-copy:hover {
+  background: color-mix(in srgb, var(--lattice-text, #e6e6e6) 10%, transparent);
+  color: var(--lattice-text, #e6e6e6);
+}
+
+.mm-copy:focus-visible {
+  outline: 1.5px solid var(--lattice-accent, #6ea8fe);
+  outline-offset: 1px;
+}
+
+.mm-bar[data-empty="true"] .mm-copy {
+  display: none;
+}
+
+.mm-sep {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  margin: 0 3px;
+  background: var(--lattice-border, #3a3d44);
+}
+
+.mm-zoom {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  padding-left: 6px;
+  overflow: hidden;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--lattice-text-muted, #9aa0a6);
+}
+
+/* ---- 改字用的浮层 ---- */
+
+.mm-edit {
+  position: absolute;
+  margin: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--lattice-accent, #6ea8fe);
+  border-radius: 6px;
+  background: var(--lattice-surface, #1c1e22);
+  color: var(--lattice-text, #e6e6e6);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  resize: none;
+  outline: none;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+}
