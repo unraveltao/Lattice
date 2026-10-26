@@ -146,8 +146,8 @@ Windows 10 / 11，64 位。没有 macOS 和 Linux 版本，也没有这个计划
 
 能，这就是这个项目的重点。三样东西，按顺序看：
 
-- **`README` 的 *Writing a widget* 一节**（[英文](../README.md#writing-a-widget) /
-  [中文](../README.zh-CN.md)）—— 四个文件、一段示例、三条会被平台惩罚的习惯。
+- **`README` 的 *Write a widget* 一节**（[英文](../README.md#write-a-widget) /
+  [中文](../README.zh-CN.md#写一个组件)）—— 四个文件、一段示例、三条会被平台惩罚的习惯。
 - **[`examples/counter`](../examples/counter)** —— 能跑的最小实现，照抄结构最快。
 - **[`WIDGET_SPEC.md`](./WIDGET_SPEC.md)** —— 契约：方法表、配置字段、清单规则，
   以及"组件真跑起来之后才会撞到"的坑。

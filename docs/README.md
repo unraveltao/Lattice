@@ -65,7 +65,7 @@
 | --- | --- | --- |
 | 想知道某个词到底指什么 | [`../GLOSSARY.md`](../GLOSSARY.md) | 1 分钟 |
 | **装上之后某个地方不对劲** | [`FAQ.md`](./FAQ.md)（按"卡在哪一步"分组，搜症状） | 1 分钟 |
-| 写一个组件（从零跑起来） | [`../README.md`](../README.md#writing-a-widget) 的 *Writing a widget* + [`../examples/counter`](../examples/counter) | 30 分钟 |
+| 写一个组件（从零跑起来） | [`../README.md`](../README.md#write-a-widget) 的 *Write a widget* + [`../examples/counter`](../examples/counter) | 30 分钟 |
 | 查组件的契约（方法表 / 配置字段 / 清单规则） | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 按需 |
 | 改平台代码 | [`../AGENTS.md`](../AGENTS.md)（先读第 4 节二十条不变量） | 20 分钟 |
 | 加一个能力（桥方法 / 权限 / 窗口行为） | [`AGENTS.md` 第 7 节"常见改动的配方"](../AGENTS.md) + `WIDGET_SPEC` 对应章节 | 按需 |
