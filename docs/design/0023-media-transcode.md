@@ -59,7 +59,7 @@ code:
 
 | 方法 | 参数 | 返回 |
 | --- | --- | --- |
-| `media.tools` | — | `{ ffmpeg: { found, version?, path? }, install: { supported, approxBytes } }` |
+| `media.tools` | — | `{ ffmpeg: { found, version?, path? }, install: { supported, approxBytes }, formats: ["mp4", …] }` |
 | `media.install` | — | `{ jobId }`；进度走同一条推送，`kind: "install"` |
 | `media.probe` | `{ path }` | `{ name, size, durationSec, container, video?, audio? }` |
 | `media.plan` | `{ path, format }` | `{ plan: "copy" \| "reencode", reason }` |
@@ -85,7 +85,7 @@ code:
 - 输出路径组件同样不能指定：`start` 的返回里给 `output`，`reveal` 只收 `jobId`。
 - 这条和 `network.rs` 的"宿主页随请求带 hosts"是同一个形状，别另发明一套。
 
-**格式表**（`media_policy.rs`，Rust 是唯一的事实来源；卡片的副本由 `tests/transcode.html` 逐字对账）
+**格式表**（`media_policy.rs` 是唯一的事实来源）
 
 | 目标 | 视频 | 音频 | 能搬流时 |
 | --- | --- | --- | --- |
@@ -100,6 +100,8 @@ code:
 | `opus` | 丢弃 | libopus 128k | 源 opus |
 
 `quality` 三档只动 crf 和码率：`better` 19 / 256k，`balanced` 23 / 192k，`smaller` 28 / 128k。
+
+**这张表只有一份。** 组件不复制它 —— 允许哪些目标由 `media.tools` 的 `formats` 给，卡片只负责给每个 id 配一个词（`mp4` → "MP4"）。Rust 加了新格式而卡片没有词，界面上就是一个没字的小方块，`tests/transcode.html` 钉住"每个 id 都有词"。
 
 **清单**：`id: lattice.transcode`，`name: 转码 / Transcode`，400×320（最小 300×240），`layer: desktop`，`interactive: true`，`permissions: ["media:transcode"]`。配置两项：`quality`（select，带 `help`）、`revealAfter`（toggle，默认关）。
 
@@ -134,7 +136,7 @@ code:
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/transcode.html` | ~40 | 格式表与 Rust 逐字一致、`plan` 的文案、进度百分比夹紧、队列状态机、`not_granted` 的处理 |
+| `tests/transcode.html` | ~40 | 每个 `formats` id 都有词、`plan` 的文案、进度百分比夹紧、队列状态机（取消/失败/完成各一次）、`not_granted` 的处理 |
 | `src-tauri/src/media_policy.rs` | ~20（`rustc --test` 壳子） | 参数构造无注入（`format` 只认枚举）、输出命名递增、路径闸门、`quality` 三档 |
 
 **手工验一次**：拖一个 mkv 进去 → 选 mp4 → 看它说"搬流，不掉画质"且几秒完 → 再选 webm → 这次说"要重编码" → 转一半按取消，确认半截文件被删、源文件还在 → 关掉卡片再打开，队列是空的（这是对的）→ 把 ffmpeg 从 PATH 拿掉，看那颗"装 ffmpeg"的按钮 → 装完再转一次。
