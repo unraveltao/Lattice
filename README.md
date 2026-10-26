@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="design/logo/png/appicon-256.png" width="92" height="92" alt="Lattice logo — a 3×3 window lattice whose filled panes spell L">
+
 <h1>棂 · Lattice</h1>
 
 <p><strong>Your own widgets on the Windows desktop — a widget is just a web page.</strong><br>

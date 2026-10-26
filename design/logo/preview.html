@@ -1,0 +1,101 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Lattice logo — final</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 44px 44px;
+    background: #E8E6E0;
+    font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+    color: #1c1c1a;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: .02em; }
+  .sub { color: #6a6a63; font-size: 12px; margin-bottom: 26px; }
+  .row { display: flex; gap: 20px; margin-bottom: 20px; align-items: stretch; }
+  .card {
+    background: #FBFAF8; border: 1px solid rgba(28,28,26,.08);
+    border-radius: 14px; padding: 20px;
+  }
+  .card.dark { background: #17171D; border-color: rgba(255,255,255,.08); color: #E9E8E3; }
+  .grow { flex: 1; }
+  .tag { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #6a6a63; }
+  .card.dark .tag { color: #9a9a92; }
+  .note { font-size: 11.5px; color: #6a6a63; margin-top: 10px; line-height: 1.5; }
+  .card.dark .note { color: #9a9a92; }
+  .sizes { display: flex; align-items: flex-end; gap: 15px; margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(28,28,26,.07); }
+  .sizes div { text-align: center; }
+  .sizes span { font-size: 10px; color: #8a8a83; display: block; margin-top: 7px; }
+  .sep { width: 1px; background: rgba(28,28,26,.1); align-self: stretch; margin: 0 8px; }
+  .chip { background: #F4F1E8; border-radius: 10px; padding: 10px; display: inline-flex; gap: 12px; align-items: center; }
+</style>
+
+<h1>Lattice / 棂 — logo 定稿</h1>
+<div class="sub">品牌色取自项目变量：深绿 #0F6E56 · 薄荷 #5DCAA5 · 暖纸 #F4F1E8</div>
+
+<div class="row">
+  <div class="card grow" style="display:flex; gap:28px; align-items:center">
+    <img src="lattice-appicon.svg" width="260" height="260">
+    <div>
+      <div class="tag">主标 · 窗棂 + L</div>
+      <div class="note" style="font-size:13px; margin-top:12px; max-width:340px">
+        3×3 等分窗棂：外框 336、条宽 30、格 72。<br>
+        落位的格子（左列 + 底行）拼出字母 <b>L</b>，<br>
+        既是一个「可以往里装东西的框」，<br>
+        也是名字本身。
+      </div>
+    </div>
+  </div>
+  <div class="card dark" style="width:300px">
+    <div class="tag">深色 / 单色</div>
+    <div style="display:flex; align-items:center; gap:14px; margin-top:16px">
+      <img src="lattice-appicon-dark.svg" width="104" height="104">
+      <div class="chip">
+        <img src="lattice-mark-small.svg" width="48" height="48">
+        <img src="lattice-mark-small.svg" width="24" height="24">
+        <img src="lattice-mark-small.svg" width="16" height="16">
+      </div>
+    </div>
+    <div class="note">单色版降到 2×2，条宽 44，16px 不糊</div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card grow">
+    <div class="tag">小尺寸实测（真实像素）</div>
+    <div class="sizes">
+      <div><img src="lattice-appicon.svg" width="96" height="96"><span>96</span></div>
+      <div><img src="lattice-appicon.svg" width="64" height="64"><span>64</span></div>
+      <div><img src="lattice-appicon.svg" width="48" height="48"><span>48</span></div>
+      <div><img src="lattice-appicon.svg" width="32" height="32"><span>32</span></div>
+      <div><img src="lattice-appicon.svg" width="24" height="24"><span>24</span></div>
+      <div><img src="lattice-appicon.svg" width="16" height="16"><span>16</span></div>
+      <div class="sep"></div>
+      <div><img src="lattice-mark-small.svg" width="32" height="32"><span>32 单色</span></div>
+      <div><img src="lattice-mark-small.svg" width="24" height="24"><span>24</span></div>
+      <div><img src="lattice-mark-small.svg" width="16" height="16"><span>16</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card grow">
+    <div class="tag">备选 A · 均分网格</div>
+    <div style="display:flex; gap:16px; align-items:center; margin-top:12px">
+      <img src="lattice-appicon-a.svg" width="88" height="88">
+      <div class="note" style="margin:0">对角三格落位，最中性、最「系统」，但没有字母那层意思</div>
+    </div>
+  </div>
+  <div class="card grow">
+    <div class="tag">备选 B · 外框加厚</div>
+    <div style="display:flex; gap:16px; align-items:center; margin-top:12px">
+      <img src="lattice-appicon-alt-b.svg" width="88" height="88">
+      <div class="note" style="margin:0">外框 40 / 内棂 26，更「窗」，但与 A 差异过小</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="tag">横版组合</div>
+  <img src="lattice-lockup.svg" height="78" style="display:block; margin-top:14px">
+  <div class="note">字标为占位排版（Segoe UI Semibold），需要正式字库可再换</div>
+</div>

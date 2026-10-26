@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="design/logo/png/appicon-256.png" width="92" height="92" alt="Lattice 图标 —— 3×3 窗棂，落位的格子拼出字母 L">
+
 <h1>棂 · Lattice</h1>
 
 <p><strong>在 Windows 桌面上摆你自己的小组件 —— 组件就是网页。</strong><br>
