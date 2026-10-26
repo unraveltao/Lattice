@@ -1,6 +1,6 @@
 # 致谢
 
-> 这份文件记两件事：**谁的建议被采纳了**，以及**怎么加进来**。
+> 这份文件记两件事：**谁的建议被采纳了**，以及**按什么判据进这份名单**。
 >
 > 它不叫 `CONTRIBUTORS.md`，因为 "contributor" 在这里有确定含义 —— 提交过代码的人，
 > GitHub 自己会算那张图。这份名单里的人大多不属于那一类，混在一起会让两边都失真：
@@ -49,44 +49,6 @@
   轮廓会被切成一条一条；轮廓掩码要在构建期算，沙箱 iframe 是不透明源、`getImageData` 直接抛。
   落在 `src-tauri/src/desktop.rs`、`src/runtime/bridge.ts`（`llm.chat`）、`public/widgets/lattice.pet/`。
   （2026-10，PR #1）
-
-## 为什么 Contributors 那一栏里没有他
-
-GitHub 右侧那块 `Contributors` 是**算**出来的，不是编辑出来的：默认分支上可达的每一条提交，
-按**作者邮箱**匹配到账号，匹配上的出一个头像。没有"手动加一个人"的开关，也没有地方上传头像。
-
-所以这份名单和那张图对不上是必然的 —— 名单记"建议被采纳"，那张图记"提交过代码"。
-
-真去让他出现在图上时，会撞到两件事：
-
-- **光合并 PR 不够。** PR #1 那两条提交的作者是 `pending <pending@localhost>`，跟任何账号都没绑。
-  直接合进来，`main` 上只会多两条认不出主人的提交，头像照旧不出现。
-- **改的是邮箱，不是显示名。** GitHub 认 commit 里的 `author email`，而且那个邮箱得在他账号的
-  已验证邮箱列表里。改 `user.name` 一点用都没有。
-
-只有一条诚实的路：**让他用自己的邮箱提交一次。** 最小的那种就够 —— 比如让他自己往上面「名单」
-里加一行，或者挑一条 pitfall 补两句。合进去之后头像会自己出现，因为到那时候，"他提交过代码"
-这句话本来就成真了。
-
-他那边只要两条命令（PR 分支还在的话，第二条会把分支上每条提交的作者重写成当前配置）：
-
-```bash
-git config user.email "133840367+Polaris-W@users.noreply.github.com"   # 或他账号里任一已验证邮箱
-git rebase origin/main --exec "git commit --amend --reset-author --no-edit"
-git push --force-with-lease
-```
-
-那串 `…@users.noreply.github.com` 在账号的 *Settings → Emails* 里直接能抄（带用户 id 前缀的
-那种），不必暴露真邮箱。**合并方式不影响结果**：squash 出来的那一条，作者仍然取自原提交。
-
-**连命令都不用敲的版本**：让他在 GitHub 网页上打开自己 fork 的那个分支，随便挑一个文件点铅笔、
-改一行（哪怕只是在 CREDITS 的名单里加自己一句）、选 *Commit directly to the branch*。网页提交
-的作者一定是他账号的已验证邮箱，所以那条提交天然算数 —— 上面那串命令只在"不想多一条提交、
-要把原来两条的作者改对"时才需要。
-
-`Co-authored-by:` 不用他动手，但它只保证**提交页**并排显示两个头像 —— 右侧那块名单是按提交
-作者算的，不保证把共同作者也列进去。而且它更贵：只有那段代码真是他写的才该用 trailer，
-否则是署名造假。理由在 [0016](./docs/design/0016-credits.md)。
 
 ## 不想被挂在这里
 

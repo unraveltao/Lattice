@@ -13,6 +13,7 @@
 | 某个词到底指什么 | [`GLOSSARY.md`](./GLOSSARY.md) |
 | 新内容该写成哪份文档 | [`docs/README.md`](./docs/README.md) 第三节 |
 | 手上有个说不通的症状 | [`docs/PITFALLS.md`](./docs/PITFALLS.md)（`Ctrl+F` 搜现象，别搜原因） |
+| 帮了忙但不是代码（提建议、报 bug、指出错字） | [`CREDITS.md`](./CREDITS.md)（判据只有一条：能在仓库里指出一处"因你而改"的东西） |
 
 ## 一、动手之前
 
