@@ -13,7 +13,7 @@
  *   Assistant    模型与 key（住在 assistant 自己的面板里，这里只是入口）
  *   About        版本、更新、退出
  *   Get help     文档入口（和 About 挨着：都在回答"这软件是什么/出问题怎么办"，
- *                不是改设置 —— 所以两行放在列表末尾同一处）
+ *                不是改设置 —— 所以两行钉在导航底部，用一条细线和上面隔开）
  *
  * 三条别踩回去：
  *   1. **不是账号系统**。没有服务端，名字/邮箱只写 `state.json`；每处
@@ -57,6 +57,7 @@ export type SettingsSection =
 
 type Section = SettingsSection;
 
+/** 改设置的那七项。以后还会长，所以底部那两项不能靠"排在最后"来定位 */
 const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
   { id: "account", label: "Account", icon: ICON.user },
   { id: "models", label: "Models", icon: ICON.chip },
@@ -65,6 +66,15 @@ const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
   { id: "desktop", label: "Desktop", icon: ICON.monitor },
   { id: "widgets", label: "Widgets", icon: ICON.store },
   { id: "assistant", label: "Assistant", icon: ICON.agent },
+];
+
+/**
+ * 不改设置的另外两项，钉在导航底部、和上面七项用一条细线隔开。
+ *
+ * 为什么不并进 `SECTIONS` 排在末尾：设置项每长一项，它们就被挤下去一格，
+ * 而"这是什么 / 出问题怎么办"这两件事的位置不该随设置项的数量漂移。
+ */
+const SECTIONS_FOOT: Array<{ id: Section; label: string; icon: string }> = [
   { id: "about", label: "About", icon: ICON.info },
   { id: "help", label: "Get help", icon: ICON.help },
 ];
@@ -456,7 +466,28 @@ export function SettingsMenu({
       ? t("Registered for a different build — flip this off and on to point it at this one.")
       : null;
 
-  const sectionLabel = SECTIONS.find((item) => item.id === section)?.label ?? "Account";
+  // 两组都要找：About / Get help 不在 `SECTIONS` 里，只查上面那组会把标题写回 "Account"
+  const sectionLabel =
+    SECTIONS.find((item) => item.id === section)?.label ??
+    SECTIONS_FOOT.find((item) => item.id === section)?.label ??
+    "Account";
+
+  /** 一条导航项。两组共用一份 —— 抄两份的话，改一处忘一处就是两种手感 */
+  const navItem = (item: { id: Section; label: string; icon: string }) => (
+    <button
+      key={item.id}
+      type="button"
+      className={`lattice-settings-nav-item${section === item.id ? " is-active" : ""}`}
+      onClick={() => {
+        setSection(item.id);
+        setCatalogueOpen(false);
+      }}
+      aria-current={section === item.id ? "page" : undefined}
+    >
+      <Glyph d={item.icon} />
+      <span>{t(item.label)}</span>
+    </button>
+  );
 
   /**
    * 「打开配置文件」：交给系统默认程序打开 `assistant.json`。
@@ -554,21 +585,10 @@ export function SettingsMenu({
                 </button>
 
                 <nav className="lattice-settings-nav-list" aria-label={t("Settings sections")}>
-                  {SECTIONS.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={`lattice-settings-nav-item${section === item.id ? " is-active" : ""}`}
-                      onClick={() => {
-                        setSection(item.id);
-                        setCatalogueOpen(false);
-                      }}
-                      aria-current={section === item.id ? "page" : undefined}
-                    >
-                      <Glyph d={item.icon} />
-                      <span>{t(item.label)}</span>
-                    </button>
-                  ))}
+                  {SECTIONS.map(navItem)}
+
+                  {/* 不跟着设置项排队的那两项，见 `SECTIONS_FOOT` 上面那段 */}
+                  <div className="lattice-settings-nav-foot">{SECTIONS_FOOT.map(navItem)}</div>
                 </nav>
               </aside>
 

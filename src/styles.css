@@ -4444,11 +4444,28 @@ button.lattice-chip[aria-pressed="true"] {
 }
 
 /*
- * 这里以前有一条 `.is-last { margin-top: auto }`，把「获取帮助」推到导航最底下。
- * 它当时的理由是"我遇到问题了，不是设置项之一"，但代价是 About 和它被一整屏
- * 空白隔开 —— 那两行是同一类东西（都不是改设置的，一个是"这是什么"，一个是
- * "我该怎么办"），离得远反而要多找一次。现在它们就挨在列表末尾。
+ * 导航底部那一组：About / Get help。
+ *
+ * 它们**不是设置项**（一个答"这是什么"，一个答"出问题怎么办"），所以不跟着
+ * 上面七项排队 —— 设置项每长一项，它们就被挤下去一格，而这两件事的位置不该漂。
+ *
+ * 前后试过两种都不对的写法，别再回去：
+ *   1. 只给「获取帮助」一条 `margin-top: auto` —— About 留在列表里，两行被
+ *      一整屏空白隔开，看起来像两个走散的孤儿。
+ *   2. 两项都塞进列表末尾 —— 位置对了，但和设置项没有任何分界，读起来像第八、
+ *      第九个设置分区。
+ *
+ * 现在是一**组**：两项一起钉到底部，上面压一条细线。分隔靠那条线，不靠空白 ——
+ * 窗口矮下来的时候空白会消失，线不会。
  */
+.lattice-settings-nav-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--lattice-border) 70%, transparent);
+}
 
 .lattice-settings-nav-item {
   display: flex;
