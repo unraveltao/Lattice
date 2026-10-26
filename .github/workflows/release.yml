@@ -106,7 +106,7 @@ jobs:
       # 顺序不能换：后面的 SHA-256 与 winget 清单都从**那个目录**现算，
       # 必须算在签过的字节上。
       #
-      # 要配的四个值（仓库 Settings → Secrets and variables → Actions）：
+      # 要配的五个值（仓库 Settings → Secrets and variables → Actions）：
       #   SIGNPATH_API_TOKEN（secret，submitter 权限）
       #   SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG /
       #   SIGNPATH_SIGNING_POLICY_SLUG / SIGNPATH_ARTIFACT_CONFIGURATION_SLUG（variables）
