@@ -540,6 +540,15 @@
   }
 
   function onPointerDown(event) {
+    // 编辑框和空态那层都长在 stage 里，**点它们不是点画布**。少了这一句有两处
+    // 会当场坏（都是真机才看得出来的，桩里点不出来）：
+    //   1. `setPointerCapture` 会把 `pointerup` 从按钮手里抢到 stage，于是浏览器
+    //      把 `click` 派给 stage —— 按钮的 click 处理器永远收不到，空卡片上那颗
+    //      「建一张图」按下去没反应（pointerdown 在按钮上、pointerup 在 stage、
+    //      click 在 stage，三段目标不一致就是证据）。
+    //   2. 点自己正在打字的输入框会先 `commitEdit()`，编辑框当场关掉、光标放不进去。
+    var target = event.target;
+    if (target && target.closest && target.closest(".mm-edit, .mm-empty")) return;
     if (editingId) commitEdit();
     if (event.button !== 0 && event.button !== 1) return;
     var point = localPoint(event);
