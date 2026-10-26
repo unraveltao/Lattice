@@ -22,7 +22,7 @@ code: src/runtime/assistant.ts, src/runtime/hands.ts, src/runtime/skills.ts, src
 | MCP | 用户配的服务 + 一律问 | 运行时发现 | 随服务数 |
 | 桥方法 | 按 `widgetId` 的权限 | `runtime/bridge.ts` | 27 |
 
-`ARCHITECTURE.md` §3 的标题是「一条能力落地的五处」—— 那是在招供。加**一组手**
+[`ARCHITECTURE.md`](../ARCHITECTURE.md) §3 的标题是「一条能力落地的五处」—— 那是在招供。加**一组手**
 （不是一族，是一组）实测要动八处：`runtime/hands.ts` 六张表（`HAND_GROUPS` /
 `HANDS_OFF` / `HAND_SPECS` / `HAND_LABELS` / `HAND_READY` / `handGroup`）、
 `runtime/skills.ts` 的 `missingGroups`、`platform/hands.ts` 的 IPC 序列化、
@@ -36,7 +36,7 @@ code: src/runtime/assistant.ts, src/runtime/hands.ts, src/runtime/skills.ts, src
 - 漏 Rust 那半 → 界面拨了开关，存盘丢掉，重启回到默认。
 
 所以真正的问题不是"代码重复"，是**同一条事实有六个家，而它们不一致时不报错**。
-这个仓库最贵的一课就是这个形状（`docs/README.md` 第四节）。
+这个仓库最贵的一课就是这个形状（[`docs/README.md`](../README.md) 第四节）。
 
 ## 2. 候选
 
@@ -63,7 +63,7 @@ C 先否掉：这个仓库的构建脚本已经 5 600 行，而生成器唯一�
    `tests/agent.html` 70 条全部要重跑；重构期间"工具表少了一条"不会红，
    只会让模型说"我没有这个工具"。
 2. 描述符会把"加一组手"从八处变成一处 —— 但它同时把**那八处的知识**收进一个文件，
-   于是那个文件成为冲突高发区（`AGENTS.md` §12 第 7 条那一类）。
+   于是那个文件成为冲突高发区（[`AGENTS.md`](../../AGENTS.md) §12 第 7 条那一类）。
 3. 新增一道"完备性"断言，等于新增一种红法。写不出这条断言，说明字段集还没定对。
 
 **什么时候该推翻它 / 什么时候该动手**：
@@ -98,7 +98,7 @@ type CapabilitySpec = {
 **描述符里没有人话，一个字段都没有。** 界面上那些句子按**组**（`HAND_LABELS`）
 和**权限**（`runtime/manifest.ts` 的文案表）走，它们的家在那里 —— 把 `label` 塞进
 描述符，等于让"这个开关叫什么"有第二个家，而它漂了不会报错，只会让同一组开关
-在面板和提示词里叫两个名字。这条是 `docs/README.md` 第四节直接推出来的，不是口味。
+在面板和提示词里叫两个名字。这条是 [`docs/README.md`](../README.md) 第四节直接推出来的，不是口味。
 
 一条真实的条目（`shell.run`，字段值全部来自今天的代码，不是设想）：
 
@@ -120,7 +120,7 @@ type CapabilitySpec = {
 不是能力属性，硬塞进描述符会让那条不变量变成数据。
 
 **要改的文件**（动手时）：上面 `code:` 那八个 + `runtime/i18n/assistant.ts`（新组要两条文案）
-+ `AGENTS.md` §4 不变量 14/20 的措辞 + 本文件的 `status`。
++ [`AGENTS.md`](../../AGENTS.md) §4 不变量 14/20 的措辞 + 本文件的 `status`。
 
 ## 5. 失败模式
 
