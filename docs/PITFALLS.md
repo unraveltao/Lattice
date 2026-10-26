@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **91 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **92 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -141,6 +141,7 @@
 | 给 WebView2 加上 `--remote-debugging-port` 之后，应用起来了、窗口标题也在，但**一个 `msedgewebview2` 子进程都没有**，端口不监听，窗口里什么都没有 | `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 里那条参数让 WebView2 的创建直接失败了（本机环境如此，去掉这个变量立刻正常）。表面症状极像"应用卡住" —— 日志里只有两条 watcher，什么都没有 | 别用 CDP 端口验界面：改成"临时把要验的状态默认成打开 / 关闭，截一张窗口图，然后改回来"。窗口截图用 `GetWindowRect` + `ImageGrab(bbox=..., all_screens=True)`，比 CDP 少一整条依赖 |
 | 用 `mouse_event` 合成点击，坐标明明在窗口里（`WindowFromPoint` 也确认了），界面毫无反应 | 注入的输入到不了 WebView2 的渲染进程 —— 而且前台窗口随时会被别的应用（聊天工具）抢走，`SetForegroundWindow` 从后台进程调经常是**静默失败**的 | 别靠合成点击验交互。交互逻辑放进能自动化跑的页面（`tests/debug-panel.html` 直接 `.click()`），真机只看"渲染出来的样子" |
 | `tests/sdk.html` 偶尔报"启动时向宿主报了一次 ready"，重跑又好了 | `postMessage` 是**宏任务**，而 `await` 子窗口的 promise 只排**微任务** —— 微任务先跑完。所以"子页面已经发了 ready"不代表"父页面的监听器已经收到" | 跨窗口的断言一律用 `waitFor(条件, 超时)` 轮询，别直接断言。这条是真机上整套测试一起跑、机器忙的时候才暴露的 |
+| 只想 `cargo check --all-targets` 看一眼自己的 Rust 改动，却在**依赖**里炸了：`ring v0.17.14` 的 `custom build command` 失败，再往上捞是 `Compiler family detection failed … "gcc.exe" "-E" …detect_compiler_family.c`（`status code exit code: 1`，一个字的诊断都没有），自己那几行代码一行没编到 | 和下面那条同一个根：这台机器上的真 gcc 16.2.0 连 `-E` 都静默退出 1。`ring` 的构建脚本要跑 `gcc -E`，谁在 PATH 上排第一就用谁 —— 手工拼 PATH 时把 `msys64\mingw64\bin` 写在 `gcc-shim` 前面，真 gcc 就赢了 | 把 `.toolchain\gcc-shim` 放到 `msys64\mingw64\bin` **之前**：`gcc-shim` 认出 `-E` 就自己复制（等价于预处理），真编译仍然转发给真 gcc，所以 `ring` 的 `.c` 照旧编得过。`PATH=".toolchain\gcc-shim;.toolchain\intl;.toolchain\windres-shim;.toolchain\msys64\mingw64\bin;…"` 现在能跑到 `Finished dev profile` |
 | 刚给这台机器装了真的 gcc（`ring` 要它），Rust 这边反而编不动了 —— 停在 `resource.rc` 上，只有一句 `windres: preprocessing failed.` | 预处理 `.rc` 时 windres 会自己 spawn `gcc -E -xc-header`，而 MSYS2 的 gcc 16.2.0 对**任何** `-x` 都静默退出 1（`gcc -E -x c foo.c` 一样是 1，一个字的诊断都没有）。装真 gcc 之前这里走的是 `gcc-shim`，它不认参数、也就不碰 `-x`，所以同一个故障是"修好一个坏掉另一个" | `.toolchain/windres-shim/x86_64-w64-mingw32-windres.exe`：往参数里塞一句 `--preprocessor <.toolchain>/gcc-shim/gcc.exe` 再转发给真 windres（棂的 `resource.rc` 没有 `#include` / `#ifdef`，"原样复制"就是正确的预处理结果），`-V` / `--version` 的探测请求原样转发（`embed-resource` 靠它认编译器种类）；`scripts/tauri.mjs` 发现这个目录就把它排到 PATH 最前。**两个 shim 各管一件事**：`windres-shim` 管"谁来预处理"，`gcc-shim` 管"预处理怎么做" —— `ring` 的 `.c` 仍然必须走真 gcc |
 | 改完 CSS 打开页面，**一点样式都没有**：按钮是系统默认样子、元素挤成一坨，可 `styles.css` 明明有 12 万字节 | vite 的 CSS transform 缓存被写坏了 —— 多个进程同时改同一个 `.css`（这个仓库常态：几个 agent 并行）时，watcher 和 transform 抢同一份缓存，产物是**空串**：`curl /src/styles.css` 回来的 JS 里 `__vite__css = ""`。症状看着像"我的 CSS 语法错了"，其实内容完全正常 | 先别动 CSS：`curl -s http://127.0.0.1:1420/src/styles.css \| grep '__vite__css = ""'`，命中就 `touch src/styles.css`（只改 mtime，不动内容），一秒恢复。判据是"**文件有内容、页面没样式**" —— 那就不是 CSS 的问题 |
 | 想拍一张窄窗口（320 宽）的布局图，`--window-size=320,420` 拍出来却是 500 宽，`@media (max-width: 380px)` 死活不生效 | Chrome 的窗口有最小尺寸（这台机器上 500），`--window-size` 给再小也会被抬上去；`--headless=old` 一样。于是"窄窗口"根本没被造出来，媒体查询当然不匹配 —— 而这个失败**长得像"媒体查询写错了"** | 窄视口只能靠 iframe 造：外层页面里放一个 `width="320"` 的 iframe，iframe 的 viewport 就是它的框，媒体查询在里面判的正是这个宽度。顺带把 `innerWidth` 写进 `data-*` 用 `--dump-dom` 读出来核对，别靠截图反推 |

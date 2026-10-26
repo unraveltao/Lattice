@@ -45,7 +45,7 @@
 | Rust 单测 | 438 条 | 386 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 50 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `term_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `power_policy` 6 + `shell_policy` 9），52 条要 `cargo test`（含 `hands.rs` 那 7 条、`mcp.rs` 那 8 条与 `term.rs` 那 1 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 99 个 | |
 | 权限 | 13 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐、`terminal:exec` 在 v0.13 补齐 |
-| 踩过的坑 | 91 条 | [`PITFALLS.md`](./PITFALLS.md) |
+| 踩过的坑 | 92 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
 ---
 

@@ -107,9 +107,9 @@ v0.12 把这一堆开关收成**两个模式** —— *内部*（桌面动作 + 
 | Tauri 命令 | 99 条 |
 | 浏览器断言 | 56 个页面、2793 条 |
 | Rust 单测 | 438 条 |
-| 记下来的坑 | 91 个 |
+| 记下来的坑 | 92 个 |
 
-每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；438 条 Rust 单测分成 386 条 `rustc --test` 的纯逻辑和 52 条要完整 `cargo test` 的；91 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
+每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；438 条 Rust 单测分成 386 条 `rustc --test` 的纯逻辑和 52 条要完整 `cargo test` 的；92 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
 
 ## 两个宿主，一套桥
 
@@ -345,7 +345,7 @@ docs/                架构、组件规范、路线图、代码签名、agent �
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 各块怎么拼起来，以及为什么 |
 | [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) | 组件契约 |
 | [docs/ROADMAP.md](./docs/ROADMAP.md) | 走到了哪、被推翻的 9 个决定、下一版做什么 |
-| [docs/PITFALLS.md](./docs/PITFALLS.md) | 91 个坑，按你正盯着的那个症状分组 |
+| [docs/PITFALLS.md](./docs/PITFALLS.md) | 92 个坑，按你正盯着的那个症状分组 |
 | [docs/reference/build.md](./docs/reference/build.md) | 工具链、构建、发版 —— 操作手册 |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | agent 端点的威胁模型 |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | 钥匙、信任锚点、哪些东西**没有**签名 |
