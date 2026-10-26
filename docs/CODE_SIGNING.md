@@ -48,7 +48,7 @@
 
 ### 流程
 
-1. 在 <https://signpath.org/apply> 申请 Foundation（免费）档：仓库地址、许可证、一段项目说明、维护者身份。人工审核，通常 1–3 个工作日
+1. 在 <https://signpath.org/apply> 申请 Foundation（免费）档：仓库地址、许可证、一段项目说明、维护者身份。人工审核，通常 1–3 个工作日。**逐栏的值（含三段英文原文）见本节末尾「表单与仓库设置：要填的字」**
 2. 批准后拿到一个 SignPath 组织。在控制台里建 **Project**（slug 例如 `lattice`）
 3. 把 GitHub 加为 **trusted build system**，指向本仓库和 `release.yml`
 4. 建 **Artifact configuration**：我们的产物是 NSIS 安装包（一个 PE 文件），注意 GitHub 的 artifact 是打 zip 上传的，配置里要按 zip 里取 exe
@@ -63,6 +63,85 @@
 **第一次启用前先拿一个一次性的 tag 干跑一遍**：这组步骤只有在真正配好 SignPath 之后才会第一次执行，本地没法验。跑完看两样东西：日志里 `status=Valid root=…` 那两行（信任链，见下面那个"未证实的说法"），以及 `releases/latest/download/latest.json` 里的 signature 与 release 上 `.exe.sig` 的内容一致。
 
 第 7 步这个"休眠"的形状是照抄好几个项目的做法。别把它写成"必须签名才能发版"：那会让一次审核（或者 SignPath 一次故障）卡住整个发布。
+
+### 表单与仓库设置：要填的字（2026-10-26 提交的那一版）
+
+`https://signpath.org/apply` 是一张 HubSpot 嵌的表单。逐栏的值如下，英文那几段可以原样粘：
+
+| 栏 | 填什么 |
+| --- | --- |
+| Project Name | `Lattice` |
+| Repository URL | `https://github.com/unraveltao/lattice` |
+| Homepage URL | `https://github.com/unraveltao/lattice`（"可以是仓库页"） |
+| Download URL | **留空**，理由见下 |
+| Privacy Policy URL | **留空** —— 应用不收集数据、没有服务端（表单说"收集数据时才需要"） |
+| Wikipedia URL | 空 |
+| Category | `Productivity` |
+| Maintainer Type | `Individual maintainer(s)` |
+| Build System | `GitHub Actions` |
+| First Name / Last Name | `Iron` / `Tom`（**这是要建 SignPath 账号的名字**，取自 git config） |
+| Email | `irontom233@gmail.com` |
+| Company Name | 空 |
+| Primary Discovery Channel | `AI / LLM tools` |
+
+**Tagline**（一句）:
+
+```text
+An extensible Windows desktop widget platform: widgets are plain HTML/CSS/JS, sandboxed and permission-gated.
+```
+
+**Description**（一段，别写版本号）：
+
+```text
+Lattice is an extensible desktop widget platform for Windows. Widgets are ordinary static packages written in plain HTML, CSS and JavaScript; the platform hosts each one in a sandboxed iframe, grants capabilities through a permission manifest, and can turn it into a real desktop window. The application itself is built with Tauri 2 (Rust host, React 19 UI) and ships as an NSIS installer produced automatically by GitHub Actions, together with signed update metadata. There is no server and no user account: the widget catalogue is a static JSON document, and widget packages are individually signed and verified before installation.
+```
+
+**Reputation**（这里的诚实比好听重要 —— 项目还年轻，就给能核的）：
+
+```text
+Public since October 2026, so there is no press coverage or download statistics yet. Verifiable signals instead:
+
+- Release pipeline: every Windows installer is built and published by GitHub Actions from this repository — https://github.com/unraveltao/lattice/releases
+- Distribution: nineteen official widgets are published as signed packages to a public catalogue on GitHub Pages — https://unraveltao.github.io/lattice-registry/registry.json
+- Quality gates: CI runs a browser assertion suite (2,726 assertions across 55 pages) and 422 Rust unit tests on every push — https://github.com/unraveltao/lattice/actions/workflows/ci.yml
+- Package manager: manifest submitted to microsoft/winget-pkgs — https://github.com/microsoft/winget-pkgs/pull/461881
+```
+
+**Discovery 的具体来源**（选 `AI / LLM tools` 时那一栏填的）：
+
+```text
+Suggested by an AI coding assistant while researching free code-signing options for an open-source Windows application; the trade-offs are written up in docs/CODE_SIGNING.md in the repository.
+```
+
+**Download URL 为什么留空**：那一栏写着"下载页必须写明本项目用 SignPath Foundation 签名"。签出第一个包之后，在 README 的安装段和 `release.yml` 的 `releaseBody` 各加一句，再把 releases 页填回去：
+
+```text
+Windows builds are code-signed by the SignPath Foundation.
+```
+
+（别提前写 —— 还没签就写"用 SignPath 签名"是假话。）
+
+**批准之后，控制台里建五个东西**（名字是建议值；改了的话，下面对应的变量一起改）：
+
+| 建什么 | 名字 | 备注 |
+| --- | --- | --- |
+| Project | `lattice` | slug 进 `SIGNPATH_PROJECT_SLUG` |
+| Trusted build system | GitHub：`unraveltao/lattice` + `.github/workflows/release.yml` | 别的 workflow 不发版，别指错 |
+| Artifact configuration | `nsis-installer` | 要签的是 zip 里的 `Lattice_*_x64-setup.exe`（一个 PE 文件） |
+| Signing policy | `release-signing` | 绑 Foundation 那张证书；要不要人工批准在这一层选 |
+| API token | （无名字） | submitter 权限；只显示一次，直接进 secret |
+
+**仓库设置里填五个值**（Settings → Secrets and variables → Actions）：
+
+| 名字 | 类型 | 值从哪来 |
+| --- | --- | --- |
+| `SIGNPATH_API_TOKEN` | secret | 上面那个 token |
+| `SIGNPATH_ORGANIZATION_ID` | variable | 组织页 URL 里那段 GUID |
+| `SIGNPATH_PROJECT_SLUG` | variable | `lattice` |
+| `SIGNPATH_SIGNING_POLICY_SLUG` | variable | `release-signing` |
+| `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG` | variable | `nsis-installer` |
+
+填完**不用改代码**：`release.yml` 那组步骤自己开始跑（`if: vars.SIGNPATH_ORGANIZATION_ID != ''`）。第一次跑按上面"一次性的 tag 干跑"那一条验。
 
 ### 一个没证实的说法，别当事实传
 
