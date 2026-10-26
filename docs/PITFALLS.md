@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **97 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **98 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -155,6 +155,7 @@
 | 终端里先跑了一条失败的原生命令（`cmd /c exit 3`），再敲一条 **cmdlet** 命令（`Get-Item C:\nope`），卡片上写的退出码是**上一条**那个 3，不是这次该有的 1 | cmdlet 失败只把 `$?` 置假，**不动 `$LASTEXITCODE`** —— 那个变量还留着上一条原生命令的值。哨兵里凡是"非零就拿 `$LASTEXITCODE`"的写法都在借旧值 | 只在这个值相对**上一条命令**变了时才采信：哨兵行末尾记一句 `$__lt_prior = $LASTEXITCODE`（哨兵自己不改这个变量），判断里加 `$__lt_code -ne $__lt_prior`，否则落 1（`term_policy::sentinel_line`）。真机验法：`cmd /c exit 3` 之后 `Get-Item C:\nope` 必须报 1、`cmd /c exit 7` 必须报 7 |
 | 终端卡片上第三条命令开始**再也没有反应**：输出不出来、停止按钮一直在转，而 shell 还活着（`term.state` 的 `running: true`、`seq` 冻住不动）；卡片正文里还多出一行 `LATTICE:c3:0:C:\Windows`（`\x1e` 这个控制符看不见，只看见后半截） | PowerShell 把**一行字和它的换行分两次写**（`\r\n` 是两次 `WriteFile`）。于是送进 `drain_stdout` 的缓冲里第一次只有"整行哨兵、没有 `\n`"：`find_done` 要求同一段缓冲里有换行返回 `None`，而 `safe_prefix_len` 当时只留"**半个**哨兵"的尾巴，整行都算安全前缀被当输出发了出去 —— 哨兵从此离开缓冲区，`find_done` 永远收不到它，那条命令永远不结束（队列头不弹，后面全堵着） | `safe_prefix_len` 里加一条：缓冲区里只要出现**整段**这一条自己的 marker（`\x1eLATTICE:<id>:`，只认当前这条的 id），从 marker 起一律留住 —— 这一行一定会被下一次 read 补上换行，那时 `find_done` 就收得下。判据：`term_policy` 的 `a_whole_sentinel_without_its_newline_is_not_output` 钉着这个到达顺序；真机上第三条命令（`cd C:\Windows; Get-Location`）必须报 done、`cwd` 必须是 `C:\Windows`。**"留半个哨兵"和"留整个哨兵"是两件事**，少写后半句就是卡死一条命令 |
 | 组件里"发一条命令、等结果"的写法偶尔会整条命令**一个字都没显示**（编号 `c7` 的事件全被当成"不认识的主人"丢掉），而同样的代码在别的命令上又是好的 | `term.write` 的**回话比输出慢**：Rust 是先写进 shell 的 stdin、再回编号，真机上快命令（`cd C:\Windows`）的输出比回话早到 **5ms**。组件此刻还不知道 `id`，就认不出这些事件是谁的 | 组件必须**从第一条事件里认领编号**：`feed` 里 `if (event.id && !next.active) next.active = event.id`，回话到达时只在 `active` 还空着的情况下才填（`public/widgets/lattice.term/widget.js` 那两处就是这个顺序，`tests/term.html` 钉着"回话还没到也要认领"）。别写"先拿到 `id` 再挂监听" —— 那是把顺序当成了契约 |
+| 换完 `src-tauri/icons/` 之后 `cargo build` 过、`tauri dev` 也重启过 app，可任务栏 / 标题栏 / 托盘 / 安装包上的图标**还是旧的**：`icons/icon.ico` 明明是新的，exe 里一处都没变 | Windows 图标是**编译期嵌进 PE 资源**的（`tauri-build` 把 `icons/icon.ico` 交给 `embed-resource` 编进 `.rsrc`），而 `.ico` 变了 `cargo` 不会重跑 build script。`tauri dev` 那句 `File src-tauri\icons\… changed. Rebuilding application…` 只是重新 `cargo run` —— 紧跟的 `Finished in 0.41s` 就等于"一个文件都没编" | 换完图标先 `cargo clean -p lattice`（或 `touch src-tauri/build.rs`）再构建。判据是**字节级**的：把 `icons/icon.ico` 的每一帧取出来，去 exe 的字节里搜索，必须"新帧 6/6 命中、旧帧 0/6"；只看 exe 的 mtime 会漏掉这条（mtime 变了而资源没换是常态，一次实测就是这么挂着旧 logo 跑了半天） |
 
 ## 目录、签名与网络
 

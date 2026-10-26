@@ -58,3 +58,5 @@ npm run tauri icon design/logo/png/appicon-1024.png
 ```
 
 会重写 `src-tauri/icons/` 整个目录（含 `icon.icns`）。跑之前先确认 `.icns` 那套也要换。
+
+**换完必须让资源重新编一次**：图标是编译期嵌进 exe 的 PE 资源的，`cargo` 不会因为 `.ico` 变了就重跑 build script —— 直接 `cargo build` / `tauri dev` 出来的还是旧图标（`tauri dev` 那句 `Rebuilding application…` 只重跑 `cargo run`）。换完先 `cargo clean -p lattice`，判据与原因的细节见 PITFALLS「构建、工具链与验证」最后一条。
