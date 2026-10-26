@@ -1,0 +1,33 @@
+# 行尾归一化。
+#
+# 为什么需要：这台机器的 `core.autocrlf=true` 会把工作区写成 CRLF、入库时转回 LF，
+# 所以 index 里已经是 LF 了。但那只是**本机**的配置 —— 换一台没设 autocrlf 的机器
+# （或者 Linux 上 clone 再拷回来），一个改了一行注释的文件会整篇变红。这份文件把
+# 规矩写进仓库，不再依赖每个人的 ~/.gitconfig。
+#
+# `text=auto` 而不是 `eol=lf`：前者让各平台按自己的习惯检出（Windows 还是 CRLF，
+# 和现在一样），只保证**入库**一律 LF。写死 eol=lf 会把所有人的工作区改成 LF，
+# 那是一次没人要求的大 diff。
+
+* text=auto
+
+# 这些是字节，任何"转换"都是损坏。`*.lattice` 是 zip 包，`*.key` 是签名的私钥。
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.ico   binary
+*.icns  binary
+*.gif   binary
+*.webp  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.lattice binary
+*.key   binary
+*.exe   binary
+*.zip   binary
+
+# 生成物：diff 里没有可读信息，标记出来让 review 默认折叠
+package-lock.json linguist-generated=true
+public/widgets/index.json linguist-generated=true

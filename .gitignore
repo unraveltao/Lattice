@@ -61,3 +61,12 @@ preview-tmp.html
 
 # Playwright MCP 的产物（页面快照 / console 日志），属于本机调试残留
 .playwright-mcp/
+
+# agent 工具的本机状态（工作记忆、临时产物）。只属于这台机器，不进仓库
+.workbuddy-ai/
+
+# 品牌资产里不该入库的那几样：
+#   Flat_vector_*.png —— 1.6M 的 AI 原始大图，是草稿，不是源；能用的是它旁边的 SVG
+#   .wrap*.html       —— render.sh 每次渲染现写现删的包装页，中途退出会留下几个
+design/logo/Flat_vector_*.png
+design/logo/.wrap*.html

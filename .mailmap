@@ -1,0 +1,12 @@
+# 同一个人换过几次机器，git 就记成了几个人。这份文件只影响**显示**
+# （shortlog / log --format=%aN / blame 的作者列 / GitHub 的 Contributors 图），
+# 不改写任何提交对象 —— 所以它是安全的，也随时可以删。
+#
+# 认出来的三份：仓库初始化时的 `iron-tom@local`、装安装包那条线用的 `bt@local`、
+# 以及现在全局配的 Gmail。`pending@localhost` 是外部贡献者的默认配置（PR #1），
+# **不要**并到这里 —— 那是另一个人。
+#
+# 查有没有新的漏网身份：git shortlog -sne --all
+
+Iron Tom <irontom233@gmail.com> <iron-tom@local>
+Iron Tom <irontom233@gmail.com> <bt@local>
