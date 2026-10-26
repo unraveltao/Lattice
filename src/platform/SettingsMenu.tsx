@@ -12,6 +12,8 @@
  *   Widgets      目录来源、重新扫描、调试面板
  *   Assistant    模型与 key（住在 assistant 自己的面板里，这里只是入口）
  *   About        版本、更新、退出
+ *   Get help     文档入口（和 About 挨着：都在回答"这软件是什么/出问题怎么办"，
+ *                不是改设置 —— 所以两行放在列表末尾同一处）
  *
  * 三条别踩回去：
  *   1. **不是账号系统**。没有服务端，名字/邮箱只写 `state.json`；每处
@@ -556,7 +558,7 @@ export function SettingsMenu({
                     <button
                       key={item.id}
                       type="button"
-                      className={`lattice-settings-nav-item${section === item.id ? " is-active" : ""}${item.id === "help" ? " is-last" : ""}`}
+                      className={`lattice-settings-nav-item${section === item.id ? " is-active" : ""}`}
                       onClick={() => {
                         setSection(item.id);
                         setCatalogueOpen(false);

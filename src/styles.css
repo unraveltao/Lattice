@@ -4443,10 +4443,12 @@ button.lattice-chip[aria-pressed="true"] {
   gap: 2px;
 }
 
-/* 「获取帮助」沉到导航最底下：它是"我遇到问题了"，不是设置项之一 */
-.lattice-settings-nav-item.is-last {
-  margin-top: auto;
-}
+/*
+ * 这里以前有一条 `.is-last { margin-top: auto }`，把「获取帮助」推到导航最底下。
+ * 它当时的理由是"我遇到问题了，不是设置项之一"，但代价是 About 和它被一整屏
+ * 空白隔开 —— 那两行是同一类东西（都不是改设置的，一个是"这是什么"，一个是
+ * "我该怎么办"），离得远反而要多找一次。现在它们就挨在列表末尾。
+ */
 
 .lattice-settings-nav-item {
   display: flex;
