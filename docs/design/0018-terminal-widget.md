@@ -10,7 +10,10 @@ code: src-tauri/src/term.rs, src-tauri/src/term_policy.rs, src-tauri/src/lib.rs,
       tests/term.html, tests/term.ts, docs/WIDGET_SPEC.md, AGENTS.md
 ---
 
-# 0010 —— 终端组件：一条常驻 shell 的皮肤
+# 0018 —— 终端组件：一条常驻 shell 的皮肤
+
+> 2026-10-26 从 0010 改为 0018：0010 已被同日先写的《目录源从一个变成一排》占用。
+> 正文一字未改 —— 这一页当初就是按 0010 写的，改的只是编号。
 
 > 用户原话：**"我要开发一个小组件可以作为终端使用……我希望他是来调用你展示你本机的 powershell、cmd，就像是个镜像的皮肤，但是我怕这样的效率不高。"**
 >

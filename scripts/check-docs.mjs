@@ -304,12 +304,53 @@ function checkLines() {
   return rows;
 }
 
+/* ------------------------------------------------------------ 设计文档 */
+
+// 两份 0010 同时存在过（多源目录 / 终端），而编号是设计文档唯一的身份 ——
+// 引用里写"见 0010"的时候没有别的线索能消歧。这两条检查就是为了让那种事
+// 在提交那一刻红，而不是等到有人翻不到。
+const DESIGN_STATUS = ["draft", "accepted", "superseded"];
+
+function checkDesign() {
+  const dir = path.join(ROOT, "docs", "design");
+  if (!fs.existsSync(dir)) return { count: 0, problems: [] };
+
+  const problems = [];
+  const files = fs
+    .readdirSync(dir)
+    .filter((name) => /^\d{4}-.*\.md$/.test(name))
+    .sort();
+
+  const byNumber = new Map();
+  for (const name of files) {
+    const number = name.slice(0, 4);
+    byNumber.set(number, [...(byNumber.get(number) ?? []), name]);
+  }
+  for (const [number, list] of byNumber) {
+    if (list.length > 1) problems.push(`编号 ${number} 撞了 ${list.length} 次：${list.join(" / ")}`);
+  }
+
+  for (const name of files) {
+    const text = fs.readFileSync(path.join(dir, name), "utf8");
+    const head = text.split("\n---")[0]; // 状态头 = 第一个 --- 之前那一段
+    const match = head.match(/^status:[ \t]*(\S+)[ \t]*$/m);
+    if (!match) {
+      problems.push(`${name} 没有 status 头`);
+    } else if (!DESIGN_STATUS.includes(match[1])) {
+      problems.push(`${name} 的 status 是 ${match[1]}，只认 ${DESIGN_STATUS.join(" / ")}`);
+    }
+  }
+
+  return { count: files.length, problems };
+}
+
 /* ------------------------------------------------------------------ 输出 */
 
 const files = walk(ROOT);
 const { total, broken } = checkLinks(files);
 const rows = checkNumbers();
 const lineRows = checkLines();
+const design = checkDesign();
 
 console.log(`文档体检：${files.length} 份 .md，${total} 条相对链接\n`);
 
@@ -318,6 +359,13 @@ if (broken.length === 0) {
 } else {
   console.log(`  链接      ✗ ${broken.length} 条不可达`);
   for (const item of broken) console.log(`            ${item.file} → ${item.target}`);
+}
+
+if (design.problems.length === 0) {
+  console.log(`  设计文档  ✓ ${design.count} 份，编号不重、status 都在词表里`);
+} else {
+  console.log(`  设计文档  ✗ ${design.problems.length} 处`);
+  for (const item of design.problems) console.log(`            ${item}`);
 }
 
 const pad = (text, width) => String(text).padEnd(width);
@@ -345,8 +393,8 @@ if (VERBOSE) {
   console.log(`  能自动数的六项行数：${LINE_METRICS.map((m) => `${m.en} ${m.derive()}`).join(" / ")}`);
 }
 
-if (broken.length || failed.length) {
-  console.log(`\n${broken.length + failed.length} 处要修。`);
+if (broken.length || failed.length || design.problems.length) {
+  console.log(`\n${broken.length + failed.length + design.problems.length} 处要修。`);
   process.exit(1);
 }
 console.log("\n全部通过。");

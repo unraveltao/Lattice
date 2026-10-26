@@ -1,5 +1,5 @@
 ---
-status: done
+status: accepted
 date: 2026-10-26
 supersedes:
 code: src/runtime/schedule.ts, src/widgetHost.ts, src/platform/WidgetFrame.tsx, src/platform/Canvas.tsx, src/platform/store.ts, src/App.tsx, src/runtime/widget-tools.ts, src/styles.css, src-tauri/src/runner.rs, packages/sdk/lattice.js, public/widgets/lattice.pet/pet.js

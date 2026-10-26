@@ -29,7 +29,7 @@
 ## 二、放哪、叫什么
 
 ```
-docs/design/0001-multi-source-catalogue.md
+docs/design/0010-multi-source-catalogue.md
               ↑     ↑
               │     └─ 英文小写短横线。中文文件名在 Windows / git / 各种工具链上
               │        各有一处坑，省下这点表达力不值得
