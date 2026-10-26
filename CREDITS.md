@@ -68,8 +68,20 @@ GitHub 右侧那块 `Contributors` 是**算**出来的，不是编辑出来的�
 里加一行，或者挑一条 pitfall 补两句。合进去之后头像会自己出现，因为到那时候，"他提交过代码"
 这句话本来就成真了。
 
-`Co-authored-by:` 也能达到同样的效果，而且不用他动手。不做，理由在
-[0016](./docs/design/0016-credits.md)：那张图是全仓库唯一一处"谁写了这些代码"还能机械核对的地方。
+他那边只要两条命令（PR 分支还在的话，第二条会把分支上每条提交的作者重写成当前配置）：
+
+```bash
+git config user.email "133840367+Polaris-W@users.noreply.github.com"   # 或他账号里任一已验证邮箱
+git rebase origin/main --exec "git commit --amend --reset-author --no-edit"
+git push --force-with-lease
+```
+
+那串 `…@users.noreply.github.com` 在账号的 *Settings → Emails* 里直接能抄（带用户 id 前缀的
+那种），不必暴露真邮箱。**合并方式不影响结果**：squash 出来的那一条，作者仍然取自原提交。
+
+`Co-authored-by:` 不用他动手，但它只保证**提交页**并排显示两个头像 —— 右侧那块名单是按提交
+作者算的，不保证把共同作者也列进去。而且它更贵：只有那段代码真是他写的才该用 trailer，
+否则是署名造假。理由在 [0016](./docs/design/0016-credits.md)。
 
 ## 不想被挂在这里
 
