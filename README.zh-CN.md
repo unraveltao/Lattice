@@ -105,11 +105,11 @@ v0.12 把这一堆开关收成**两个模式** —— *内部*（桌面动作 + 
 | 官方组件 | 20 个 |
 | 权限 | 13 项 |
 | Tauri 命令 | 99 条 |
-| 浏览器断言 | 56 个页面、2804 条 |
+| 浏览器断言 | 56 个页面、2809 条 |
 | Rust 单测 | 439 条 |
-| 记下来的坑 | 95 个 |
+| 记下来的坑 | 96 个 |
 
-每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；439 条 Rust 单测分成 387 条 `rustc --test` 的纯逻辑和 52 条要完整 `cargo test` 的；95 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
+每一个数字背后都有东西盯着。浏览器断言在 CI 里起真 dev server、真 Chrome 跑；439 条 Rust 单测分成 387 条 `rustc --test` 的纯逻辑和 52 条要完整 `cargo test` 的；96 个坑全是真的踩过，每个都附了"别再踩回去"的那句话。
 
 ## 两个宿主，一套桥
 
@@ -304,7 +304,7 @@ npm run test:sdk         # 每份内嵌 SDK 副本都和 packages/sdk 一致
 npm run test:agent       # agent 客户端的请求形状与退出码
 npm run test:tokens      # 三张表（字号 / 圆角 / 间距）的规则本身：半像素、豁免、font 简写
 npm run check:tokens     # 仓库真的遵守了它们：字号、圆角、2px 间距网格
-npm run test:browser     # 56 个页面、2804 条断言，真 Chrome、真 dev server
+npm run test:browser     # 56 个页面、2809 条断言，真 Chrome、真 dev server
 ```
 
 浏览器那套是里面最有意思的。每个 `tests/*.html` 都是一张真的断言页 —— 纯逻辑（semver、config、目录、参考线、关闭守卫、屏幕夹紧）、布局预算、组件行为 —— 由 dev server 伺服，Chrome 驱动。它存在的原因是"我这儿是好的"这句话反复地说错：书签第六行实测 36px，而它的注释写着 30px，就这么被 `overflow: hidden` 静默切掉，直到有人去量。
@@ -333,7 +333,7 @@ docs/                架构、组件规范、路线图、代码签名、agent �
 | TypeScript | 23 956 行 |
 | CSS | 6 130 行 |
 | Rust | 24 335 行 |
-| SDK | 943 行 |
+| SDK | 961 行 |
 | 官方组件 + 示例 | 26 969 行 |
 | 脚本 | 5 499 行 |
 
@@ -345,7 +345,7 @@ docs/                架构、组件规范、路线图、代码签名、agent �
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | 各块怎么拼起来，以及为什么 |
 | [docs/WIDGET_SPEC.md](./docs/WIDGET_SPEC.md) | 组件契约 |
 | [docs/ROADMAP.md](./docs/ROADMAP.md) | 走到了哪、被推翻的 9 个决定、下一版做什么 |
-| [docs/PITFALLS.md](./docs/PITFALLS.md) | 95 个坑，按你正盯着的那个症状分组 |
+| [docs/PITFALLS.md](./docs/PITFALLS.md) | 96 个坑，按你正盯着的那个症状分组 |
 | [docs/reference/build.md](./docs/reference/build.md) | 工具链、构建、发版 —— 操作手册 |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | agent 端点的威胁模型 |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | 钥匙、信任锚点、哪些东西**没有**签名 |

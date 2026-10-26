@@ -21,7 +21,7 @@ import {
 import { permissionLabel, type Permission } from "../runtime/manifest";
 import { normalizeAppearance } from "../runtime/appearance";
 import { resolveConfig } from "../runtime/config";
-import { createScheduler } from "../runtime/schedule";
+import { createScheduler, subscribeWindowVisible, windowVisibleNow } from "../runtime/schedule";
 import {
   ERROR_KIND_LABEL,
   errorSignature,
@@ -186,6 +186,21 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
    */
   const scheduler = useMemo(() => createScheduler(post), [post]);
 
+  /*
+   * 窗口看不看得见，也推给画布里的组件。
+   *
+   * `scheduler` 只停它自己的定时器；组件里那条 `requestAnimationFrame` 不在
+   * 那条时间轴上，主窗口最小化 / 藏起来之后照跑 —— 桌宠空转吃掉一个核就是
+   * 这么来的（见 PITFALLS「组件与资源」那条）。
+   */
+  useEffect(
+    () =>
+      subscribeWindowVisible((visible) => {
+        post({ [BRIDGE_TAG]: 1, type: "visible", payload: { visible } });
+      }),
+    [post],
+  );
+
   /** 换一份 iframe（重载 / 授权变化 / 实例被删）就把旧订阅作废 */
   useEffect(() => {
     scheduler.reset();
@@ -249,6 +264,7 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
       if (data && data[BRIDGE_TAG] === 1 && data.type === "ready") {
         post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
         post({ [BRIDGE_TAG]: 1, type: "language", payload: languagePayload() });
+        post({ [BRIDGE_TAG]: 1, type: "visible", payload: { visible: windowVisibleNow() } });
         return;
       }
       if (!isBridgeRequest(data)) return;

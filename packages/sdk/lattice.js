@@ -257,6 +257,19 @@ export function createLattice(options = {}) {
         return;
       }
       /**
+       * 窗口看不看得见。**只对"自己开帧循环"的组件有用**：平台的时间轴
+       * （`schedule.every`）在不可见时本来就会停，但 `requestAnimationFrame`
+       * 不归它管 —— 不看这条推送，窗口藏起来了组件还在每帧重绘（一只桌宠空转
+       * 实测烧掉一个核）。
+       *
+       * 收到 `false` 就 `cancelAnimationFrame`，收到 `true` 再续上；别用"降帧率"
+       * 糊弄，看不见的东西一帧都不该画。
+       */
+      case "visible": {
+        emit("visible", !(data.payload && data.payload.visible === false));
+        return;
+      }
+      /**
        * 模型调了你声明的工具。和桥是**反方向**的同一条通道：一条消息进，
        * 一条 `agent-result` 出，而且**一定要回**（不回的那次，平台等 8 秒
        * 之后告诉模型"它没应"，用户看到的是"这个组件不听话"）。

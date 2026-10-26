@@ -847,6 +847,7 @@ await call("schedule.clear", { id: grant.id });
 | `{ __lattice: 1, type: "theme", payload }` | 主题切换、组件加载完成 | CSS 变量字典 |
 | `{ __lattice: 1, type: "language", payload }` | 界面语言切换、组件加载完成 | `{ lang: "zh" \| "en", locale }`，见下 |
 | `{ __lattice: 1, type: "tick", payload }` | `schedule.every` 到期 | `{ id, at }`，`id` 就是订阅号 |
+| `{ __lattice: 1, type: "visible", payload }` | 窗口被最小化 / 收起 / 整个盖住，再露出来，以及加载完成 | `{ visible: boolean }`。**自己开 `requestAnimationFrame` 的组件必须处理它**，见下 |
 | `{ __lattice: 1, type: "store-changed", payload }` | 本组件的私有存储被**任意**实例写入了 | `{ key }`，`key` 为空串表示整份文件被替换 |
 | `{ __lattice: 1, type: "config-changed", payload }` | 这个实例的配置被改了（属性面板） | `{ config }`，完整对象，见 §2.3 |
 | `{ __lattice: 1, type: "agent-call", payload }` | agent / assistant 调了你声明的工具 | `{ callId, tool, args }`；**必须**回一条 `agent-result` 带上同一个 `callId`，见 §3.6 |
@@ -864,6 +865,25 @@ if (data.type === "store-changed" && (!data.payload.key || data.payload.key === 
 ```
 
 不要收到通知就立刻写回，那会变成两个实例互相触发、无限刷新。
+
+**自己开帧循环的组件必须接 `visible`。** 平台的 `schedule` 只停它自己的定时器：
+`requestAnimationFrame` 不归它管，窗口被最小化 / 盖住之后那条循环还在跑 —— 一只
+桌宠 60fps 整屏重绘实测吃掉一整个核（见 PITFALLS「可见性与调度」）。
+
+```js
+let raf = 0;
+const tick = (now) => { draw(now); raf = requestAnimationFrame(tick); };
+function setVisible(visible) {
+  if (!visible) { if (raf) cancelAnimationFrame(raf); raf = 0; return; }
+  if (!raf) raf = requestAnimationFrame(tick);   // 回来补一帧
+}
+setVisible(true);                                 // 首帧照旧先画（不变量 18）
+if (data.type === "visible") setVisible(data.payload.visible !== false);
+```
+
+两条经验：**看不见就一帧都别画**（"降帧率"不是解法）；**闲着的时候降帧** ——
+呼吸这类几乎看不出变化的动画 20fps 就够，走动 / 拖拽 / 动画明显的时候再回 60fps。
+`dt` 夹在 0.05 正好是 20fps 的步长，这样"降帧"不会让动画变慢。
 
 主题字典的键：`--lattice-bg`、`--lattice-surface`、`--lattice-text`、`--lattice-text-muted`、`--lattice-border`、`--lattice-accent`、`--lattice-radius`、`--lattice-font`。
 
@@ -956,7 +976,7 @@ const session = await lattice.media.get();
 
 `lattice.js` 和 `lattice.d.ts` 是**两个普通文件**，从 `examples/counter/` 或 `npm run create:widget` 的产物里拷进组件目录即可 —— 不需要 `npm install`，不需要打包。这样"组件不用构建"这个前提保住了。
 
-它替你做的事：请求 / 响应配对、超时、`LatticeError`（带 `code` 和 `permission`）、启动时先拉配置 / 主题 / **语言**再报 `ready`、主题令牌写成 CSS 变量（长名 + 短别名）、`store-changed` / `config-changed` / `tick` / `language` 的分发。
+它替你做的事：请求 / 响应配对、超时、`LatticeError`（带 `code` 和 `permission`）、启动时先拉配置 / 主题 / **语言**再报 `ready`、主题令牌写成 CSS 变量（长名 + 短别名）、`store-changed` / `config-changed` / `tick` / `language` / `visible` 的分发。
 
 双语的那两件事也在里面：`lattice.language`（`{ lang, locale }`）和 `lattice.on("language", …)`。
 

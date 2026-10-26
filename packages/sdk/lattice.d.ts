@@ -214,6 +214,11 @@ export interface Lattice {
   on(event: "config", handler: (config: ConfigValues) => void): () => void;
   on(event: "store", handler: (key: string | undefined) => void): () => void;
   on(event: "tick", handler: (payload: TickPayload) => void): () => void;
+  /**
+   * 窗口看不看得见。**自己开帧循环的组件必须接这条**：平台的时间轴在不可见时
+   * 会停，但 `requestAnimationFrame` 不归它管 —— 不接就一直每帧重绘。
+   */
+  on(event: "visible", handler: (visible: boolean) => void): () => void;
   on(event: string, handler: (payload: any) => void): () => void;
   off(event: string, handler: (payload: any) => void): void;
 

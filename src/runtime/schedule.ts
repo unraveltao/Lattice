@@ -99,6 +99,39 @@ export function setWindowVisible(visible: boolean): void {
 }
 
 /**
+ * 现在看不看得见：`document.hidden` 和窗口状态取"与"。
+ *
+ * 给**自己要开帧循环**的组件用。`schedule` 只管挂在时间轴上的定时器，组件里
+ * 那条 `requestAnimationFrame` 它管不到 —— 窗口藏起来之后那条循环还在跑，
+ * 实测一只桌宠空转就吃掉一整个核（它每帧整屏重绘）。所以宿主把这个状态当一条
+ * 推送发给组件（`{ type: "visible" }`），由组件自己停/续它的帧循环。
+ */
+export function windowVisibleNow(): boolean {
+  return !pageHidden();
+}
+
+/**
+ * 订阅"看不看得见"，**并且立刻回调一次当前值**。
+ *
+ * 立刻回调那一半不能省：页面可能是在"窗口已经不可见"的时候加载的（热更新、
+ * 权限变了重载、暂停期间新建的组件）。那一次"变成不可见"早就发生过了，只订
+ * 事件的话组件会一直以为自己在屏幕上。
+ *
+ * 返回退订函数 —— 宿主卸载（画布卡片被删、窗口关掉）时要还回去，否则一个已经
+ * 销毁的 iframe 还会被推送。
+ */
+export function subscribeWindowVisible(handler: (visible: boolean) => void): () => void {
+  const onChange = () => handler(!pageHidden());
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", onChange);
+  if (typeof window !== "undefined") window.addEventListener(WINDOW_VISIBLE_EVENT, onChange);
+  handler(!pageHidden());
+  return () => {
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onChange);
+    if (typeof window !== "undefined") window.removeEventListener(WINDOW_VISIBLE_EVENT, onChange);
+  };
+}
+
+/**
  * 接上 Rust 发来的窗口可见性。
  *
  * 动态 import：这一层只是"多一个触发源"，非 Tauri 环境（浏览器里跑测试、

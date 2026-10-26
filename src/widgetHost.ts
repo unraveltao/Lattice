@@ -47,7 +47,7 @@ import {
 } from "./runtime/bridge";
 import { enableMirror, isWidgetLog, trace } from "./runtime/debug";
 import { decideClose, type CloseDecision } from "./runtime/close-guard";
-import { createScheduler } from "./runtime/schedule";
+import { createScheduler, subscribeWindowVisible, windowVisibleNow } from "./runtime/schedule";
 import { fitAnchor, type FitOptions, type ScreenBox } from "./runtime/screen-fit";
 import type { ConfigValues } from "./runtime/config";
 import {
@@ -1348,6 +1348,21 @@ async function boot() {
   const scheduler = createScheduler(post);
   resetScheduler = () => scheduler.reset();
 
+  /*
+   * 窗口看不看得见，推给组件。
+   *
+   * `schedule` 停的只是挂在时间轴上的定时器；组件自己开的
+   * `requestAnimationFrame` 不在它管辖内 —— 桌面窗口被最小化 / 藏起来之后
+   * 那条帧循环还在跑，实测一只桌宠空转就吃掉一整个核。
+   *
+   * 不带的身份这件事不用管：这条说的是"这个窗口"，而这个宿主页只有一个 iframe。
+   */
+  const stopVisibilityWatch = subscribeWindowVisible((visible) => {
+    post({ [BRIDGE_TAG]: 1, type: "visible", payload: { visible } });
+  });
+  // 窗口关掉时退订：宿主页和窗口同生共死，退订只是不给"销毁中的文档"再推消息
+  window.addEventListener("beforeunload", stopVisibilityWatch, { once: true });
+
   window.addEventListener("message", (event) => {
     if (event.source !== iframe.contentWindow) return;
 
@@ -1385,6 +1400,7 @@ async function boot() {
       post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
       post({ [BRIDGE_TAG]: 1, type: "config-changed", payload: { config: instanceConfig } });
       post({ [BRIDGE_TAG]: 1, type: "language", payload: languagePayload() });
+      post({ [BRIDGE_TAG]: 1, type: "visible", payload: { visible: windowVisibleNow() } });
       return;
     }
     if (!isBridgeRequest(data)) return;
@@ -1427,6 +1443,7 @@ async function boot() {
     post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
     post({ [BRIDGE_TAG]: 1, type: "language", payload: languagePayload() });
     post({ [BRIDGE_TAG]: 1, type: "config-changed", payload: { config: instanceConfig } });
+    post({ [BRIDGE_TAG]: 1, type: "visible", payload: { visible: windowVisibleNow() } });
   });
 
   /*

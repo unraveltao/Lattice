@@ -1,7 +1,7 @@
 {
   "id": "lattice.pet",
   "name": { "zh": "大肥鱼", "en": "Big Fishy" },
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": {
     "zh": "一只住在桌面上的蓝色大肥鱼（鲸鱼娘）：会打招呼、害羞、生气、摆烂、睡觉，能拖着走、也会自己散步。三套衣服可换，只有她的身体挡鼠标，其余位置点得到桌面",
     "en": "A blue whale girl living on your desktop: she greets you, gets shy, sulks, lazes around and sleeps. Drag her anywhere, and she wanders on her own. Three outfits; only her body blocks the mouse — everywhere else clicks through to the desktop"
@@ -166,6 +166,16 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.9.2",
+      "date": "2026-10-26",
+      "changes": [
+        {
+          "zh": "闲着的时候不再每帧重画（一秒 60 次整屏重绘，实测空转吃掉一个核）：现在她闲着是 20fps，走动、被拖、气泡开着的时候照旧 60fps，看不出区别。窗口被最小化、收起或整个盖住时干脆一帧都不画。",
+          "en": "She no longer repaints 60 times a second while idle (that alone was burning a full CPU core): idle now runs at 20 fps, and it goes back to 60 fps while walking, being dragged, or with the bubble open — you should not be able to tell. When her window is minimized, hidden or completely covered, she stops drawing entirely."
+        }
+      ]
+    },
     {
       "version": "0.9.1",
       "date": "2026-10-25",

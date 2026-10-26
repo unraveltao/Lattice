@@ -67,6 +67,10 @@
       applyLanguage(data.payload);
       return;
     }
+    if (data.type === "visible") {
+      setVisible(!(data.payload && data.payload.visible === false));
+      return;
+    }
     if (data.type === "theme") {
       var tokens = data.payload || {};
       var map = {
@@ -319,8 +323,33 @@
 
   var lastFrame = 0;
   var walkPhase = 0;
+  var rafId = 0;
+  var visible = true;
+
+  /*
+   * 闲着的时候一帧画多少毫秒。
+   *
+   * 为什么要降：`figure.tick` 是**整屏重绘**（`clearRect` + 25 个部件各自
+   * clip + drawImage），60fps 空转实测吃掉一整个核 —— 而她闲着的时候只是
+   * 呼吸（1% 的缩放）和偶尔眨一下眼，20fps 看不出来。
+   *
+   * 为什么正好 50ms：下面 `dt` 被夹在 0.05，20fps 的步长恰好等于它，所以呼吸
+   * 和发丝弹簧的**时间轴一点都不变慢**；再低就要开始走样了。
+   */
+  var IDLE_FRAME_MS = 50;
+
+  /** 只有真的在动才值 60fps：走动、被拖、气泡开着 */
+  function wantsFullRate() {
+    return !!walk.dir || !!drag || bubbleOpen;
+  }
 
   function frame(now) {
+    rafId = 0;
+    if (!visible) return;
+    if (lastFrame && now - lastFrame < (wantsFullRate() ? 16 : IDLE_FRAME_MS)) {
+      rafId = requestAnimationFrame(frame);
+      return;
+    }
     var dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0.016;
     lastFrame = now;
     if (figure) {
@@ -334,7 +363,27 @@
       figure.setExpression(drag ? "dragged" : EXPR[holdExpr || "greeting"]);
       figure.tick(dt);
     }
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
+  }
+
+  /*
+   * 看不见就一帧都别画。
+   *
+   * 两个来源：平台推的 `visible`（窗口被最小化 / 收起 / 整个盖住 —— Rust 观测的，
+   * 见 `runtime/schedule.ts`）和文档自己的 `visibilitychange`（整个 webview 藏
+   * 起来时的兜底）。这比"降帧率"重要得多：降帧只是省三分之二，停是一分都不花。
+   */
+  function setVisible(next) {
+    if (next === visible) return;
+    visible = next;
+    if (!visible) {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = 0;
+      return;
+    }
+    // 回来补一帧。`lastFrame` 必须清零：停摆期间攒下的 dt 会让弹簧一步跳过头
+    lastFrame = 0;
+    if (!rafId) rafId = requestAnimationFrame(frame);
   }
 
   /* ---------- 她说什么语言 ---------- */
@@ -848,6 +897,11 @@
 
   window.addEventListener("resize", layout);
 
+  // 兜底：整个 webview 被藏起来时，文档自己能收到这条
+  document.addEventListener("visibilitychange", function () {
+    setVisible(!document.hidden);
+  });
+
   /* ---------- 启动 ---------- */
 
   var data = window.__PET_RIG_DATA;
@@ -861,7 +915,7 @@
     layout();
     setState("greeting");
     decideLater();
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
   }
 
   // 心跳交给平台：窗口藏起来时它会停（所以她不会在看不见的时候还"想事情"）

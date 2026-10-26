@@ -40,6 +40,7 @@
         MIN_INTERVAL,
         createScheduler,
         setWindowVisible,
+        subscribeWindowVisible,
       } from "/src/runtime/schedule.ts";
       import { handleBridgeRequest } from "/src/runtime/bridge.ts";
 
@@ -162,7 +163,40 @@
         scheduler.reset();
       }
 
-      // ---- 6. 桥：参数校验与权限 ----
+      // ---- 6. 可见性订阅：组件自己的帧循环靠这条停役 ----
+      {
+        /*
+         * `schedule` 停的只是它自己的定时器。组件里那条 `requestAnimationFrame`
+         * 不归它管（桌宠空转吃掉一个核就是这么来的），所以宿主把"看不看得见"
+         * 单独推给组件（`{ type: "visible" }`）。
+         *
+         * 两条最值得钉：**订阅立刻给一次当前值**（少了它，在不可见窗口里加载的
+         * 组件会永远以为自己在屏幕上）、变了立刻再给一次。
+         */
+        const seen = [];
+        const stop = subscribeWindowVisible((visible) => seen.push(visible));
+        log(seen.length === 1 && seen[0] === true, `订阅立刻回调一次当前值（${JSON.stringify(seen)}）`);
+
+        setWindowVisible(false);
+        log(seen.length === 2 && seen[1] === false, `窗口收起后推 false（${JSON.stringify(seen)}）`);
+
+        setWindowVisible(true);
+        log(seen.length === 3 && seen[2] === true, `还原后推 true（${JSON.stringify(seen)}）`);
+
+        Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+        document.dispatchEvent(new Event("visibilitychange"));
+        log(seen.length === 4 && seen[3] === false, `文档藏起来也推 false（${JSON.stringify(seen)}）`);
+        Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+        document.dispatchEvent(new Event("visibilitychange"));
+
+        stop();
+        const afterUnsubscribe = seen.length;
+        setWindowVisible(false);
+        setWindowVisible(true);
+        log(seen.length === afterUnsubscribe, `退订之后不再推（仍然 ${seen.length} 次）`);
+      }
+
+      // ---- 7. 桥：参数校验与权限 ----
       {
         const scheduler = createScheduler(() => {});
 
