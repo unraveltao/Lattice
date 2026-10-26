@@ -42,7 +42,13 @@
 
 ## 名单
 
-还没有人。
+- **[@Polaris-W](https://github.com/Polaris-W)** — [PR #1](https://github.com/unraveltao/Lattice/pull/1)
+  提了三件事：`shape: "region"`（窗口轮廓由组件自己上报）、`llm.chat`（组件能问模型但拿不到 key）、
+  一只桌宠。PR 没有合并，三条路后来在仓库里各自落了地；但两处最容易踩的坑是这份 PR 先写下来的 ——
+  `SetWindowRgn` 之后必须补一次 `RedrawWindow(…, RDW_ALLCHILDREN)`，否则 WebView2 不重画、
+  轮廓会被切成一条一条；轮廓掩码要在构建期算，沙箱 iframe 是不透明源、`getImageData` 直接抛。
+  落在 `src-tauri/src/desktop.rs`、`src/runtime/bridge.ts`（`llm.chat`）、`public/widgets/lattice.pet/`。
+  （2026-10，PR #1）
 
 ## 不想被挂在这里
 
