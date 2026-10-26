@@ -81,7 +81,7 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 
 ## Where it stands
 
-**v0.12 is the current milestone.** The `v0.x` numbers in this README are milestone labels, not release versions: what the installer reports is `0.1.1`, and that is the only number that ships. v0.11 is still open on three gaps, and v0.13 is a design doc for putting the assistant on the desktop — not code yet.
+**v0.12 is the current milestone.** The `v0.x` numbers in this README are milestone labels, not release versions: what the installer reports is `0.1.2`, and that is the only number that ships. v0.11 is still open on three gaps, and v0.13 is a design doc for putting the assistant on the desktop — not code yet.
 
 The milestones behind it: v0.8 let an agent drive the desktop (an opt-in loopback endpoint, 8 allowlisted actions, every call in an audit log); v0.9 added sound you can see and links that get out; v0.10 brought the built-in assistant — **a model you bring, hands that stay ours**: `Ctrl+K` opens a small window, paste an OpenAI-compatible base URL and a key once, and the key lives in `assistant.json` under Rust's control while the frontend only ever sees `sk-1…cdef`. At that point the only thing the model could *do* was the same eight allowlisted actions the agent endpoint already had, and a widget asking for `llm:chat` got text back, never tools.
 
