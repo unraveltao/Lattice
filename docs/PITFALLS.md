@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **90 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **91 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -148,6 +148,7 @@
 | 终端卡片里以 `#` 注释结尾的命令永远"跑不完"：输出都出来了，停止按钮还在转；探针里 `find_done` 一直是 `None` | 哨兵和命令拼在同一行（`<命令>; Write-Output "<RS>LATTICE:<id>"`），而 PowerShell 的 `#` 是**行**注释 —— 从 `#` 到行尾，包括那个分号和哨兵，全被吃掉 | 哨兵单独占一行：`term_policy::script_for` 出两行（命令 + `sentinel_line`），整段交给 `Invoke-Expression` 跑，所以多行命令也能用。改拼法之前先想清楚"命令自己带注释"这件事在真实用法里一点都不少 |
 | 终端里敲中文命令，真实的 PowerShell 收到的是一串乱码（`找不到命令` 或者跑的是别的字），英文命令却一切正常 | 从 GUI 进程 spawn、没有控制台的 `powershell.exe -Command -` 按 **OEM 代码页**（这台机器是 CP437）解码 stdin，不是 UTF-8。前端一路上都是 UTF-8，坏就坏在最后这一跳 —— 而这条只有拿真命令探一次才看得见，单测里拼字符串永远是对的 | 命令和哨兵整段 UTF-8 后 base64，只送一行纯 ASCII：`$__lt_c = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('…')); Invoke-Expression $__lt_c`（`term_policy::wrapper_line`）。输出侧的编码由 preamble 那两行设成 UTF-8。别指望 `chcp 65001` —— 那是给控制台用的，管道 stdin 不看它 |
 | 哨兵字符串在 PowerShell 5.1 上原样打出来是 `u{1E}LATTICE:…`，切分永远匹配不上 | `` `u{1E} `` 这种转义是 **PowerShell 7** 才有的；Windows 自带的 5.1 不认它，把 `` `u `` 当转义失败、后面的 `{1E}` 原样留了下来 | 用 `[char]0x1E`（5.1 和 7 都认），由 `term_policy::SENTINEL_PREFIX` / `sentinel_line` 一处生成。设计稿里写的 `` `u{1E} `` 已经按实测改掉了，别再改回去 |
+| 终端里先跑了一条失败的原生命令（`cmd /c exit 3`），再敲一条 **cmdlet** 命令（`Get-Item C:\nope`），卡片上写的退出码是**上一条**那个 3，不是这次该有的 1 | cmdlet 失败只把 `$?` 置假，**不动 `$LASTEXITCODE`** —— 那个变量还留着上一条原生命令的值。哨兵里凡是"非零就拿 `$LASTEXITCODE`"的写法都在借旧值 | 只在这个值相对**上一条命令**变了时才采信：哨兵行末尾记一句 `$__lt_prior = $LASTEXITCODE`（哨兵自己不改这个变量），判断里加 `$__lt_code -ne $__lt_prior`，否则落 1（`term_policy::sentinel_line`）。真机验法：`cmd /c exit 3` 之后 `Get-Item C:\nope` 必须报 1、`cmd /c exit 7` 必须报 7 |
 
 ## 目录、签名与网络
 

@@ -36,16 +36,16 @@
 | --- | --- | --- |
 | 前端 TS/TSX | 23 956 行 | 平台外壳 + 运行时 + 商店面板 + 调试面板 + assistant 抽屉与小窗 + agent 执行器 + 手的 IPC 面 + 中英文案表 + 作者文案的双语归一化 |
 | 样式 CSS | 6 130 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css` + `assistant-window.css`） |
-| Rust | 24 282 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、电源读数、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务）、终端（常驻 shell、哨兵切分、环形补发） |
+| Rust | 24 301 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、电源读数、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务）、终端（常驻 shell、哨兵切分、环形补发） |
 | 组件 SDK | 943 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
 | 官方组件 + 示例 | 26 969 行 | 20 个官方包 + 1 个示例（含每个包里的 SDK 副本） |
 | 构建脚本 | 5 499 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、winget 清单生成器 + 单测、样式与文档的守门人 |
 | 浏览器断言 | 2 793 条 | 56 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 72 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + winget 清单生成器 11 条 + 浏览器预览那条通道 28 条，都不依赖 dev server；CI 六条全跑（72 条） |
-| Rust 单测 | 437 条 | 385 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 50 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `term_policy` 14 + `power_policy` 6 + `shell_policy` 9），52 条要 `cargo test`（含 `hands.rs` 那 7 条、`mcp.rs` 那 8 条与 `term.rs` 那 1 条，本机跑不了），见 AGENTS §11 |
+| Rust 单测 | 438 条 | 386 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 50 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `term_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `power_policy` 6 + `shell_policy` 9），52 条要 `cargo test`（含 `hands.rs` 那 7 条、`mcp.rs` 那 8 条与 `term.rs` 那 1 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 99 个 | |
 | 权限 | 13 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐、`terminal:exec` 在 v0.13 补齐 |
-| 踩过的坑 | 90 条 | [`PITFALLS.md`](./PITFALLS.md) |
+| 踩过的坑 | 91 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
 ---
 
@@ -447,7 +447,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 - **八条命令接线完成**（`toggle` / `hide` / `save_pos` / `state` / `mode` / `appearance` / `locked` / `save_rect`，全 `async fn`）：面板开局读 `state`、改底板与改锁都拿返回值覆盖本地，标题栏那颗模式药丸、底板面板和锁因此真的生效（以前 invoke 会 reject、界面只是"看着能点"）。断言：`tests/assistant-window.html` 33 条 + `assistant_window_policy.rs` 11 条（`rustc --test` 壳子），`cargo check --all-targets` 干净。
 - **真机还差最后一遍**（人点一次，记在 `AGENTS.md` §8 与 0007 第 6 节）：桌面模式下 Win+D / 被别的应用盖住之后还在、点它敲字进输入框、锁上拖不动、拉到 900×700 松手重启还是这个尺寸、切回浮窗对话一行没少。
 - 明确不做：9 个方向的缩放手柄、"画面缩放"（会让字体一起变大，和"把面板拉宽"是两件事）、把 assistant 做成 placement（那会把"聊到一半"挂在一次布局同步上）。
-- [x] **终端组件（`lattice.term`）** —— 一条常驻 `powershell.exe` 的皮肤（每实例一条，实测每条命令 480ms → 常驻之后约 40ms，`cd` 与变量都留着）：命令和哨兵整段 UTF-8 后 base64 送进去（GUI 进程 spawn 出来的 stdin 按 OEM 代码页解码，直接写中文命令会乱），哨兵单独一行切出退出码与 `cd` 之后的位置；正文走 `lattice:term` 事件（桥只回编号），环形缓冲靠 `term.state { since }` 补发；新权限 `terminal:exec`（默认拒，没有"内置组件例外"）；两条收尸路（实例销毁 / 应用退出）。见 [design/0010](./design/0010-terminal-widget.md)。断言：`tests/term.html` 67 条 + `term_policy.rs` 14 条 `rustc --test`，`cargo check --all-targets` 干净。**真机还没走**：五条验收记在 `AGENTS.md` §8。明确不做：交互式程序（`vim` / `ssh`）、ANSI 颜色、分页、管道输入、单条命令的 `Ctrl+C`（停 = 杀 shell）
+- [x] **终端组件（`lattice.term`）** —— 一条常驻 `powershell.exe` 的皮肤（每实例一条，实测每条命令 480ms → 常驻之后约 40ms，`cd` 与变量都留着）：命令和哨兵整段 UTF-8 后 base64 送进去（GUI 进程 spawn 出来的 stdin 按 OEM 代码页解码，直接写中文命令会乱），哨兵单独一行切出退出码与 `cd` 之后的位置；正文走 `lattice:term` 事件（桥只回编号），环形缓冲靠 `term.state { since }` 补发；新权限 `terminal:exec`（默认拒，没有"内置组件例外"）；两条收尸路（实例销毁 / 应用退出）。见 [design/0010](./design/0010-terminal-widget.md)。断言：`tests/term.html` 67 条 + `term_policy.rs` 15 条 `rustc --test`，`cargo check --all-targets` 干净。**协议那一半真机走过了**（`.scratch/term-probe` 把 `term_policy` 接上真的 `powershell -Command -`：`cd C:\Windows` 之后 `dir` 列的是 `C:\Windows`、`ping -n 5` 分 12 段跨 4.1 秒到、`echo 你好` 不乱码、`cmd /c exit 3` 报 3 而 `Get-Item C:\nope` 报 1、杀掉之后进程没了）；**界面那一半还没走**：五条验收记在 `AGENTS.md` §8。明确不做：交互式程序（`vim` / `ssh`）、ANSI 颜色、分页、管道输入、单条命令的 `Ctrl+C`（停 = 杀 shell）
 
 ## 长期要盯的风险
 

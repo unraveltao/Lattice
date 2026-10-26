@@ -60,14 +60,19 @@ pub fn preamble() -> &'static str {
 /// 哨兵行：先存 `$?` 和 `$LASTEXITCODE`，再打一行带编号的标记。
 ///
 /// `$?` 是**用户那条命令**的成功与否（这一行在它后面，所以看到的是它留下的值）。
-/// 原生命令失败时用 `$LASTEXITCODE`，cmdlet 失败时它可能是旧的，所以先用 `$?`
-/// 判，判不了才落到 1。`:` 后面接当前目录 —— 提示符要它。
+/// 原生命令失败时才有可信的 `$LASTEXITCODE`；cmdlet 失败时它**还是上一条原生
+/// 命令留下的旧值**，直接拿来用会让卡片报一个别人的退出码（实测：`cmd /c exit 3`
+/// 之后 `Get-Item C:\nope` 报 3）。所以只在这个值**相对上一条命令变了**时才采信，
+/// 否则落到 1。上一轮的值由本行末尾那句记下 —— 哨兵自己不改 `$LASTEXITCODE`。
+/// `:` 后面接当前目录 —— 提示符要它。
 pub fn sentinel_line(id: &str) -> String {
     format!(
         "$__lt_ok = $?; $__lt_code = $LASTEXITCODE; $__rs = [char]0x1E; \
          Write-Output ($__rs + \"LATTICE:{id}:\" + \
-         $(if ($__lt_ok) {{ 0 }} elseif ($__lt_code -is [int] -and $__lt_code -ne 0) {{ $__lt_code }} else {{ 1 }}) + \
-         \":\" + $PWD.Path)"
+         $(if ($__lt_ok) {{ 0 }} \
+           elseif ($__lt_code -is [int] -and $__lt_code -ne 0 -and $__lt_code -ne $__lt_prior) {{ $__lt_code }} \
+           else {{ 1 }}) + \
+         \":\" + $PWD.Path); $__lt_prior = $LASTEXITCODE"
     )
 }
 
@@ -284,6 +289,20 @@ mod tests {
         let line = sentinel_line("c1");
         assert!(line.contains("[char]0x1E"));
         assert!(!line.contains("u{1E}"));
+    }
+
+    #[test]
+    fn a_cmdlet_failure_does_not_borrow_the_last_native_code() {
+        let line = sentinel_line("c9");
+        // 采信 `$LASTEXITCODE` 的前提多了一条：它得和上一条命令留下的不一样
+        assert!(line.contains("$__lt_code -ne $__lt_prior"), "要挡住旧值：{line}");
+        // 上一轮的值在哨兵**之后**记下 —— 这一行不改 `$LASTEXITCODE`，所以记下的是同一个值；
+        // 顺序反了就变成"跟本轮的自己比"，那个条件永远为假，原生命令的码也就丢了
+        let snapshot = line
+            .find("$__lt_prior = $LASTEXITCODE")
+            .expect("要记下这一轮的退出码");
+        let marker = line.find("LATTICE:").expect("要有标记");
+        assert!(snapshot > marker, "快照要在哨兵之后");
     }
 
     #[test]
