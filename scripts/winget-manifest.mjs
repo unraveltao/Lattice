@@ -170,7 +170,11 @@ export function buildManifests({ version, sha256, url, publisher, shortDescripti
           Description: description,
           Moniker: "lattice",
           Tags: ["widgets", "desktop", "tauri"],
-          ManifestType: "singleton",
+          // 三件套里的 locale 那一份是 `defaultLocale`，**不是** `singleton`。
+          // 写错的症状不在本地：`winget validate` 会说"multi file manifest 里不该
+          // 出现这种 ManifestType"，而提 PR 之后校验器才红。`singleton` 是"一个
+          // 文件写完整份清单"的那种投法，三件套里一份都不该有。
+          ManifestType: "defaultLocale",
           ManifestVersion: MANIFEST_VERSION,
         }),
       ],

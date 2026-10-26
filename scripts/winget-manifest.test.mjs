@@ -76,7 +76,17 @@ test("三份清单的名字与 ManifestType 对得上", () => {
   ]);
   assert.match(byName[`${PACKAGE_IDENTIFIER}.yaml`], /^ManifestType: version$/m);
   assert.match(byName[`${PACKAGE_IDENTIFIER}.installer.yaml`], /^ManifestType: installer$/m);
-  assert.match(byName[`${PACKAGE_IDENTIFIER}.locale.en-US.yaml`], /^ManifestType: singleton$/m);
+  // 三件套里 locale 那一份是 `defaultLocale`，不是 `singleton`。
+  //
+  // 这条一开始写错了，而错的那一版被当成"期望值"钉在这儿，所以本地一直是绿的 ——
+  // 直到 2026-10-26 第一次真的拿清单去 `winget validate`：
+  // "The multi file manifest should not contain file with the particular ManifestType.
+  //  [ManifestType] Value: singleton"。三件套里任何一份写 `singleton`，winget 就当成
+  // "你把单文件清单拆错了"。`singleton` 只属于"一个文件写完整个清单"的那种投法。
+  assert.match(byName[`${PACKAGE_IDENTIFIER}.locale.en-US.yaml`], /^ManifestType: defaultLocale$/m);
+  for (const body of Object.values(byName)) {
+    assert.doesNotMatch(body, /^ManifestType: singleton$/m, "三件套里不许出现 singleton");
+  }
 });
 
 test("installer 那份是 nullsoft + 用户级 + x64", () => {
