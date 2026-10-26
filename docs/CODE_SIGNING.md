@@ -53,12 +53,16 @@
 3. 把 GitHub 加为 **trusted build system**，指向本仓库和 `release.yml`
 4. 建 **Artifact configuration**：我们的产物是 NSIS 安装包（一个 PE 文件），注意 GitHub 的 artifact 是打 zip 上传的，配置里要按 zip 里取 exe
 5. 建 **Signing policy**（通常叫 `release-signing`），绑到 Foundation 证书
-6. 建一个 **API token**（submitter 权限），把 token 和三个 slug 写进仓库的 Secrets / Variables：
+6. 建一个 **API token**（submitter 权限），把 token 和四个 slug 写进仓库的 Secrets / Variables：
    - `SIGNPATH_API_TOKEN`（secret）
-   - `SIGNPATH_ORGANIZATION_ID`、`SIGNPATH_PROJECT_SLUG`、`SIGNPATH_SIGNING_POLICY_SLUG`（variables）
-7. `release.yml` 里加一步 `signpath/github-action-submit-signing-request`，**用 `vars.SIGNPATH_ORGANIZATION_ID != ''` 把它 gate 住** —— 没配置的时候这一步跳过，发布流程照常出未签名的包。这样申请还在审核期间也能正常发版
+   - `SIGNPATH_ORGANIZATION_ID`、`SIGNPATH_PROJECT_SLUG`、`SIGNPATH_SIGNING_POLICY_SLUG`、`SIGNPATH_ARTIFACT_CONFIGURATION_SLUG`（variables）
+7. `release.yml` 里那一步**已经写好了（2026-10-26）**，休眠中：整组签名步骤挂在 `vars.SIGNPATH_ORGANIZATION_ID != ''` 上 —— 没配就跳过，发布照常出未签名的包。批下来之后把第 6 步那五个值填进仓库设置，下一次打 tag 自动签，不用再改代码。
 
-第 7 步是照抄好几个项目的做法：签名步骤休眠，配置齐了自动生效。别把它写成"必须签名才能发版"，那会让一次审核卡住整个发布。
+**这一步不光是把包交给 SignPath，签完还得自己收尾**（`release.yml` 里写在注释里，别删）：Authenticode 会改字节，而 tauri-action 早就按**未签名**的那份 exe 算过更新器那种 minisign（release 上的 `.exe.sig` 与 `latest.json` 里的 `signature`）。所以签完要把签过的 exe 放回打包目录、用同一把更新器私钥重签、把 `latest.json` 里两处 `signature` 换成新的、三个资产重传 —— 再往下走的 SHA-256 与 winget 清单都从那个目录现算，必须算在签过的字节上。漏掉重签的症状是"检查更新"看着成功、下载回来报签名校验失败。
+
+**第一次启用前先拿一个一次性的 tag 干跑一遍**：这组步骤只有在真正配好 SignPath 之后才会第一次执行，本地没法验。跑完看两样东西：日志里 `status=Valid root=…` 那两行（信任链，见下面那个"未证实的说法"），以及 `releases/latest/download/latest.json` 里的 signature 与 release 上 `.exe.sig` 的内容一致。
+
+第 7 步这个"休眠"的形状是照抄好几个项目的做法。别把它写成"必须签名才能发版"：那会让一次审核（或者 SignPath 一次故障）卡住整个发布。
 
 ### 一个没证实的说法，别当事实传
 
@@ -99,6 +103,6 @@ winget 的分发模型里，信任不是挂在证书上的，是挂在**清单�
 | --- | --- | --- |
 | 现在 | README 实话 + release 附 SHA-256 | 0 |
 | 下一次发版前 | 提 SignPath 申请（审核 1–3 天，可以先提交再等） | 0 |
-| 批准后 | `release.yml` 加签名步骤，发一版签过名的，按上面的验证法验一遍 | 0 |
+| 批准后 | 填那五个值（签名步骤已经写好、休眠着），发一版签过名的，按上面的验证法验一遍 | 0 |
 | 有稳定安装包之后 | 提 winget manifest（生成器与 CI 附件已就绪，见 [`reference/build.md`](./reference/build.md) 第五节） | 0 |
 | 永远 | 不买 OV/EV，不用自签名对外分发 | 0 |
