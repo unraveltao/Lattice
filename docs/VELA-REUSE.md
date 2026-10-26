@@ -9,7 +9,7 @@
 > **左边那一列（vela）是冻结的，右边那一列（lattice）会过期。** 这份清单是 2026-10-24 那天
 > 两边状态的对照，不是 lattice 现状的说明：那天之后又长出来十来个组件，"需要的新平台能力"
 > 一栏里写着"无"的，有些已经做完了；写着某个桥方法名的，有些已经改名。**判断"这件事现在做了
-> 没有"要看 [`public/widgets/index.json`](../public/widgets/index.json) 和 `docs/ROADMAP.md`，
+> 没有"要看 `public/widgets/index.json`（`npm run widgets:index` 生成，不进仓库，所以这里不挂链接）和 `docs/ROADMAP.md`，
 > 不要看这里。** 下面凡是已确认落地的都标了 ✅ 和落地后的真实名字。
 
 ---
