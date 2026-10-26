@@ -366,7 +366,7 @@ If you read only one thing before changing code, read the invariants in [AGENTS.
 ## Credits
 
 Some of the best decisions in this repo came from people who never committed a line of it.
-Who they are, what they changed, and the rule for getting on that list: [CREDITS.md](./CREDITS.md).
+The rule for crediting them, and the list itself (empty so far): [CREDITS.md](./CREDITS.md).
 
 ## License
 

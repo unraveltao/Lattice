@@ -2,8 +2,11 @@
 
 > 这份文件记两件事：**谁的建议被采纳了**，以及**按什么判据进这份名单**。
 >
+> 名单现在是空的 —— 第一条会在第一次"因某人而改"发生时出现。空着不代表这个文件没用：
+> 判据写死在这儿，谁都能查，也谁都能照着提。
+>
 > 它不叫 `CONTRIBUTORS.md`，因为 "contributor" 在这里有确定含义 —— 提交过代码的人，
-> GitHub 自己会算那张图。这份名单里的人大多不属于那一类，混在一起会让两边都失真：
+> GitHub 自己会算那张图。这份名单要记的人大多不属于那一类，混在一起会让两边都失真：
 > 真提交过代码的人被稀释，提建议的人被误读成"他写过这块"。
 > 为什么不改名、为什么不用 `Co-authored-by:` 让他们出现在那张图上，见
 > [0016](./docs/design/0016-credits.md)。
@@ -39,16 +42,6 @@
 缺第三样就回到上面那条判据 —— 指不出来，就不进。
 
 日期写月份就够。出处写清是 issue / PR / 对话 —— 半年后要核对时，得知道去哪儿翻。
-
-## 名单
-
-- **[@Polaris-W](https://github.com/Polaris-W)** — [PR #1](https://github.com/unraveltao/Lattice/pull/1)
-  提了三件事：`shape: "region"`（窗口轮廓由组件自己上报）、`llm.chat`（组件能问模型但拿不到 key）、
-  一只桌宠。PR 没有合并，三条路后来在仓库里各自落了地；但两处最容易踩的坑是这份 PR 先写下来的 ——
-  `SetWindowRgn` 之后必须补一次 `RedrawWindow(…, RDW_ALLCHILDREN)`，否则 WebView2 不重画、
-  轮廓会被切成一条一条；轮廓掩码要在构建期算，沙箱 iframe 是不透明源、`getImageData` 直接抛。
-  落在 `src-tauri/src/desktop.rs`、`src/runtime/bridge.ts`（`llm.chat`）、`public/widgets/lattice.pet/`。
-  （2026-10，PR #1）
 
 ## 不想被挂在这里
 
