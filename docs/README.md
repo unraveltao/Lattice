@@ -16,6 +16,7 @@
 | **过去** | 每个版本当时怎么做的、验到什么程度 | [`reference/history.md`](./reference/history.md) | 想知道某段代码当初是怎么撞出来的 |
 | **过去** | 撞到过什么、怎么绕开的（**按症状**分组） | [`PITFALLS.md`](./PITFALLS.md) | 见到一个说不通的症状时，先 `Ctrl+F` 这里 |
 | **现在** | 这个词到底指什么 | [`../GLOSSARY.md`](../GLOSSARY.md) | **所有人**，包括 AI |
+| **现在** | 我卡住了 / 这算不算 bug | [`FAQ.md`](./FAQ.md) | 用这个应用的人，**先查这里再开 issue** |
 | **现在** | 组件作者必须遵守什么 | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 写组件的人 |
 | **现在** | 改平台代码不许碰什么 | [`../AGENTS.md`](../AGENTS.md) | 改平台的人，人或 agent |
 | **现在** | 查一下就好：agent 接入 / 签名 / 素材 / 邻仓 / 构建发版 | `AGENT_ACCESS.md`、`CODE_SIGNING.md`、`PET_REFERENCE.md`、`VELA-REUSE.md`、[`reference/build.md`](./reference/build.md) | 碰到那一块的时候 |
@@ -39,6 +40,8 @@
 
 它们不进这张表，是因为它们**不构成事实的家**。每份开头都写着"正文在 `AGENTS.md` 第 N 节"，自己只给顺序和判据。所以它们过期的方式也不同：**结论错了去改 `AGENTS.md`，工序错了才改这里**。往这三份里补一句"权限一共 12 个"就是违规 —— 那已经是别人的家了。
 
+根目录的 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 同一类：它只写"从 clone 到 push 之间的顺序"和"什么会被拒"，一条规矩都不重复，全是链接。第一次给这个仓库提东西的人读它，不读这一页。
+
 ### 这些页面在应用里也能读
 
 「设置 → 获取帮助」直接渲染这个目录里的 Markdown：`src/runtime/docs.ts` 里有一张九条的清单，其余文件（专题、`design/`）不在清单里，但正文的相对链接能跳过去。两个后果，写文档时要记住：
@@ -61,7 +64,9 @@
 | 你要做的事 | 读这份 | 花多久 |
 | --- | --- | --- |
 | 想知道某个词到底指什么 | [`../GLOSSARY.md`](../GLOSSARY.md) | 1 分钟 |
-| 写一个组件 | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 30 分钟 |
+| **装上之后某个地方不对劲** | [`FAQ.md`](./FAQ.md)（按"卡在哪一步"分组，搜症状） | 1 分钟 |
+| 写一个组件（从零跑起来） | [`../README.md`](../README.md#writing-a-widget) 的 *Writing a widget* + [`../examples/counter`](../examples/counter) | 30 分钟 |
+| 查组件的契约（方法表 / 配置字段 / 清单规则） | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 按需 |
 | 改平台代码 | [`../AGENTS.md`](../AGENTS.md)（先读第 4 节二十条不变量） | 20 分钟 |
 | 加一个能力（桥方法 / 权限 / 窗口行为） | [`AGENTS.md` 第 7 节"常见改动的配方"](../AGENTS.md) + `WIDGET_SPEC` 对应章节 | 按需 |
 | 想知道某个奇怪设计为什么是这样 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的九个决定」 | 按需 |
@@ -99,9 +104,12 @@
 | 改代码的约束 | `AGENTS.md` | 别处不重复 |
 | 决定与代价 | `docs/ROADMAP.md` | `design/` 只写推理，结论链接过去 |
 | 坑：症状 / 真实原因 / 解法 | `docs/PITFALLS.md` | 别处只说「见 PITFALLS」，**不要顺手把解法再抄一遍** |
+| 用户该点哪儿、报 issue 带什么 | `docs/FAQ.md` | 别处给链接，**不要在产品文案里重写一遍** |
 | 构建与发版的步骤 | `docs/reference/build.md` | `ROADMAP` 只写为什么这么定 |
 
 判断方法：**这段内容如果代码改了要不要跟着改？** 要 → 它不是文档，是指针，改成链接。
+
+`FAQ` 和 `PITFALLS` 都按症状分组，别混：**FAQ 回答"我该点哪儿"**（用这个应用的人，不许出现文件名和函数名），**PITFALLS 回答"这段代码为什么长成这样"**（改这个仓库的人）。同一件事两边都写，就是两处各自漂。
 
 ## 五、发版时要同步哪三处
 
@@ -111,7 +119,7 @@
 2. `ROADMAP.md` 的**进度总览**表 —— 一条版本从"进行中"变"已完成"。
 3. `AGENTS.md` 的**已知缺口**表 —— 补掉一条就删一条，别留着当"历史"。
 
-能自动对的不用人记：`npm run check:docs` 会拿 `public/widgets/index.json`、`KNOWN_PERMISSIONS`、`#[tauri::command]`、`PITFALLS.md` 的条目数去对账，顺带查全仓库每一份 `.md` 里的相对链接。行数那六行按 **1% 容差**比 —— 它们每次提交都会动，要求精确相等等于让每个 PR 都去改 README，而一张没人愿意维护的表最后会被删掉。**断言数只能手数**（浏览器 2 325 条、Rust 413 条），脚本只核中英文两份写的是不是同一个数，别指望它发现你数错。CI 里跑同一条命令。
+能自动对的不用人记：`npm run check:docs` 会拿 `public/widgets/index.json`、`KNOWN_PERMISSIONS`、`#[tauri::command]`、`PITFALLS.md` 的条目数去对账，顺带查全仓库每一份 `.md` 里的相对链接。行数那六行按 **1% 容差**比 —— 它们每次提交都会动，要求精确相等等于让每个 PR 都去改 README，而一张没人愿意维护的表最后会被删掉。**断言数只能手数**（浏览器 2 816 条 / 56 页、Rust 439 条），脚本只核中英文两份写的是不是同一个数，别指望它发现你数错。CI 里跑同一条命令。
 
 ## 六、别做的事
 

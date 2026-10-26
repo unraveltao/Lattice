@@ -144,6 +144,9 @@ export const SETTINGS_ZH: Record<string, string> = {
   "The project": "项目",
   "Documentation map": "文档地图",
   "Which page answers which question": "哪份文档回答哪类问题",
+  Troubleshooting: "出问题了",
+  "Nothing on screen, won't move, won't refresh — check here first":
+    "空的一屏、拖不动、不刷新 —— 先查这里",
   Glossary: "术语表",
   "Directory, manifest, placement — the words this project reuses":
     "目录、清单、实例 —— 这个项目反复用的词",

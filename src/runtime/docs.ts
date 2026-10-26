@@ -14,7 +14,7 @@
  *   3. 打包体积。`import.meta.glob` **不 eager**，每份文档是独立 chunk，
  *      点开才读 —— 不点开就只是文件躺在安装目录里。
  *
- * # 为什么只列九份
+ * # 为什么只列十份
  *
  * `docs/` 下还有 `AGENT_ACCESS.md` / `CODE_SIGNING.md` / `VELA-REUSE.md`
  * 这些专题，以及九份 design 文档。它们**能被链接跳到**（glob 覆盖整个目录），
@@ -39,6 +39,13 @@ export const DOCS: DocEntry[] = [
     group: "Start here",
     title: "Documentation map",
     summary: "Which page answers which question",
+  },
+  {
+    id: "faq",
+    path: "docs/FAQ.md",
+    group: "Start here",
+    title: "Troubleshooting",
+    summary: "Nothing on screen, won't move, won't refresh — check here first",
   },
   {
     id: "glossary",
