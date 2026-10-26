@@ -41,6 +41,7 @@
         MAX_AGENT_TOOL_DESCRIPTION,
         MAX_WIDGET_TOOL_RESULT,
         WIDGET_TOOL_PREFIX,
+        canvasNeedsLiveFrame,
         normalizeAgentTools,
         normalizeToolReply,
         notRunningReply,
@@ -292,6 +293,50 @@
       eq(dead.ok === false ? dead.code : "", "not-running", "和别的失败分开：这一条让模型别重试");
       ok(dead.ok === false && dead.error.includes("widget.lattice.todo.add"), "错误里带着工具名");
 
+      // ---- 画布要不要挂活副本 ----
+
+      /*
+       * 桌面模式下每个摆放都有自己的真窗口，画布再跑一份是重复的（桌宠实测每份
+       * 空转 0.3 核）。三种情况必须活着：**设计态**（那时没有窗口）、
+       * **声明了工具且授了 agent:tools**（画布那份是数据平面唯一的答话人）、
+       * 以及**那个窗口已经被组件自己关掉了**（`suppressed`）—— 那种时候静态卡
+       * 会说"它在桌面上跑"，而桌面上什么都没有。
+       */
+      eq(
+        canvasNeedsLiveFrame({ desktopMode: false, toolCount: 0, granted: [] }),
+        true,
+        "设计态：没有窗口，画布就是唯一的家",
+      );
+      eq(
+        canvasNeedsLiveFrame({ desktopMode: true, toolCount: 0, granted: [] }),
+        false,
+        "桌面模式 + 没声明工具：只画静态卡",
+      );
+      eq(
+        canvasNeedsLiveFrame({ desktopMode: true, toolCount: 3, granted: [] }),
+        false,
+        "声明了但没授权：工具进不了表，画布也不用挂活的",
+      );
+      eq(
+        canvasNeedsLiveFrame({ desktopMode: true, toolCount: 3, granted: ["agent:tools"] }),
+        true,
+        "声明了又授了：画布那份是唯一答话人，必须活着",
+      );
+      eq(
+        canvasNeedsLiveFrame({ desktopMode: true, toolCount: 0, granted: ["agent:tools"] }),
+        false,
+        "授了权但清单里没工具：没人会调它，静态卡就够",
+      );
+      eq(
+        canvasNeedsLiveFrame({ desktopMode: true, toolCount: 0, granted: [], suppressed: true }),
+        true,
+        "窗口被组件自己关了：静态卡会说谎，退回画布上活的那一份",
+      );
+      eq(
+        canvasNeedsLiveFrame({ desktopMode: false, toolCount: 0, granted: [], suppressed: true }),
+        true,
+        "设计态 + suppressed：本来就是活的，别被这个信号翻回去",
+      );
       // ---- 输出 ----
 
       const pass = lines.filter((line) => line.startsWith("PASS")).length;

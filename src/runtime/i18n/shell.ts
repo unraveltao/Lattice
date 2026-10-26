@@ -10,6 +10,8 @@ export const SHELL_ZH: Record<string, string> = {
   "Not available in browser preview — run npm run tauri:dev":
     "浏览器预览里不可用 —— 请跑 npm run tauri:dev",
   "Bring back": "收回来",
+  "Running on the desktop — open it there, or send it back to edit.":
+    "正在桌面上跑 —— 去桌面上看它，或者先收回来再调。",
   "Send to desktop": "投放到桌面",
   "Assistant — tell it what to change on your desktop (Ctrl+K, separate window)":
     "助手 —— 说一句就能改桌面（Ctrl+K，独立小窗）",

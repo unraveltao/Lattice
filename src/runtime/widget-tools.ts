@@ -15,6 +15,12 @@
  * 3. **答话的永远是画布里的那一份**。每个 placement 在画布上都有一个 iframe，
  *    与它有没有投放到桌面无关 —— 于是"组件没在跑"这个问题在大半情况下不存在，
  *    只有"组件没装 / 画布上那份已经卸了"才回 `not-running`。
+ *
+ *    这条约束有代价：桌面模式下每个摆放其实**已经有一个真窗口**，画布再挂一份
+ *    活副本等于同一个组件跑两遍（桌宠实测每份空转 0.3 核）。所以桌面模式下画布
+ *    只画静态卡（`canvasNeedsLiveFrame`），**唯独声明了工具的那几个例外** ——
+ *    它们的画布副本就是唯一的答话人，撤了就没人应了。等哪天桌面窗口能自己应
+ *    这条约束才可以彻底去掉（AGENTS §8 的「不唤醒窗口」）。
  */
 import type { ToolSpec } from "./assistant";
 
@@ -296,6 +302,41 @@ export function widgetToolSources(candidates: WidgetToolCandidate[]): WidgetTool
       title: item.title,
       tools: item.tools,
     }));
+}
+
+/**
+ * 画布上这一份要不要挂**活的 iframe**（桌面模式下默认只画静态卡）。
+ *
+ * 为什么可以只画静态卡：桌面模式（`desktopMode`）下每个摆放都已经是一个真窗口，
+ * 画布再挂一份等于同一个组件跑两遍 —— 实测每份活副本空转约 0.3 核（桌宠那种每帧
+ * 整屏重绘的），内存还多一个 renderer。
+ *
+ * 三个例外，都是"撤了会真的坏"：
+ *
+ * - **没进桌面模式**：那时没有窗口，画布就是它唯一的家，必须活着（设计态得能调它）。
+ * - **声明了工具并且授了 `agent:tools`**：画布这一份是数据平面唯一的答话人
+ *   （见文件头第 3 条），撤了模型调它只会得到 `not-running`。
+ * - **那一份窗口已经不在了**（`suppressed`，组件自己调 `window.close()` 关掉的，
+ *   见 `runner.rs::widget_close`）。桌面模式说的是"摆放都投放了"，可窗口会没 ——
+ *   静态卡的意义是"它在那儿跑，你去那儿看"，窗口不在还画静态卡的话，这个组件
+ *   在屏幕上就**一个像素都没有了**，而卡片还在骗人说它在桌面上。
+ *
+ * 判据和 `widgetToolSources` 是同一条（装了 / 授了 / 真声明了），这里只看后两条：
+ * "装了"在 `Canvas` 里已经筛过一遍（没装的走破卡）。
+ */
+export function canvasNeedsLiveFrame(input: {
+  /** 现在是桌面模式吗（摆放都在真窗口里跑） */
+  desktopMode: boolean;
+  /** 清单里声明了几条工具 */
+  toolCount: number;
+  /** 这个组件拿到的权限 */
+  granted: readonly string[];
+  /** 这一份的窗口本次运行里被组件自己关掉了 */
+  suppressed?: boolean;
+}): boolean {
+  if (!input.desktopMode) return true;
+  if (input.suppressed) return true;
+  return input.toolCount > 0 && input.granted.includes("agent:tools");
 }
 
 /**

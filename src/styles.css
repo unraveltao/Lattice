@@ -1582,6 +1582,38 @@ button {
   color: var(--lattice-danger);
 }
 
+/* 桌面模式下的画布卡：只有一个图标和一句话，不挂 iframe（见 WidgetFrame 的 poster） */
+.lattice-poster {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 12px 16px;
+  text-align: center;
+  border-top: 1px dashed var(--lattice-border);
+  background: var(--lattice-surface);
+}
+
+.lattice-poster svg,
+.lattice-poster img {
+  opacity: 0.75;
+}
+
+.lattice-poster-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lattice-text);
+}
+
+.lattice-poster-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted);
+}
+
 /* 组件撞到未授权权限时的就地提示 —— 比让用户去右边面板找开关更直接 */
 .lattice-perm-prompt {
   position: absolute;

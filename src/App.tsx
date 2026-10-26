@@ -230,6 +230,7 @@ export default function App() {
   const deleteTrashed = useLattice((state) => state.deleteTrashed);
   const emptyTrash = useLattice((state) => state.emptyTrash);
   const setPaused = useLattice((state) => state.setPaused);
+  const suppressWindow = useLattice((state) => state.suppressWindow);
   const [desktopBusy, setDesktopBusy] = useState(false);
   /** 安装结果提示：成功会自己消失，失败留着让人看清 */
   const [notice, setNotice] = useState<InstallNotice | null>(null);
@@ -519,6 +520,16 @@ export default function App() {
     bind<InstanceEvent>("lattice:widget-close", (payload) => {
       removePlacement(payload.instanceId);
     });
+    /*
+     * 组件自己把窗口关了（`lattice.pet` 右键就是这条，见 `runner.rs::widget_close`）。
+     *
+     * placement 不动 —— 那是用户摆好的布局；只把"这一份已经没有窗口"记下来，
+     * 画布拿它决定要不要挂活的那一份（`canvasNeedsLiveFrame`）。少了这一条，
+     * 桌面模式下这个组件会变成一张说"它在桌面上跑"的静态卡，而桌面上什么都没有。
+     */
+    bind<InstanceEvent>("lattice:widget-suppressed", (payload) => {
+      suppressWindow(payload.instanceId);
+    });
     // 组件目录里有人动了文件（编辑器存盘、手工拷进去、脚本生成）。
     // 重读一遍清单：新增的包要出现在组件库里，删掉的要消失，
     // 改了 manifest 的尺寸/权限要跟着变
@@ -538,7 +549,7 @@ export default function App() {
       disposed = true;
       for (const dispose of disposers) dispose();
     };
-  }, [refresh, removePlacement, setDesktopRect, setPaused, updatePlacement]);
+  }, [refresh, removePlacement, setDesktopRect, setPaused, suppressWindow, updatePlacement]);
 
   // 主题落到 <html data-theme>，CSS 变量与组件都从这里取色
   useEffect(() => {

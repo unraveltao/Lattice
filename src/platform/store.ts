@@ -306,6 +306,18 @@ interface LatticeState {
    */
   paused: boolean;
   /**
+   * 本次运行里**窗口被组件自己关掉**的那几份实例（`lattice.pet` 右键关窗就走这条）。
+   *
+   * 真相在 Rust 那边（`Runner::suppressed`：窗口不再重建，placement 留着 ——
+   * 见不变量 11 与 `runner.rs::widget_close`），这里只是它的镜像，靠
+   * `lattice:widget-suppressed` 同步。**不持久化**：下次启动是全新的一轮。
+   *
+   * 为什么主窗口要知道：桌面模式下画布只画静态卡（`canvasNeedsLiveFrame`），
+   * 那张卡的含义是"它在你自己那个窗口里跑"。窗口没了还画静态卡，这个组件在
+   * 屏幕上就一个像素都没有了 —— 所以这几份退回画布上活的那一份。
+   */
+  suppressed: string[];
+  /**
    * 订阅的组件目录源，**一个列表，按顺序生效**（0010）。
    *
    * 顺序决定同一时刻"同一个 `widgetId` 被两个源提供时谁赢"；`enabled` 决定参不参与
@@ -377,6 +389,8 @@ interface LatticeState {
   toggleRestoreOnLaunch: () => void;
   /** 只改镜像，别在这里调 Rust —— 状态由托盘/设置菜单发起，再由事件回流 */
   setPaused: (paused: boolean) => void;
+  /** 记下"这一份的窗口已经没了"（只改镜像，真相在 `Runner::suppressed`） */
+  suppressWindow: (instanceId: string) => void;
   setDesktopRect: (instanceId: string, rect: DesktopRect) => void;
   /** 改一项配置。值非法不用管：`resolveConfig` 会退回出厂值 */
   setConfig: (instanceId: string, key: string, value: ConfigValues[string]) => void;
@@ -492,6 +506,7 @@ export const useLattice = create<LatticeState>()(
       lastClosed: null,
       trash: [],
       paused: false,
+      suppressed: [],
       sources: [{ ...OFFICIAL_CATALOGUE_SOURCE }],
       onboarded: false,
       trustedKeys: {},
@@ -627,6 +642,13 @@ export const useLattice = create<LatticeState>()(
 
       setPaused: (paused) =>
         set((state) => (state.paused === paused ? state : { paused })),
+
+      suppressWindow: (instanceId) =>
+        set((state) =>
+          state.suppressed.includes(instanceId)
+            ? state
+            : { suppressed: [...state.suppressed, instanceId] },
+        ),
 
       setDesktopRect: (instanceId, rect) =>
         set((state) => {

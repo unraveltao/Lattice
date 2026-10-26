@@ -2,7 +2,7 @@
 status: done
 date: 2026-10-26
 supersedes:
-code: src/runtime/schedule.ts, src/widgetHost.ts, src/platform/WidgetFrame.tsx, packages/sdk/lattice.js, public/widgets/lattice.pet/pet.js
+code: src/runtime/schedule.ts, src/widgetHost.ts, src/platform/WidgetFrame.tsx, src/platform/Canvas.tsx, src/platform/store.ts, src/App.tsx, src/runtime/widget-tools.ts, src/styles.css, src-tauri/src/runner.rs, packages/sdk/lattice.js, public/widgets/lattice.pet/pet.js
 ---
 
 # 0017 —— 组件自己的帧循环要有停的条件
@@ -98,3 +98,43 @@ code: src/runtime/schedule.ts, src/widgetHost.ts, src/platform/WidgetFrame.tsx, 
 取每个 target 的 `Performance.getMetrics`，再在页面里包一层 `clearRect` 数重绘次数。
 **注意**：本机 WebView2 走的是软件光栅（`--in-process-gpu` 兜底，见 `lib.rs`），
 所以"一帧多少钱"这个数在其他机器上会更低 —— 结论（该停、该降）不受影响。
+
+## 7. 同一个摆放的第二份：画布不再挂活副本（2026-10-26，同一轮）
+
+修完"停的条件"之后，剩下的大头不是帧率而是**份数**：本机摆着两只桌宠，
+任务管理器里却有四个 `lattice.pet` 在跑 —— 桌面窗口各一份，主窗口画布上再各一份
+（`Canvas.tsx` 对每个 placement 无条件挂 iframe）。同一个组件跑两遍，
+两份各自 `clearRect`、各自吃一份光栅。
+
+**决定**：桌面模式下画布只画**静态卡**（`.lattice-poster`：图标 + 一句话），不挂
+iframe。判据收在一个纯函数里 —— `runtime/widget-tools.ts::canvasNeedsLiveFrame`，
+三个例外各有各的理由：
+
+| 例外 | 为什么必须活着 |
+| --- | --- |
+| 没进桌面模式（`desktopMode === false`） | 那时没有窗口，画布就是它唯一的家，设计态还得能调它 |
+| 声明了 `agent.tools` **且**授了 `agent:tools` | 画布这一份是数据平面唯一的答话人，撤了模型调它只会得到 `not-running`（WIDGET_SPEC §3.6） |
+| 这一份的窗口已被组件自己关掉（`suppressed`） | 静态卡的意思是"它在自己那个窗口里跑"，窗口不在还画静态卡，这个组件在屏幕上就**一个像素都没有了** —— 而卡片还在说它在桌面上 |
+
+第三条是实测撞出来的：`lattice.pet` 右键会 `window.close()`（组件自己关窗，
+placement 留着，见不变量 11 与 `runner.rs::widget_close`），那一刻窗口没了。
+所以 `widget_close` 在 `suppressed` 分支上多广播一条 `lattice:widget-suppressed`
+（**和删摆放的那条 `lattice:widget-close` 分开**，合成一条就是当初静默删用户数据的老路），
+主窗口把它记进 store 的同名镜像（不落盘），画布据此退回活的那一份。
+
+**实测（真机，16 核 / 15.8 GB，两只桌宠都在桌面上）**：
+
+| 状态 | 改之前 | 改之后 |
+| --- | --- | --- |
+| 主窗口画布上活的 iframe | 2 | **0**（两张静态卡） |
+| 同一个组件的活副本总数 | 4（2 窗口 + 2 卡） | **2**（只有那两扇窗口） |
+| 每份活副本的空转成本 | 约 0.3 核 / 份（同一状态下逐 renderer 差分） | 画布这一份的 0.3 核 × 2 不再存在 |
+
+量法：`--remote-debugging-port=9222` 之后在主窗口页面里数
+`document.querySelectorAll("iframe")` 与 `.lattice-poster`（改之前/之后各一次），
+成本用进程树 `TotalProcessorTime` 差分。
+
+**什么时候该推翻它**：等桌面窗口自己能应数据平面（AGENTS §8 的「不唤醒窗口」那条），
+第二条例外就能去掉，判据可以收成"`desktopMode` 之外一律静态卡"。
+在那之前**别在别处再写一份"要不要挂活副本"的判断** —— 画布、工具登记、钱包页面
+的"是不是在跑"都该问同一个函数。

@@ -61,9 +61,17 @@ interface WidgetFrameProps {
   placement: Placement;
   /** 拖拽中的对齐参考线，交给画布去画（见 runtime/align-guides.ts） */
   onGuides?: (guides: AlignGuideState | null) => void;
+  /**
+   * 只画静态卡、不挂 iframe。
+   *
+   * 桌面模式下每个摆放本来就有自己的真窗口，画布再跑一份是重复的（见
+   * `runtime/widget-tools.ts::canvasNeedsLiveFrame`）。判据在画布那边算，
+   * 这里只负责"长什么样"。
+   */
+  poster?: boolean;
 }
 
-export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
+export function WidgetFrame({ record, placement, onGuides, poster = false }: WidgetFrameProps) {
   const t = useT();
   /** 组件名是作者写的（可能两门），按当前语言取一份 */
   const text = useText();
@@ -155,8 +163,13 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
    * 登记的是"能把话送进 iframe"这件事本身，答复从下面那个消息监听器回来 ——
    * 也就是说组件工具和桥走**同一条** postMessage，只是方向相反：桥是组件问宿主，
    * 工具是宿主问组件。卸载时按 handler 身份删，见 `unregisterCanvasWidgetTools`。
+   *
+   * **静态卡不登记**：没有 iframe 就没有答话人，登记了只会让 `listWidgetTools`
+   * 以为它活着、模型调过来却永远拿不到回话。判据在画布那边（声明了工具 + 授了
+   * `agent:tools` 的才挂活副本），这里只是个保险。
    */
   useEffect(() => {
+    if (poster) return;
     let seq = 0;
     const handler = (tool: string, args: Record<string, unknown>) =>
       new Promise<unknown>((resolve) => {
@@ -175,7 +188,7 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
       });
     registerCanvasWidgetTools(placement.instanceId, handler);
     return () => unregisterCanvasWidgetTools(placement.instanceId, handler);
-  }, [placement.instanceId]);
+  }, [placement.instanceId, poster]);
 
   /*
    * 画布上的每个组件实例也有一条自己的时间轴。
@@ -618,7 +631,20 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
         </span>
       </div>
 
-      {record.entryUrl ? (
+      {poster ? (
+        /*
+         * 静态卡：桌面上那个真窗口在跑，画布这份不挂 iframe（省掉一份 renderer，
+         * 每份空转约 0.3 核）。内容改成"它是什么 + 去哪儿调它"，拖拽 / 缩放 /
+         * 层级 / 收回这些**编辑**动作照旧在这张卡上做。
+         */
+        <div className="lattice-poster">
+          {record.iconUrl && <WidgetIconMark url={record.iconUrl} size={28} />}
+          <span className="lattice-poster-title">{text(record.manifest.name)}</span>
+          <p className="lattice-poster-hint">
+            {t("Running on the desktop — open it there, or send it back to edit.")}
+          </p>
+        </div>
+      ) : record.entryUrl ? (
         <iframe
           key={reloadKey}
           ref={iframeRef}

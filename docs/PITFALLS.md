@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **96 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **97 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -92,6 +92,7 @@
 | 主窗口最小化之后，画布上的组件还在按心跳空转（系统监控那张卡的数字还在变） | `document.visibilityState` 对"窗口最小化"完全无感 —— 实测最小化前后都是 `visible`。WebView2 只在**整个 webview 被藏起来**时才翻这个属性，而最小化只是把窗口收进任务栏，渲染进程照跑。于是调度器那句"不可见就停摆"在桌面端从来没生效过 | `visibility.rs` 盯 `WindowEvent::Resized`（最小化/还原在 Windows 上都是 `WM_SIZE`，最小化那一下尺寸是 0×0），用 `is_minimized()` / `is_visible()` 算出真实可见性，变了才发 `lattice:window-visible`；`hide()` / `show()` 不动尺寸、不触发 Resized，由调用点显式补一次 `sync()`。调度器把这条信号和 `visibilityState` 取"与" |
 | 热更新之后画布上的组件又跳起来了，窗口明明还最小化着 | 事件是"**变了才发**"，而页面可能是在窗口已经最小化**之后**才加载的（热更新、权限变更重载、改完 Rust 重启应用）。那一次"变成不可见"早就发生过了，只订事件会永远以为自己是可见的 | 页面第一次建调度器时主动拉一次 `getCurrentWindow().isMinimized()`（`hookWindowVisibility` 里那句动态 import），把初始状态补上。Rust 侧不能靠"重发一次"解决：`LAST` 去重就是为了挡住拖边缩放时几十次重复 emit |
 | 桌宠什么都没干也在"呼吸"，任务管理器里一个 webview 进程空转吃掉**整一个核**；窗口被盖住 / 收起来之后照样跑 | `lattice.pet` 的 `frame()` 无条件 `requestAnimationFrame(frame)`，每帧都 `figure.tick(dt)` → `draw()` 整屏 `clearRect` 再重画 25 个部件。平台的 `schedule` 管不到 rAF（不变量 10 说它归组件自己管），所以"看不见就别跑"对它完全没生效。本机 WebView2 走软件光栅（`--in-process-gpu` 兜底），420×340 的画布一秒 60 次就是 1 核 | 两条一起做：①**闲着降帧**到 20fps（`IDLE_FRAME_MS = 50`，正好等于 `dt` 夹紧的 0.05，所以动画速度不变；走动 / 拖拽 / 气泡开着仍然 60fps）—— 两只桌宠从 1.2 核降到 0.6 核；②**看不见就停**：宿主把可见性当推送下发（`{ type: "visible" }`，`subscribeWindowVisible` → 两个宿主 → SDK 的 `on("visible")`），`setVisible(false)` 直接 `cancelAnimationFrame` —— 被盖住时实测掉到 0.01%（约 0.16% 单核）。判据：**组件自己的帧循环必须自带停的条件** |
+| 桌面上只摆了两只桌宠，任务管理器里却是**四个**在跑：`lattice.pet` 的帧循环开着四份 | 画布的 `WidgetFrame` 无条件挂 iframe —— 而 `desktopMode` 下同一个 placement 已经是一个真窗口在跑，画布那张卡还是**活的第二份**（本机两个实例 = 2 窗口 + 2 卡 = 4 条 rAF）。它不是缓存而是实打实的第二份成本：各自画各自的帧、各自吃一份光栅 | `runtime/widget-tools.ts::canvasNeedsLiveFrame({ desktopMode, toolCount, granted })` 定生死：设计态（`desktopMode === false`）画布就是唯一的实例，照样挂 iframe；桌面模式下只有"声明了 `agent.tools` **且**授了 `agent:tools`"的组件保留活的那份（数据平面那条例外，见 WIDGET_SPEC §3.6），其余画成 `.lattice-poster`（图标 + 一句话"正在桌面上跑"）。第三个例外是**窗口已经被组件自己关掉**（`suppressed`：桌宠右键就走这条，见不变量 11）—— 那时静态卡会骗人说"它在桌面上跑"而屏幕上什么都没有，所以 `widget_close` 多广播一条 `lattice:widget-suppressed`，主窗口据此把那一份退回活的那份。判据：**同一个 placement 同时只能有一份在跑，除非有一份非跑不可** |
 
 ## 数据与落盘
 

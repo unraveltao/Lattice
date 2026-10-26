@@ -1218,6 +1218,24 @@ pub async fn widget_close(
             );
         } else {
             runner.suppress(&config.instance_id);
+            /*
+             * 告诉主窗口"这一份没窗口了"。
+             *
+             * 桌面模式下画布那张卡只画静态卡（"它在自己那个窗口里跑"），窗口
+             * 不在的时候那句话就是假的，组件在屏幕上会一个像素都不剩。主窗口
+             * 拿这条事件把那一份退回画布上活的那份（`canvasNeedsLiveFrame`）。
+             *
+             * 和上一条**故意分开**：那条的语义是"删掉这个摆放"（用户点了 ✕），
+             * 这条是"摆放留着、只是窗口没了"。合成一条的后果正是当初那三次
+             * 静默删用户数据的老路。
+             */
+            let _ = app.emit_to(
+                "main",
+                "lattice:widget-suppressed",
+                InstancePayload {
+                    instance_id: config.instance_id,
+                },
+            );
         }
     }
     runner.forget(window.label());

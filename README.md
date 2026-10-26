@@ -113,9 +113,9 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 | Official widgets | 20 |
 | Permissions | 13 |
 | Tauri commands | 99 |
-| Browser assertions | 2 809 over 56 pages |
+| Browser assertions | 2 816 over 56 pages |
 | Rust tests | 439 |
-| Documented pitfalls | 96 |
+| Documented pitfalls | 97 |
 
 Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 387 `rustc --test` pure-logic cases plus 52 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
@@ -312,7 +312,7 @@ npm run test:sdk         # every embedded SDK copy matches packages/sdk
 npm run test:agent       # the agent client's request shape and exit codes
 npm run test:tokens      # the three scales' rules themselves (half-pixels, exemptions, font shorthand)
 npm run check:tokens     # the repo actually obeys them: sizes, radii, 2 px spacing grid
-npm run test:browser     # 2 726 assertions over 55 pages, real Chrome, real dev server
+npm run test:browser     # 2 816 assertions over 56 pages, real Chrome, real dev server
 ```
 
 The browser suite is the interesting one. Each `tests/*.html` page is a real assertion page — pure logic (semver, config, catalogue, guides, close guard, screen fit), layout budgets, and widget behaviour — served by the dev server and driven by Chrome. It exists because "it works on my machine" was, repeatedly, wrong: a sixth bookmark row measured 36 px against the 30 px its comment claimed and was silently clipped by `overflow: hidden` until somebody measured it.
@@ -338,9 +338,9 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 23 956 lines |
-| CSS | 6 130 lines |
-| Rust | 24 335 lines |
+| TypeScript | 24 168 lines |
+| CSS | 6 204 lines |
+| Rust | 24 353 lines |
 | SDK | 961 lines |
 | Widgets + example | 26 969 lines |
 | Scripts | 5 499 lines |

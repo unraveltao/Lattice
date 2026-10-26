@@ -9,6 +9,7 @@ import { useCallback, useRef, useState } from "react";
 import { useLattice } from "./store";
 import { WidgetFrame } from "./WidgetFrame";
 import { guideLines, type AlignGuideState } from "../runtime/align-guides";
+import { canvasNeedsLiveFrame } from "../runtime/widget-tools";
 import { useT } from "../runtime/i18n";
 import type { WidgetRecord } from "../runtime/registry";
 
@@ -23,6 +24,9 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
   const t = useT();
   const placements = useLattice((state) => state.placements);
   const snapToGrid = useLattice((state) => state.snapToGrid);
+  const desktopMode = useLattice((state) => state.desktopMode);
+  const grants = useLattice((state) => state.grants);
+  const suppressed = useLattice((state) => state.suppressed);
   const select = useLattice((state) => state.select);
   const hasInstalled = installedIds.size > 0;
 
@@ -140,6 +144,19 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
             record={record}
             placement={placement}
             onGuides={onGuides}
+            /*
+             * 桌面模式下桌面上的那个真窗口已经在跑，画布这份只画静态卡 ——
+             * 不然同一个组件跑两遍（桌宠空转 0.3 核 × 每份）。三个例外（设计态、
+             * 声明了工具的、窗口已经被自己关掉的）见 `canvasNeedsLiveFrame`。
+             */
+            poster={
+              !canvasNeedsLiveFrame({
+                desktopMode,
+                toolCount: record.manifest.agent?.tools?.length ?? 0,
+                granted: grants[record.manifest.id] ?? [],
+                suppressed: suppressed.includes(placement.instanceId),
+              })
+            }
           />
         );
       })}
