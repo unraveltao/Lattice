@@ -264,6 +264,10 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **百分比不夹紧**：>100 当成读不到（`null`），不画成满格 —— 坏读数装成满电比不显示更糟。
     - **不做平台侧缓存**：节流交给组件的 `schedule.every`（30 秒一拍，卡片藏起来就停），平台每秒问一次只是空转。
     - **单独一条命令，没折进 `system_metrics`**：两条命令读两套 Win32 API，失败模式也不同 —— 台式机没有电池是「正常但没有电池」，不是错误。
+  - [ ] **思维导图（`lattice.mindmap`，待做）** —— 存树、位置算出来的大纲编辑器；右向生长，`Tab` / `Shift+Tab` / `Alt+↑↓` 改结构，导出走剪贴板（Markdown / Mermaid / OPML）。取舍、大纲格式、工具契约与失败模式在 [`design/0022-mindmap-widget.md`](./design/0022-mindmap-widget.md)。
+    - **和 `lattice.diagram` 的分工**：那边位置由人摆，这边位置由结构决定。想要"把框拖到任意地方"的人要的是 diagram —— 两个都在目录里，选错的那个会被当成 bug。
+    - **导出只能是剪贴板**：沙箱没有 `allow-downloads`，`shell.open` 只收 http/https。所以 `help` 里得正面写"复制 → 粘到你想要的地方"，而不是让用户去找"另存为"。
+    - **大纲文本一个格式三个用途**（agent 输入 / 剪贴板导出 / 手工粘贴），缩进用栈解析，不猜步长。参数只能传标量（§3.6），和 0008 撞的是同一堵墙。
   - **本地目录和公开目录对齐了（2026-10-26）**：本地 19 个官方包，`unraveltao/lattice-registry` 从 14 个补到 19 —— 差的正是后加的那五个：`lattice.anki`、`lattice.battery`、`lattice.diagram`、`lattice.pet`、`lattice.habit`。每个走一条 `npm run publish:widget -- public/widgets/<id> --key ../lattice-registry/.keys/publisher.key`（打包、签名、写 sidecar、重建 `registry.json` 一次做完），五个图标顺手补进 `icons/`（另外 14 个都有，缺了在目录里是一块空白）。Pages 部署之后线上 `registry.json` 就是 19 个，挑一个包直链验过 200。流程与判据在 [`reference/build.md`](./reference/build.md) 第四节。
 
 **明确不做**：账号、云端评分、下载计数、组件市场首页。这些全都要服务端，而 v0.5 的整个前提是"没有服务端"。评分和举报继续落本地文件（`reports/*.json`），作者自己收 —— 假装有云端比没有更糟。
