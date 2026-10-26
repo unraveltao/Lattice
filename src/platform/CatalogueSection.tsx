@@ -14,6 +14,11 @@
  * 整段默认收起，里面再分堆：**已安装且没有新版本的条目一律不出卡片**（它在
  * "Installed" 里已经有一张了），只留一行统计交代；剩下的分成"能装 / 要决定"
  * 和"装不了"。目录越长这条越重要 —— 装过之后八条里通常只有一条需要点。
+ *
+ * 卡片本身也是一行（`.lattice-card.is-row`），和组件库那几行同一个形状：
+ * 名字 + 签名状态 + 主行动，说明留一行，版本 / 权限 / 指纹 / 处置理由都收在
+ * 展开区里。十几条目录摊成十几张卡时，一屏只放得下三条 —— 而其中大多数
+ * 只是"哦，还有这么个东西"。三种情况默认摊开：换钥匙、被拉黑、更新多要权限。
  */
 
 import { useMemo, useState } from "react";
@@ -64,11 +69,10 @@ export interface StoreBinding {
   /**
    * 装 / 更新一个目录条目。
    *
-   * 返回值是 Promise：批量安装要**一条一条来**。并发跑的话，`busyId` 会被
-   * 后一条覆盖，`setNotice` 也只剩最后一条能看见 —— 装 5 个坏 1 个，
-   * 用户看到的是"装好了"。
+   * 一次一条 —— 这一段没有"全部安装"：更新可能多要权限，批量更新等于把
+   * "逐条确认"那道闸绕过去，而那道闸正是权限变更提示存在的理由。
    */
-  onInstall: (entry: CatalogueEntry, pkg: CataloguePackage, acceptNewKey: boolean) => void | Promise<void>;
+  onInstall: (entry: CatalogueEntry, pkg: CataloguePackage, acceptNewKey: boolean) => void;
   /** 拉黑一把钥匙（"这人的东西我不装"，以及换钥匙时"旧的那把可能泄露了"） */
   onBlockKey: (key: string) => void;
   onUnblockKey: (key: string) => void;
@@ -132,8 +136,6 @@ export function CatalogueSection({
   const listSep = isZh ? "、" : ", ";
   const notesSep = isZh ? "、" : " and ";
   const { snapshot } = store;
-  /** 批量安装正在进行：期间把按钮按住，免得点两遍 */
-  const [batchBusy, setBatchBusy] = useState(false);
 
   const entries = useMemo(() => {
     const list = snapshot?.catalogue?.entries ?? [];
@@ -240,8 +242,6 @@ export function CatalogueSection({
    */
   const actionable = visible.filter((row) => NEEDS_ACTION.has(row.plan.kind));
   const stuck = visible.filter((row) => !NEEDS_ACTION.has(row.plan.kind));
-  /** 批量安装只覆盖"从没装过"的；更新可能多要权限，必须一张一张确认 */
-  const fresh = visible.filter((row) => row.plan.kind === "install");
   /*
    * 平时这一堆就是"能装的"。只有出现换钥匙 / 被拉黑时才改口 ——
    * 那两种条目严格说来**装不了**（要先确认或先解黑），继续写
@@ -355,31 +355,6 @@ export function CatalogueSection({
             {routine ? t("Can be installed") : t("Needs a decision")}
             <span className="lattice-lib-count">{actionable.length}</span>
           </span>
-          {/*
-            一次装完这一堆。只收 `install` 那几支 —— 更新可能多要权限，
-            批量更新等于把"逐条确认"这道闸绕过去，那正是权限变更提示存在的理由。
-          */}
-          {fresh.length > 1 && (
-            <button
-              type="button"
-              className="lattice-btn is-small"
-              disabled={store.busy || batchBusy}
-              onClick={async () => {
-                setBatchBusy(true);
-                try {
-                  // 串行：每一条都要走完验签、落盘、刷新，抢着跑只会互相盖状态
-                  for (const row of fresh) {
-                    await store.onInstall(row.entry, row.plan.pkg, false);
-                  }
-                } finally {
-                  setBatchBusy(false);
-                }
-              }}
-              title={t("Install all {count} widgets at once", { count: fresh.length })}
-            >
-              {batchBusy ? t("Installing…") : t("Install all")}
-            </button>
-          )}
         </div>
       )}
 
@@ -478,8 +453,32 @@ function CatalogueCard({
   const pinnedBlocked =
     plan.kind === "untrusted" && isBlockedKey(plan.pinned, store.blockedKeys);
 
+  /*
+   * 收起 / 展开。静止时它和组件库里那几行同一个形状（`.lattice-card.is-row`）：
+   * 图标 + 名字 + 签名状态 + 主行动 + `⋯`，说明留一行，其余按需。
+   *
+   * 为什么商店卡也要收：这一段动辄十几条，摊开时一条一百多像素，一屏放得下三条，
+   * 而其中大多数只是"哦，还有这么个东西"。收成行之后一屏十几条，想装哪条再点开。
+   *
+   * 三种情况**默认摊开**：换钥匙、被拉黑、更新会多要权限。这三件事都得先读再点，
+   * 收起来等于把"要不要信它"变成一次盲点 —— 而这一段存在的全部理由就是让人先看一眼。
+   *
+   * 用 `override` 而不是 `useState(needsReading)`：目录刷新之后，同一条可能从
+   * "能装"变成"换了人"，那时候它必须自己摊开，而不是等用户想起来去点。
+   */
+  const needsReading =
+    plan.kind === "untrusted" ||
+    plan.kind === "blocked" ||
+    // 只有**更新**才谈得上"多要权限"：新装一个包时 `added` 会是它的全部权限，
+    // 拿它当判据会让每一张新卡片都摊开（`addedPermissions` 对空的那一侧就是这么算的）。
+    (plan.kind === "update" && added.length > 0);
+  const [override, setOverride] = useState<boolean | null>(null);
+  const expanded = override ?? needsReading;
+
   return (
-    <div className={`lattice-card is-store${installed ? " is-installed" : ""}`}>
+    <div
+      className={`lattice-card is-row is-store${installed ? " is-installed" : ""}${expanded ? " is-expanded" : ""}`}
+    >
       <div className="lattice-card-top">
         <span className="lattice-card-glyph" aria-hidden>
           {entry.icon ? (
@@ -501,6 +500,59 @@ function CatalogueCard({
         ) : (
           <span className="lattice-chip">{entry.publisher ? t("Signed") : t("Unsigned")}</span>
         )}
+
+        {/*
+          行尾两样：主行动和"详情"。主行动随处置变 —— 装 / 更新 / 信任新钥匙，
+          剩下的几种（已最新、目录落后、没签名）根本没有按钮可给，它们的说明
+          全在展开区里。
+        */}
+        <div className="lattice-card-actions">
+          {plan.kind === "install" && (
+            <button
+              type="button"
+              className="lattice-btn is-small is-primary"
+              disabled={busy}
+              onClick={() => store.onInstall(entry, plan.pkg, false)}
+            >
+              {busy ? t("Installing…") : t("Install")}
+            </button>
+          )}
+
+          {plan.kind === "update" && (
+            <button
+              type="button"
+              className="lattice-btn is-small is-primary"
+              disabled={busy}
+              onClick={() => store.onInstall(entry, plan.pkg, false)}
+              title={
+                added.length > 0
+                  ? t("This update asks for {permissions}", {
+                      permissions: added.map((item) => permissionLabel(item)).join(listSep),
+                    })
+                  : undefined
+              }
+            >
+              {busy ? t("Updating…") : t("Update to {version}", { version: plan.pkg.version })}
+            </button>
+          )}
+
+          {/*
+            "换人了"那颗不给到行尾：这六个字比整行还宽，塞在名字右边会把名字
+            挤成零宽（量过）。它本来就属于"先读再点"那一类，所以和解释一起
+            待在展开区里 —— 而换钥匙的条目一律默认摊开，按钮不会因此藏起来。
+          */}
+
+          <button
+            type="button"
+            className="lattice-icon-btn is-tiny lattice-card-more"
+            onClick={() => setOverride(!expanded)}
+            aria-expanded={expanded}
+            aria-label={t("Details for {name}", { name: text(entry.name) })}
+            title={t("Details")}
+          >
+            <Glyph d={ICON.chevron} size={12} />
+          </button>
+        </div>
       </div>
 
       <p className="lattice-card-desc">{text(entry.description) || t("No description yet")}</p>
@@ -556,115 +608,84 @@ function CatalogueCard({
         </p>
       )}
 
-      <div className="lattice-card-actions">
-        {plan.kind === "install" && (
-          <button
-            type="button"
-            className="lattice-btn is-small is-primary"
-            disabled={busy}
-            onClick={() => store.onInstall(entry, plan.pkg, false)}
-          >
-            {busy ? t("Installing…") : t("Install")}
-          </button>
-        )}
+      {plan.kind === "current" && (
+        <span className="lattice-store-note">
+          {installed ? t("Up to date") : t("Already installed ({version})", { version: plan.pkg.version })}
+        </span>
+      )}
 
-        {plan.kind === "update" && (
-          <button
-            type="button"
-            className="lattice-btn is-small is-primary"
-            disabled={busy}
-            onClick={() => store.onInstall(entry, plan.pkg, false)}
-            title={
-              added.length > 0
-                ? t("This update asks for {permissions}", {
-                    permissions: added.map((item) => permissionLabel(item)).join(listSep),
-                  })
-                : undefined
-            }
-          >
-            {busy ? t("Updating…") : t("Update to {version}", { version: plan.pkg.version })}
-          </button>
-        )}
+      {/*
+        目录比本地旧。以前这一支混在 `Up to date` 里 —— 那句话在
+        "我有 1.0.0、目录只到 0.9.0" 的时候是假的。这里不提供任何按钮：
+        降级是个需要人明确说"我知道"的动作，不该长成一颗随手能点的按钮。
+      */}
+      {plan.kind === "older" && (
+        <span className="lattice-store-note">
+          {t("The catalogue only has {version} — you have {installed}. Nothing to do.", {
+            version: plan.pkg.version,
+            installed: plan.installed,
+          })}
+        </span>
+      )}
 
-        {plan.kind === "current" && (
-          <span className="lattice-store-note">
-            {installed ? t("Up to date") : t("Already installed ({version})", { version: plan.pkg.version })}
-          </span>
-        )}
+      {plan.kind === "unsigned" && (
+        <span className="lattice-store-note is-warn">
+          {t("No publisher signature — this catalogue entry cannot be installed")}
+        </span>
+      )}
 
-        {/*
-          目录比本地旧。以前这一支混在 `Up to date` 里 —— 那句话在
-          "我有 1.0.0、目录只到 0.9.0" 的时候是假的。这里不提供任何按钮：
-          降级是个需要人明确说"我知道"的动作，不该长成一颗随手能点的按钮。
-        */}
-        {plan.kind === "older" && (
-          <span className="lattice-store-note">
-            {t("The catalogue only has {version} — you have {installed}. Nothing to do.", {
-              version: plan.pkg.version,
-              installed: plan.installed,
+      {plan.kind === "blocked" && (
+        <div className="lattice-store-trust">
+          <span className="lattice-store-note is-warn">
+            {t("You blocked this publisher key ({fingerprint}). Nothing signed with it will be installed.", {
+              fingerprint: keyFingerprint(plan.key),
             })}
           </span>
-        )}
+          <button
+            type="button"
+            className="lattice-btn is-small"
+            onClick={() => store.onUnblockKey(plan.key)}
+          >
+            {t("Unblock this key")}
+          </button>
+        </div>
+      )}
 
-        {plan.kind === "blocked" && (
-          <div className="lattice-store-trust">
-            <span className="lattice-store-note is-warn">
-              {t("You blocked this publisher key ({fingerprint}). Nothing signed with it will be installed.", {
-                fingerprint: keyFingerprint(plan.key),
-              })}
-            </span>
+      {plan.kind === "untrusted" && (
+        <div className="lattice-store-trust">
+          <span className="lattice-store-note is-warn">
+            {t("Publisher key changed: was {old}, now {new}.", {
+              old: keyFingerprint(plan.pinned),
+              new: keyFingerprint(plan.offered),
+            })}
+          </span>
+          <button
+            type="button"
+            className="lattice-btn is-small is-danger"
+            disabled={busy}
+            onClick={() => store.onInstall(entry, plan.pkg, true)}
+          >
+            {t("Trust the new key and install")}
+          </button>
+          {/*
+            换钥匙是"私钥泄露"最像的样子：旧钥匙还在本地被钉着，而它可能已经
+            在别人手上。所以这个对话框里要有一条"旧的那把别再用了"的路 ——
+            点完之后这把钥匙进拉黑名单，将来哪怕它又签了什么，也装不进来。
+          */}
+          {pinnedBlocked ? (
+            <span className="lattice-store-note">{t("The old key is blocked — it can no longer ship to you.")}</span>
+          ) : (
             <button
               type="button"
               className="lattice-btn is-small"
-              onClick={() => store.onUnblockKey(plan.key)}
+              onClick={() => store.onBlockKey(plan.pinned)}
+              title={t("Stop trusting the previous key entirely — use this if it may have leaked")}
             >
-              {t("Unblock this key")}
+              {t("Block the old key instead")}
             </button>
-          </div>
-        )}
-
-        {plan.kind === "unsigned" && (
-          <span className="lattice-store-note is-warn">
-            {t("No publisher signature — this catalogue entry cannot be installed")}
-          </span>
-        )}
-
-        {plan.kind === "untrusted" && (
-          <div className="lattice-store-trust">
-            <span className="lattice-store-note is-warn">
-              {t("Publisher key changed: was {old}, now {new}.", {
-                old: keyFingerprint(plan.pinned),
-                new: keyFingerprint(plan.offered),
-              })}
-            </span>
-            <button
-              type="button"
-              className="lattice-btn is-small is-danger"
-              disabled={busy}
-              onClick={() => store.onInstall(entry, plan.pkg, true)}
-            >
-              {t("Trust the new key and install")}
-            </button>
-            {/*
-              换钥匙是"私钥泄露"最像的样子：旧钥匙还在本地被钉着，而它可能已经
-              在别人手上。所以这个对话框里要有一条"旧的那把别再用了"的路 ——
-              点完之后这把钥匙进拉黑名单，将来哪怕它又签了什么，也装不进来。
-            */}
-            {pinnedBlocked ? (
-              <span className="lattice-store-note">{t("The old key is blocked — it can no longer ship to you.")}</span>
-            ) : (
-              <button
-                type="button"
-                className="lattice-btn is-small"
-                onClick={() => store.onBlockKey(plan.pinned)}
-                title={t("Stop trusting the previous key entirely — use this if it may have leaked")}
-              >
-                {t("Block the old key instead")}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {plan.kind === "update" && added.length > 0 && (
         <p className="lattice-store-note is-warn">

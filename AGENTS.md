@@ -58,7 +58,7 @@ src/
     WidgetFrame.tsx       画布里的一个组件实例 = 一个沙箱 iframe + 拖拽缩放；**也是数据平面答话的那一份**（挂载时登记 `agent-call` 处理器，卸载按 handler 身份删）
     LibraryPanel.tsx      组件库：已安装 / 可安装 / 加载失败 + 搜索过滤 + 评分与举报入口 + 回收站那一段（有内容才画）
     LibSection.tsx        可折叠的一段：标题行（开合 + 计数）+ 右侧动作位（组件库与属性面板共用）
-    CatalogueSection.tsx  商店区：目录条目的卡片、权限对比、安装 / 更新 / 换钥匙确认
+    CatalogueSection.tsx  商店区：目录条目的一行（可展开：版本 / 权限差集 / 指纹）、安装 / 更新 / 换钥匙确认
     HelpContent.tsx       组件的"怎么用"：分节正文 + 可折叠变更记录；属性面板与卡片 `?` 共用这一份
     ReportDialog.tsx      举报与评分对话框（没有服务端，落成一份 JSON 文件）
     InspectorPanel.tsx    属性面板：三段折叠（层级与尺寸 / 外观 / 权限与选项）+ 底部移除区

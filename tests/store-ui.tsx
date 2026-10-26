@@ -317,11 +317,12 @@ async function main() {
     false,
     "那一层不再叫 Nothing to install（已安装的重复卡片已经从这里拿掉了）",
   );
-  eq(
-    buttons("Install all").length,
-    0,
-    "只有 1 条能装时不给批量按钮（批量是给一堆新包的）",
-  );
+  /*
+   * 目录段没有"全部安装"。更新可能多要权限，批量更新等于把"逐条确认"那道闸
+   * 绕过去 —— 而那道闸正是权限变更提示存在的理由。这条以前只在"能装的不足两条"
+   * 时才成立，现在一条都没有：那颗按钮已经拿掉了。
+   */
+  eq(buttons("Install all").length, 0, "目录段不给“全部安装”（每一条都要单独确认）");
 
   /*
    * 去重：已安装且没有新版本的条目只能出现一次。
@@ -386,6 +387,45 @@ async function main() {
     sysmonCard?.textContent?.includes("Block the old key instead") ?? false,
     "换钥匙的对话框里有“旧的那把别再用了”这条路",
   );
+
+  /*
+   * ---- 1b. 目录条目也是一行：静止只留名字，详情按需 ----
+   *
+   * 和组件库那几行同源：十几条目录摊成十几张卡时，一屏只放得下三张，而其中
+   * 大多数只是"哦，还有这么个东西"。但**三种情况必须默认摊开** —— 换钥匙、
+   * 被拉黑、更新多要权限。那三件事得先读再点，收起来等于把"要不要信它"
+   * 变成一次盲点，而这一段存在的全部理由就是让人先看一眼。
+   */
+  /*
+   * 51px 是"一行 + 一行说明 + 一颗 28px 的 Install"量出来的。上限给到 56 是为了
+   * 不把行高钉死在某一次字号调整上 —— 钉住的是"它是一行"，不是某个具体像素。
+   */
+  const noteRowHeight = Math.round(noteCard?.getBoundingClientRect().height ?? 0);
+  log(noteRowHeight > 0 && noteRowHeight <= 56, `能装的目录条目是一行（量到 ${noteRowHeight}px）`);
+  eq(
+    [".lattice-card-meta", ".lattice-perm-list", ".lattice-store-key"].map(
+      (selector) => getComputedStyle(noteCard!.querySelector(selector)!).display,
+    ),
+    ["none", "none", "none"],
+    "静止时不画版本 / 权限 / 指纹（节点还在，展开不用重建）",
+  );
+  log(
+    getComputedStyle(noteCard!.querySelector(".lattice-card-desc")!).display !== "none",
+    "说明留一行 —— 装不装它，取决于它是干什么的",
+  );
+  noteCard!.querySelector<HTMLButtonElement>(".lattice-card-more")!.click();
+  await sleep(60);
+  log(
+    getComputedStyle(noteCard!.querySelector(".lattice-perm-list")!).display !== "none" &&
+      getComputedStyle(noteCard!.querySelector(".lattice-store-key")!).display !== "none",
+    "点开之后权限和发布者指纹一起出现",
+  );
+  log(
+    clockCard!.classList.contains("is-expanded") &&
+      getComputedStyle(clockCard!.querySelector(".lattice-perm-list")!).display !== "none",
+    "更新会多要权限的那张默认摊开（先读再点）",
+  );
+  log(sysmonCard!.classList.contains("is-expanded"), "换了钥匙的那张默认摊开");
 
   calls.length = 0;
   sysmonCard

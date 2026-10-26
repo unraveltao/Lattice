@@ -9,9 +9,11 @@
  * 怎么用 / 层级与尺寸 / 外观 / 权限与选项。只有"层级与尺寸"默认展开 ——
  * 那是选中一个组件之后最常做的事；开合状态只活在会话里，不落盘。
  *
- * 最底下单独一格 `.lattice-danger-zone` 放 `Remove`。它**不许**回到标题行：
- * 那颗按钮旁边的邻居是"收起来"，而移除会拿走用户摆好的一个实例
- * （`removePlacement` 留了 8 秒撤销，那是兜底，不是设计）。
+ * 最上面第一格 `.lattice-danger-zone` 放 `Remove` —— 紧贴名字，在说明下面。
+ * 它**仍然不许**回到标题行：那颗按钮的邻居是"收起来"，而移除会拿走用户摆好的
+ * 一个实例（`removePlacement` 留了 8 秒撤销，那是兜底，不是设计）。沉到底部
+ * 是上一版的做法，代价是"想删一份得滚过三段设置"，一样是错的 —— 位置要对准
+ * 用户想找它的时候在哪儿找，不是对准"离危险按钮越远越好"。
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -432,8 +434,9 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
 
             上一版这颗"移除"就长在收起按钮左边，中间隔 8px —— 想收面板、
             结果删掉了一个组件（好在 `removePlacement` 留了 8 秒撤销）。
-            规矩：危险动作永远沉到面板最下面、离开合按钮最远，
-            见下面 `.lattice-danger-zone`。别挪回来。
+            它后来沉到面板最底部，那条规矩换来了另一个毛病：要滚过三段设置
+            才够得着。现在它在内容区第一格（见 `.lattice-danger-zone`）——
+            **离开合按钮一整列远**，同时不用滚。别挪回这一行。
           */}
           <button
             type="button"
@@ -450,6 +453,31 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
 
       <div className="lattice-panel-body">
         <p className="lattice-card-desc">{text(manifest.description) || t("No description")}</p>
+
+        {/*
+          面板最顶上那一件"会真的动用户东西"的事：把这一份从画布和桌面上拿走。
+
+          三条规矩：
+            · 它**紧贴名字**，在说明下面第一格 —— 上一版沉在面板最底下，要滚过
+              三段设置才看得见（`Layer & size` 默认展开，那一屏根本够不着它）。
+              "想删一份却找不到删除"和"想收面板却删掉一份"是同一类错，方向相反。
+            · 它仍然**不在标题行里**。那颗按钮的邻居是"收起来"，两件事隔 8px 时
+              真的有人点错过；现在它落在内容区左边缘，和右上角那颗隔了大半列。
+            · 旁边写清它**不是**卸载 —— 包还在组件库里，再拖出来又是一份。
+              用户把"移除一个实例"当成"删掉这个组件"是这个面板最容易误读的一句话。
+        */}
+        <div className="lattice-danger-zone">
+          <p className="lattice-hint">
+            {t("Takes this copy off the canvas and the desktop. The widget itself stays in your library.")}
+          </p>
+          <button
+            type="button"
+            className="lattice-btn is-danger"
+            onClick={() => remove(placement.instanceId)}
+          >
+            {t("Remove")}
+          </button>
+        </div>
 
         {/*
           "怎么用"放在最上面、默认收起：它是选中共一个组件时最先想知道的事，
@@ -750,28 +778,6 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
             <code className="lattice-mono lattice-path">{record.dir}</code>
           </section>
         </LibSection>
-
-        {/*
-          面板最底下那一件"会真的动用户东西"的事：把这一份从画布和桌面上拿走。
-
-          三条规矩：
-            · 它不在标题行里（上一版在那儿，紧挨着"收起来"）；
-            · 它和上面的设置隔一条线，位置最低、离标题最远；
-            · 旁边写清它**不是**卸载 —— 包还在组件库里，再拖出来又是一份。
-              用户把"移除一个实例"当成"删掉这个组件"是这个面板最容易误读的一句话。
-        */}
-        <div className="lattice-danger-zone">
-          <p className="lattice-hint">
-            {t("Takes this copy off the canvas and the desktop. The widget itself stays in your library.")}
-          </p>
-          <button
-            type="button"
-            className="lattice-btn is-danger"
-            onClick={() => remove(placement.instanceId)}
-          >
-            {t("Remove")}
-          </button>
-        </div>
       </div>
     </aside>
   );

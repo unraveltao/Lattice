@@ -6,8 +6,10 @@
  *   1. **一个面板只回答三件事**：它在哪儿（层级与尺寸）/ 它长什么样（外观）/
  *      它被允许做什么（权限与选项）。十一项控件平铺在一条滚不完的列里时，
  *      每一件看起来都同等要紧 —— 它们不是。
- *   2. **危险动作在最下面**：`Remove` 不许回到标题行。上一版它紧挨着"收起来"，
- *      想收面板的人点了它会删掉一个组件。
+ *   2. **危险动作贴着名字，但不进标题行**：`Remove` 必须出现在说明下面第一格。
+ *      它曾经在标题行里、紧挨着"收起来"，想收面板的人点了它会删掉一个组件；
+ *      后来沉到面板最底下，换来的毛病是"想删一份得滚过三段设置"。两头都钉着：
+ *      不许进 header，也不许沉底。
  *
  * 这两条都是"布局对了、某个星期一改又回去了"那一类：没有断言的话，谁把
  * `.lattice-danger-zone` 挪回 header 都不会报错，只会在用户那儿少一个组件。
@@ -144,17 +146,25 @@ async function main() {
   );
 
   /*
-   * ---- 2. 移除沉在面板最底部 ----
+   * ---- 2. 移除贴着名字，但不在标题行 ----
    *
-   * 判据是**位置**，不是"有没有"：这颗按钮必须不在 header 里、在 danger zone 里、
-   * 而 danger zone 是面板内容区的最后一个元素，并且上面有一条线把它和设置隔开。
+   * 判据是**位置**，两条都要：它是内容区的第二格（紧跟说明），并且离顶端足够近；
+   * 同时它不在 header 里。三条一起才能同时挡住"删错"和"找不到"。
    */
   const body = panel.querySelector<HTMLElement>(".lattice-panel-body")!;
   const dangerZone = body.querySelector<HTMLElement>(".lattice-danger-zone");
-  log(Boolean(dangerZone), "面板底部有一条危险区");
+  log(Boolean(dangerZone), "面板有一条危险区");
   log(
-    body.lastElementChild === dangerZone && parseFloat(getComputedStyle(dangerZone!).borderTopWidth) > 0,
-    "危险区在内容区最后，并且和上面的设置隔了一条线",
+    body.children[1] === dangerZone,
+    "危险区是内容区第二格（说明之后的第一件事），不用滚就看得见",
+  );
+  const gapFromTop = Math.round(
+    dangerZone!.getBoundingClientRect().top - body.getBoundingClientRect().top,
+  );
+  log(gapFromTop < 120, `危险区离内容区顶端 ${gapFromTop}px（一屏之内）`);
+  log(
+    parseFloat(getComputedStyle(dangerZone!).borderBottomWidth) > 0,
+    "危险区和下面那些设置隔了一条线（线在它下面，上面是说明）",
   );
   log(
     dangerZone?.querySelector<HTMLElement>("button.lattice-btn.is-danger") !== null &&

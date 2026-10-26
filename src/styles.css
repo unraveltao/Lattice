@@ -622,14 +622,23 @@ button {
 /*
  * 组件库里的一行 = `.lattice-card.is-row`。
  *
- * 它和商店卡（`.lattice-card.is-store`）是两个物种，只是历史原因共用 `.lattice-card`：
- * 商店卡是"要不要装这个版本"的决策面，权限差集、指纹、版本按钮都得摊开；库里这一行
- * 是"我装过哪些东西"的清单，职责是让眼睛一行行扫过去。所以这一段的规矩是
- * **一行只画名字，其余按需**：
+ * 两种行共用这一套形状，只差"展开区里放什么"：
  *
- *   - 静止：图标 + 名字 +（可安装的才有一行说明）+ 行尾的 `Install` / `⋯`；
+ *   · 库里这一行（已安装 / 可安装）是"我有哪些东西"的清单，展开放版本、作者、
+ *     来源、权限、评分、回滚；
+ *   · 商店那一行（`.is-store`，来自远端目录）是"要不要装这个版本"的决策面，
+ *     展开放权限差集、发布者指纹、以及"为什么不能装"的那句话。
+ *
+ * 商店卡**曾经**是一张摊开的卡（权限、指纹、版本按钮全在静止面上），理由是
+ * "决策面得摊开"。那条理由只在目录只有三五条时成立 —— 十几条时一屏放得下三张，
+ * 而其中大多数只是"哦，还有这么个东西"。现在它也是行：静止只留名字、签名状态、
+ * 主行动，要读的东西点开就有。三种情况默认摊开，见 `CatalogueCard` 里那段注释。
+ *
+ * 所以这一段的规矩是 **一行只画名字，其余按需**：
+ *
+ *   - 静止：图标 + 名字 +（可安装 / 目录条目才有一行说明）+ 行尾的主行动 / `⋯`；
  *   - 指到 / 键盘聚焦：`?` / Report / Uninstall 淡入（它们平时占位但不发光）；
- *   - 点 `⋯`：这一行展开，版本、作者、来源、权限、评分、回滚一起现身。
+ *   - 点 `⋯`：这一行展开，其余一起现身。
  *
  * 四条别踩回去：
  *
@@ -674,12 +683,16 @@ button {
 
 /* 未安装的行不再用虚线：虚线在行里像一条画歪了的分隔线，而不像"还没装" */
 .lattice-card.is-row.is-available,
-.lattice-card.is-row.is-available:hover {
+.lattice-card.is-row.is-available:hover,
+.lattice-card.is-row.is-store,
+.lattice-card.is-row.is-store:hover {
   border-style: solid;
   border-color: transparent;
+  background: transparent;
 }
 
-.lattice-card.is-row.is-available:hover {
+.lattice-card.is-row.is-available:hover,
+.lattice-card.is-row.is-store:hover {
   background: var(--lattice-selection-soft);
 }
 
@@ -748,18 +761,26 @@ button {
  *
  * 说明是例外（见下一条）：没装的那几行静止时也要留一行说明，不然
  * "装不装它"只能靠名字猜。其余四块（版本/权限/评分/危险动作）都等展开。
+ *
+ * 商店那一行多三块要收：来源说明 / 指纹 / 处置理由（换钥匙、被拉黑、没签名）。
+ * 它们的共同点是**只在展开区里成立** —— 收起来时行尾那颗状态角标已经说过
+ * 大意了（Signed / Unsigned / Blocked / Review），把整句摆在一行里只会撑破行。
  */
 .lattice-card.is-row:not(.is-expanded) .lattice-card-desc,
 .lattice-card.is-row:not(.is-expanded) .lattice-card-meta,
 .lattice-card.is-row:not(.is-expanded) .lattice-perm-list,
 .lattice-card.is-row:not(.is-expanded) .lattice-card-rating,
 .lattice-card.is-row:not(.is-expanded) .lattice-card-help,
+.lattice-card.is-row:not(.is-expanded) .lattice-store-key,
+.lattice-card.is-row:not(.is-expanded) .lattice-store-note,
+.lattice-card.is-row:not(.is-expanded) .lattice-store-trust,
 .lattice-card.is-row:not(.is-expanded) .lattice-card-danger {
   display: none;
 }
 
 /* 可安装的那几行静止留一行说明：装不装它，取决于它是干什么的 */
-.lattice-card.is-row.is-available:not(.is-expanded) .lattice-card-desc {
+.lattice-card.is-row.is-available:not(.is-expanded) .lattice-card-desc,
+.lattice-card.is-row.is-store:not(.is-expanded) .lattice-card-desc {
   display: -webkit-box;
   margin: 0 0 0 30px;
   overflow: hidden;
@@ -776,6 +797,9 @@ button {
 .lattice-card.is-row.is-expanded .lattice-perm-list,
 .lattice-card.is-row.is-expanded .lattice-card-rating,
 .lattice-card.is-row.is-expanded .lattice-card-help,
+.lattice-card.is-row.is-expanded .lattice-store-key,
+.lattice-card.is-row.is-expanded .lattice-store-note,
+.lattice-card.is-row.is-expanded .lattice-store-trust,
 .lattice-card.is-row.is-expanded .lattice-card-danger {
   padding-left: 30px;
 }
@@ -1841,14 +1865,24 @@ button {
  * 想收面板的人点了它会删掉一个组件（`removePlacement` 留了 8 秒撤销，那是
  * 兜底，不是设计）。同一条规矩在组件库里也有一份：举报与卸载沉在展开区底部。
  */
+/*
+ * 移除这一份 —— 面板内容区的第一格，紧跟说明。
+ *
+ * 位置换过两次，两次都是"用户想找它的时候找不到"：
+ *   1. 标题行里，挨着"收起来" —— 想收面板的人删掉了一个组件；
+ *   2. 面板最底下 —— 安全了，但要滚过三段设置才够得着（`Layer & size` 默认展开，
+ *      一屏根本翻不到）。
+ * 现在是第三种：贴着名字、离开合按钮一整列远。线画在**下面**（上面是说明，
+ * 不需要再分一次），把危险动作和下面那些"随便点点也没事"的设置隔开。
+ */
 .lattice-danger-zone {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
-  margin-top: 2px;
-  padding-top: 14px;
-  border-top: 1px solid var(--lattice-border);
+  margin: 0;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--lattice-border);
 }
 
 .lattice-label {
@@ -3224,16 +3258,21 @@ button.lattice-chip[aria-pressed="true"] {
 }
 
 /*
- * 目录卡片不画成"虚线可用"：它和可安装的包不是一回事 ——
+ * 目录条目不再是"虚线可用"：它和可安装的包不是一回事 ——
  * 那个在你磁盘上，这个在网上，点下去要下载、要验签。
+ *
+ * 它现在是**行**（`is-row`），实线的边框和透明底色由上面「组件库的行」那一节
+ * 统一给（`.lattice-card.is-row.is-store`）。这一条只兜住"万一哪天它不再是行"，
+ * 别在这里加颜色 —— 加了会和那一节打架，而输赢取决于谁写在后面。
  */
 .lattice-card.is-store {
   border-style: solid;
 }
 
-.lattice-card.is-store.is-installed {
-  background: var(--lattice-surface-2);
-}
+/*
+ * 以前"已装但目录里有新版"整行填一层 surface-2。变成行之后这条不能留：
+ * 一行里铺底色会和 hover 的那层选中色打架，而且"已安装"这颗角标已经在说了。
+ */
 
 .lattice-card-glyph-img {
   width: 17px;
@@ -3262,6 +3301,9 @@ button.lattice-chip[aria-pressed="true"] {
 }
 
 .lattice-store-note {
+  /* 卡片是 flex 列、间距由 gap 给；`<p>` 自带的那 1em 上下边距在这里是纯噪声
+     （量出来 11+11，把"多要权限"那句推得离指纹老远） */
+  margin: 0;
   font-size: 11px;
   line-height: 1.5;
   color: var(--lattice-text-muted);
