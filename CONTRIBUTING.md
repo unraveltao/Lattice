@@ -50,10 +50,28 @@
 
 `git log --oneline -20` 看三行就懂：`type(scope): 一句话`，中文，说"改了什么"。
 
-- type 只用这几个：`feat` / `fix` / `perf` / `docs` / `chore` / `test` / `refactor`。
+- type 只用这几个：`feat` / `fix` / `perf` / `docs` / `chore` / `test` / `refactor` / `ci` / `style`。
+  `ci` 是 `.github/workflows/` 与发版脚本；`style` 只指**不改行为**的排版收敛 ——
+  改了看起来什么样，那是 `feat`。
 - scope 是目录或模块名：`ui`、`term`、`store`、`credits`、`release`。
+  **scope 不是 type。** `credits:` / `settings:` / `release:` 是把 scope 顶到了 type 的位置，
+  写成 `docs(credits):` / `feat(settings):` / `chore(release):` 才对 —— 这类写法在历史里
+  出现过几处（`git log --grep` 能搜到），不再改历史，但新提交别再添。
 - body 写**为什么** —— "怎么做"diff 里已经有了。
 - 不写 `update file`、`fix bug`、`修改一下`。
+
+这一条**有钩子拦着**，不靠自觉：`npm install` / `npm ci` 会把 `core.hooksPath` 指到
+`scripts/git-hooks/`（装不上只是不装，不会让安装失败）。
+
+| 钩子 | 做什么 | 什么时候红 |
+| --- | --- | --- |
+| `commit-msg` | 校验上面那个形状 | type 不在表里、`feat:` 后面空着、`credits:` 这种 scope 当 type |
+| `pre-push` | `npm run typecheck` + `npm run check:docs` | 类型错、相对链接死了、README 的数字和代码对不上 |
+
+只拦格式和"本机能验的那一半"，不拦内容。真绕过去用 `--no-verify` —— 但 `pre-push`
+那两条正是 CI 会红的两条，绕过去只是把红推迟到别人的机器上。
+
+钩子换了机器要重装：`npm run hooks:install`（不用重装依赖）。
 
 ## 六、不会被合的东西
 

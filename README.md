@@ -348,7 +348,7 @@ CONTRIBUTING.md      clone → push, and what gets rejected
 | Rust | 24 353 lines |
 | SDK | 961 lines |
 | Widgets + example | 27 046 lines |
-| Scripts | 5 499 lines |
+| Scripts | 5 566 lines |
 
 **Read next**
 

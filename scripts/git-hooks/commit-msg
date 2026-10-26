@@ -1,0 +1,75 @@
+#!/bin/sh
+# 只拦"形状"，不拦"内容" —— 一句话说得清吗、是不是真的，钩子管不了。
+#
+# 允许的 type：feat fix perf docs chore test refactor ci style
+# 形状：       type(scope): 一句话        或   type: 一句话
+# 放过：       Merge / Revert / fixup! / squash! / amend!（git 自己生成的那些）
+#
+# 规矩的出处是 CONTRIBUTING.md 第五节。这里只是把它从"写在文档里"变成"提交不了"。
+
+msg_file="${1:-}"
+[ -z "$msg_file" ] && exit 0
+
+first=$(head -n 1 "$msg_file" | tr -d '\r')
+
+# 空信息 = 放弃提交，交给 git 自己处理
+[ -z "$first" ] && exit 0
+
+case "$first" in
+  "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"amend! "*|"# "*) exit 0 ;;
+esac
+
+types="feat fix perf docs chore test refactor ci style"
+
+# type = 冒号之前、去掉可选的 (scope)
+type=$(printf '%s' "$first" | sed -n 's/^\([a-z][a-z]*\)\(([^)]*)\)\{0,1\}: .*/\1/p')
+
+if [ -z "$type" ]; then
+  {
+    echo ""
+    echo "commit-msg: 这一行不符合形状："
+    echo "  $first"
+    echo ""
+    echo "  要的是  type(scope): 一句话   —— 半角冒号，后面一个空格"
+    echo "  例：    fix(term): 退出码不借上一条原生命令的旧码"
+    echo "          docs: 补上两份缺的文档"
+    echo ""
+    echo "  规矩在 CONTRIBUTING.md 第五节。"
+  } >&2
+  exit 1
+fi
+
+case " $types " in
+  *" $type "*) ;;
+  *)
+    {
+      echo ""
+      echo "commit-msg: 不认识的 type：$type"
+      echo "  type 只用这几个：$types"
+      echo ""
+      echo "  如果 $type 是模块名，那它是 **scope**，要放进括号里；"
+      echo "  前面那个 type 按改动性质挑（文档 docs / 新行为 feat / 修错 fix / 杂事 chore）："
+      echo "    错  $first"
+      echo "    对  docs($type): ${first#*: }"
+      echo ""
+      echo "  规矩在 CONTRIBUTING.md 第五节。"
+    } >&2
+    exit 1
+    ;;
+esac
+
+# 光有 type、没有话。`fix:` 这种等于没写
+subject=${first#*: }
+case "$(printf '%s' "$subject" | tr 'A-Z' 'a-z')" in
+  ""|"update file"|"update files"|"fix bug"|"修改一下"|"更新")
+    {
+      echo ""
+      echo "commit-msg: 冒号后面得说改了什么："
+      echo "  $first"
+      echo "  不写 \"update file\"、\"fix bug\"、\"修改一下\" —— CONTRIBUTING.md 第五节。"
+    } >&2
+    exit 1
+    ;;
+esac
+
+exit 0

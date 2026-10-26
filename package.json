@@ -29,7 +29,9 @@
     "tauri": "tauri",
     "tauri:dev": "node scripts/tauri.mjs dev",
     "tauri:build": "node scripts/tauri.mjs build",
-    "test:browser": "node scripts/test-browser.mjs"
+    "test:browser": "node scripts/test-browser.mjs",
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "prepare": "node scripts/install-hooks.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

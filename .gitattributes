@@ -31,3 +31,8 @@
 # 生成物：diff 里没有可读信息，标记出来让 review 默认折叠
 package-lock.json linguist-generated=true
 public/widgets/index.json linguist-generated=true
+
+# 钩子脚本必须 LF。git 在 Windows 上把钩子交给自带的 sh，而 CRLF 的 shebang
+# 报的是 `/bin/sh^M: bad interpreter` —— 一句话里没有一个字提到行尾。
+# 这条用 eol=lf 而不是 text=auto：这里要的是"各平台都检出成 LF"，不是"各随其便"。
+scripts/git-hooks/* text eol=lf
