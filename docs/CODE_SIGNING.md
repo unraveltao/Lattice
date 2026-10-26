@@ -71,8 +71,8 @@
 | 栏 | 填什么 |
 | --- | --- |
 | Project Name | `Lattice` |
-| Repository URL | `https://github.com/unraveltao/lattice` |
-| Homepage URL | `https://github.com/unraveltao/lattice`（"可以是仓库页"） |
+| Repository URL | `https://github.com/unraveltao/Lattice` |
+| Homepage URL | `https://github.com/unraveltao/Lattice`（"可以是仓库页"） |
 | Download URL | **留空**，理由见下 |
 | Privacy Policy URL | **留空** —— 应用不收集数据、没有服务端（表单说"收集数据时才需要"） |
 | Wikipedia URL | 空 |
@@ -101,9 +101,9 @@ Lattice is an extensible desktop widget platform for Windows. Widgets are ordina
 ```text
 Public since October 2026, so there is no press coverage or download statistics yet. Verifiable signals instead:
 
-- Release pipeline: every Windows installer is built and published by GitHub Actions from this repository — https://github.com/unraveltao/lattice/releases
+- Release pipeline: every Windows installer is built and published by GitHub Actions from this repository — https://github.com/unraveltao/Lattice/releases
 - Distribution: nineteen official widgets are published as signed packages to a public catalogue on GitHub Pages — https://unraveltao.github.io/lattice-registry/registry.json
-- Quality gates: CI runs a browser assertion suite (2,726 assertions across 55 pages) and 422 Rust unit tests on every push — https://github.com/unraveltao/lattice/actions/workflows/ci.yml
+- Quality gates: CI runs a browser assertion suite (2,726 assertions across 55 pages) and 422 Rust unit tests on every push — https://github.com/unraveltao/Lattice/actions/workflows/ci.yml
 - Package manager: manifest submitted to microsoft/winget-pkgs — https://github.com/microsoft/winget-pkgs/pull/461881
 ```
 
@@ -126,7 +126,7 @@ Windows builds are code-signed by the SignPath Foundation.
 | 建什么 | 名字 | 备注 |
 | --- | --- | --- |
 | Project | `lattice` | slug 进 `SIGNPATH_PROJECT_SLUG` |
-| Trusted build system | GitHub：`unraveltao/lattice` + `.github/workflows/release.yml` | 别的 workflow 不发版，别指错 |
+| Trusted build system | GitHub：`unraveltao/Lattice` + `.github/workflows/release.yml` | 别的 workflow 不发版，别指错 |
 | Artifact configuration | `nsis-installer` | 要签的是 zip 里的 `Lattice_*_x64-setup.exe`（一个 PE 文件） |
 | Signing policy | `release-signing` | 绑 Foundation 那张证书；要不要人工批准在这一层选 |
 | API token | （无名字） | submitter 权限；只显示一次，直接进 secret |

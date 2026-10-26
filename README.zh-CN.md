@@ -7,7 +7,7 @@
 没有账号，没有服务端。</p>
 
 <p>
-<a href="https://github.com/unraveltao/lattice/actions/workflows/ci.yml"><img src="https://github.com/unraveltao/lattice/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
+<a href="https://github.com/unraveltao/Lattice/actions/workflows/ci.yml"><img src="https://github.com/unraveltao/Lattice/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
 <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b82f6.svg" alt="MIT license"></a>
 <a href="#安装与构建"><img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D4.svg" alt="Windows 10 / 11"></a>
 </p>
@@ -278,7 +278,7 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖回窗口
 
 ## 安装与构建
 
-**只想装上用，不用编译。** 去 [Releases](https://github.com/unraveltao/lattice/releases) 下那个 Windows 安装包（`*-setup.exe`），双击装完就能用。
+**只想装上用，不用编译。** 去 [Releases](https://github.com/unraveltao/Lattice/releases) 下那个 Windows 安装包（`*-setup.exe`），双击装完就能用。
 
 第一次运行会被 SmartScreen 拦成"未知发布者" —— 安装包还没有代码签名，点 **更多信息 → 仍要运行**。这是采购问题不是技术问题，它躺在 [AGENTS.md 的已知缺口](./AGENTS.md)那张表里，不是被悄悄忽略。
 

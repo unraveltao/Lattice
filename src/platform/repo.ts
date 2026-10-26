@@ -22,7 +22,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "../runtime/registry";
 
 /** `owner/name`，显示用。仓库换了只改这一行 */
-export const REPO = "unraveltao/lattice";
+export const REPO = "unraveltao/Lattice";
 
 export const REPO_URL = `https://github.com/${REPO}`;
 

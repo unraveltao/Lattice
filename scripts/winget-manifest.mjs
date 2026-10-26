@@ -42,7 +42,7 @@ import { sha256Hex } from "./sign-widget.mjs";
 
 export const MANIFEST_VERSION = "1.6.0";
 export const PACKAGE_IDENTIFIER = "unraveltao.Lattice";
-export const REPO_URL = "https://github.com/unraveltao/lattice";
+export const REPO_URL = "https://github.com/unraveltao/Lattice";
 export const LICENSE = "MIT";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");

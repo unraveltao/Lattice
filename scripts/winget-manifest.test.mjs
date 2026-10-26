@@ -48,7 +48,7 @@ test("安装包名字与直链用的是同一份形状", () => {
   assert.equal(installerName(VERSION), "Lattice_0.1.1_x64-setup.exe");
   assert.equal(
     installerUrl(VERSION),
-    "https://github.com/unraveltao/lattice/releases/download/v0.1.1/Lattice_0.1.1_x64-setup.exe",
+    "https://github.com/unraveltao/Lattice/releases/download/v0.1.1/Lattice_0.1.1_x64-setup.exe",
   );
 });
 

@@ -7,7 +7,7 @@ Whoever writes one writes HTML / CSS / JS; real windows, the sandbox, permission
 No account, no server.</p>
 
 <p>
-<a href="https://github.com/unraveltao/lattice/actions/workflows/ci.yml"><img src="https://github.com/unraveltao/lattice/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
+<a href="https://github.com/unraveltao/Lattice/actions/workflows/ci.yml"><img src="https://github.com/unraveltao/Lattice/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
 <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-3b82f6.svg" alt="MIT license"></a>
 <a href="#install-and-build"><img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D4.svg" alt="Windows 10 / 11"></a>
 </p>
@@ -286,7 +286,7 @@ npm run pack:widget -- demo.mine      # folder → .lattice, drag straight into 
 
 ## Install and build
 
-**To just install it, no compiling.** Take the Windows installer (`*-setup.exe`) from [Releases](https://github.com/unraveltao/lattice/releases) and run it.
+**To just install it, no compiling.** Take the Windows installer (`*-setup.exe`) from [Releases](https://github.com/unraveltao/Lattice/releases) and run it.
 
 The first launch gets stopped by SmartScreen as an "unknown publisher" — the installer is not code-signed yet, so click **More info → Run anyway**. That is a procurement problem, not a technical one, and it sits in the known-gaps table in [AGENTS.md](./AGENTS.md) rather than being quietly ignored.
 
