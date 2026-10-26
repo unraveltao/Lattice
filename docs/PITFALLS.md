@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **86 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **87 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -162,6 +162,7 @@
 | `.scratch` 里的验签壳子编不过：`unresolved import ed25519_dalek` / `crate::protocol` 找不到 | `rustc --test 壳子.rs` 只编这一个文件，不会替你解析 `Cargo.toml` 里的依赖，也没有 `crate::` 下的兄弟模块 | 加 `-L src-tauri/target/debug/deps --extern ed25519_dalek=<rlib> --extern sha2=<rlib>`；`csp.rs` 只用到 `protocol::SCHEME`，桩一个常量即可。桩的值要抄对 —— 抄成 `lattice`（真值是 `lattice-widget`）时单测会红，这次正好被它抓了一下 |
 | 下载 16MB 的组件包，sha256 永远对不上，报"下载损坏" | 中间那一层顺手 `String::from_utf8_lossy` 转了一道字符串：非 UTF-8 的字节全变成 U+FFFD，二进制当场报废。上传下载这类管道里，**任何一次"顺手转成字符串"都是不可逆的** | `network::send` 改成返回 `Vec<u8>`，上限由调用方给（目录 2MB / 包 16MB）；`network_fetch` 只在最后一步转字符串。同一个函数服务两种用途时，最底层那个类型要选得够宽 |
 | 更新器弹"检查你的网络"，可网络完全正常；release 页面能打开、产物也都在 | 发布时勾了 **"Set as a pre-release"**：`/releases/latest` 跳过的不只是草稿，还有预发布。`releases/download/v0.x.0/latest.json` 照样 200，**唯独更新器会去敲的那个地址**（`releases/latest/download/latest.json`）是 404 —— 而插件对任何非 2xx 都只记日志、最后统一抛 `ReleaseNotFound`，和真断网是同一句话 | 在 release 页面取消那个勾（或者下个版本别勾）。代码侧没有更稳的办法，`latest` 这个别名就是这么定义的。前端 `describeUpdateError` 先认这一条再认网络（`tests/updater.html` 14 条钉着，含"别把 `TargetNotFound` 也归进来"） |
+| `winget validate --manifest <三件套目录>` 报 `The multi file manifest should not contain file with the particular ManifestType. [ManifestType] Value: singleton` / `The multi file manifest is incomplete` | locale 那份 `ManifestType` 写成了 `singleton` —— 那是"一个文件装完整份清单"的投法，三件套里只认 `defaultLocale`。更难受的是**测试把错的当成了期望值**：`winget-manifest.test.mjs` 里那条"三份清单的名字与 ManifestType 对得上"断的就是 `singleton`，于是生成器错、测试跟着错，本地一路绿，直到第一次真去提 PR 前跑 validate | 三件套分别是 `version` / `installer` / `defaultLocale`；测试改成断 `defaultLocale`，再加一条"三件套里不许出现 `singleton`"。清单是发布产物、不进仓库，所以**提 PR 之前那一步 `winget validate` 是唯一会替你看这件事的地方**，别跳 |
 
 ## 错误上报与崩溃守卫
 

@@ -45,7 +45,7 @@
 | Rust 单测 | 422 条 | 371 条纯逻辑用 `rustc --test` 壳子跑得动（今天全过，含 `llm_policy` 的 50 条、`agent_policy` 26 + `input_policy` 23 + `screen_policy` 21 + `web_policy` 21 + `hands_policy` 21 + `skills_policy` 19 + `mcp_policy` 17 + `assistant_session_policy` 15 + `fs_policy` 14 + `assistant_window_policy` 11 + `power_policy` 6 + `shell_policy` 9），51 条要 `cargo test`（含 `hands.rs` 那 7 条与 `mcp.rs` 那 8 条，本机跑不了），见 AGENTS §11 |
 | Tauri 命令 | 95 个 | |
 | 权限 | 12 项全可用 | `media:control` 在 v0.4、`agent:activity` 在 v0.8、`audio:level` / `shell:open` 在 v0.9、`llm:chat` 与 `desktop:control` 在 v0.10 补齐、`agent:tools` 在 v0.11 补齐 |
-| 踩过的坑 | 86 条 | [`PITFALLS.md`](./PITFALLS.md) |
+| 踩过的坑 | 87 条 | [`PITFALLS.md`](./PITFALLS.md) |
 
 ---
 
@@ -262,7 +262,7 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **百分比不夹紧**：>100 当成读不到（`null`），不画成满格 —— 坏读数装成满电比不显示更糟。
     - **不做平台侧缓存**：节流交给组件的 `schedule.every`（30 秒一拍，卡片藏起来就停），平台每秒问一次只是空转。
     - **单独一条命令，没折进 `system_metrics`**：两条命令读两套 Win32 API，失败模式也不同 —— 台式机没有电池是「正常但没有电池」，不是错误。
-  - **本地目录和公开目录还差五个**：本地 19 个官方包，`unraveltao/lattice-registry` 上是 14 个 —— 少 `lattice.anki`、`lattice.battery`、`lattice.diagram`、`lattice.pet`、`lattice.habit`（五个都是后加的）。发上去就走 `npm run publish:widget -- public/widgets/<id> --key <私钥>` 再提 PR，流程与判据在 [`reference/build.md`](./reference/build.md) 第四节。
+  - **本地目录和公开目录对齐了（2026-10-26）**：本地 19 个官方包，`unraveltao/lattice-registry` 从 14 个补到 19 —— 差的正是后加的那五个：`lattice.anki`、`lattice.battery`、`lattice.diagram`、`lattice.pet`、`lattice.habit`。每个走一条 `npm run publish:widget -- public/widgets/<id> --key ../lattice-registry/.keys/publisher.key`（打包、签名、写 sidecar、重建 `registry.json` 一次做完），五个图标顺手补进 `icons/`（另外 14 个都有，缺了在目录里是一块空白）。Pages 部署之后线上 `registry.json` 就是 19 个，挑一个包直链验过 200。流程与判据在 [`reference/build.md`](./reference/build.md) 第四节。
 
 **明确不做**：账号、云端评分、下载计数、组件市场首页。这些全都要服务端，而 v0.5 的整个前提是"没有服务端"。评分和举报继续落本地文件（`reports/*.json`），作者自己收 —— 假装有云端比没有更糟。
 
@@ -275,14 +275,17 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 - [ ] **代码签名** —— 没有证书，用户第一次运行会被 SmartScreen 拦成"未知发布者"，点"仍要运行"才装得上。**2026 年重新算过账：不买证书。** 完整论证在 [CODE_SIGNING.md](./CODE_SIGNING.md)，一句话版：EV 从 2024 起不再跳过 SmartScreen、Azure Artifact Signing 的个人开发者只限美/加、OV 一年一续且私钥必须进硬件 —— 付费唯一买到的是"发布者名字从'未知'变成你的"，而 SignPath Foundation 免费给同样的东西。原先这条写的是"要花钱买 OV/EV 证书"，那句话是错的。
   - [ ] **提 SignPath 申请** —— 免费 OV 级证书。它要求的四条我们全都有了：MIT（`LICENSE`）、公开仓库、`release.yml` 从 `v0.1.0` 起就在 `windows-latest` 上全自动构建、有已发布的 release。审核 1–3 个工作日。批准后 `release.yml` 加一步签名，**必须用 `vars.SIGNPATH_ORGANIZATION_ID != ''` gate 住** —— 没配就照常发未签名的包，别让一次审核卡住整个发布。
   - [ ] **验一次信任链** —— 有个中文博客说它链到私有根 `SignPath Root CA G2`、不在 Windows 默认信任库里，这和微软"OV-level certificate signing"的措辞对不上（另有第三方指南说是 DigiCert 签发）。三种说法都记在 CODE_SIGNING.md，**没证实，别当事实传**。签出第一个包后按文档里的 `Get-AuthenticodeSignature` + 一台干净 Windows 验一遍再定论。
-  - [x] **winget manifest** —— **清单生成器和 CI 附件都做了；第一次真的提 PR 还没发生**（那要等一个发布出去的安装包）。winget 下载的包不带 Mark-of-the-Web，用户根本不走"浏览器下载 → SmartScreen 拦"这条路，是免费方案里最接近"真的不弹警告"的一条。
-    - **手抄的三样东西改成现算**：版本号 + 安装包直链 + SHA-256，抄错不会在本地红，要等 microsoft/winget-pkgs 的校验器说。现在 `scripts/winget-manifest.mjs` 从**这次真正打出来的那个 exe** 上算（`npm run winget:manifest`），`release.yml` 打完包顺手把三份 YAML 传成 release 附件 —— 发版时只差一次 PR。
+  - [x] **winget manifest** —— 生成器、CI 附件，以及**第一次真的提 PR** 都有了：`microsoft/winget-pkgs#461881`（2026-10-26，`unraveltao.Lattice` 0.1.1，三件套）。Microsoft 那条 CLA 需要作者本人回一句 `@microsoft-github-policy-service agree`（那是法律动作，别人代不了）。winget 下载的包不带 Mark-of-the-Web，用户根本不走"浏览器下载 → SmartScreen 拦"这条路，是免费方案里最接近"真的不弹警告"的一条。
+    - **第一次 `winget validate` 就红了一处**：locale 那份的 `ManifestType` 写成了 `singleton`（三件套只认 `defaultLocale`），而**测试把错的当期望值钉住了** —— 生成器和测试一起错，本地一路绿。修在 `ddb8019`，测试加了"三件套里不许出现 singleton"，坑记进 [`PITFALLS.md`](./PITFALLS.md) 第 87 条。
+    - **手抄的三样东西改成现算**：版本号 + 安装包直链 + SHA-256，抄错不会在本地红，要等 microsoft/winget-pkgs 的校验器说。现在 `scripts/winget-manifest.mjs` 从**这次真正打出来的那个 exe** 上算（`npm run winget:manifest`），`release.yml` 打完包顺手把三份 YAML 传成 release 附件 —— 这次 PR 用的就是那三份（`winget validate` 过后重传了一遍，哈希仍是 `5FD4C0F8…`）。
     - **清单不进仓库**：它描述"某个版本的某个字节"，和 `.lattice` 包一样是发布产物（`dist-winget/` 在 `.gitignore` 里）。存一份在仓库里的结局是"哈希和真包不是一份"。
     - **`InstallerType: nullsoft` + `Scope: user` 是 Tauri 在 Windows 上的真实形状**（NSIS、装进 `%LOCALAPPDATA%`）；`Publisher` 取 `identifier` 的第二段（Tauri 自己的默认规则，这台机器上是 `iron-tom`），和安装器 ARP 里那个名字一字不差 —— 所以没有为此去改 `bundle.publisher`：那会连带换掉卸载信息所在的注册表路径，已装的用户会多一条残留。
     - **`npm run test:winget` 11 条**钉住生成器的形状（哈希大写、直链与附件名同源、Publisher 的来源、两次生成逐字节相同），`frontend` job 跑它。
     - **Scoop 仍然没做**：要再维护一个 bucket，而且 NSIS 的静默参数没在真机上验过。先让 winget 这一条真跑通一次，再谈它（理由写在 [`reference/build.md`](./reference/build.md) 第五节末尾）。
   - [x] **release 附 SHA-256** —— 签名回答"谁做的"，哈希回答"有没有被换过"，未签名期间后者是唯一能给的。写在 `release.yml` 末尾，带 `continue-on-error`（编译完再判红太亏）。**下一次打 tag 才第一次真跑**，在那之前它只是写好了。
 - [ ] **发布流程跑通一次** —— 打 tag → Actions 出草稿 release → 人工发布 → 旧版本点 Check for updates 能升上来。本地已经把"构建 → 签名 → 出安装包"跑通了，CI 那一侧也跑通了（`v0.1.0` 就是 Actions 出来的，2.67 MB 的 NSIS 安装包 + `.sig` + `latest.json`）。
+  - **2026-10-26 真走了一遍前面的四步**：`v0.1.1` 的 tag 重打到 `66090f0`（重打是允许的，草稿还没发布；原来的 tag 落后 28 个提交，而且它那一版 `release.yml` 还没有 winget 那一步）→ Actions 出草稿（安装包 + `.sig` + `latest.json` + 三份 winget 清单）→ 用 API 发布（`draft: false, prerelease: false`，没碰那个勾）→ 线上端点核过三样：`releases/latest/download/latest.json` 200、里面 `version` 是 `0.1.1`、`platforms.windows-x86_64` 的签名 436 字符与直链同一次构建；exe 直链取前 1 KB 回 206。
+  - **剩下的只有最后一句"旧版本点 Check for updates 能升上来"** —— 那要在一台真的装着 `v0.1.0` 的机器上点一次，属于真机验收。
   - **踩到一个坑**：`v0.1.0` 发布时勾了 "Set as a pre-release"，更新器于是报"检查你的网络"，而网络完全正常。症状、真实原因、修法在 [`PITFALLS.md`](./PITFALLS.md)「目录、签名与网络」那一组 —— 这条特别值得记，因为它的症状和原因长得完全不像。
 
 ### 三条边界，别改
