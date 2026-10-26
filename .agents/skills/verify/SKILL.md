@@ -26,7 +26,7 @@ TypeScript 6 + React 19。它不检查 `.html` 里的断言，也不碰 Rust。
 
 ## 2. 按改动挑断言页（不要每次都跑全量）
 
-全量是 50 页 / 2 325 条，慢；先用 `--filter` 命中相关页，交付前再考虑全量。
+全量是五十多页、两千八百多条，慢；先用 `--filter` 命中相关页，交付前再考虑全量。
 
 ```bash
 npm run dev                                   # 另一个终端；断言页要 dev server 才能 import .ts/.tsx

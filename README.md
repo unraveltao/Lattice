@@ -331,18 +331,21 @@ examples/counter/    a drag-and-drop sample widget
 scripts/             widget index, scaffold, pack, sign, store index, agent CLI, tauri wrapper
 src-tauri/src/       40+ modules, each split into a Win32 shell and a pure-logic policy with tests
 tests/               browser assertion pages
-docs/                architecture, widget spec, roadmap, code signing, agent access
+docs/                architecture, widget spec, roadmap, code signing, agent access, FAQ
+docs/design/         the reasoning behind each decision (accepted / superseded)
+AGENTS.md            platform invariants — read before changing src/ or src-tauri/
+CONTRIBUTING.md      clone → push, and what gets rejected
 ```
 
 **Code, roughly**
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 24 168 lines |
+| TypeScript | 24 178 lines |
 | CSS | 6 204 lines |
 | Rust | 24 353 lines |
 | SDK | 961 lines |
-| Widgets + example | 26 969 lines |
+| Widgets + example | 27 046 lines |
 | Scripts | 5 499 lines |
 
 **Read next**

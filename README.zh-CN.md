@@ -323,18 +323,21 @@ examples/counter/    一个可以直接拖进去的示例组件
 scripts/             组件索引、脚手架、打包、签名、目录生成、agent CLI、tauri 包装
 src-tauri/src/       40 多个模块，每个拆成"Win32 胶水 + 带单测的纯逻辑"
 tests/               浏览器断言页
-docs/                架构、组件规范、路线图、代码签名、agent 接入
+docs/                架构、组件规范、路线图、代码签名、agent 接入、常见问题
+docs/design/         每个决定的推理（accepted / superseded）
+AGENTS.md            平台不变量 —— 改 src/ 或 src-tauri/ 之前先读
+CONTRIBUTING.md      从 clone 到 push 的顺序，以及什么会被拒
 ```
 
 **代码量，大致**
 
 | 部分 | 行数 |
 | --- | --- |
-| TypeScript | 24 168 行 |
+| TypeScript | 24 178 行 |
 | CSS | 6 204 行 |
 | Rust | 24 353 行 |
 | SDK | 961 行 |
-| 官方组件 + 示例 | 26 969 行 |
+| 官方组件 + 示例 | 27 046 行 |
 | 脚本 | 5 499 行 |
 
 **接着读**
