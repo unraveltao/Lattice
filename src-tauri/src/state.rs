@@ -22,11 +22,17 @@ fn state_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// 读回上次存下的状态。文件不存在算正常情况（第一次启动），返回 None。
+///
+/// **BOM 要在这里剥掉**。这份文件是可以手改、可以备份回去的，而记事本 /
+/// `Set-Content -Encoding utf8` 这类工具会在开头写一个 `EF BB BF`。前端拿到
+/// 带 BOM 的文本 `JSON.parse` 会直接抛，hydrate 落到默认值，然后（因为
+/// `hydrated` 已经置真）把默认值写回磁盘 —— 用户的摆放、授权、已装列表**静默
+/// 归零**。这条已经在本机发生过一次，所以宁可在这一个边界上吃掉它。
 #[tauri::command]
 pub fn state_read(app: AppHandle) -> Result<Option<String>, String> {
     let path = state_path(&app)?;
     match std::fs::read_to_string(&path) {
-        Ok(text) => Ok(Some(text)),
+        Ok(text) => Ok(Some(text.trim_start_matches('\u{feff}').to_string())),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(format!("failed to read state: {error}")),
     }

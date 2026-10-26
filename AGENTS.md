@@ -194,7 +194,7 @@ src-tauri/src/
   backup.rs               覆盖安装前的备份与回滚（回滚是**交换**，只留一代）
   store.rs                商店命令：取目录、下载包（带缓存）、验签安装、写举报
   instance.rs             单实例：命名互斥体 + 命名事件
-  state.rs                平台状态落盘（state.json，原子替换）
+  state.rs                平台状态落盘（state.json，原子替换）；**读的时候先剥 BOM** —— 这份文件可手改、可备份回去，而记事本 / `Set-Content -Encoding utf8` 会写 `EF BB BF`，前端 `JSON.parse` 一抛就落默认值、再整份写回去（布局静默归零，见 PITFALLS「状态落盘」那条）
   widget_store.rs         组件私有存储落盘（widget-data/<id>.json）
   widgets.rs              用户组件的扫描 / 安装 / 卸载
 src-tauri/installer-hooks.nsh  NSIS 钩子：卸载时删掉 Run 注册表项（只此一处）
