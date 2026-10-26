@@ -3,7 +3,7 @@
 //! 组件是这条 shell 的皮肤，不是终端模拟器。没有 PTY、没有 ANSI、没有 xterm.js ——
 //! 它做的是"把一张卡片接到真的 PowerShell 上"，所以 `cd` 保留、`$env:` 保留、
 //! 输出是真的，代价是跑不了 `vim` / `ssh` / 任何要控制台的程序（设计里的能力边界，
-//! 见 [design/0010](../../docs/design/0010-terminal-widget.md) §3）。
+//! 见 [design/0018](../../docs/design/0018-terminal-widget.md) §3）。
 //!
 //! # 为什么不每条命令起一个进程
 //!
