@@ -59,6 +59,7 @@ import {
 } from "./runtime/diagnostics";
 import type { Permission } from "./runtime/manifest";
 import { languagePayload, setLanguage, t } from "./runtime/i18n";
+import type { TermEvent } from "./runtime/term";
 
 interface HostConfig {
   instanceId: string;
@@ -1488,6 +1489,29 @@ async function boot() {
   void listen<{ widgetId: string; key: string }>("lattice:widget-store", (event) => {
     if (event.payload.widgetId !== config.widgetId) return;
     post({ [BRIDGE_TAG]: 1, type: "store-changed", payload: { key: event.payload.key } });
+  });
+
+  /*
+   * 终端的输出流（`lattice.term`）。
+   *
+   * 桥是一问一答的，`ping -n 10` 那十行只能走事件。Rust 的 `emit` 到不了 iframe，
+   * 所以宿主页认领（按 `instanceId`，不变量 9）再转进去。
+   */
+  void listen<TermEvent>("lattice:term", (event) => {
+    if (event.payload.instanceId !== config.instanceId) return;
+    post({ [BRIDGE_TAG]: 1, type: "term", payload: event.payload });
+  });
+
+  /*
+   * 页面自己要走了：把这条 shell 收掉。
+   *
+   * 主路是 Rust 侧那个 `WindowEvent::Destroyed`（`runner.rs`），这一句补的是
+   * "窗口还在、宿主页先被换掉"（重载入口页、组件被卸载）的那一段。
+   */
+  window.addEventListener("pagehide", () => {
+    void invoke("term_dispose", { instanceId: config.instanceId }).catch(() => {
+      /* 应用正在退出，没人接这条命令了 */
+    });
   });
 
   /*

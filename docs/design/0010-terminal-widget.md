@@ -2,7 +2,12 @@
 status: accepted
 date: 2026-10-26
 supersedes:
-code: 未实现（这一份是先定决定、后写代码）
+code: src-tauri/src/term.rs, src-tauri/src/term_policy.rs, src-tauri/src/lib.rs,
+      src-tauri/src/runner.rs, src/runtime/term.ts, src/runtime/bridge.ts,
+      src/runtime/manifest.ts, src/runtime/catalogue.ts, src/runtime/i18n/misc.ts,
+      src/platform/WidgetFrame.tsx, src/widgetHost.ts,
+      public/widgets/lattice.term/{manifest.json,index.html,style.css,widget.js,icon.svg},
+      tests/term.html, tests/term.ts, docs/WIDGET_SPEC.md, AGENTS.md
 ---
 
 # 0010 —— 终端组件：一条常驻 shell 的皮肤

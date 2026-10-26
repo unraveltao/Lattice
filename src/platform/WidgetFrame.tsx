@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import {
   BRIDGE_TAG,
   handleBridgeRequest,
@@ -33,6 +34,7 @@ import { computeAlign, type AlignGuideState } from "../runtime/align-guides";
 import { languagePayload, useLang, useT } from "../runtime/i18n";
 import { useText } from "../runtime/widget-text";
 import { isWidgetLog, trace } from "../runtime/debug";
+import type { TermEvent } from "../runtime/term";
 import { WidgetIconMark } from "./icons";
 import { registerCanvasWidgetTools, unregisterCanvasWidgetTools } from "./widget-tools";
 import { snap, useLattice, type Placement } from "./store";
@@ -343,6 +345,48 @@ export function WidgetFrame({ record, placement, onGuides }: WidgetFrameProps) {
       dispose?.();
     };
   }, [post, record.manifest.id]);
+
+  /*
+   * 终端的输出流（`lattice.term`）。
+   *
+   * 桥是一问一答的，`ping -n 10` 那十行只能走事件。Rust 的 `emit` 到不了 iframe，
+   * 所以由宿主页认领（按 `instanceId`，不变量 9：`emit` 是广播）再转进去。
+   */
+  useEffect(() => {
+    if (!isTauri()) return;
+    let dispose: (() => void) | undefined;
+    let disposed = false;
+
+    void listen<TermEvent>("lattice:term", (event) => {
+      if (event.payload.instanceId !== placement.instanceId) return;
+      post({ [BRIDGE_TAG]: 1, type: "term", payload: event.payload });
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else dispose = unlisten;
+    });
+
+    return () => {
+      disposed = true;
+      dispose?.();
+    };
+  }, [post, placement.instanceId]);
+
+  /*
+   * 这个实例没了：把它那条常驻 shell 一起收掉。
+   *
+   * 卸载是画布这一侧**唯一**能观察到的信号（placement 被删、组件被卸、画布被清空）。
+   * 桌面窗口那条路有 `WindowEvent::Destroyed` 兜着（`runner.rs`），画布这条没有。
+   * 少了它，删掉卡片之后 `powershell.exe` 会一直躺到应用退出。
+   */
+  useEffect(() => {
+    if (!isTauri()) return;
+    const instanceId = placement.instanceId;
+    return () => {
+      void invoke("term_dispose", { instanceId }).catch(() => {
+        /* 应用正在退出，命令可能已经没地方答了 */
+      });
+    };
+  }, [placement.instanceId]);
 
   /*
    * 组件文件变了就重挂 iframe。

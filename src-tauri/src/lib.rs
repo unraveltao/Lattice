@@ -61,6 +61,8 @@ pub mod skills;
 pub mod skills_policy;
 pub mod state;
 pub mod store;
+pub mod term;
+pub mod term_policy;
 pub mod tray;
 pub mod usage;
 pub mod usage_policy;
@@ -231,6 +233,10 @@ pub fn run() {
             assistant_window::assistant_window_save_rect,
             usage::usage_read,
             usage::usage_clear,
+            term::term_write,
+            term::term_stop,
+            term::term_state,
+            term::term_dispose,
             quit_app,
             show_main_window,
             restart_app,
@@ -244,6 +250,9 @@ pub fn run() {
     app.run(|_app, event| {
         if let tauri::RunEvent::Exit = event {
             usage::flush();
+            // 终端组件的常驻 shell：一个都不许留。实例销毁那条路在宿主页卸载时
+            // 已经走过一次，但"组件早删了、进程还在"永远会遇到，退出是最后一道
+            term::kill_all();
         }
     });
 }

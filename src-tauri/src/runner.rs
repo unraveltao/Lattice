@@ -561,6 +561,22 @@ fn create(app: &AppHandle, spec: &WidgetWindowSpec, runner: &Runner) -> Result<(
     // 渲染进程整个挂掉时前端自己报不了（它就是那个进程），只能从这边看
     crate::crash::guard(app, &window, &spec.instance_id);
 
+    /*
+     * 窗口销毁 = 这个实例没了。
+     *
+     * 终端组件的常驻 shell 挂在这一条上：宿主页可能来不及发 `term_dispose`
+     * （渲染进程崩、进程被杀），而窗口一定会被 Tauri 收掉。少了它，任务管理器里
+     * 会留下一排 `powershell.exe`，而用户只是关了一张卡片。
+     */
+    {
+        let instance = spec.instance_id.clone();
+        window.on_window_event(move |event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                crate::term::kill_instance(&instance);
+            }
+        });
+    }
+
     // 缩放时窗口尺寸变了，圆角裁剪区域得跟着重算。
     // 放在 Rust 里做，省掉"上报前端 → 存 store → 再同步回来"这一圈，拖动边缘才跟手。
     //

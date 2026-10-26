@@ -291,6 +291,7 @@ const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set<string>([
   "agent:activity",
   "llm:chat",
   "agent:tools",
+  "terminal:exec",
   "desktop:control",
 ]);
 

@@ -8,7 +8,7 @@
 >
 > **要写新文档先看 [docs/README.md](./docs/README.md)**：哪份该读、哪份该改、新内容该放哪（按你要做的事找 + 三问定归属 + "一份事实只有一个家"）。还没做的事在动手前的推理放 [docs/design/](./docs/design/README.md)，写完的结论要沉回 ROADMAP 一行。
 >
-> **这一页 600 多行，按这个顺序读**：第 4 节（十九条不变量，改任何代码之前）→ 第 8 节（已知缺口，别把缺口当 bug 修一半）→ 第 7 节（你要改的东西对应的配方）→ 第 11 节（怎么验证）。词不认识查 [GLOSSARY.md](./GLOSSARY.md)，剩下的按需查。
+> **这一页 600 多行，按这个顺序读**：第 4 节（二十条不变量，改任何代码之前）→ 第 8 节（已知缺口，别把缺口当 bug 修一半）→ 第 7 节（你要改的东西对应的配方）→ 第 11 节（怎么验证）。词不认识查 [GLOSSARY.md](./GLOSSARY.md)，剩下的按需查。
 
 ---
 
@@ -82,6 +82,7 @@ src/
     help.ts               组件说明与变更记录：清单里的 `help` / `changelog`、上限、逐条丢弃（纯函数，`tests/help.html` 钉着）
     registry.ts           组件发现：bundled（public/widgets）+ user（%APPDATA%）；入口地址解析
     bridge.ts             RPC 桥：方法表、权限闸门、平台内置方法
+    term.ts               终端的事件形状（`TermEvent` / `TermState`）：两个宿主只按 `instanceId` 转发，不解释正文
     appearance.ts         底板外观模型：归一化、合成色、亮度阈值
     diagnostics.ts        错误通道：认出组件报上来的错、去重指纹、挑主错误
     widget-reporter.js    注入进组件文档的上报脚本（**唯一真源**，两条发文档的路都读它）
@@ -173,6 +174,8 @@ src-tauri/src/
   web_policy.rs           网页那道的形状：`Location` 解析（绝对 / `//` / `/` / `?` / 相对 + `.`/`..` 折叠）、HTML 折正文（去 `script`/`style` 体、块级换行、实体表）、字符上限与截断（21 条 `rustc --test`，**不引 crate**）
   screen_policy.rs        屏幕那道的形状：窗口判据（不可见 / cloak / 无标题 / 零尺寸）、标题压平与按字符截断、截图落点、PNG 容器（签名 / IHDR / IDAT / IEND、CRC32、每行滤波字节、stored zlib）（21 条 `rustc --test`，**不引 crate**）
   input_policy.rs         键鼠那道的形状：键名 → 虚拟键码（含 F1–F24 与 OEM 标点）、`Ctrl+S` 解析、文字 → UTF-16 按键序列（中文 / emoji / 换行）、虚拟桌面归一化到 0..65535（23 条 `rustc --test`，**不引 crate**）
+  term.rs                 终端组件（`lattice.term`）的那条常驻 shell：一实例一条 `powershell.exe`（`pwsh` 兜底）、哨兵切分、输出按 `lattice:term` 事件推、环形补发、两条收尸路（实例销毁 / 应用退出）；三只命令 `term_write` / `term_stop` / `term_state`，外加 `term_dispose`
+  term_policy.rs          上面那道的纯逻辑：哨兵与命令脚本（UTF-8 → base64 那条通道）、preamble、安全前缀切分、`Done` 解析、环形缓冲上限、单命令 64KB 夹紧（14 条 `rustc --test`，**不引 crate**）
   mcp.rs                  assistant 的第六只手（0004 的 P6）：`mcp.<server>.<tool>` 的发现与执行 —— `mcp.json`（`{version, servers: [{id, label, transport, command, args, url}]}`）读写、两种传输（stdio：`cmd /C` 起子进程 + 换行分隔的 JSON-RPC + `CREATE_NO_WINDOW`；http：streamable POST + SSE `data:` 帧 + 回 echo `Mcp-Session-Id`）、`initialize` → `notifications/initialized` 握手、`tools/list` 发现与 `tools/call`、三个命令（mcp_servers / mcp_servers_save / mcp_tools）；**一次调用一条连接，不复用**；`spawn_blocking` 里跑
   mcp_policy.rs          上面那道的纯逻辑：工具名三段形状（`mcp.<server>.<tool>`）、服务 id 的字母表与撞名去重（`_2`）、工具段压成 `[a-z0-9_-]`、`cmd /C` 的命令行拼装与引号、换行分隔 JSON 的切帧、三种请求体（initialize / tools-list / tools-call）（17 条 `rustc --test`，**不引 crate**）
   assistant_session.rs    assistant 的会话存档：`assistant-sessions/<id>.json` 的读写列删（四条命令 assistant_sessions / assistant_session_load / assistant_session_save / assistant_session_delete），保存时按 200 条 / 1 MB 两道预算裁最老的、`truncated` 写回文件让人知道"它掉过头"；标题取第一句用户的话前 12 个字（算不出来就存空串，界面自己翻）；坏文件不拦列表，标 `damaged: true`
@@ -206,7 +209,7 @@ docs/                     架构、组件规范、路线图与踩坑、代码签
 ---
 
 
-## 4. 十九条不变量（改代码前必读）
+## 4. 二十条不变量（改代码前必读）
 
 1. **零内置**。平台本身不含任何组件。随应用分发的包（`bundled`）必须显式"安装"（记进 `installedIds`）才可用；用户目录里的包（`user`）在磁盘上即已装。不要为了"体验好一点"让 bundled 自动可用，那会把扩展平台退化成桌面工具。
 2. **两个宿主，一套桥**。画布里的 `WidgetFrame.tsx` 和桌面上的 `widgetHost.ts` 都必须走 `runtime/bridge.ts` 的同一张方法表。**任何"只在预览能用"或"只在桌面能用"的分叉都是 bug**，不是特性。
@@ -263,6 +266,11 @@ docs/                     架构、组件规范、路线图与踩坑、代码签
     - **术语表只收跨块共用的词**。边界是"组件作者能看见，且前端 / Rust / SDK 都会用到"。某个 slice 的内部字段、某条 Rust 命令名不进表——代码本身就是它的家。
     - **术语表定"是什么"，规范定"必须怎样"**。同一个词在 `WIDGET_SPEC` 里有行为约束时，`GLOSSARY` 只写一句话定义加一条指向，别把契约抄第二遍（`docs/README.md` 第四节）。
     - **改术语表用精确替换，不许整份重写**。它和第 12 节第 7 条那几个文件一样是冲突高发区：改完立刻 `git add GLOSSARY.md && git commit`。术语表被写歪不会报错，只会让后面每一份文档都跟着歪，所以**新增或改动条目后看一眼 `git diff`**，纯措辞微调可以跳过。
+20. **流式的东西走事件，不走桥的返回值；活的东西要有两条收尸路**。终端组件（`lattice.term`）是第一个"一条命令的输出比一次调用活得久"的能力，四条别踩回去：
+    - **桥是一问一答的，流只能走事件**。`term.write` 只回编号，正文从 `lattice:term` 一条条来（Rust `emit` → 宿主页按 `instanceId` 转发 → iframe）。把 `ping -n 10` 塞进一个 Promise 的后果不是"慢一点"，是"等十秒一次性出现"——而那正好是终端最不能忍的。任何新能力只要"边跑边有话说"，都按这个形状来（`llm_chat_stream` 同一条）。
+    - **输出要留补发缓冲**。窗口藏起来回来、权限变更重载 iframe，中间那段事件会缺；`term.state { since }` 让平台把 `seq` 之后的缓冲重发一遍（环形缓冲，`term_policy::RING_EVENTS` / `RING_BYTES`）。只有 `seq` 没有正文的"对账"是假的 —— 组件缺的是那几行字。
+    - **常驻进程要有两条收尸路，少一条就漏**。一条是实例销毁（画布：宿主页卸载时 `term_dispose`；桌面：`runner.rs` 的 `WindowEvent::Destroyed` → `term::kill_instance`），另一条是应用退出（`RunEvent::Exit` → `term::kill_all`）。只挂第一条，"组件早删了、进程还在"会一直留到重启；只挂第二条，用户关一张卡片就多一个 `powershell.exe`，而任务管理器里没人知道它是谁的。
+    - **每个实例一条进程，别按命令起进程**。实测每条命令 480ms 起步（常驻之后约 40ms），而"每条命令起一个"还会顺手丢掉 `cd` 和变量 —— 于是"终端"就变成了"命令输入框"。代价要写在组件说明里：跑不了 `vim` / `ssh`，没有 `Ctrl+C`（停 = 杀 shell），没有 ANSI 颜色。
 
 ---
 
@@ -342,6 +350,7 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 3. 要碰系统/文件 → 写 Rust 命令，注册进 `lib.rs` 的 `invoke_handler`
 4. `docs/WIDGET_SPEC.md` 的方法表补一行（第三方只认这张表）
 5. 权限未授予时**返回结构化错误**，不要抛异常——组件要能降级
+6. 方法要"边跑边有话说"（流式输出、常驻进程、长任务）→ 先读不变量 20：桥只回编号，正文走事件，补发缓冲 + 两条收尸路，一个都不能省
 
 ### 加一项组件配置
 
@@ -395,7 +404,7 @@ if (data.type === "language") { lang = data.payload.lang; repaint(); }
 3. **首帧先按一门画**（不变量 18）：HTML 里写死一份、`lang.get` 回来再换。等桥的那几十毫秒里画"加载中"是把同一个等待画得更久。
 4. **清单那边的双语是 `{ zh, en }` 对象**，走 `normalizeText` / `pickText`（`runtime/widget-text.ts`）—— 字段清单和上限见 WIDGET_SPEC §2.7。搜索是两种语言都建索引的（`textVariants`），别只挑当前语言。
 5. **SDK 已经把这两件事包好了**：`lattice.language` + `lattice.on("language")`，启动时自动拉一次。手写桥的组件（内置组件全是手写的）照上面四行做。
-6. **内置组件必须真做到**，不是"建议"。19 个官方组件的清单文案、`<html lang>`、卡片里画出去的字（星期 / 月份 / 上午下午 / 计数 / 按钮 / 提示行）全是双语，写死的那一门是**中文**。`tests/help.html` 第 5 段钉着两件事：清单里该双语的字段两门齐全；每个组件的源码里既有 `lang.get` 也有 `language` 推送。只做一半的症状很隐蔽 —— 只听推送的，热重载之后就停在旧语言；只读一次的，用户换语言卡片一动不动。
+6. **内置组件必须真做到**，不是"建议"。20 个官方组件的清单文案、`<html lang>`、卡片里画出去的字（星期 / 月份 / 上午下午 / 计数 / 按钮 / 提示行）全是双语，写死的那一门是**中文**。`tests/help.html` 第 5 段钉着两件事：清单里该双语的字段两门齐全；每个组件的源码里既有 `lang.get` 也有 `language` 推送。只做一半的症状很隐蔽 —— 只听推送的，热重载之后就停在旧语言；只读一次的，用户换语言卡片一动不动。
 
 
 ### 改内置 assistant / 加一项 AI 能力
@@ -532,6 +541,7 @@ public/widgets/<id>/
 | --- | --- | --- |
 | **电池读数只在断言里验过**（v0.12 的 `lattice.battery`，见 ROADMAP 那条） | `tests/battery.html` 90 条 + `power_policy.rs` 6 条全过，`cargo check --all-targets` 干净 —— 但那全是「哨兵值认不认 / 百分比夹没夹」和「组件拿假读数画得对不对」。**没验的是真硬件**：插上电、拔掉、低电量、省电模式，以及台式机（没有电池）上卡片画的是「No battery」而不是 0% | 起一次桌面应用 → 装 Battery 摆一张：插电时看得到在充电与百分比 → 拔掉电源，几十秒内剩余时间出来、交流那行消失 → 台式机上确认画的是「No battery」而不是 0% → 撤掉 `system:monitor` 再点，卡片该说它缺这一项权限。**别在平台侧加缓存或后台线程来"验"它** —— 那是把节流从组件的 `schedule.every` 挪走 |
 | **assistant 小窗的窗口行为只在断言里验过**（v0.13，见 ROADMAP 那条与 [0007 §6](./docs/design/0007-assistant-on-desktop.md)） | 八条命令都接了线（`AssistantWindow.tsx` 真的在 invoke，不再是"看着能点"），`tests/assistant-window.html` 33 条 + `assistant_window_policy.rs` 11 条全过，`cargo check --all-targets` 干净 —— 但那全是"夹进屏幕对不对 / 坏值退得对不对 / 界面读到的状态对不对"。**没验的是真窗口**：桌面模式按 Win+D、被别的应用整个盖住之后还在不在；点它能不能拿到键盘焦点、敲的字进不进输入框；锁上之后标题栏和三个手柄是不是一起失效；拉到 900×700 松手、退掉重启还是不是这个尺寸；切回浮窗那一轮对话有没有少；底板三档值有没有真落到 `assistant-window.json` | 起一次桌面应用（`npm run tauri:dev`）走一遍：`Ctrl+K` 开小窗 → 底板面板里那行开关切到桌面 → Win+D 再回来 → 点输入框敲一行 → 上锁后拖标题栏与右下角手柄（都不该动）→ 拉到 900×700 松手 → 退出重进（尺寸 / 模式 / 底板都还在）→ 切回浮窗，刚聊的那轮还在。**模式开关在底板面板里，别再往标题栏放一颗** —— 它长得像最大化，2026-10-25 删过一次 |
+| **终端只在断言与探针里验过**（v0.13 的 `lattice.term`，见 ROADMAP 那条与 [0010](./docs/design/0010-terminal-widget.md)） | `tests/term.html` 67 条 + `term_policy.rs` 14 条全过，`cargo check --all-targets` 干净 —— 但那全是"切分对不对 / 历史存得对不对 / 假事件画得对不对"。真跑过的只有 `.scratch/` 里那几个探针（`powershell -Command -` 的 stdin、stderr、退出码、`cd` 保留、中文、多行块），**没验的是整条链路**：Rust `emit` → 宿主页按 `instanceId` 转发 → iframe，以及下面五条验收 | 起一次桌面应用 → 装 Terminal 摆一张 → `cd C:\Windows` 再 `dir`，列出来的必须是 `C:\Windows` 的东西（不是安装目录）→ `ping -n 10 127.0.0.1` 一行一行出、不是十秒后一起出 → 点 Stop，任务管理器里那个 `powershell.exe` 真的没了 → 敲 `echo 你好` 回显正常、不乱码 → 删掉这张卡，进程没留下；退出应用，`Get-Process powershell` 里不该有它起的那些。**别用"输出出现了"当通过**：这条能力要验的是顺序与收尸 |
 | **组件工具的遗留**（v0.11 数据平面，见 ROADMAP 的 v0.11 那条） | 组件把能力声明成工具这条路通了（`agent:tools` + `widget.<id>.<tool>` + `lattice.diagram`），SDK 那一侧收口了（`lattice.agentTools()`，0012），**小窗那一轮也收口了**：清单与执行都收进 `AssistantSurface`，小窗走 `assistant_widget_tools` / `assistant_widget_call` 问主窗口要（0013，`tests/widget-tools.html` 55 条 + `tests/agent.html` 70 条钉着）。**只剩一处**：**不唤醒窗口** —— 画布上那张是破卡或组件没装时，调用直接回 `not-running` 给模型（"建窗口 → 等宿主页 boot → 再投递"是一串会输的竞态，所以故意不做） | 真机走一遍小窗那条 IPC（装 `lattice.diagram` + 授 `agent:tools` + 摆一张 → `Ctrl+K` 问"帮我画个流程图" → 该画出来；撤掉授权再问 → 该说没有这个工具）；「唤醒」要么接受现状，要么做成一次显式请求而不是默认路径 |
 | **`shell.open` 只过了单测** | `open_policy.rs` 的 5 条 `rustc --test` 全过、`cargo check` 干净、`tests/bookmarks.html` 48 条全过 —— 但那全是"规则对不对"和"组件答得对不对"。**没验的**是最后一步：`ShellExecuteW` 到底有没有把浏览器叫起来，以及撤掉 `shell:open` 之后点一行是不是只出提示、什么都不打开 | 起一次桌面应用 → 装 Bookmarks（属性面板里勾上 Open links）→ 点一行看默认浏览器是否起来（`shell.open` 成功只代表"交给系统了"，浏览器起不来它也不会知道）→ 撤掉 Open links 再点一次，卡片应显示 "It needs the Open links permission"，任务管理器里不该多出浏览器进程。**跑之前先确认没有残留的 `lattice.exe`**，孤儿进程会用内存里那份盖掉 `state.json` |
 | **手在真机上还有三处没走过**（其余 2026-10-25 已验，见 [AGENT_ACCESS §4.9](./docs/AGENT_ACCESS.md)） | 六组开关、审批、六种手都在真机上跑通了：文件（中文路径与中文内容、二进制拒读、写 UTF-8 无 BOM）、`shell.run`（中文输出、退出码、按 Stop 1517ms 后子进程真的没了、`timeoutMs: 2000` 跑 20 秒的睡眠 → 2013ms 回 `timedOut`）、`web.fetch`（HTML 折成正文、跟 302 到新地址）、屏幕（列窗口 + 3456×1081 PNG 落盘）、MCP（自建 stdio 探针：起进程、`initialize`、`tools/list`、`tools/call`，第二次发现走缓存）、键鼠（点、打字含 emoji、`Enter`），以及**一轮完整对话里 Deny 之后磁盘上确实没有那个文件**。**还没走的**：`hands.rs` 那 7 条与 `mcp.rs` 那 8 条 `cargo test` 本机跑不了（写不了 `target/debug/deps`）；截图内容只有人眼能看（模型 `vision: false`）；`input.key` 只验了 `Enter`，`Ctrl+S` 这类组合键没在前台窗口里试；撤掉某组开关之后模型再调它（`disabled`）只在单测里验过 | 换一台能跑 `cargo test` 的机器补那 15 条；再起一次真机，把「撤掉 Files 之后让它读」和「Ctrl+S 进前台窗口」各试一次 |
@@ -691,7 +701,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
 
 - `npm run typecheck` —— 必跑，当前是干净的
 - **`npm run check:tokens`** —— 三张表（字号 / 圆角 / 间距）的守门人，扫 `src/**/*.css`，越界就红并指出行号；`npm run test:tokens` 钉规则本身（半像素、`font` 简写、豁免、以及"仓库现状是干净的"）。改样式前后各跑一次，比肉眼数 `10.5px` 靠谱。真要写规矩外的值，行尾加 `/* token-ok 理由 */`，理由不写会被报。
-- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（55 页 / 2 726 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。**改断言就顺手 `grep -n '<页名>' AGENTS.md docs/`**：这一页和 §3 / §7 / `docs/AGENT_ACCESS.md` 里有十几处手写的「N 条」，条数没人替你核（`check:docs` 只对账总数），飘了不会红。
+- **`npm run test:browser`** —— 跑一遍 `tests/*.html` 里的全部断言（56 页 / 2 793 条）。先 `npm run dev` 起 dev server（默认 1420），另一个终端跑它；`--filter catalogue` 只跑匹配的页。它用 headless Chrome 的 `--dump-dom` 读 `<pre id="out">`，所以**页面的断言必须写成 `PASS …` / `FAIL …` 两行式**，别的格式它数不到。CI 里这条是 `browser` job，红在哪一页会直接打出来。**改断言就顺手 `grep -n '<页名>' AGENTS.md docs/`**：这一页和 §3 / §7 / `docs/AGENT_ACCESS.md` 里有十几处手写的「N 条」，条数没人替你核（`check:docs` 只对账总数），飘了不会红。
 - **断言页别等 iframe**。`--virtual-time-budget` 会让虚拟时钟一路快进到 9 秒，而 iframe 的 `load` 走真实网络 —— 谁先到看运气，快进赢了就 dump 到一个空的 `<pre>`，`test:browser` 报"0 条 —— 一条断言都没跑完"。那个症状和"页面没有断言"一模一样，别去调 budget（调大只是让赌局更偏一点，还是赌）。正确做法是**同步加载**：组件把纯逻辑挂在 `window.__latticeXxx` 上，普通 `<script src>` 引进来就能断言；拿不到那个对象时也要先 `log(false, …)` 再 `flush()`，否则页面永远吐 0 条。
 - 改了组件 UI：`npm run dev` 后在浏览器里看；要截固定尺寸的图，用 Edge headless：
   ```bash
@@ -739,7 +749,7 @@ chrome --headless=new --window-size=1560,1500 --virtual-time-budget=25000 \
   #[path = "../src-tauri/src/network_policy.rs"] mod network_policy;
   ```
   `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe`。**这就是"纯逻辑要单独拆成一个文件"的原因 —— 拆出来才测得到**。断言只有一份（`#[cfg(test)] mod tests` 在模块内部），壳子别复制。
-  能这么跑的现在是 371 条（全仓 422 条 `#[test]`，`grep -c` 一下就对得上）：`llm_policy.rs`（50，**不引 crate**）、`agent_policy.rs`（26）、`input_policy.rs`（23，**不引 crate**）、`web_policy.rs`（21，**不引 crate**）、`screen_policy.rs`（21，**不引 crate**）、`hands_policy.rs`（21，**不引 crate**）、`skills_policy.rs`（19，**不引 crate**）、`mcp_policy.rs`（17，**不引 crate**）、`assistant_session_policy.rs`（15）、`diagnostics.rs`（14）、`fs_policy.rs`（14，**不引 crate**）、`network_policy.rs`（12）、`assistant_window_policy.rs`（11）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`shell_policy.rs`（9，**不引 crate**）、`occlusion_policy.rs`（8）、`usage_policy.rs`（8）、`audio_policy.rs`（6）、`power_policy.rs`（6，**不引 crate**）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）。剩下 51 条（`protocol.rs` 6、`llm.rs` 15、`widget_store.rs` 5、`hands.rs` 7、`mcp.rs` 8、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
+  能这么跑的现在是 385 条（全仓 437 条 `#[test]`，`grep -c` 一下就对得上）：`llm_policy.rs`（50，**不引 crate**）、`agent_policy.rs`（26）、`input_policy.rs`（23，**不引 crate**）、`web_policy.rs`（21，**不引 crate**）、`screen_policy.rs`（21，**不引 crate**）、`hands_policy.rs`（21，**不引 crate**）、`skills_policy.rs`（19，**不引 crate**）、`mcp_policy.rs`（17，**不引 crate**）、`assistant_session_policy.rs`（15）、`diagnostics.rs`（14）、`fs_policy.rs`（14，**不引 crate**）、`term_policy.rs`（14，**不引 crate**）、`network_policy.rs`（12）、`assistant_window_policy.rs`（11）、`package_policy.rs`（11）、`catalogue_policy.rs`（9，要 `--extern serde_json=<rlib>`）、`crash_policy.rs`（9）、`signature_policy.rs`（9）、`shell_policy.rs`（9，**不引 crate**）、`occlusion_policy.rs`（8）、`usage_policy.rs`（8）、`audio_policy.rs`（6）、`power_policy.rs`（6，**不引 crate**）、`watch_policy.rs`（5）、`autostart_policy.rs`（5）、`guide_policy.rs`（5）、`metrics_policy.rs`（5）、`open_policy.rs`（5）、`signature.rs`（4）、`csp.rs`（3，要桩一个 `protocol::SCHEME` 常量）。剩下 52 条（`protocol.rs` 6、`llm.rs` 15、`widget_store.rs` 5、`hands.rs` 7、`mcp.rs` 8、`backup.rs` 4、`egress.rs` 3、`media.rs` 2、`store.rs` 1、`term.rs` 1）只有 `cargo test` 能跑，本机跑不了 —— 改动它们时靠 review 和真机验证。
   **壳子会过期，过期了要修，不要当它不存在**：`extract-test.rs` 曾经在 `package.rs` 加上验签之后编不过（`extract` 多了第三个参数、还引用了 `signature_policy` 和 `backup`），但 `rustc` 编译失败时旧的 `.exe` 还在，`&&` 串起来的写法会**跑那个旧二进制并显示全绿** —— 那才是最坏的情况。所以：编不过就是红，先看 `rustc` 的退出码，别信后面那行 `test result`。修法是给壳子补 `#[path]` 把 `signature_policy.rs` 编进来，`backup` 依赖 `tauri` 编不进来，就写一个签名对得上的桩（四条用例传的都是 `None`，走不到那条分支）。
   `package.rs` 要用到 `flate2` / `serde_json`，`signature.rs` 要用到 `ed25519_dalek` / `sha2`，壳子得额外指路：`rustc --edition 2024 --test 壳子.rs -L src-tauri/target/debug/deps --extern flate2=<rlib> --extern serde_json=<rlib> -o 壳子.exe`（rlib 从 `target/debug/deps/` 里按 `libflate2-*.rlib` 找）。只给 `--extern` 不给 `-L` 会报 `can't find crate`。`csp.rs` 那个桩的值要抄对（`"lattice-widget"`，不是 `"lattice"`），抄错了单测会红 —— 这次正好被它抓了一下。
   **raw `rustc` 的默认 edition 是 2015**，不带 `--edition` 编出来的 panic 消息不认内联捕获（`assert!(cond, "{index}")` 会报 unused placeholder，断言本身照样成立）。想安静就照着 crate 的 edition 给一个：`rustc --edition 2024 --test src-tauri/src/guide_policy.rs -o 壳子.exe`。

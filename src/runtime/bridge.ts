@@ -832,6 +832,61 @@ function readKey(params: unknown): string {
   return key;
 }
 
+/*
+ * 终端（`lattice.term`）：每个实例一条常驻 shell。
+ *
+ * 三条和别的方法不一样的地方：
+ *
+ * 1. **返回值只有编号**。输出走 `lattice:term` 事件（宿主页按 `instanceId` 转发进
+ *    iframe，见 WIDGET_SPEC §4.4）。桥是一问一答的 —— `ping -n 10` 那十行不可能
+ *    塞进一个 Promise，塞进去就等于"等十秒一次性出现"。
+ * 2. **命令形状复用 Rust 的 `shell_policy`**。这里先挡一道只是为了把"命令是空的"
+ *    变成 `bad_params`（组件看得懂），不是第二套危险命令判断 —— 判断不了危险命令，
+ *    那是 `shell_policy.rs` 开头写过的结论。
+ * 3. **`term.state` 的 `since` 是补漏**。窗口藏起来再回来、权限变更导致 iframe
+ *    重载，中间那段输出靠它重发（Rust 侧留着一个环形缓冲）。不传就只报状态。
+ */
+const TERM_MAX_COMMAND_CHARS = 8000;
+
+defineMethod("term.write", "terminal:exec", async (params, ctx) => {
+  const command = (params as { command?: unknown } | undefined)?.command;
+  if (typeof command !== "string" || !command.trim()) {
+    throw new BridgeError("bad_params", "term.write requires a non-empty string \"command\"");
+  }
+  if (command.length > TERM_MAX_COMMAND_CHARS) {
+    throw new BridgeError("bad_params", `a command may hold at most ${TERM_MAX_COMMAND_CHARS} characters`);
+  }
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "running commands needs the desktop app");
+  }
+  return await invoke<{ id: string }>("term_write", {
+    instanceId: ctx.instanceId,
+    command,
+  });
+});
+
+defineMethod("term.stop", "terminal:exec", async (_params, ctx) => {
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "running commands needs the desktop app");
+  }
+  return await invoke<{ ok: boolean }>("term_stop", { instanceId: ctx.instanceId });
+});
+
+defineMethod("term.state", "terminal:exec", async (params, ctx) => {
+  const since = (params as { since?: unknown } | undefined)?.since;
+  if (since !== undefined && (typeof since !== "number" || !Number.isFinite(since))) {
+    throw new BridgeError("bad_params", "term.state takes an optional number \"since\"");
+  }
+  if (!bridgeInTauri()) {
+    // 浏览器预览里没有 shell。回一份"没在跑"而不是抛错：卡片据此画空态
+    return { running: false, cwd: "", shell: "powershell" as const, seq: 0 };
+  }
+  return await invoke<{ running: boolean; cwd: string; shell: string; seq: number }>("term_state", {
+    instanceId: ctx.instanceId,
+    since: since ?? null,
+  });
+});
+
 /** 把 CSS 变量读成普通对象，组件据此跟随平台主题，不必自己判断明暗 */
 export function readThemeTokens(): Record<string, string> {
   const style = getComputedStyle(document.documentElement);

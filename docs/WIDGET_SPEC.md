@@ -481,8 +481,11 @@ if (data.type === "config-changed") {
 | `llm:chat` | `llm.chat`（用**用户自己配的**模型说一句话，花的是用户的额度，见 §3.4） | 可用 |
 | `desktop:control` | `assistant.ask`（让平台的模型**替你动桌面**，见 §3.5） | 可用 |
 | `agent:tools` | 组件清单里 `agent.tools` 声明的那几条工具可以被 agent / assistant 调用（见 §3.6） | 可用 |
+| `terminal:exec` | `term.write` / `term.stop` / `term.state`（在这个卡片里跑命令，见 §4.9） | 可用 |
 
 只申请你真正用到的。申请一堆用不上的权限，用户会直接不装。
+
+`terminal:exec` 是**最重**的一条：它能执行任意命令、读写你的文件、花你的时间。平台判断不了一条命令危不危险（`shell_policy.rs` 开头写过为什么：`Remove-Item` 和 `Get-ChildItem` 的差别在参数和变量里，任何黑名单都能被一行 `& $x` 绕过去），所以防线只有三处 —— 默认不授、授权那一屏把后果写成正文、商店卡片读同一句文案。**没有"只给内置组件"的例外**：第二套规则总有一天会被绕过，而绕过它不需要任何人犯错。
 
 `llm:chat` 是唯一一条"会花钱"的权限：它不碰网络、拿不到 key，但每次调用都在消耗用户充进去的额度。所以它和其它权限一样**逐项授权、按 widgetId**，而且默认拒绝 —— 授权界面上那行字叫 "Use my AI model"，用户看得懂自己点了什么。
 
@@ -749,6 +752,9 @@ parent.postMessage(
 | `llm.status` | — | — | `{ configured, model }`；只是"用户配没配模型"，拿不到 key，见 §3.4 |
 | `llm.chat` | `llm:chat` | `{ messages }` | `{ text }`；`messages` 是 `{role, content}` 数组，role 只认 `system` / `user` / `assistant`，见 §3.4 |
 | `assistant.ask` | `desktop:control` | `{ messages, persona? }` | `{ text, actions }`；平台替你跑一整轮带工具的对话，见 §3.5 |
+| `term.write` | `terminal:exec` | `{ command }` | `{ id }`；输出走 `lattice:term` 事件，见 §4.9 |
+| `term.stop` | `terminal:exec` | — | `{ ok: true }`；杀掉这条 shell，下一条命令会自动起一条新的 |
+| `term.state` | `terminal:exec` | `{ since? }` | `{ running, cwd, shell, seq }`；带 `since` 时把之后缓冲的事件重发一遍 |
 | `window.close` | — | — | 关闭当前组件实例的窗口，**但不删用户的 placement** |
 | `window.setRegion` | — | `{ parts }` | `{ ok, applied, parts }`；`shape: "region"` 才有 `applied: true`，见 §2.5 |
 | `window.moveBy` | — | `{ dx, dy }` | `{ ok, applied, x?, y? }`；`dx` / `dy` 是 **CSS 像素**位移，撞到工作区边缘会被夹紧，`x` / `y` 是夹紧后的**物理像素**落点，见 §2.6 |
@@ -844,6 +850,7 @@ await call("schedule.clear", { id: grant.id });
 | `{ __lattice: 1, type: "store-changed", payload }` | 本组件的私有存储被**任意**实例写入了 | `{ key }`，`key` 为空串表示整份文件被替换 |
 | `{ __lattice: 1, type: "config-changed", payload }` | 这个实例的配置被改了（属性面板） | `{ config }`，完整对象，见 §2.3 |
 | `{ __lattice: 1, type: "agent-call", payload }` | agent / assistant 调了你声明的工具 | `{ callId, tool, args }`；**必须**回一条 `agent-result` 带上同一个 `callId`，见 §3.6 |
+| `{ __lattice: 1, type: "term", payload }` | 终端组件的命令输出（Rust 的 `lattice:term` 转过来） | `{ instanceId, id, seq, kind, … }`，见 §4.9 |
 | `{ __lattice: 1, type: "ready" }` | 组件主动发出，表示已就绪 | 宿主收到后会立刻推一次主题和配置 |
 
 `store-changed` 的标准处理方式（两个示例组件都是这么写的）：
@@ -979,6 +986,38 @@ if (!touched && saved) apply(saved);
 `touched` 那个闸门不能省。桥回来之前用户完全可能已经点过分类、打过数字了，这时候把存档盖上去等于把他刚做的选择撤销掉。宁可这次不恢复，也不能吃掉用户的操作。
 
 也别用"加载中"占位：空白卡片和骨架屏是同一个等待，只是后者多画了点东西。默认值本来就是合法的界面。
+
+### 4.9 `term.*`：一条常驻 shell 的皮肤
+
+`lattice.term` 用这一组。它和别的方法有三处不一样，写在这里是因为第三方组件也可能想做同一类东西（一个"运行脚本"的卡片、一个"日志尾巴"的卡片）。
+
+**每个实例一条进程，不是每条命令一条。** 平台按 `instanceId` 挂一条 `powershell -NoProfile -NonInteractive -Command -`，命令从 stdin 进去、输出从 stdout 出来。实测启动约 480ms、之后每条约 40ms —— 每条命令起一个进程的话，"敲一条等半秒"就是硬伤。代价：跑不了 `vim` / `ssh` / 任何要控制台的程序，`Ctrl+C` 也没有（停止 = 杀掉 shell 再起一条，`cd` 和变量会丢）。
+
+**输出走事件，不走返回值。** `term.write` 只回一个编号：
+
+```js
+const { id } = await call("term.write", { command: "ping -n 10 127.0.0.1" });
+// 之后从 { type: "term" } 推送里一段段收正文（见 §4.4）
+```
+
+事件形状（`payload`）：
+
+| 字段 | 说明 |
+| --- | --- |
+| `instanceId` | 哪个实例的终端。宿主页按它转发，组件一般不用看 |
+| `id` | 这一条命令的编号（`term.write` 的返回值） |
+| `seq` | 单调递增的事件序号，`term.state` 拿它跟平台对账 |
+| `kind` | `chunk` / `done` / `lost` |
+| `stream` | `chunk` 才有：`stdout` / `stderr` |
+| `text` | `chunk` 才有：这一段的正文（已经按行归一过 `\r`） |
+| `code` | `done` 才有：退出码，拿不到时是 `null` |
+| `truncated` | `done` 才有：这一条输出超过 64KB，后面的被丢掉了 |
+
+**`lost` 不是错误，是事实**：shell 自己 `exit` 了、被杀软干掉了、用户按了停。组件该做的是说清楚，然后让下一条命令起一条新的（平台就是这么做的，不需要额外调用）。
+
+**`term.state` 的 `since` 用来补齐。** 窗口藏起来回来、权限变更导致 iframe 重载，中间那段事件可能没画上；带上手里最后那个 `seq`，平台会把之后缓冲的事件重发一遍（环形缓冲，最多 512 条 / 200KB）。
+
+**能力边界要写在组件自己的说明里**，别让用户以为这是 Windows Terminal：没有 ANSI 颜色、没有补全、没有多标签、跑不了交互式程序。
 
 ## 5. 沙箱限制
 

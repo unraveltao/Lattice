@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **87 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **90 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -145,6 +145,9 @@
 | 改完 CSS 打开页面，**一点样式都没有**：按钮是系统默认样子、元素挤成一坨，可 `styles.css` 明明有 12 万字节 | vite 的 CSS transform 缓存被写坏了 —— 多个进程同时改同一个 `.css`（这个仓库常态：几个 agent 并行）时，watcher 和 transform 抢同一份缓存，产物是**空串**：`curl /src/styles.css` 回来的 JS 里 `__vite__css = ""`。症状看着像"我的 CSS 语法错了"，其实内容完全正常 | 先别动 CSS：`curl -s http://127.0.0.1:1420/src/styles.css \| grep '__vite__css = ""'`，命中就 `touch src/styles.css`（只改 mtime，不动内容），一秒恢复。判据是"**文件有内容、页面没样式**" —— 那就不是 CSS 的问题 |
 | 想拍一张窄窗口（320 宽）的布局图，`--window-size=320,420` 拍出来却是 500 宽，`@media (max-width: 380px)` 死活不生效 | Chrome 的窗口有最小尺寸（这台机器上 500），`--window-size` 给再小也会被抬上去；`--headless=old` 一样。于是"窄窗口"根本没被造出来，媒体查询当然不匹配 —— 而这个失败**长得像"媒体查询写错了"** | 窄视口只能靠 iframe 造：外层页面里放一个 `width="320"` 的 iframe，iframe 的 viewport 就是它的框，媒体查询在里面判的正是这个宽度。顺带把 `innerWidth` 写进 `data-*` 用 `--dump-dom` 读出来核对，别靠截图反推 |
 | 断言页跑出 **0 条断言**，而这一页明明写着几十条 | 脚本字符串里直接写了 `</script>`（比如断言「原始 HTML 被转义」那一句）—— HTML 解析器不认 JavaScript，看到闭合标签就把这一页的 `<script>` 就地结束，后面的断言全变成页面上的文字。**「0 条」和「这一页没写断言」是同一个症状**，所以第一反应永远是回去数断言 | 写成 `<\/script>`（`\/` 在 JS 字符串里就是 `/`，但 HTML 解析器不认这一对）；`tests/markdown.html` 那行注释钉着原因 |
+| 终端卡片里以 `#` 注释结尾的命令永远"跑不完"：输出都出来了，停止按钮还在转；探针里 `find_done` 一直是 `None` | 哨兵和命令拼在同一行（`<命令>; Write-Output "<RS>LATTICE:<id>"`），而 PowerShell 的 `#` 是**行**注释 —— 从 `#` 到行尾，包括那个分号和哨兵，全被吃掉 | 哨兵单独占一行：`term_policy::script_for` 出两行（命令 + `sentinel_line`），整段交给 `Invoke-Expression` 跑，所以多行命令也能用。改拼法之前先想清楚"命令自己带注释"这件事在真实用法里一点都不少 |
+| 终端里敲中文命令，真实的 PowerShell 收到的是一串乱码（`找不到命令` 或者跑的是别的字），英文命令却一切正常 | 从 GUI 进程 spawn、没有控制台的 `powershell.exe -Command -` 按 **OEM 代码页**（这台机器是 CP437）解码 stdin，不是 UTF-8。前端一路上都是 UTF-8，坏就坏在最后这一跳 —— 而这条只有拿真命令探一次才看得见，单测里拼字符串永远是对的 | 命令和哨兵整段 UTF-8 后 base64，只送一行纯 ASCII：`$__lt_c = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('…')); Invoke-Expression $__lt_c`（`term_policy::wrapper_line`）。输出侧的编码由 preamble 那两行设成 UTF-8。别指望 `chcp 65001` —— 那是给控制台用的，管道 stdin 不看它 |
+| 哨兵字符串在 PowerShell 5.1 上原样打出来是 `u{1E}LATTICE:…`，切分永远匹配不上 | `` `u{1E} `` 这种转义是 **PowerShell 7** 才有的；Windows 自带的 5.1 不认它，把 `` `u `` 当转义失败、后面的 `{1E}` 原样留了下来 | 用 `[char]0x1E`（5.1 和 7 都认），由 `term_policy::SENTINEL_PREFIX` / `sentinel_line` 一处生成。设计稿里写的 `` `u{1E} `` 已经按实测改掉了，别再改回去 |
 
 ## 目录、签名与网络
 

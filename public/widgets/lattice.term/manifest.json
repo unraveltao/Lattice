@@ -1,0 +1,141 @@
+{
+  "id": "lattice.term",
+  "name": { "zh": "终端", "en": "Terminal" },
+  "version": "0.1.0",
+  "description": {
+    "zh": "桌面上的一条真 PowerShell：每条命令约 40ms，cd 会保留，输出一行一行回来。不是终端模拟器，跑不了 vim/ssh",
+    "en": "A real PowerShell on your desktop: about 40ms per command, cd sticks, output arrives line by line. Not a terminal emulator: vim/ssh will not work"
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 320, "h": 220, "minW": 240, "minH": 160 },
+  "layer": "top",
+  "permissions": ["terminal:exec"],
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "它是什么", "en": "What it is" },
+        "items": [
+          {
+            "zh": "一张卡片，接在你自己的 PowerShell 上。命令真的在跑，目录和变量真的留着。",
+            "en": "A card wired to your own PowerShell. Commands really run; the directory and variables really stay."
+          },
+          {
+            "zh": "每个实例一条常驻 shell，不是每条命令起一个进程 —— 所以一条命令几十毫秒，而不是半秒。",
+            "en": "One resident shell per instance instead of one process per command, so a command takes tens of milliseconds, not half a second."
+          },
+          {
+            "zh": "它只是那条 shell 的一块皮肤：没有模拟终端，没有 ANSI 颜色，没有命令补全。",
+            "en": "It is a skin over that shell: no terminal emulation, no ANSI colours, no completion."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "跑不了什么", "en": "What it cannot run" },
+        "items": [
+          {
+            "zh": "要控制台的程序会挂住或者吐乱码：vim、top、ssh、python 的交互式 REPL。",
+            "en": "Anything that wants a console hangs or garbles: vim, top, ssh, the interactive python REPL."
+          },
+          {
+            "zh": "这是能力边界，不是 bug。要待在里面干活，请开一个真终端；这张卡片是顺手看一眼。",
+            "en": "That is the boundary, not a bug. For work that lives inside a console, open a real terminal; this card is for a glance."
+          },
+          {
+            "zh": "彩色输出会变成普通文字（PowerShell 在非交互模式下本来也不吐颜色）。",
+            "en": "Coloured output becomes plain text; PowerShell in non-interactive mode would not colour it anyway."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "停与重开", "en": "Stop and restart" },
+        "items": [
+          {
+            "zh": "跑着的命令旁边有一颗方块：按它等于杀掉这条 shell，下一条命令会自动起一条新的。",
+            "en": "A square appears next to a running command: pressing it kills the shell, and the next command starts a fresh one."
+          },
+          {
+            "zh": "杀掉会丢掉 cd 和变量 —— 没有控制台就没有 Ctrl+C，只能整条重来。",
+            "en": "Killing loses the directory and variables; without a console there is no Ctrl+C, so it is all or nothing."
+          },
+          {
+            "zh": "命令自己 exit 了，卡片会直说 shell 退出了，敲下一条就重开。",
+            "en": "If the command exits the shell, the card says so; the next command starts a new one."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "输出太长", "en": "Long output" },
+        "items": [
+          {
+            "zh": "一条命令最多留 64KB，再多会丢掉并标上「已截断」。",
+            "en": "A command keeps at most 64KB; more is dropped and marked as truncated."
+          },
+          {
+            "zh": "卡片只显示最近 2000 行，滚动条往上翻得动，但更早的已经不在内存里了。",
+            "en": "The card shows the last 2000 lines; you can scroll, but older ones are gone from memory."
+          },
+          {
+            "zh": "行不会横向滚动：长行折行显示，拉到最宽也不会出现横向滚动条。",
+            "en": "Nothing scrolls sideways: long lines wrap, even at the widest size."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "权限", "en": "The permission" },
+        "items": [
+          {
+            "zh": "「在终端里跑命令」这一项默认不给，授予它等于允许这个组件执行任意命令、读写你的文件。",
+            "en": "Run commands is off by default; granting it lets this widget execute anything and reach your files."
+          },
+          {
+            "zh": "平台不判断一条命令危不危险 —— 判断不了。所以请只装你信得过的组件。",
+            "en": "The platform cannot judge whether a command is dangerous, so only install widgets you trust."
+          },
+          {
+            "zh": "撤掉权限会重载卡片，正在跑的 shell 会跟着停。",
+            "en": "Revoking the permission reloads the card, and the running shell stops with it."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "历史和落盘", "en": "History and storage" },
+        "items": [
+          {
+            "zh": "命令历史存在组件自己的存储里（最多 200 条，最近的在最后），不进平台的 state.json。",
+            "en": "Command history lives in the widget's own storage (up to 200, newest last), not in the platform's state.json."
+          },
+          {
+            "zh": "历史按实例分开：画布上那份和桌面上那份各记各的。",
+            "en": "History is per instance: the canvas copy and the desktop copy each keep their own."
+          },
+          {
+            "zh": "上下箭头翻历史，回车执行；空行不会发出去。",
+            "en": "Up and down walk the history, Enter runs; an empty line is never sent."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "changes": [
+        {
+          "zh": "第一个版本：每个实例一条常驻 PowerShell，命令输出一行一行回来，cd 保留。",
+          "en": "First release: one resident PowerShell per instance, output streaming back line by line, cd preserved."
+        },
+        {
+          "zh": "停一条命令 = 杀掉 shell 再起一条；命令历史留在组件自己的存储里。",
+          "en": "Stopping a command kills the shell and starts a new one; history stays in the widget's own storage."
+        },
+        {
+          "zh": "能力边界写在说明里：跑不了 vim/ssh，没有 ANSI 颜色，没有补全。",
+          "en": "The limits are documented: no vim/ssh, no ANSI colours, no completion."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

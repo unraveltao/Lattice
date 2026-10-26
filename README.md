@@ -110,14 +110,14 @@ How each version was argued out is in [ROADMAP](./docs/ROADMAP.md).
 
 | Metric | Value |
 | --- | --- |
-| Official widgets | 19 |
-| Permissions | 12 |
-| Tauri commands | 95 |
-| Browser assertions | 2 726 over 55 pages |
-| Rust tests | 422 |
-| Documented pitfalls | 87 |
+| Official widgets | 20 |
+| Permissions | 13 |
+| Tauri commands | 99 |
+| Browser assertions | 2 793 over 56 pages |
+| Rust tests | 437 |
+| Documented pitfalls | 90 |
 
-Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 371 `rustc --test` pure-logic cases plus 51 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
+Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split 385 `rustc --test` pure-logic cases plus 52 that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
 ## Two hosts, one bridge
 
@@ -324,7 +324,7 @@ Release: push a `v*` tag. Actions builds on `windows-latest`, signs the updater 
 ```
 src/                 React shell, canvas, inspector, settings, store
   runtime/           manifest · config · bridge · schedule · catalogue · agent · guides (pure logic)
-public/widgets/      the 19 official packages
+public/widgets/      the 20 official packages
 public/store/        the bundled catalogue (generated, not committed)
 packages/sdk/        @lattice/sdk — the single source of truth for the widget API
 examples/counter/    a drag-and-drop sample widget
@@ -338,12 +338,12 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 23 784 lines |
-| CSS | 6 103 lines |
-| Rust | 23 229 lines |
+| TypeScript | 23 956 lines |
+| CSS | 6 130 lines |
+| Rust | 24 282 lines |
 | SDK | 943 lines |
-| Widgets + example | 26 036 lines |
-| Scripts | 5 485 lines |
+| Widgets + example | 26 969 lines |
+| Scripts | 5 499 lines |
 
 **Read next**
 
@@ -356,7 +356,7 @@ docs/                architecture, widget spec, roadmap, code signing, agent acc
 | [docs/reference/build.md](./docs/reference/build.md) | Toolchain, build, release — the operational manual |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | The agent endpoint's threat model |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | Keys, trust anchors, what is *not* signed |
-| [AGENTS.md](./AGENTS.md) | 19 invariants, written for whoever touches this next |
+| [AGENTS.md](./AGENTS.md) | 20 invariants, written for whoever touches this next |
 
 If you read only one thing before changing code, read the invariants in [AGENTS.md](./AGENTS.md). They are not style preferences — each one is a bug that shipped.
 

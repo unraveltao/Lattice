@@ -1,0 +1,195 @@
+:root {
+  --bg: transparent;
+  --fg: #ecebe6;
+  --muted: #97978f;
+  --accent: #5dcaa5;
+  --border: rgba(255, 255, 255, 0.12);
+  --radius: 10px;
+  /* 正文用等宽，别的字用平台那套 —— "只在正文区用等宽字体" */
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", ui-monospace, monospace;
+  /*
+   * 警示色是**写死的**，和便签 / 待办 / 电池同一条取舍：平台推下来的令牌里
+   * 没有 `--lattice-danger`（`bridge.ts::readThemeTokens` 只送七个）。
+   */
+  --danger: #f09595;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  overflow: hidden;
+}
+
+.term {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* 不画黑框：底板由平台的壁纸 + 底色层负责，这里从头到尾透明 */
+  background: transparent;
+  padding: 6px 10px 8px;
+}
+
+/*
+ * 顶上 22px 给窗饰让位：桌面窗口右上角那排按钮浮在 6px 处、约 120×28。
+ * 只有状态点、名字和目录，所以右边整段留空。
+ */
+.term-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding-right: 120px;
+}
+
+.term-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+/* 跑着的时候是强调色，退出去了是警示色 —— 不看字也能分出三种状态 */
+.term-dot[data-state="running"] {
+  background: var(--accent);
+}
+
+.term-dot[data-state="lost"],
+.term-dot[data-state="denied"] {
+  background: var(--danger);
+}
+
+.term-title {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.term-cwd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/*
+ * 输出区。`pre-wrap` 是"长行折行、不横向滚动"的唯一写法：
+ * 换成 `pre` 会横向滚，换成 `normal` 会把缩进吃掉。
+ * `overflow-wrap: anywhere` 兜住那种一整行没有空格的路径。
+ */
+.term-out {
+  flex: 1;
+  min-height: 0;
+  margin: 2px 0 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  font-family: var(--mono);
+  /* 锁字号：列数由宽度算，字号不跟着变 */
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.term-line {
+  display: block;
+  min-height: 1.45em;
+}
+
+/* 命令回显：比输出弱一档，一眼能分出"我敲的"和"它回的" */
+.term-line.is-echo {
+  color: var(--muted);
+}
+
+/* stderr 整行警示色。不画背景块：底板是平台的，组件不参与 */
+.term-line.is-err {
+  color: var(--danger);
+}
+
+/* 平台自己说的话（权限被拒、shell 退出、已截断）：强调色，且带前缀 */
+.term-line.is-note {
+  color: var(--accent);
+}
+
+.term-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.term-prompt {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--accent);
+}
+
+.term-input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.4;
+  caret-color: var(--accent);
+}
+
+/* 没有原生控件的样子：沙箱的 color-scheme 是 normal，原生按钮会是浅色的 */
+.term-stop {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--danger);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  appearance: none;
+}
+
+.term-stop:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 输入框空着的时候，方块不该抢注意力：只有跑着才看得见（JS 管 hidden） */
+.term.is-denied .term-prompt,
+.term.is-denied .term-input {
+  color: var(--muted);
+}

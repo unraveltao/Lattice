@@ -62,7 +62,7 @@
 | --- | --- | --- |
 | 想知道某个词到底指什么 | [`../GLOSSARY.md`](../GLOSSARY.md) | 1 分钟 |
 | 写一个组件 | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 30 分钟 |
-| 改平台代码 | [`../AGENTS.md`](../AGENTS.md)（先读第 4 节十九条不变量） | 20 分钟 |
+| 改平台代码 | [`../AGENTS.md`](../AGENTS.md)（先读第 4 节二十条不变量） | 20 分钟 |
 | 加一个能力（桥方法 / 权限 / 窗口行为） | [`AGENTS.md` 第 7 节"常见改动的配方"](../AGENTS.md) + `WIDGET_SPEC` 对应章节 | 按需 |
 | 想知道某个奇怪设计为什么是这样 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的九个决定」 | 按需 |
 | **手上有个说不通的症状** | [`PITFALLS.md`](./PITFALLS.md)（`Ctrl+F` 搜现象，别搜原因） | 1 分钟 |

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>终端</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="term" id="card">
+      <!--
+        22px 标题条：右边留 120px 给窗饰（WIDGET_SPEC §5.1）。
+        这里只有状态点、名字和当前目录，都不该被那颗 ✕ 压住。
+      -->
+      <header class="term-head">
+        <span class="term-dot" id="dot" data-state="idle"></span>
+        <span class="term-title" id="title">终端</span>
+        <span class="term-cwd" id="cwd"></span>
+      </header>
+
+      <!-- 输出：行是高亮单位，stderr 的行单独上色；容器不吃横向滚动 -->
+      <pre class="term-out" id="out" role="log" aria-live="polite"></pre>
+
+      <!-- 输入行：提示符会按卡片宽度缩写，回车执行，方块停掉整条 shell -->
+      <form class="term-row" id="form" autocomplete="off">
+        <span class="term-prompt" id="prompt">PS&gt;</span>
+        <input
+          class="term-input"
+          id="input"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          aria-label="Command"
+        />
+        <button class="term-stop" id="stop" type="button" hidden aria-label="Stop">■</button>
+      </form>
+    </main>
+    <script src="widget.js"></script>
+  </body>
+</html>
