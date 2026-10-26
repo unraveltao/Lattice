@@ -18,6 +18,15 @@ on:
   pull_request:
   workflow_dispatch:
 
+# 同一个 ref 连推两次时，前一次已经没人要了 —— 取消它，别占着 runner 让后一次排队。
+# 只写在 ci 里：release 那条**不能**这样，中途取消会留下一个半成品草稿。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# 这里刻意**不写** paths-ignore。文档改动看着"只是字"，但 frontend job 里有一条
+# `check:docs` 专门盯相对链接和 README 里的数字 —— 那正是文档改错时唯一会红的
+# 地方。跳过它等于把这条规矩关掉。真要省时间，省的是别的。
 jobs:
   frontend:
     runs-on: ubuntu-latest
