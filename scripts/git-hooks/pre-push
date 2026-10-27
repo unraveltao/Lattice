@@ -1,12 +1,18 @@
 #!/bin/sh
 # 推之前把本机能跑的那一半先跑一遍。
 #
-# 为什么值得这 40 秒：CI 也会跑这两条，但 CI 是"红了才知道"，而 main 是直接推的 ——
+# 为什么值得这 40 秒：CI 也会跑这几条，但 CI 是"红了才知道"，而 main 是直接推的 ——
 # 等它红的时候，坏提交已经在远端了，回滚比等 40 秒贵得多。
 #
-# 只放不依赖 dev server 的两条：
-#   npm run typecheck    静态那一半
-#   npm run check:docs   相对链接 + README 的数字对不对得上
+# 只放不依赖 dev server 的三条：
+#   npm run typecheck     静态那一半
+#   npm run check:tokens  字号 / 圆角 / 间距三张表
+#   npm run check:docs    相对链接 + README 的数字对不对得上
+#
+# `check:tokens` 是 2026-10-27 补进来的：那天 CI 红在 `test:tokens`，而本机
+# typecheck 和 check:docs 都是绿的 —— 一个 10.5px 的字号就能这么过去。这条跑一次
+# 几十毫秒，没有任何理由留在 CI 那一侧。
+#
 # 全量断言（test:browser）要 dev server + Chrome，留在 CI。一个推一次要三分钟的
 # 钩子，第三天就会被 --no-verify 绕过 —— 那时候它连现在这点用都没有了。
 #
@@ -37,7 +43,7 @@ log="${TMPDIR:-/tmp}/lattice-pre-push.log"
 : > "$log"
 
 fail=0
-for task in typecheck check:docs; do
+for task in typecheck check:tokens check:docs; do
   printf 'pre-push: npm run %s ... ' "$task" >&2
   if npm run --silent "$task" >>"$log" 2>&1; then
     echo "ok" >&2

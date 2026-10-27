@@ -169,7 +169,7 @@ The newest milestone is v0.13: the assistant gets its own window on the desktop.
 | Tauri commands | 113 |
 | Browser assertions | 3 867 over 76 pages |
 | Rust tests | 487 |
-| Documented pitfalls | 111 |
+| Documented pitfalls | 112 |
 
 These are measured: the browser assertions start a real dev server and a real Chrome in CI, and the Rust tests split pure-logic cases from the ones that need a full `cargo test`. The pitfalls are the ones that actually bit, each written up with the reasoning that keeps it from coming back.
 
@@ -178,7 +178,7 @@ These are measured: the browser assertions start a real dev server and a real Ch
 | Area | Lines |
 | --- | --- |
 | TypeScript | 26 145 lines |
-| CSS | 6 436 lines |
+| CSS | 6 441 lines |
 | Rust | 28 814 lines |
 | SDK | 961 lines |
 | Widgets + example | 37 919 lines |

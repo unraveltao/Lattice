@@ -169,7 +169,7 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖进窗口
 | Tauri 命令 | 113 |
 | 浏览器断言 | 76 页 3 867 条 |
 | Rust 单测 | 487 |
-| 记下来的坑 | 111 |
+| 记下来的坑 | 112 |
 
 这些数是跑出来的：浏览器断言在 CI 里起真的 dev server 和真的 Chrome，Rust 单测分成纯逻辑的和要跑完整 `cargo test` 的两批。坑也是真咬过人的那些，每条都写着为什么不会再犯。
 
@@ -178,7 +178,7 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖进窗口
 | 部分 | 行数 |
 | --- | --- |
 | TypeScript | 26 145 行 |
-| CSS | 6 436 行 |
+| CSS | 6 441 行 |
 | Rust | 28 814 行 |
 | SDK | 961 行 |
 | 官方组件 + 示例 | 37 919 行 |

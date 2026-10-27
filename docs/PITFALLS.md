@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **111 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **112 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -169,6 +169,7 @@
 | 换完 `src-tauri/icons/` 之后 `cargo build` 过、`tauri dev` 也重启过 app，可任务栏 / 标题栏 / 托盘 / 安装包上的图标**还是旧的**：`icons/icon.ico` 明明是新的，exe 里一处都没变 | Windows 图标是**编译期嵌进 PE 资源**的（`tauri-build` 把 `icons/icon.ico` 交给 `embed-resource` 编进 `.rsrc`），而 `.ico` 变了 `cargo` 不会重跑 build script。`tauri dev` 那句 `File src-tauri\icons\… changed. Rebuilding application…` 只是重新 `cargo run` —— 紧跟的 `Finished in 0.41s` 就等于"一个文件都没编" | 换完图标先 `cargo clean -p lattice`（或 `touch src-tauri/build.rs`）再构建。判据是**字节级**的：把 `icons/icon.ico` 的每一帧取出来，去 exe 的字节里搜索，必须"新帧 6/6 命中、旧帧 0/6"；只看 exe 的 mtime 会漏掉这条（mtime 变了而资源没换是常态，一次实测就是这么挂着旧 logo 跑了半天） |
 | 想单验 DPAPI 的调用形状，写个 `rustc` 小探针，`CryptProtectData` 一律回 0、`GetLastError` 是 **127**（`ERROR_PROC_NOT_FOUND`），可 `crypt32.dll` 明明加载成功、`CryptProtectData` 的地址也拿到了 | `crypt32!CryptProtectData` 是个**转发导出**，实现在 `dpapi.dll` 里 —— 而 agent 这个进程树里 `LoadLibraryW("dpapi.dll")` 直接回 NULL（DLL 在 `System32` 里、40 KB，看得见、加载不了）。不是参数写错，也不是 `windows-sys` 少开了 `Win32_Security_Cryptography`（少了那个根本编不过） | 分两步量：`LoadLibraryW` + `GetProcAddress` 各打一行，`crypt32` 能加载、`dpapi` 不能，就到此为止，别再改自己的 BLOB。**代码路径是按"失败保留明文"写的，所以这个故障是安全的**：key 照旧能用，设置页那一行带着这句 127。DPAPI 的真机验收只能在正常用户会话里做（ROADMAP 里那条还挂着） |
 | 只想 `cargo check` 看一眼自己的 Rust 改动，却报 `failed to run custom build command for lattice`，末尾一句 `The process cannot access the file because it is being used by another process. (os error 32)`，指着 `out/libresource.a` | 这个仓库的常态：另一个 agent 的 `tauri dev`（`cargo run`）正活着，它和你的 `cargo check` 共用 `src-tauri/target/debug/build/lattice-*/out`，`tauri-build` 写 PE 资源那一步撞在一起 | 换一个 target 目录：`CARGO_TARGET_DIR=src-tauri/target/check cargo check`。**必须在 `target/` 里面** —— 放到 `.scratch/` 这类目录会被安全策略拦在"build script 写探针 exe"那一步（`Failed to create …/out/probe: OS Error 5`，看着像代码问题，其实是目录问题）。代价是依赖重编一遍（约 3.5 分钟），之后增量几秒 |
+| `ci` 的 `frontend` job 红在 `test:tokens`（"仓库现状是干净的"），而本机 `typecheck`、`check:docs`、全量断言全绿 | pre-push 只跑 `typecheck` + `check:docs`，而 CI 的 `frontend` 有十几步；一条 `font-size: 10.5px` 就能这么上 main（2026-10-27 真发生：`.lattice-probe` 想比说明小半档） | 把 `check:tokens` 加进 pre-push（几十毫秒）；碰过 `src/**/*.css` 就顺手跑一次 `npm run test:tokens`，它连规则本身一起钉 |
 
 ## 目录、签名与网络
 

@@ -1918,10 +1918,15 @@ button {
  *
  * 它是**读数**不是提示，所以用等宽字、和上面那句说明拉开一点距离 ——
  * 说明是平台说的，读数是系统说的，两者对不上时正是最该看清的时候。
+ *
+ * 字号**不在这里写**，继承 `.lattice-hint` 的 11。这里曾经写过 10.5px，想让
+ * 读数比说明再小半档 —— 半像素在 100% 缩放下取整不一致、中文会发虚，规矩
+ * 见本文件头部第 4 条；而且 `npm run test:tokens` 里"仓库现状是干净的"那条
+ * 会当场红，CI 就是在这儿红的（2026-10-27）。它和上面那句说明的差别由等宽字
+ * 和 `--lattice-text-muted` 承担，不靠字号。
  */
 .lattice-probe {
   font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
-  font-size: 10.5px;
   letter-spacing: 0.01em;
   color: var(--lattice-text-muted);
 }
