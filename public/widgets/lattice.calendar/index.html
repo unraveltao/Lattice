@@ -24,6 +24,7 @@
         <div class="cal-day-head">
           <span class="cal-day-label" id="day-label"></span>
           <span class="cal-day-count" id="day-count"></span>
+          <button type="button" class="cal-import-open" id="import-open" aria-label="导入日历">导入</button>
         </div>
         <ol class="cal-events" id="events"></ol>
         <input
@@ -36,7 +37,31 @@
           aria-label="新条目"
         />
       </section>
+
+      <!--
+        粘贴导入：组件拿不到文件系统，而 .ics 就是纯文本 —— 从日历应用导出、
+        用记事本打开、全选粘进来。盖住整张卡片是为了不让下面的月视图跟着
+        滚动，导完就收起来。
+      -->
+      <div class="cal-import" id="import-sheet" hidden>
+        <div class="cal-import-title" id="import-title">粘贴日历</div>
+        <p class="cal-import-hint" id="import-hint">
+          从日历应用导出 .ics，用记事本打开，全选粘到这里。
+        </p>
+        <textarea
+          class="cal-import-text"
+          id="import-text"
+          spellcheck="false"
+          aria-label="ICS 文本"
+        ></textarea>
+        <div class="cal-import-foot">
+          <span class="cal-import-status" id="import-status" aria-live="polite"></span>
+          <button type="button" class="cal-import-cancel" id="import-cancel">取消</button>
+          <button type="button" class="cal-import-go" id="import-go">导入</button>
+        </div>
+      </div>
     </main>
+    <script src="calendar-ics.js"></script>
     <script src="widget.js"></script>
   </body>
 </html>

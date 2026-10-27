@@ -305,6 +305,18 @@
   var prevEl = document.getElementById("prev");
   var nextEl = document.getElementById("next");
 
+  // 粘贴导入那一层
+  var importOpenEl = document.getElementById("import-open");
+  var importSheetEl = document.getElementById("import-sheet");
+  var importTitleEl = document.getElementById("import-title");
+  var importHintEl = document.getElementById("import-hint");
+  var importTextEl = document.getElementById("import-text");
+  var importStatusEl = document.getElementById("import-status");
+  var importCancelEl = document.getElementById("import-cancel");
+  var importGoEl = document.getElementById("import-go");
+  /** 导完之后那颗按钮变成「完成」，只负责收面板 */
+  var importFinished = false;
+
   /** HTML 里那几句不随月份重画的字：翻月按钮、标题提示、输入框 —— 换语言时一起换 */
   function paintChrome() {
     prevEl.setAttribute("aria-label", say("上个月", "Previous month"));
@@ -312,6 +324,17 @@
     titleEl.title = say("回到今天", "Back to today");
     entryEl.placeholder = say("9:30 站会", "9:30 Standup");
     entryEl.setAttribute("aria-label", say("新条目", "New event"));
+    importOpenEl.textContent = say("导入", "Import");
+    importOpenEl.setAttribute("aria-label", say("粘贴日历导入", "Import a pasted calendar"));
+    importTitleEl.textContent = say("粘贴日历", "Paste a calendar");
+    importHintEl.textContent = say(
+      "从日历应用导出 .ics，用记事本打开，全选粘到这里。",
+      "Export an .ics from your calendar app, open it in Notepad, and paste it here.",
+    );
+    importTextEl.setAttribute("aria-label", say("ICS 文本", "ICS text"));
+    importCancelEl.textContent = say("取消", "Cancel");
+    // 导完那一次之后按钮是「完成」，别把它改回「导入」
+    importGoEl.textContent = importFinished ? say("完成", "Done") : say("导入", "Import");
   }
 
   var KEY = "calendar";
@@ -469,6 +492,107 @@
     renderGrid();
     renderDay();
     save();
+  });
+
+  // ---- 粘贴导入 ----
+
+  function setImportStatus(text) {
+    importStatusEl.textContent = text;
+  }
+
+  function openImport() {
+    importFinished = false;
+    importGoEl.disabled = false;
+    importTextEl.value = "";
+    setImportStatus("");
+    paintChrome();
+    importSheetEl.hidden = false;
+    importTextEl.focus();
+  }
+
+  function closeImport() {
+    importSheetEl.hidden = true;
+    importTextEl.value = "";
+    setImportStatus("");
+    importFinished = false;
+    importGoEl.disabled = false;
+    importGoEl.textContent = say("导入", "Import");
+    entryEl.focus();
+  }
+
+  /**
+   * 解析 + 合并 + 报数。
+   *
+   * 解析出来的条目并进 `events` 之后立刻落盘，并且把视图跳到第一条导入的
+   * 那一天 —— 导完停在原处、什么都看不见，用户会以为没成功。
+   */
+  function doImport() {
+    var parser = window.__latticeIcs;
+    if (!parser) return;
+    var parsedIcs = parser.parseEvents(importTextEl.value);
+    if (parsedIcs.entries.length === 0) {
+      setImportStatus(
+        parsedIcs.events === 0
+          ? say("这一段里没有日历事件", "This text holds no calendar events")
+          : say(
+              "看不懂 " + parsedIcs.skipped + " 条（缺标题或缺开始时间）",
+              "Could not read " + parsedIcs.skipped + " events (no title or start)",
+            ),
+      );
+      return;
+    }
+
+    var merged = parser.mergeInto(events, parsedIcs.entries, { maxPerDay: MAX_PER_DAY });
+    events = merged.events;
+    touched = true;
+
+    var first = parseKey(parsedIcs.entries[0].key);
+    if (first) {
+      selected = parsedIcs.entries[0].key;
+      view = { year: first.year, month: first.month };
+    }
+    renderAll();
+    save();
+
+    var parts = [say("导入 " + merged.added + " 条", merged.added + " imported")];
+    if (merged.duplicates) {
+      parts.push(say("跳过 " + merged.duplicates + " 条重复", merged.duplicates + " duplicates"));
+    }
+    if (merged.overflow) {
+      parts.push(
+        say(
+          "一天最多 " + MAX_PER_DAY + " 条，放不下 " + merged.overflow + " 条",
+          MAX_PER_DAY + " per day is full, " + merged.overflow + " left out",
+        ),
+      );
+    }
+    if (parsedIcs.skipped) parts.push(say("看不懂 " + parsedIcs.skipped + " 条", parsedIcs.skipped + " unreadable"));
+    setImportStatus(parts.join(" · "));
+
+    importTextEl.value = "";
+    importFinished = true;
+    importGoEl.textContent = say("完成", "Done");
+  }
+
+  importOpenEl.addEventListener("click", openImport);
+  importCancelEl.addEventListener("click", closeImport);
+  importGoEl.addEventListener("click", function () {
+    if (importFinished) {
+      closeImport();
+      return;
+    }
+    doImport();
+  });
+  importTextEl.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeImport();
+      return;
+    }
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      doImport();
+    }
   });
 
   // -------------------------------------------------------------------------

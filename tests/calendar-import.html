@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>calendar import / paste an ics</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 日历的「导入」这条路：点开、粘贴、导入、收起来。
+       *
+       * 组件是整页 iframe，所以直接操作它自己的 DOM；`__latticeCalendar`
+       * 暴露的 snapshot 用来看"条目真的进了表、视图真的跳过去了"。
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const ICS = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "BEGIN:VEVENT",
+        "UID:a@example.com",
+        "SUMMARY:项目评审",
+        "DTSTART:20260501T093000",
+        "END:VEVENT",
+        "BEGIN:VEVENT",
+        "UID:b@example.com",
+        "SUMMARY:全天的事",
+        "DTSTART;VALUE=DATE:20260502",
+        "END:VEVENT",
+        "END:VCALENDAR",
+      ].join("\r\n");
+
+      function mount(options) {
+        const config = options || {};
+        const state = { saved: config.saved || null, sets: [] };
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+        frame.style.width = (config.width || 300) + "px";
+        frame.style.height = (config.height || 340) + "px";
+        frame.src = "/widgets/lattice.calendar/index.html";
+        document.body.appendChild(frame);
+
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+            if (data.method === "lang.get") return reply({ ok: true, result: { lang: "zh" } });
+            if (data.method === "config.get") return reply({ ok: true, result: { weekStart: "monday" } });
+            if (data.method === "storage.get") return reply({ ok: true, result: state.saved });
+            if (data.method === "storage.set") {
+              state.saved = data.params.value;
+              state.sets.push(data.params.value);
+              return reply({ ok: true, result: { ok: true } });
+            }
+            reply({ ok: false, code: "unknown_method", error: "unknown" });
+          });
+        });
+
+        return {
+          frame,
+          state,
+          ready,
+          doc: () => frame.contentDocument,
+          api: () => frame.contentWindow.__latticeCalendar,
+          send(type, payload) {
+            frame.contentWindow.postMessage({ __lattice: 1, type, payload }, "*");
+            return sleep(80);
+          },
+        };
+      }
+
+      function paste(view, text) {
+        const doc = view.doc();
+        doc.getElementById("import-text").value = text;
+        doc.getElementById("import-go").click();
+        return sleep(120);
+      }
+
+      // ---------- 场景 1：导入两条，视图跟着跳 ----------
+      {
+        const view = mount();
+        await view.ready;
+        await sleep(150);
+        const doc = view.doc();
+        const sheet = doc.getElementById("import-sheet");
+
+        log(sheet.hidden === true, "面板默认是藏着的");
+        log(doc.getElementById("import-open").textContent === "导入", "当天那行右边有「导入」");
+
+        doc.getElementById("import-open").click();
+        await sleep(80);
+        log(sheet.hidden === false, "点一下面板打开");
+        log(doc.activeElement === doc.getElementById("import-text"), "焦点直接落在粘贴框里");
+        log(
+          doc.getElementById("import-hint").textContent.includes(".ics"),
+          "面板上写着从哪来怎么粘",
+        );
+
+        await paste(view, ICS);
+        const status = doc.getElementById("import-status").textContent;
+        log(status.startsWith("导入 2 条"), `状态行报数（「${status}」）`);
+        log(doc.getElementById("import-go").textContent === "完成", "按钮变成「完成」");
+
+        const snap = view.api().snapshot();
+        log(!!snap.events["2026-05-01"], "条目进了 5 月 1 日");
+        log(
+          snap.events["2026-05-01"][0].time === "09:30" && snap.events["2026-05-01"][0].title === "项目评审",
+          "时刻和标题都对",
+        );
+        log(!!snap.events["2026-05-02"], "全天那条进了 5 月 2 日");
+        log(snap.events["2026-05-02"][0].time === "", "全天条目没有时刻");
+        log(snap.selected === "2026-05-01", "视图跳到第一条导入的那天");
+        log(doc.getElementById("title").textContent === "2026年5月", `月份栏换成 ${doc.getElementById("title").textContent}`);
+        log(doc.getElementById("day-label").textContent === "5月1日", "下面的日期也跟着换");
+        log(
+          doc.querySelectorAll(".cal-event").length === 1,
+          `当天列表里画出一条（现在 ${doc.querySelectorAll(".cal-event").length} 条）`,
+        );
+        log(view.state.sets.length >= 1, "导入之后立刻落盘");
+
+        doc.getElementById("import-go").click();
+        await sleep(80);
+        log(sheet.hidden === true, "点「完成」收起来");
+
+        // 再导一次同一份
+        doc.getElementById("import-open").click();
+        await sleep(80);
+        await paste(view, ICS);
+        const again = doc.getElementById("import-status").textContent;
+        log(again.includes("导入 0 条") && again.includes("跳过 2 条重复"), `第二次导入全是重复（「${again}」）`);
+        log(
+          view.api().snapshot().events["2026-05-01"].length === 1,
+          "日历上没有多出一条",
+        );
+
+        // 胡写的文本：导完一次之后要重新打开面板才能再导（那颗按钮已经变成「完成」）
+        doc.getElementById("import-go").click();
+        await sleep(80);
+        log(sheet.hidden === true, "「完成」把面板收起来");
+        doc.getElementById("import-open").click();
+        await sleep(80);
+        await paste(view, "这不是日历");
+        log(
+          doc.getElementById("import-status").textContent === "这一段里没有日历事件",
+          `无效文本有专门的说明（「${doc.getElementById("import-status").textContent}」）`,
+        );
+
+        // 取消
+        doc.getElementById("import-cancel").click();
+        await sleep(80);
+        log(sheet.hidden === true, "取消直接收起来");
+        log(doc.getElementById("import-status").textContent === "", "收起时状态行被清掉");
+
+        // 换语言
+        await view.send("language", { lang: "en" });
+        log(doc.getElementById("import-open").textContent === "Import", "英文下按钮是 Import");
+        doc.getElementById("import-open").click();
+        await sleep(80);
+        log(doc.getElementById("import-title").textContent === "Paste a calendar", "英文面板标题");
+        log(doc.getElementById("import-go").textContent === "Import", "英文主按钮");
+        doc.getElementById("import-cancel").click();
+
+        view.frame.remove();
+      }
+
+      // ---------- 场景 2：面板的布局 ----------
+      {
+        const view = mount({ width: 240, height: 280 });
+        await view.ready;
+        await sleep(150);
+        const doc = view.doc();
+        doc.getElementById("import-open").click();
+        await sleep(80);
+        const sheet = doc.getElementById("import-sheet").getBoundingClientRect();
+        log(sheet.width >= 220 && sheet.height >= 240, `最小尺寸下面板仍占满卡片（${sheet.width}×${sheet.height}）`);
+        const text = doc.getElementById("import-text").getBoundingClientRect();
+        log(text.height >= 60, `粘贴框高 ${text.height.toFixed(1)}px`);
+        log(doc.documentElement.scrollHeight <= 280, `没有纵向溢出（${doc.documentElement.scrollHeight}）`);
+        log(
+          doc.getElementById("import-go").getBoundingClientRect().right <= 240,
+          "按钮没有顶出卡片右边",
+        );
+        view.frame.remove();
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

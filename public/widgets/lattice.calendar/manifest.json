@@ -1,10 +1,10 @@
 {
   "id": "lattice.calendar",
   "name": { "zh": "日历", "en": "Calendar" },
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": {
-    "zh": "月视图加自己的条目——点一天，写一行",
-    "en": "Month view with your own events — click a day, type a line"
+    "zh": "月视图加自己的条目——点一天，写一行，或者粘一份 .ics 进来",
+    "en": "Month view with your own events — click a day, type a line, or paste an .ics"
   },
   "author": "Lattice",
   "entry": "index.html",
@@ -66,6 +66,31 @@
         ]
       },
       {
+        "title": { "zh": "从一个 .ics 导入", "en": "Importing an .ics" },
+        "items": [
+          {
+            "zh": "点当天那一行右边的「导入」，把 .ics 的全文粘进去。从日历应用导出、用记事本打开就能全选复制。",
+            "en": "Click Import at the right of the day row and paste the whole .ics. Export it from your calendar app, open it in Notepad, copy all."
+          },
+          {
+            "zh": "认标题、开始时间、全天事件和常见的重复规则（每天 / 每周 / 每月 / 每年，带间隔、次数、截止和星期几）。",
+            "en": "It reads the title, the start time, all-day events and the usual repeat rules (daily / weekly / monthly / yearly, with interval, count, until and weekdays)."
+          },
+          {
+            "zh": "时区不换算：带 TZID 的当本地时间；带 Z 的按 UTC 换算过来。",
+            "en": "Time zones are not converted: a TZID value is taken as local time, while a trailing Z is converted from UTC."
+          },
+          {
+            "zh": "重复事件只展开一年（单个最多 120 条），被单独取消的某一次（EXDATE）不认。",
+            "en": "Repeats are expanded for one year at most (120 entries per event), and single cancelled instances (EXDATE) are not understood."
+          },
+          {
+            "zh": "同一天里时间与标题都一样的算重复，所以同一份文件导入两次不会出现两遍。",
+            "en": "An entry with the same time and title on the same day counts as a duplicate, so importing the same file twice does not double it."
+          }
+        ]
+      },
+      {
         "title": { "zh": "存了什么", "en": "What it stores" },
         "items": [
           {
@@ -85,6 +110,20 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.1.3",
+      "date": "2026-10-27",
+      "changes": [
+        {
+          "zh": "可以从别的日历导入了：把 .ics 全文粘进「导入」，重复事件按规则展开成一条条。",
+          "en": "Events can now come from another calendar: paste the whole .ics into Import, and repeats are expanded into single entries."
+        },
+        {
+          "zh": "导完会报数（导入多少条、跳过多少重复），并把视图跳到第一条进来的那天。",
+          "en": "Afterwards it says how many came in and how many were duplicates, and jumps the view to the first imported day."
+        }
+      ]
+    },
     {
       "version": "0.1.2",
       "date": "2026-10-25",

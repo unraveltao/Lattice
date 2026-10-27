@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>calendar ics / parser</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.calendar/calendar-ics.js"></script>
+    <script type="module">
+      /*
+       * .ics 解析。
+       *
+       * 时区相关的断言都现算一遍期望值（同一个公式），这样在 UTC 机器和
+       * 东八区机器上结论一致 —— 这里要验的是"解析对不对"，不是"时区对不对"。
+       */
+      const ics = window.__latticeIcs;
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+
+      const CRLF = "\r\n";
+      function event(props) {
+        return ["BEGIN:VEVENT"].concat(props, ["END:VEVENT"]).join(CRLF);
+      }
+      function calendar(body) {
+        return ["BEGIN:VCALENDAR", "VERSION:2.0", body, "END:VCALENDAR"].join(CRLF);
+      }
+
+      // ---------- 折行 ----------
+
+      log(ics.unfold("SUMMARY:长标\n 题") === "SUMMARY:长标题", "折行（换行 + 空格）展开成一行");
+      log(ics.unfold("A:1\r\n\t2") === "A:12", "换行 + 制表符也认");
+      log(ics.unfold("A:1\rB:2") === "A:1\nB:2", "单独的 CR 归一成换行");
+      log(ics.unfold(null) === "", "null 当空文本");
+
+      // ---------- TEXT 转义 ----------
+
+      log(ics.unescapeText("a\\,b") === "a,b", "\\, 是逗号");
+      log(ics.unescapeText("a\\;b") === "a;b", "\\; 是分号");
+      log(ics.unescapeText("a\\\\b") === "a\\b", "\\\\ 是反斜杠");
+      log(ics.unescapeText("第一行\\n第二行") === "第一行\n第二行", "\\n 是换行");
+      log(ics.unescapeText("普通") === "普通", "没有转义就原样");
+
+      // ---------- 属性与参数 ----------
+
+      {
+        const prop = ics.parseProperty("DTSTART;TZID=Asia/Shanghai:20260501T093000");
+        log(prop.name === "DTSTART", `属性名是大写（${prop.name}）`);
+        log(prop.params.TZID === "Asia/Shanghai", "参数被拆出来");
+        log(prop.value === "20260501T093000", "值是冒号后面那一段");
+      }
+      log(ics.parseProperty("X-FOO:BAR").name === "X-FOO", "自定义属性名照样解析");
+      log(ics.parseProperty("SUMMARY:9:30 站会").value === "9:30 站会", "值里可以有冒号");
+      log(ics.parseProperty("没有冒号") === null, "没有冒号的行跳过");
+      log(ics.parseProperty("summary:小写也行").name === "SUMMARY", "属性名统一成大写");
+      {
+        const quoted = ics.parseProperty('DTSTART;TZID="America/New_York":20260101T090000');
+        log(quoted.params.TZID === "America/New_York", "参数外面的引号被剥掉");
+      }
+
+      // ---------- 日期值 ----------
+
+      {
+        const allDay = ics.parseDateValue("20260501");
+        log(allDay && allDay.allDay === true, "八个数字是全天");
+        log(ics.keyOf(allDay.date) === "2026-05-01", "全天事件的日期键");
+      }
+      {
+        const timed = ics.parseDateValue("20260501T093000");
+        log(timed && timed.allDay === false, "带 T 的是带时刻的");
+        log(ics.timeOf(timed.date) === "09:30", `时刻是 ${ics.timeOf(timed.date)}`);
+      }
+      {
+        const utc = ics.parseDateValue("20260501T093000Z");
+        const expected = new Date(Date.UTC(2026, 4, 1, 9, 30));
+        log(ics.keyOf(utc.date) === ics.keyOf(expected), "带 Z 的按 UTC 换算成本地日期");
+        log(ics.timeOf(utc.date) === ics.timeOf(expected), "带 Z 的按 UTC 换算成本地时刻");
+      }
+      log(ics.parseDateValue("20260230") === null, "2 月 30 日不是日期");
+      log(ics.parseDateValue("20261301") === null, "13 月不是月份");
+      log(ics.parseDateValue("20260501T250000") === null, "25 点不是时刻");
+      log(ics.parseDateValue("") === null && ics.parseDateValue(null) === null, "空格和 null 都返回 null");
+
+      // ---------- 重复规则 ----------
+
+      {
+        const rule = ics.parseRule("FREQ=WEEKLY;INTERVAL=2;COUNT=5;BYDAY=MO,WE");
+        log(rule.freq === "WEEKLY" && rule.interval === 2 && rule.count === 5, "FREQ / INTERVAL / COUNT");
+        log(rule.byday.join(",") === "MO,WE", "BYDAY 拆成数组");
+      }
+      log(ics.parseRule("FREQ=DAILY").interval === 1, "没写 INTERVAL 就是 1");
+      log(ics.parseRule("FREQ=DAILY;COUNT=abc").count === 0, "坏 COUNT 当没写");
+      {
+        const until = ics.parseRule("FREQ=DAILY;UNTIL=20260506");
+        log(until.until && ics.keyOf(until.until) === "2026-05-06", "UNTIL 解析成日期");
+      }
+      log(ics.parseRule("FREQ=DAILY;BYDAY=XX").byday.length === 0, "不认识的星期几被丢掉");
+
+      // ---------- 展开 ----------
+
+      {
+        const start = new Date(2026, 4, 4, 9, 0);
+        log(ics.expand(start, null).length === 1, "没有规则就只有它自己");
+
+        const daily = ics.expand(start, ics.parseRule("FREQ=DAILY;COUNT=3"));
+        log(daily.length === 3, `每天一次、共三次（现在 ${daily.length} 条）`);
+        log(ics.keyOf(daily[1]) === "2026-05-05" && ics.keyOf(daily[2]) === "2026-05-06", "连着三天");
+
+        const every2 = ics.expand(start, ics.parseRule("FREQ=DAILY;INTERVAL=2;COUNT=4"));
+        log(
+          every2.map((date) => ics.keyOf(date)).join(",") === "2026-05-04,2026-05-06,2026-05-08,2026-05-10",
+          "隔天一次：" + every2.map((date) => ics.keyOf(date)).join(","),
+        );
+
+        const until = ics.expand(start, ics.parseRule("FREQ=DAILY;UNTIL=20260506"));
+        log(until.length === 3, `UNTIL 当天也算（${until.length} 条）`);
+      }
+
+      {
+        // 2026-05-04 是周一
+        const start = new Date(2026, 4, 4, 9, 0);
+        log(start.getDay() === 1, "测试用的起点确实是周一");
+        const weekly = ics.expand(start, ics.parseRule("FREQ=WEEKLY;BYDAY=MO,WE;COUNT=5"));
+        log(
+          weekly.map((date) => ics.keyOf(date)).join(",") ===
+            "2026-05-04,2026-05-06,2026-05-11,2026-05-13,2026-05-18",
+          "每周一和周三：" + weekly.map((date) => ics.keyOf(date)).join(","),
+        );
+        const biweekly = ics.expand(start, ics.parseRule("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;COUNT=3"));
+        log(
+          biweekly.map((date) => ics.keyOf(date)).join(",") === "2026-05-04,2026-05-18,2026-06-01",
+          "隔周一次：" + biweekly.map((date) => ics.keyOf(date)).join(","),
+        );
+        const noByday = ics.expand(start, ics.parseRule("FREQ=WEEKLY;COUNT=3"));
+        log(noByday.length === 3 && noByday.every((date) => date.getDay() === 1), "不写 BYDAY 就跟着起点那天走");
+      }
+
+      {
+        const start = new Date(2026, 0, 31, 8, 0);
+        const monthly = ics.expand(start, ics.parseRule("FREQ=MONTHLY"));
+        log(ics.keyOf(monthly[1]) === "2026-03-31", `31 号的月重复会跳过 2 月（第二期是 ${ics.keyOf(monthly[1])}）`);
+        log(
+          monthly.every((date) => date.getDate() === 31),
+          "每一期都落在 31 号，不滚到次月",
+        );
+        log(monthly.length > 3, "一年里能展开好几期");
+      }
+
+      {
+        const start = new Date(2026, 4, 1, 8, 0);
+        const yearly = ics.expand(start, ics.parseRule("FREQ=YEARLY"));
+        log(ics.keyOf(yearly[1]) === "2027-05-01", "每年一次，落到明年同一天");
+      }
+
+      {
+        const start = new Date(2026, 0, 1, 9, 0);
+        const capped = ics.expand(start, ics.parseRule("FREQ=DAILY;COUNT=1000"));
+        log(capped.length === ics.MAX_INSTANCES, `最多展开 ${ics.MAX_INSTANCES} 条（现在 ${capped.length} 条）`);
+
+        const windowed = ics.expand(start, ics.parseRule("FREQ=WEEKLY"));
+        log(
+          windowed.length <= 54,
+          `一年窗口内每周一次约 53 条（现在 ${windowed.length} 条）`,
+        );
+      }
+
+      // ---------- 整段解析 ----------
+
+      {
+        const text = calendar(
+          event([
+            "UID:abc@example.com",
+            "SUMMARY:9:30 站会",
+            "DTSTART:20260501T093000",
+            "DTEND:20260501T100000",
+          ]),
+        );
+        const parsed = ics.parseEvents(text);
+        log(parsed.events === 1 && parsed.entries.length === 1, "一个事件一条");
+        log(parsed.entries[0].key === "2026-05-01" && parsed.entries[0].time === "09:30", "日期与时刻");
+        log(parsed.entries[0].title === "9:30 站会", "标题里的冒号留着");
+      }
+
+      {
+        const text = calendar(
+          event(["SUMMARY:全天的事", "DTSTART;VALUE=DATE:20260501"]),
+        );
+        const parsed = ics.parseEvents(text);
+        log(parsed.entries[0].time === "", "全天事件没有时刻");
+      }
+
+      {
+        const text = calendar(
+          event(["SUMMARY:三天会", "DTSTART;VALUE=DATE:20260501", "DTEND;VALUE=DATE:20260503"]),
+        );
+        const parsed = ics.parseEvents(text);
+        log(
+          parsed.entries.map((entry) => entry.key).join(",") === "2026-05-01,2026-05-02",
+          "全天跨天按 DTEND 不含：5/1–5/3 记两天（" +
+            parsed.entries.map((entry) => entry.key).join(",") +
+            "）",
+        );
+      }
+
+      {
+        const text = calendar(
+          event([
+            "SUMMARY:折起来的标题",
+            " 还在同一行",
+            "DTSTART:20260501T093000",
+          ]),
+        );
+        const parsed = ics.parseEvents(text);
+        log(parsed.entries[0].title === "折起来的标题还在同一行", `折行拼回去（「${parsed.entries[0].title}」）`);
+      }
+
+      {
+        const text = calendar(
+          event(["SUMMARY:上午\\,下午", "DTSTART:20260501T093000"]),
+        );
+        log(ics.parseEvents(text).entries[0].title === "上午,下午", "标题里的 \\, 还原成逗号");
+      }
+
+      {
+        const text = calendar(
+          [
+            "BEGIN:VTIMEZONE",
+            "TZID:Asia/Shanghai",
+            "BEGIN:STANDARD",
+            "SUMMARY:不该被当成事件",
+            "DTSTART:19700101T000000",
+            "END:STANDARD",
+            "END:VTIMEZONE",
+            event(["SUMMARY:真事件", "DTSTART:20260501T093000"]),
+          ].join(CRLF),
+        );
+        const parsed = ics.parseEvents(text);
+        log(parsed.entries.length === 1 && parsed.entries[0].title === "真事件", "VTIMEZONE 里的东西不算事件");
+      }
+
+      {
+        const text = calendar(
+          event([
+            "SUMMARY:带提醒的事件",
+            "DTSTART:20260501T093000",
+            "BEGIN:VALARM",
+            "ACTION:DISPLAY",
+            "SUMMARY:提醒的标题不该出现",
+            "TRIGGER:-PT15M",
+            "END:VALARM",
+          ]),
+        );
+        const parsed = ics.parseEvents(text);
+        log(parsed.entries.length === 1, "VALARM 不额外产生条目");
+        log(parsed.entries[0].title === "带提醒的事件", `标题是事件自己的（「${parsed.entries[0].title}」）`);
+      }
+
+      {
+        const text = calendar(
+          [
+            event(["SUMMARY:没开始时间"]),
+            event(["DTSTART:20260501T093000"]),
+            event(["SUMMARY:好的", "DTSTART:20260502T093000"]),
+          ].join(CRLF),
+        );
+        const parsed = ics.parseEvents(text);
+        log(parsed.entries.length === 1, "缺标题、缺开始时间的两条被跳过");
+        log(parsed.skipped === 2, `跳过计数是 2（现在 ${parsed.skipped}）`);
+        log(parsed.events === 3, "事件总数仍是 3");
+      }
+
+      {
+        const text = calendar(
+          event(["SUMMARY:每周站会", "DTSTART:20260504T093000", "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"]),
+        );
+        const parsed = ics.parseEvents(text);
+        log(parsed.recurring === 1, "记下有一条重复事件");
+        log(parsed.entries.length === 4, `展开成 4 条（现在 ${parsed.entries.length} 条）`);
+        log(new Set(parsed.entries.map((entry) => entry.key)).size === 4, "落在 4 个不同的日子");
+      }
+
+      {
+        const parsed = ics.parseEvents("这不是日历");
+        log(parsed.entries.length === 0 && parsed.events === 0, "胡写的文本当成空");
+        log(ics.parseEvents("").entries.length === 0, "空文本也算空");
+      }
+
+      // ---------- 合并 ----------
+
+      {
+        const entries = [
+          { key: "2026-05-01", time: "09:30", title: "站会" },
+          { key: "2026-05-01", time: "", title: "全天" },
+          { key: "2026-05-02", time: "09:30", title: "站会" },
+        ];
+        const before = { "2026-05-01": [{ id: "old", time: "18:00", title: "晚饭" }] };
+        const merged = ics.mergeInto(before, entries);
+        log(merged.added === 3, `三条都进来（现在 ${merged.added} 条）`);
+        log(merged.events["2026-05-01"].length === 3, "原来那条还在，没被覆盖");
+        log(before["2026-05-01"].length === 1, "原表没被就地改");
+        log(
+          merged.events["2026-05-01"].every((item) => typeof item.id === "string" && item.id.length > 0),
+          "每条都有 id",
+        );
+        log(new Set(merged.events["2026-05-01"].map((item) => item.id)).size === 3, "id 不重复");
+      }
+
+      {
+        const entries = [{ key: "2026-05-01", time: "09:30", title: "站会" }];
+        const first = ics.mergeInto({}, entries);
+        const again = ics.mergeInto(first.events, entries);
+        log(again.added === 0 && again.duplicates === 1, "同一份导入第二遍全是重复");
+        log(again.events["2026-05-01"].length === 1, "日历上没多出一条");
+        const other = ics.mergeInto(first.events, [{ key: "2026-05-01", time: "10:00", title: "站会" }]);
+        log(other.added === 1, "同一天同一标题、时间不同：算两条");
+      }
+
+      {
+        const entries = Array.from({ length: 5 }, (_, index) => ({
+          key: "2026-05-01",
+          time: "",
+          title: "第 " + index,
+        }));
+        const merged = ics.mergeInto({}, entries, { maxPerDay: 3 });
+        log(merged.added === 3 && merged.overflow === 2, "一天装不下就报「放不下」而不是丢得无声无息");
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

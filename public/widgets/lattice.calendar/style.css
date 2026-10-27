@@ -25,6 +25,7 @@ body {
 }
 
 .cal {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -298,4 +299,144 @@ body {
 
 .cal-entry::placeholder {
   color: var(--muted);
+}
+
+/* ---------- 粘贴导入 ---------- */
+
+/*
+ * 「导入」贴着当天那一行的右边。它不占标题栏 —— 那一条要留给窗饰的 120px，
+ * 再塞一颗按钮，月份名会被挤到只剩省略号。
+ */
+.cal-import-open {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 0 6px;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cal-import-open:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.cal-import-open:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/*
+ * 盖住整张卡片的一层。底板用 `--surface`（宿主给的表面色）+ 磨砂，
+ * 免得下面的月视图从字缝里透出来。
+ */
+.cal-import {
+  position: absolute;
+  inset: 6px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+}
+
+.cal-import-title {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.cal-import-hint {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.cal-import-text {
+  flex: 1 1 auto;
+  min-height: 60px;
+  width: 100%;
+  padding: 6px 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  color: var(--fg);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  /* 粘贴进来的 .ics 是长行，别把它折成看不出结构的碎块 */
+  white-space: pre;
+  overflow: auto;
+}
+
+.cal-import-text:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.cal-import-foot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 状态行占满剩下的地方，两边两颗按钮贴着右下 */
+.cal-import-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-import-cancel,
+.cal-import-go {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.cal-import-go {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
+}
+
+.cal-import-cancel:hover {
+  color: var(--fg);
+}
+
+.cal-import-go:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.cal-import-cancel:focus-visible,
+.cal-import-go:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
 }
