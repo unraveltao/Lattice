@@ -91,6 +91,21 @@
       log(has(md.inline("![图](https://x/y.png)"), 'class="md-alt"', "图"), "图片只渲染 alt 文字");
       log(!md.inline("![图](https://x/y.png)").includes("<img"), "不会去加载图片");
 
+      // ---------- 内联图片（0.3） ----------
+
+      {
+        const src = "data:image/webp;base64,AAAA";
+        const html = md.inline(`![图](${src}){width=240}`);
+        log(has(html, 'class="md-img"', `src="${src}"`, 'alt="图"', 'width="240"'), "内联图片画成 <img>，宽度进属性");
+        log(has(html, 'data-note-index="0"'), "直到 0 号 —— 预览里那颗百分比按钮靠它认图");
+        log(!html.includes("md-alt"), "内联图不再退成 alt 文字");
+        log(has(md.inline(`![一](${src})![二](${src})`), 'data-note-index="0"', 'data-note-index="1"'), "两张图各占一个序号");
+        log(has(md.inline("![图](图片/a.png)"), 'class="md-img"', 'src="图片/a.png"'), "组件自己的相对路径也画");
+        log(!md.inline("![图](图片/a.png)").includes("data-note-index"), "相对路径没有序号：它不能改宽度");
+        log(has(md.inline("![图](blob:http://localhost/1)"), 'class="md-img"'), "blob: 当场预览能用");
+        log(has(md.inline("![图](//evil.example/x.png)"), 'class="md-alt"'), "协议相对的 // 当外链，不画");
+      }
+
       {
         // 拼出来而不是写字面量：内联脚本里出现结束标签会把 script 提前关掉
         const raw = "<" + "script>alert(1)" + "<" + "/script>";

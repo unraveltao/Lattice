@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>note images / 纯逻辑</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.note/note-images.js"></script>
+    <script type="module">
+      /*
+       * 便签的图片：正文里那一行长什么样、三档宽度怎么改、导出时怎么切。
+       *
+       * 这一页只碰纯逻辑（`note-images.js` 里没有 DOM）：压缩那一半在 widget.js，
+       * 用 canvas，只有真浏览器里才跑得起来，靠 note-layout.html 和真机验收。
+       *
+       * 钉六件事：
+       *   1. 只认 `data:image/`，`blob:` 和 `http(s)` 不进正文
+       *   2. 字数先剥图片再数（否则一张截图顶四万字）
+       *   3. 宽度换算与三档循环（100 → 25 → 50 → 100）
+       *   4. 名字：第一行 `# 标题` 优先，否则 `便签 时间`
+       *   5. 导出把 data URL 抽成 `images/N.ext`、宽度改写成 `<img width>`
+       *   6. 上下限就是 design/0028 里那三个数
+       */
+      const imgs = window.__latticeNoteImages;
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text}（得到 ${JSON.stringify(actual)}）`,
+        );
+
+      /** 一段假的内联图：真字节数不用对，只要求形状像 */
+      const pic = (alt = "", base64 = "AAAA", width = 0, mime = "webp") =>
+        `![${alt}](data:image/${mime};base64,${base64})` + (width ? `{width=${width}}` : "");
+
+      // ---------- 上限 ----------
+
+      eq(
+        [imgs.LONG_EDGE, imgs.QUALITY, imgs.PRE_DOWNSCALE, imgs.MAX_IMAGES],
+        [480, 0.8, 2000, 8],
+        "长边 480 / 质量 0.8 / 预降采样 2000 / 最多 8 张",
+      );
+      eq(
+        [imgs.MAX_IMAGE_BYTES, imgs.MAX_TOTAL_BYTES],
+        [120 * 1024, 1024 * 1024],
+        "单张 120KB、合计 1MB",
+      );
+
+      // ---------- 字节估算 ----------
+
+      eq(imgs.base64Bytes("AAAA"), 3, "4 个字符 ≈ 3 字节");
+      eq([imgs.base64Bytes("AA=="), imgs.base64Bytes("")], [1, 0], "padding 扣掉；空串是 0");
+      eq(
+        [imgs.dataUrlBytes("data:image/webp;base64,AAAA"), imgs.dataUrlBytes("abcd")],
+        [3, 0],
+        "data URL 只数逗号后面那段；没有逗号算 0",
+      );
+
+      // ---------- 认出正文里的图 ----------
+
+      {
+        const text = `前 ${pic("图", "AAAA", 240)} 中 ${pic("", "AAAAAAAA", 0, "jpeg")} 后`;
+        const found = imgs.imagesIn(text);
+        eq(found.length, 2, "两张图都认出来");
+        eq(
+          [found[0].alt, found[0].width, found[0].mime, found[0].bytes],
+          ["图", 240, "webp", 3],
+          "第一张的 alt / 宽度 / 类型 / 字节",
+        );
+        eq([found[1].width, found[1].mime, found[1].bytes], [0, "jpeg", 6], "没写宽度就是 0");
+        eq(imgs.totalImageBytes(text), 9, "字节合计两张相加");
+      }
+      eq(imgs.imageCount(pic() + "\n" + pic()), 2, "数得出张数");
+      eq(imgs.imageCount("![](blob:http://localhost/x) 和 ![a](https://x/y.png)"), 0, "blob: 与外链都不算正文里的图");
+      eq(imgs.imageCount("纯文字，没有图"), 0, "没图就是 0");
+
+      eq(
+        imgs.stripImages(`前${pic("", "AAAA", 240)}后`),
+        "前后",
+        "剥图时连 {width=…} 一起剥掉",
+      );
+      eq(
+        [imgs.countChars(`中文 ${pic("", "A".repeat(400), 240)}`), imgs.countChars("中文 " + pic())],
+        [3, 3],
+        "字数只数文字 —— 图片那段 base64 一个字符都不进数",
+      );
+      eq(imgs.countChars(pic()), 0, "只有一张图的正文是 0 个字");
+
+      // ---------- 等比缩放 ----------
+
+      eq(imgs.fitSize(4000, 2000, 480), { width: 480, height: 240 }, "横图按长边缩");
+      eq(imgs.fitSize(2000, 4000, 480), { width: 240, height: 480 }, "竖图按长边缩");
+      eq(imgs.fitSize(300, 200, 480), { width: 300, height: 200 }, "本来就在框里就不动");
+      eq(imgs.fitSize(1000, 3, 480), { width: 480, height: 1 }, "极端比例也不缩成 0");
+      eq(
+        [imgs.fitSize(0, 100, 480), imgs.fitSize(100, 100, 0)],
+        [
+          { width: 0, height: 0 },
+          { width: 0, height: 0 },
+        ],
+        "有一边是 0 或者框是 0，都回 0",
+      );
+
+      // ---------- 三档宽度 ----------
+
+      eq(
+        [
+          imgs.widthPercent(480, 480),
+          imgs.widthPercent(240, 480),
+          imgs.widthPercent(120, 480),
+          imgs.widthPercent(0, 480),
+          imgs.widthPercent(240, 0),
+        ],
+        [100, 50, 25, 100, 100],
+        "显示宽度换成档位：没记录 / 没有原宽都是 100%",
+      );
+      eq(imgs.widthPercent(200, 480), 50, "41.7% 归到 50 那一档");
+      eq(imgs.widthPercent(100, 480), 25, "20.8% 归到 25 那一档");
+
+      {
+        const text = pic("一", "AAAA", 240) + "\n" + pic("二", "AAAA", 0);
+        const out = imgs.setWidthAt(text, 1, 120);
+        log(out.startsWith(pic("一", "AAAA", 240)), "改第二张时第一张原样留着");
+        log(out.endsWith(pic("二", "AAAA", 120)), "第二张写上了 {width=120}");
+        eq(imgs.setWidthAt(text, 9, 120), text, "序号越界就一个字都不改");
+        eq(imgs.setWidthAt(pic("一", "AAAA", 240), 0, 0), pic("一", "AAAA", 0), "传 0 就把宽度删掉（回到 100%）");
+      }
+
+      {
+        // 100 → 25 → 50 → 100，原宽 480
+        const shots = [];
+        let text = pic("图", "AAAA", 0);
+        for (let i = 0; i < 4; i += 1) {
+          const step = imgs.cycleWidth(text, 0, 480);
+          text = step.text;
+          shots.push([step.percent, imgs.imagesIn(text)[0].width]);
+        }
+        eq(
+          shots,
+          [
+            [25, 120],
+            [50, 240],
+            [100, 480],
+            [25, 120],
+          ],
+          "四个数分别是 25→120、50→240、100→480、再回到 25",
+        );
+      }
+      eq(imgs.cycleWidth(pic(), 5, 480).percent, 0, "没有那张图就退 0，不瞎改");
+
+      // ---------- 扩展名 ----------
+
+      eq(
+        ["jpeg", "JPEG", "jpg", "png", "gif", "avif", "webp", "heic"].map(imgs.extensionFor),
+        ["jpg", "jpg", "jpg", "png", "gif", "avif", "webp", "webp"],
+        "jpeg 落成 .jpg，认不出的类型退 webp",
+      );
+      eq(
+        [imgs.base64Of("data:image/png;base64,AAAA"), imgs.base64Of("没有逗号")],
+        ["AAAA", ""],
+        "base64Of 只取逗号后面那段",
+      );
+
+      // ---------- 导出时的名字 ----------
+
+      eq(imgs.defaultNoteName("# 周会记录\n\n正文"), "周会记录", "第一行是 # 标题就用它");
+      eq(imgs.defaultNoteName("# 周会记录 #\n"), "周会记录", "行尾的 # 不算名字的一部分");
+      eq(imgs.defaultNoteName("# a/b:c*?"), "a b c", "Windows 不许的字符换成空格");
+      eq(
+        imgs.defaultNoteName("# " + "字".repeat(80)).length,
+        60,
+        "太长的标题截到 60 个字",
+      );
+      eq(
+        imgs.defaultNoteName("没有标题的正文", new Date(2026, 9, 27, 10, 44)),
+        "便签 2026-10-27 10-44",
+        "没有标题就用日期和时间",
+      );
+      eq(
+        imgs.defaultNoteName("", new Date(2026, 0, 5, 9, 7), "Note"),
+        "Note 2026-01-05 09-07",
+        "月和日补到两位；前缀跟着界面语言",
+      );
+
+      // ---------- 导出的切分 ----------
+
+      {
+        const text = `# 今天的图\n\n${pic("截图", "AAAA", 240)}`;
+        const plan = imgs.exportPlan(text, new Date(2026, 9, 27, 10, 44));
+        eq(plan.baseName, "今天的图", "导出名字来自标题");
+        eq(plan.zip, true, "有图就要打成 zip");
+        eq(
+          plan.files.map((file) => file.name),
+          ["note.md", "images/1.webp"],
+          "正文叫 note.md，图按顺序编号",
+        );
+        log(!plan.files[0].text.includes("data:image"), "note.md 里不再有 base64");
+        log(
+          plan.files[0].text.includes('<img src="images/1.webp" alt="截图" width="240">'),
+          "宽度改写成 <img width>，alt 也带上了",
+        );
+        eq(plan.files[1].base64, "AAAA", "图片那条是裸 base64，不带 data: 头");
+      }
+      {
+        const plan = imgs.exportPlan(pic("", "AAAA", 0, "jpeg") + pic("", "AAAA", 0, "jpeg"), new Date(2026, 9, 27));
+        eq(
+          plan.files.map((file) => file.name),
+          ["note.md", "images/1.jpg", "images/2.jpg"],
+          "jpeg 落成 .jpg，两张各占一个名字",
+        );
+        log(!plan.files[0].text.includes("width="), "没写宽度的图不硬塞一个 width");
+      }
+      {
+        const plan = imgs.exportPlan(pic('他说"好"', "AAAA", 120));
+        log(plan.files[0].text.includes('alt="他说&quot;好&quot;"'), "alt 里的引号被转义，不会把属性截断");
+      }
+      {
+        const text = "只有字，没有图";
+        const plan = imgs.exportPlan(text, new Date(2026, 9, 27, 10, 44));
+        eq(plan.zip, false, "没图就写一个 .md，不打 zip");
+        eq(plan.files.length, 1, "只有一个文件");
+        eq(plan.files[0].text, text, "正文原样交出去");
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

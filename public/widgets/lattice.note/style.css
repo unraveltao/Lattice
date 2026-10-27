@@ -238,6 +238,59 @@ body {
   color: var(--muted);
 }
 
+/* ---------- 图片 ---------- */
+
+/*
+ * 内联图片本身按 `width` 画，但绝不许撑破卡片：`max-width: 100%` 是兜底 —— 一张
+ * 480px 的图放进 260px 的便签，应当缩到卡片宽度，而不是把预览撑出横向滚动。
+ */
+.note-preview .md-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+/* 三档宽度那颗按钮要挂在这层上：`position: relative` 让它落在图片右下角 */
+.note-img-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  margin: 2px 0 4px;
+}
+
+/*
+ * 右下角那颗 25% / 50% / 100%。常驻半透明而不是只在 hover 时出现：它是图片唯一的
+ * 缩小入口，藏起来等于没做这个功能；半透明又不至于盖住图的内容。
+ */
+.note-img-size {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, #000 48%, transparent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+
+.note-img-wrap:hover .note-img-size,
+.note-img-size:focus-visible {
+  opacity: 1;
+}
+
+.note-img-size:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
 #status.is-saved {
   color: var(--accent);
 }

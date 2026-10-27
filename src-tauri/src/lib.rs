@@ -29,6 +29,8 @@ pub mod dictation;
 pub mod dictation_button;
 pub mod dictation_policy;
 pub mod egress;
+pub mod export;
+pub mod export_policy;
 pub mod fs_policy;
 pub mod guide_policy;
 pub mod guides;
@@ -110,6 +112,9 @@ pub fn run() {
         // 自动更新：只在用户点了"Check for updates"时跑，不后台轮询。
         // 后台轮询一个只发布几次的项目，等于每台机器每天替你发一次请求
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // 组件的 `file.save`：保存对话框（`export.rs`）。插件只是"弹框"这一件事，
+        // 写什么、写到哪儿仍然由我们那条命令说了算
+        .plugin(tauri_plugin_dialog::init())
         // 听写的全局热键（0027 §3 决定②）。插件只管"按下了"这件事，
         // 开不开麦、打不打字仍然是 dictation.rs 那一份状态说了算
         .plugin(
@@ -194,6 +199,7 @@ pub fn run() {
             guides::guide_targets,
             guides::guide_show,
             open::open_external,
+            export::file_save,
             wallpaper::widget_wallpaper,
             metrics::system_metrics,
             power::system_power,

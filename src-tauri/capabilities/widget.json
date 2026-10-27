@@ -5,6 +5,7 @@
   "windows": ["widget-*"],
   "permissions": [
     "core:default",
+    "dialog:allow-save",
     "core:window:allow-close",
     "core:window:allow-hide",
     "core:window:allow-show",

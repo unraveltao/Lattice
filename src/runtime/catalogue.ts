@@ -293,6 +293,7 @@ const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set<string>([
   "agent:tools",
   "terminal:exec",
   "secret",
+  "file:save",
   "desktop:control",
 ]);
 

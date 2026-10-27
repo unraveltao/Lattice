@@ -111,7 +111,7 @@ npm run pack:widget -- demo.mine      # folder → .lattice, drag straight into 
 
 ## How it works
 
-A widget *becomes* a window without ever touching Windows. It runs in a sandboxed iframe with an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge. There are fourteen permissions, nothing is granted by default, and installing a widget grants it nothing: you approve each capability once per widget, and revoking one takes effect in the windows already open.
+A widget *becomes* a window without ever touching Windows. It runs in a sandboxed iframe with an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge. There are fifteen permissions, nothing is granted by default, and installing a widget grants it nothing: you approve each capability once per widget, and revoking one takes effect in the windows already open.
 
 <p align="center"><a href="docs/screenshot-editor.png"><img src="docs/screenshot-editor.png" width="880" alt="The main window: widget library, canvas and inspector"></a></p>
 
@@ -163,8 +163,8 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 | Metric | Value |
 | --- | --- |
 | Official widgets | 25 |
-| Permissions | 14 |
-| Tauri commands | 111 |
+| Permissions | 15 |
+| Tauri commands | 112 |
 | Browser assertions | 3 828 over 76 pages |
 | Rust tests | 487 |
 | Documented pitfalls | 105 |
@@ -175,11 +175,11 @@ Every one of those is enforced by something. The browser assertions run a real d
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 25 075 lines |
+| TypeScript | 25 554 lines |
 | CSS | 6 365 lines |
-| Rust | 27 923 lines |
+| Rust | 28 563 lines |
 | SDK | 961 lines |
-| Widgets + example | 37 180 lines |
+| Widgets + example | 37 603 lines |
 | Scripts | 5 614 lines |
 
 </details>

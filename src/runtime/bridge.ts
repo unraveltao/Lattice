@@ -15,6 +15,7 @@ import type { ConfigValues } from "./config";
 import type { Scheduler } from "./schedule";
 import { languagePayload } from "./i18n";
 import { normalizeAskMessages } from "./assistant";
+import { cancelledResult, planSave, savedResult, withSaveExtension } from "./save-file";
 
 export const BRIDGE_TAG = "__lattice";
 
@@ -414,6 +415,36 @@ defineMethod("shell.open", "shell:open", async (params) => {
   }
   await invoke("open_external", { url });
   return { ok: true };
+});
+
+/*
+ * 把内容存成一个文件（或一个 zip）。
+ *
+ * 和 `shell.open` 是同一类"往外递东西"的门，但方向相反：那边是把一个地址交给
+ * 系统，这边是把用户的字和图交给磁盘。所以它也要权限（`file:save`），而且和
+ * `hands.rs` 的 `file.write` 是两件事 —— 那条是"助手直接写盘"（带审批、能写
+ * 任意路径），这条**每次弹保存对话框、用户自己选位置**。名字必须分开。
+ *
+ * 三条：
+ * 1. **参数先在这里收成干净的形状**（`runtime/save-file.ts`），不合格回
+ *    `bad_params`。`export_policy.rs` 会再判一遍 —— 这一份挡"组件写错了"，
+ *    那一份挡"有人绕过了这一份"。
+ * 2. **取消不是错误**。Rust 回 `{ok:false}` 时这条桥回 `{ok:false, cancelled:true}`
+ *    而不是抛错：抛错会让组件画一行红字，而用户只是不想存了。
+ * 3. **单文件还是 zip 由内容决定**（一个 text = 单文件；多文件或带 base64 = zip）。
+ *    扩展名也按内容补，不信用户在对话框里敲的那个。
+ */
+defineMethod("file.save", "file:save", async (params) => {
+  const plan = planSave(params);
+  if (!plan.ok) throw new BridgeError("bad_params", plan.error);
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "saving a file needs the desktop app");
+  }
+  const reply = await invoke<{ ok: boolean; path?: string; cancelled?: boolean }>("file_save", {
+    name: withSaveExtension(plan.request.name, plan.zip),
+    files: plan.request.files,
+  });
+  return reply.ok ? savedResult(reply.path ?? "") : cancelledResult();
 });
 
 defineMethod("theme.get", null, () => readThemeTokens());

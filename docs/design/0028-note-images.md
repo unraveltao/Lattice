@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-10-27
 supersedes:
-code: 未实现（这一份是先定决定、后写代码）
+code: src/runtime/{save-file.ts,bridge.ts,manifest.ts,catalogue.ts,i18n/misc.ts}, src-tauri/src/{export.rs,export_policy.rs,lib.rs}, src-tauri/Cargo.toml, src-tauri/capabilities/{default.json,widget.json}, public/widgets/lattice.note/{manifest.json,index.html,style.css,widget.js,note-md.js,note-images.js}, tests/{note-images.html,export.html,note-md.html}, docs/{WIDGET_SPEC.md,ROADMAP.md}, AGENTS.md
 ---
 
 # 0028 —— 便签装图片：内联压缩 + 导出成 zip
@@ -110,9 +110,9 @@ file.save      权限 file:save
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/note-images.html` | ~25 | 压缩参数、base64 剥离与回填、`{width}` 解析与改写、导出切分、字数统计忽略图片、上限拒绝 |
-| `tests/export.html` | ~12 | 文件名清洗、单文件 vs zip 的判定、取消、扩展名补齐 |
-| `src-tauri/src/export_policy.rs` | ~15 | 同上（Rust 侧那一份），zip 头字节与 EOCD |
+| `tests/note-images.html` | 49 | 压缩参数、base64 剥离与回填、`{width}` 解析与改写、导出切分、字数统计忽略图片、上限拒绝 |
+| `tests/export.html` | 27 | 文件名清洗、单文件 vs zip 的判定、取消、扩展名补齐 |
+| `src-tauri/src/export_policy.rs` | 14 | 同上（Rust 侧那一份），zip 头字节与 EOCD |
 
 **手工验一次**：
 

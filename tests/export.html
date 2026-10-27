@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>file.save / 参数与落点</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * `file.save` 的纯逻辑：名字能不能当文件名、这一趟写一个文件还是打 zip、
+       * 扩展名补哪个、取消长什么样。
+       *
+       * 这一页不碰 Tauri：真正弹对话框、写盘、打 zip 在 Rust（`export.rs` +
+       * `export_policy.rs`，那边的单测钉格式）。这里钉的是**组件递上来的东西**
+       * 要过哪几道闸 —— 任何一处不合格都整趟拒掉，不许悄悄修好再写。
+       */
+      import {
+        MAX_SAVE_FILES,
+        MAX_SAVE_FILE_BYTES,
+        MAX_SAVE_NAME_CHARS,
+        MAX_SAVE_TOTAL_BYTES,
+        base64Bytes,
+        cancelledResult,
+        cleanEntryName,
+        cleanSaveName,
+        planSave,
+        saveNeedsZip,
+        savedResult,
+        withSaveExtension,
+      } from "/src/runtime/save-file.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text}（得到 ${JSON.stringify(actual)}）`,
+        );
+
+      // ---------- 名字：只当文件名 ----------
+
+      eq(cleanSaveName("便签 2026-10-27 10-44"), "便签 2026-10-27 10-44", "普通名字原样收下");
+      eq(cleanSaveName("  周会记录  "), "周会记录", "两头空格去掉");
+      eq(
+        [cleanSaveName("a/b.md"), cleanSaveName("a\\b.md"), cleanSaveName("C:name"), cleanSaveName("名*字")],
+        [null, null, null, null],
+        "带路径分隔符、盘符、Windows 九个头的一律是坏参数",
+      );
+      eq(
+        [cleanSaveName(""), cleanSaveName("   "), cleanSaveName(null), cleanSaveName(42)],
+        [null, null, null, null],
+        "空串、空白、非字符串都不收",
+      );
+      eq(
+        [cleanSaveName("."), cleanSaveName("..")],
+        [null, null],
+        "单独的 . 和 .. 不收（那是路径不是名字）",
+      );
+      eq(cleanSaveName("字".repeat(MAX_SAVE_NAME_CHARS)).length, MAX_SAVE_NAME_CHARS, "正好 120 个字能用");
+      eq(cleanSaveName("字".repeat(MAX_SAVE_NAME_CHARS + 1)), null, "121 个字就不收");
+
+      // ---------- zip 里的路径 ----------
+
+      eq(cleanEntryName("images/1.webp"), "images/1.webp", "正常相对路径收下");
+      eq(
+        [
+          cleanEntryName("images/../x"),
+          cleanEntryName("/abs.md"),
+          cleanEntryName("a//b.md"),
+          cleanEntryName("a\\b.md"),
+          cleanEntryName("C:/box.md"),
+          cleanEntryName("dir/"),
+        ],
+        [null, null, null, null, null, null],
+        "../、绝对路径、空段、反斜杠、盘符、结尾斜杠都拒",
+      );
+
+      // ---------- 字节估算 ----------
+
+      eq(
+        [base64Bytes("AAAA"), base64Bytes("AA=="), base64Bytes("")],
+        [3, 1, 0],
+        "base64 字节数按长度估：padding 扣掉，空串是 0",
+      );
+
+      // ---------- 单文件还是 zip ----------
+
+      eq(
+        [
+          saveNeedsZip([{ name: "note.md", text: "# x" }]),
+          saveNeedsZip([{ name: "n.md", base64: "AAAA" }]),
+          saveNeedsZip([{ name: "a.md", text: "a" }, { name: "b.md", text: "b" }]),
+        ],
+        [false, true, true],
+        "只有一个文本文件才不打包；有 base64 或者多于一个文件都打 zip",
+      );
+
+      // ---------- 整趟计划 ----------
+
+      {
+        const plan = planSave({ name: "周会记录", files: [{ name: "note.md", text: "# 周会记录" }] });
+        eq(plan.ok, true, "一个文本文件收下");
+        if (plan.ok) {
+          eq(plan.zip, false, "单文件不打包");
+          eq(plan.request.name, "周会记录", "名字原样带进去（扩展名由保存框补）");
+          eq(plan.request.files, [{ name: "note.md", text: "# 周会记录" }], "文件原样交出去");
+        }
+      }
+      {
+        const plan = planSave({
+          name: "周会记录",
+          files: [
+            { name: "note.md", text: "# 周会记录" },
+            { name: "images/1.webp", base64: "AAAA" },
+          ],
+        });
+        eq(plan.ok && plan.zip, true, "正文 + 图 → zip");
+        if (plan.ok) eq(plan.request.files.length, 2, "两条都在");
+      }
+      eq(
+        [planSave(null).ok, planSave("x").ok, planSave({ files: [{ name: "a.md", text: "x" }] }).ok],
+        [false, false, false],
+        "非对象、没有名字、没有 files 都拒",
+      );
+      eq(
+        [planSave({ name: "a" }).ok, planSave({ name: "a", files: [] }).ok],
+        [false, false],
+        "files 缺失或者空数组都拒",
+      );
+      eq(
+        [
+          planSave({ name: "a", files: [{ name: "a.md", text: "x", base64: "AAAA" }] }).ok,
+          planSave({ name: "a", files: [{ name: "a.md" }] }).ok,
+          planSave({ name: "a", files: [{ text: "x" }] }).ok,
+        ],
+        [false, false, false],
+        "每条文件必须**恰好**给 text 或 base64，且必须有名字",
+      );
+      eq(
+        planSave({ name: "a", files: Array.from({ length: MAX_SAVE_FILES + 1 }, (_, i) => ({ name: `f${i}.md`, text: "x" })) }).ok,
+        false,
+        `超过 ${MAX_SAVE_FILES} 个文件整趟拒掉`,
+      );
+      {
+        const plan = planSave({
+          name: "a",
+          files: [{ name: "big.md", text: "x".repeat(MAX_SAVE_FILE_BYTES + 1) }],
+        });
+        eq(plan.ok, false, "单个文件超过 8MB 拒掉");
+      }
+      {
+        const chunk = "x".repeat(Math.ceil(MAX_SAVE_TOTAL_BYTES / 3) + 1024);
+        const plan = planSave({
+          name: "a",
+          files: [
+            { name: "1.md", text: chunk },
+            { name: "2.md", text: chunk },
+            { name: "3.md", text: chunk },
+          ],
+        });
+        eq(plan.ok, false, "三个都在单文件上限以内、加起来过 16MB，整趟还是拒");
+      }
+
+      // ---------- 扩展名 ----------
+
+      eq(
+        [
+          withSaveExtension("周会记录", false),
+          withSaveExtension("周会记录", true),
+          withSaveExtension("a.md", false),
+          withSaveExtension("a.md", true),
+          withSaveExtension("a.zip", false),
+          withSaveExtension("a.txt", true),
+          withSaveExtension("图表.v2", false),
+        ],
+        ["周会记录.md", "周会记录.zip", "a.md", "a.zip", "a.md", "a.zip", "图表.v2.md"],
+        "按内容补扩展名：已经是那个就留着，是 .md/.zip/.txt 的另一个就换掉，其余接在后面",
+      );
+
+      // ---------- 两种回话 ----------
+
+      eq(savedResult("C:\\Users\\me\\周会记录.md"), { ok: true, path: "C:\\Users\\me\\周会记录.md" }, "写成功回路径");
+      {
+        const done = cancelledResult();
+        eq(done, { ok: false, cancelled: true }, "取消是 {ok:false, cancelled:true}");
+        log(!("error" in done), "取消不带 error —— 界面上一个字都不该说");
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

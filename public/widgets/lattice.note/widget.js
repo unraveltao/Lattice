@@ -12,6 +12,17 @@
  *  2. **清空之后能找回**：把整段文字删光并落盘时，上一版正文会存进
  *     `backup` 这个键，24 小时内卡片上会出现一颗「恢复」。删掉一张便签的
  *     全部内容是不可逆的，而这颗「恢复」是它唯一的退路。
+ *
+ * 0.3 起有图片（design/0028）：
+ *  - **进来只有两条路**：`textarea` 的粘贴、卡片的拖入。图片当场压到长边 480 /
+ *    WebP 0.8，**内联成 base64 写进正文**（`![]({data:…}){width=…}`）—— 正文因此
+ *    自己就是可导出的 Markdown，不需要第二个存储键。上限：单张 120KB / 共 1MB /
+ *    8 张，超了拒绝并说清楚（悄悄丢一张比拒绝糟得多）。
+ *  - **缩小只在预览态做**：图片右下角那颗按钮循环 25% / 50% / 100%，改的是源文本
+ *    里的 `{width=N}`，不是 DOM 上的样式 —— 否则下次渲染就回去了。
+ *  - **导出**走桥的 `file.save`（权限 `file:save`）：把 data URL 抽成 `images/N`,
+ *    `{width=N}` 改写成 `<img width>`，一次交给平台弹保存框。用户取消时一句话都
+ *    不说 —— 把"我不想存了"画成红字是这个仓库反复踩过的坑。
  */
 (function () {
   "use strict";
@@ -78,9 +89,10 @@
     updateCount();
     // 状态行的文字由状态机给，重画当前那一条，别把"保存中…"写成别的
     setStatus(statusKey, statusKind);
-    // 预览按钮、恢复按钮、空预览的提示语都跟语言有关
+    // 预览按钮、恢复按钮、导出按钮、空预览的提示语都跟语言有关
     renderMode();
     updateRestore();
+    updateExportLabel();
   }
 
   window.addEventListener("message", function (event) {
@@ -116,6 +128,7 @@
 
   // ---------- 业务 ----------
   var md = window.__latticeNoteMarkdown;
+  var imgs = window.__latticeNoteImages;
 
   var textEl = document.getElementById("text");
   var previewEl = document.getElementById("preview");
@@ -123,6 +136,7 @@
   var countEl = document.getElementById("count");
   var modeEl = document.getElementById("mode");
   var restoreEl = document.getElementById("restore");
+  var exportEl = document.getElementById("export");
 
   var timer = null;
 
@@ -179,6 +193,36 @@
     loadFailed: function () {
       return say("读不到内容", "Could not load");
     },
+    imageWorking: function () {
+      return say("处理图片…", "Processing image…");
+    },
+    imageTooBig: function () {
+      return say("压完还是超过 120KB", "Still over 120 KB after squeezing");
+    },
+    imageLimit: function () {
+      return say("最多 8 张图", "At most 8 images");
+    },
+    noteFull: function () {
+      return say("图片总量到 1MB 了", "Images have reached 1 MB");
+    },
+    imageBroken: function () {
+      return say("这张图读不了", "That image could not be read");
+    },
+    exportWorking: function () {
+      return say("导出中…", "Exporting…");
+    },
+    exportDone: function () {
+      return say("已导出", "Exported");
+    },
+    exportFailed: function () {
+      return say("导出失败", "Could not export");
+    },
+    exportDenied: function () {
+      return say("没有「保存文件」权限", "No file permission");
+    },
+    exportEmpty: function () {
+      return say("还没有内容", "Nothing to export");
+    },
   };
 
   function setStatus(key, kind) {
@@ -194,9 +238,18 @@
   }
 
   function updateCount() {
-    countEl.textContent = say(
-      Array.from(textEl.value).length + " 字",
-      Array.from(textEl.value).length + " chars",
+    // 字数先剥掉图片再数：一张 40KB 的图会让字数跳到四万（design/0028 §8）
+    var chars = imgs ? imgs.countChars(textEl.value) : Array.from(textEl.value).length;
+    countEl.textContent = say(chars + " 字", chars + " chars");
+  }
+
+  /** 底栏那颗「导出」的字与提示。缺 `file:save` 权限时它照旧可点 —— 点下去会说缺什么 */
+  function updateExportLabel() {
+    if (!exportEl) return;
+    exportEl.textContent = say("导出", "Export");
+    exportEl.title = say(
+      "把正文和图片导出成 Markdown 或 zip",
+      "Export the note and its images as Markdown or a zip",
     );
   }
 
@@ -206,6 +259,7 @@
     if (!previewEl) return;
     previewEl.setAttribute("data-empty", say("还没有内容", "Nothing here yet"));
     previewEl.innerHTML = md ? md.render(textEl.value) : "";
+    decorateImages();
   }
 
   function renderMode() {
@@ -259,7 +313,254 @@
 
   restoreEl.addEventListener("click", restore);
 
+  // ---------- 图片 ----------
+
+  /** 只挑图片文件：拖进来一个 .md 不该被当成图 */
+  function imageFilesOf(list) {
+    var out = [];
+    for (var i = 0; i < (list ? list.length : 0); i += 1) {
+      var file = list[i];
+      if (file && file.type && file.type.indexOf("image/") === 0) out.push(file);
+    }
+    return out;
+  }
+
+  /** 拖拽经过时 `files` 还是空的（浏览器到 drop 才填），得看 `items` */
+  function hasImagePayload(data) {
+    if (!data) return false;
+    var items = data.items;
+    for (var i = 0; i < (items ? items.length : 0); i += 1) {
+      var item = items[i];
+      if (item.kind === "file" && item.type && item.type.indexOf("image/") === 0) return true;
+    }
+    return imageFilesOf(data.files).length > 0;
+  }
+
+  /** 等比画到 canvas 上。`source` 可以是图片文件解出来的 bitmap，也可以是上一张 canvas */
+  function drawScaled(source, maxEdge) {
+    var size = imgs.fitSize(source.width, source.height, maxEdge);
+    if (!size.width || !size.height) return null;
+    var canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    var context = canvas.getContext("2d");
+    if (!context) return null;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(source, 0, 0, size.width, size.height);
+    return canvas;
+  }
+
+  /**
+   * 一张 `File` → 一张压好的 data URL。
+   *
+   * 长边超过 2000 的先降一次采样再压到 480：4K 截图直接压要卡两秒，而这两秒是
+   * 主线程（`createImageBitmap` 之后的绘制和编码都在这里）。
+   */
+  function compressImage(file) {
+    return createImageBitmap(file).then(function (bitmap) {
+      var source = bitmap;
+      if (Math.max(bitmap.width, bitmap.height) > imgs.PRE_DOWNSCALE) {
+        var middle = drawScaled(bitmap, imgs.PRE_DOWNSCALE);
+        if (middle) source = middle;
+      }
+      var canvas = drawScaled(source, imgs.LONG_EDGE);
+      if (bitmap.close) bitmap.close();
+      if (!canvas) throw new Error("the image could not be drawn");
+      var url = canvas.toDataURL("image/webp", imgs.QUALITY);
+      if (url.indexOf("data:image/webp") !== 0) {
+        // 浏览器不支持 WebP 编码（老 Chromium）：退 JPEG。导出时扩展名跟着变 .jpg
+        url = canvas.toDataURL("image/jpeg", imgs.QUALITY);
+      }
+      return { url: url, width: canvas.width, height: canvas.height, bytes: imgs.dataUrlBytes(url) };
+    });
+  }
+
+  /** 把一张图接在光标处（前后各补一个换行，光标落到图片下一行） */
+  function insertImage(image) {
+    var start = typeof textEl.selectionStart === "number" ? textEl.selectionStart : textEl.value.length;
+    var end = typeof textEl.selectionEnd === "number" ? textEl.selectionEnd : start;
+    var before = textEl.value.slice(0, start);
+    var token =
+      (before && before.slice(-1) !== "\n" ? "\n" : "") +
+      "![](" +
+      image.url +
+      "){width=" +
+      image.width +
+      "}\n";
+    textEl.setRangeText(token, start, end, "end");
+    markEdited();
+    textEl.focus();
+  }
+
+  /**
+   * 一张一张地压、一张一张地插。
+   *
+   * 三条上限都在这里判：单张压完 ≤ 120KB、整张便签 ≤ 1MB、最多 8 张。任何一条
+   * 越界都**停下并说明** —— 悄悄丢掉一张图，用户只会以为"贴失败了"。
+   */
+  function addImages(files) {
+    var picked = imageFilesOf(files);
+    if (!picked.length) return;
+    if (imgs.imageCount(textEl.value) + picked.length > imgs.MAX_IMAGES) {
+      setStatus("imageLimit", "error");
+      return;
+    }
+    setStatus("imageWorking", "");
+    var chain = Promise.resolve();
+    picked.forEach(function (file) {
+      chain = chain.then(function () {
+        return compressImage(file)
+          .then(function (image) {
+            if (image.bytes > imgs.MAX_IMAGE_BYTES) {
+              setStatus("imageTooBig", "error");
+              return;
+            }
+            if (imgs.totalImageBytes(textEl.value) + image.bytes > imgs.MAX_TOTAL_BYTES) {
+              setStatus("noteFull", "error");
+              return;
+            }
+            insertImage(image);
+          })
+          .catch(function () {
+            setStatus("imageBroken", "error");
+          });
+      });
+    });
+    chain.then(function () {
+      // 插进去的图会触发一次保存（`markEdited`），状态行交给保存状态机；
+      // 一张都没插进去时才把「处理图片…」收掉
+      if (statusKey === "imageWorking") setStatus("saved", "saved");
+    });
+  }
+
+  /**
+   * 预览里的每张内联图右下角挂一颗三档按钮。
+   *
+   * 点一下改的是**源文本**里的 `{width=N}`（不是 DOM 的 style）—— 否则下次渲染、
+   * 下次重开就回到原样了。序号按出现顺序，和 `note-images.js` 的 `cycleWidth` 对齐。
+   */
+  function bindImage(img) {
+    var index = Number(img.getAttribute("data-note-index"));
+    if (!isFinite(index)) return; // 相对路径 / blob: 的外部图不给宽度按钮
+
+    var wrap = document.createElement("span");
+    wrap.className = "note-img-wrap";
+    img.parentNode.insertBefore(wrap, img);
+    wrap.appendChild(img);
+
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "note-img-size";
+    wrap.appendChild(button);
+
+    function label() {
+      var natural = img.naturalWidth || 0;
+      var shown = Number(img.getAttribute("width")) || natural;
+      var percent = imgs.widthPercent(shown, natural);
+      button.textContent = percent + "%";
+      button.title = say("点一下换宽度：100% → 25% → 50%", "Click to cycle the width: 100% → 25% → 50%");
+      button.setAttribute("aria-label", say("图片宽度 " + percent + "%", "Image width " + percent + "%"));
+    }
+
+    button.addEventListener("click", function () {
+      var natural = img.naturalWidth || Number(img.getAttribute("width")) || 0;
+      var next = imgs.cycleWidth(textEl.value, index, natural);
+      if (next.text === textEl.value) return;
+      textEl.value = next.text;
+      markEdited();
+      renderPreview();
+    });
+
+    img.addEventListener("load", label);
+    label();
+  }
+
+  function decorateImages() {
+    if (!previewEl) return;
+    var list = previewEl.querySelectorAll("img.md-img");
+    for (var i = 0; i < list.length; i += 1) bindImage(list[i]);
+  }
+
+  /*
+   * 进来只有两条路：粘贴、拖入。
+   *
+   * **只接 `textarea` 的 paste**：接在 `document` 上时，桌面窗口那套焦点/z 序会让
+   * 一些粘贴被吞掉（design/0028 §5）。拖入接在整张卡片上，并且 `preventDefault`
+   * —— 不拦的话浏览器会把图片当成一次导航（"打开这个文件"），卡片当场变成一个
+   * 预览窗口，便签还在，但用户刚才在看的东西没了。
+   */
+  textEl.addEventListener("paste", function (event) {
+    var data = event.clipboardData;
+    if (!data || !imageFilesOf(data.files).length) return;
+    event.preventDefault();
+    addImages(data.files);
+  });
+
+  document.addEventListener("dragover", function (event) {
+    if (hasImagePayload(event.dataTransfer)) event.preventDefault();
+  });
+
+  document.addEventListener("drop", function (event) {
+    if (!hasImagePayload(event.dataTransfer)) return;
+    event.preventDefault();
+    addImages(event.dataTransfer.files);
+  });
+
+  // ---------- 导出 ----------
+
+  var exporting = false;
+
+  /**
+   * 把便签交给平台的保存框：正文 + 每张图各一个文件（多文件 → 平台打 zip）。
+   *
+   * 三件事都在这儿：切分（`imgs.exportPlan`）、缺权限时说清是哪一项、**取消时
+   * 一句话都不说**（把状态行还原成点导出之前的样子）。
+   */
+  function exportNote() {
+    if (exporting) return;
+    var plan = imgs.exportPlan(textEl.value, new Date(), say("便签", "Note"));
+    if (!plan.files[0].text.trim()) {
+      setStatus("exportEmpty", "");
+      return;
+    }
+    exporting = true;
+    var before = { key: statusKey, kind: statusKind };
+    setStatus("exportWorking", "");
+    call("file.save", { name: plan.baseName, files: plan.files })
+      .then(function (result) {
+        exporting = false;
+        if (result && result.ok) {
+          setStatus("exportDone", "saved");
+          return;
+        }
+        // 用户点了取消：不是错误，也不留一句话
+        setStatus(before.key, before.kind);
+      })
+      .catch(function (error) {
+        exporting = false;
+        setStatus(error.code === "permission_denied" ? "exportDenied" : "exportFailed", "error");
+      });
+  }
+
+  if (exportEl) exportEl.addEventListener("click", exportNote);
+
   // ---------- 保存 ----------
+
+  /**
+   * 正文改过了：更新字数、恢复条，并把"停手 400ms 就落盘"这条计时重新起一遍。
+   *
+   * 输入框的 `input`、插入图片、预览里改宽度都走这一个入口 —— 三条路各写一遍的话，
+   * 迟早有一条忘了 `revision` 或忘了清计时器。
+   */
+  function markEdited() {
+    revision += 1;
+    updateCount();
+    updateRestore();
+    // 正在保存时别把"保存中…"改回"未保存"，那会让人以为存完了又退回
+    if (!saving) setStatus("unsaved", "");
+    clearTimeout(timer);
+    timer = setTimeout(save, 400);
+  }
 
   function save() {
     // 上一次还没回来就什么都不做：它回来时会发现 revision 更大，自己再存一次
@@ -305,15 +606,7 @@
       });
   }
 
-  textEl.addEventListener("input", function () {
-    revision += 1;
-    updateCount();
-    updateRestore();
-    // 正在保存时别把"保存中…"改回"未保存"，那会让人以为存完了又退回
-    if (!saving) setStatus("unsaved", "");
-    clearTimeout(timer);
-    timer = setTimeout(save, 400);
-  });
+  textEl.addEventListener("input", markEdited);
 
   // 失焦立刻落盘，避免用户切走时最后 400ms 的输入丢掉
   textEl.addEventListener("blur", function () {
@@ -426,6 +719,7 @@
     })
     .then(function () {
       renderMode();
+      updateExportLabel();
       parent.postMessage({ __lattice: 1, type: "ready" }, "*");
     });
 })();

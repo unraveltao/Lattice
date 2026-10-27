@@ -26,6 +26,7 @@ export const MISC_ZH: Record<string, string> = {
   "Agent tool calls": "调用组件声明的工具",
   "Run commands": "在终端里跑命令",
   "Store a secret for me": "替我保管一个密钥",
+  "Save files": "保存文件",
   "Rearrange my desktop": "替我调整桌面",
 
   // —— 商店：这份东西有多旧（`platform/catalogue.ts` 的 describeAge）——

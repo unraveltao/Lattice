@@ -35,6 +35,23 @@
 
   var HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
+  /**
+   * 一张图片的地址能不能真画出来。`null` = 不能，降级成 alt 文字。
+   *
+   * 只认三种：内联的 `data:image/`（便签自己贴进来的，0.3 起就是它）、当场的
+   * `blob:`（预览用，存不下去）、相对路径（组件自己的文件）。`http(s)` **不认** ——
+   * 卡片里没有位置，CSP 也只放行自己的资源；真去请求一次，用户看到的是一个破图标。
+   * `//host/x` 这种协议相对的写法也拒：它等于一次外网请求。
+   */
+  function imageSrc(raw) {
+    var src = String(raw || "").trim();
+    if (!src) return null;
+    if (/^(data:image\/|blob:)/i.test(src)) return src;
+    if (src.startsWith("//")) return null;
+    if (HAS_SCHEME.test(src)) return null;
+    return src;
+  }
+
   /** 这个地址能不能写进 title。`null` = 不能，链接降级成纯文字 */
   function safeHref(raw) {
     var href = String(raw || "").trim();
@@ -62,9 +79,27 @@
 
     out = escapeHtml(out);
 
-    out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (_match, alt) {
-      // 图片不加载：卡片里没有位置，CSP 也只放行自己的资源
-      return '<span class="md-alt">' + alt + "</span>";
+    /*
+     * 图片：`![](data:image/webp;base64,…){width=240}`。
+     *
+     * 必须早于链接规则 —— 否则 `![x](y)` 里的 `[x](y)` 会被链接先吃掉，预览里就
+     * 只剩一行字面量。`data-note-index` 是给预览里那三档宽度按钮用的序号（只数
+     * 内联图）：点一下改的是源文本里对应的那个 `{width=N}`。
+     */
+    var imageIndex = 0;
+    out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)\)(?:\{width=(\d+)\})?/g, function (_match, alt, src, width) {
+      var url = imageSrc(src);
+      if (!url) {
+        // 外部图片不加载：卡片里没有位置，CSP 也只放行自己的资源
+        return '<span class="md-alt">' + alt + "</span>";
+      }
+      var attrs = ' class="md-img" src="' + url + '" alt="' + alt + '"';
+      if (width) attrs += ' width="' + width + '"';
+      if (/^data:/i.test(url)) {
+        attrs += ' data-note-index="' + imageIndex + '"';
+        imageIndex += 1;
+      }
+      return "<img" + attrs + ">";
     });
 
     out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (_match, label, href) {
@@ -233,6 +268,7 @@
   window.__latticeNoteMarkdown = {
     escapeHtml: escapeHtml,
     safeHref: safeHref,
+    imageSrc: imageSrc,
     inline: inline,
     render: render,
   };

@@ -8,7 +8,7 @@
 >
 > **要写新文档先看 [docs/README.md](./docs/README.md)**：哪份该读、哪份该改、新内容该放哪（按你要做的事找 + 三问定归属 + "一份事实只有一个家"）。还没做的事在动手前的推理放 [docs/design/](./docs/design/README.md)，写完的结论要沉回 ROADMAP 一行。
 >
-> **这一页八百多行，按这个顺序读**：第 4 节（二十条不变量，改任何代码之前）→ 第 8 节（已知缺口，别把缺口当 bug 修一半）→ 第 7 节（你要改的东西对应的配方）→ 第 11 节（怎么验证）。词不认识查 [GLOSSARY.md](./GLOSSARY.md)，剩下的按需查。
+> **这一页八百多行，按这个顺序读**：第 4 节（二十二条不变量，改任何代码之前）→ 第 8 节（已知缺口，别把缺口当 bug 修一半）→ 第 7 节（你要改的东西对应的配方）→ 第 11 节（怎么验证）。词不认识查 [GLOSSARY.md](./GLOSSARY.md)，剩下的按需查。
 
 ---
 
@@ -82,6 +82,7 @@ src/
     help.ts               组件说明与变更记录：清单里的 `help` / `changelog`、上限、逐条丢弃（纯函数，`tests/help.html` 钉着）
     registry.ts           组件发现：bundled（public/widgets）+ user（%APPDATA%）；入口地址解析
     bridge.ts             RPC 桥：方法表、权限闸门、平台内置方法
+    save-file.ts          `file.save` 的参数规则：名字只当文件名（不是路径）、单文件还是 zip、扩展名按内容补、取消不是错误（纯函数，`tests/export.html` 27 条钉着；Rust 侧那一份是 `export_policy.rs`）
     term.ts               终端的事件形状（`TermEvent` / `TermState`）：两个宿主只按 `instanceId` 转发，不解释正文
     appearance.ts         底板外观模型：归一化、合成色、亮度阈值
     diagnostics.ts        错误通道：认出组件报上来的错、去重指纹、挑主错误
@@ -159,6 +160,8 @@ src-tauri/src/
   usage_policy.rs         上面那道的纯逻辑：日键校验、分钟累加、400 天裁剪（8 条 rustc --test）
   open.rs                 打开外链：把 shell.open 交给系统默认浏览器（协议由 open_policy 卡）
   open_policy.rs          上面那道的纯逻辑：只放 http/https、像地址栏一样补协议头（5 条 rustc --test）
+  export.rs               `file_save`：一次系统保存对话框（`tauri-plugin-dialog`）+ 写一个文本文件，或者按 `files` 打一个 zip（deflate，压不小就 stored）；**先全部解码再弹框**，写得进去才动盘
+  export_policy.rs        上面那道的纯逻辑：名字清洗（与 `save-file.ts` 各判一遍）、单文件还是 zip、base64 解码、CRC32、DOS 时间、zip 头字节与 EOCD（14 条 rustc --test，**不引 crate**）
   power.rs                电源读数（battery 组件用）：一次 `GetSystemPowerStatus` 拿交流 / 电池两态、百分比、剩余分钟与省电模式，直接调 Win32 不引 crate
   power_policy.rs         上面那道的纯逻辑：255 这类「不知道」的哨兵值、百分比上界、剩余时间只在放电时给（6 条 rustc --test）
   agent.rs                Agent 端点：只绑 127.0.0.1 的 HTTP、令牌、审计、转发给主窗口（默认关）；小窗要的 `assistant_snapshot` / `assistant_act` / `assistant_widget_tools` / `assistant_widget_call` 也复用这条转发（后两条是数据平面，见 0013）
@@ -211,7 +214,7 @@ docs/                     架构、组件规范、路线图与踩坑、代码签
 ---
 
 
-## 4. 二十条不变量（改代码前必读）
+## 4. 二十二条不变量（改代码前必读）
 
 1. **零内置**。平台本身不含任何组件。随应用分发的包（`bundled`）必须显式"安装"（记进 `installedIds`）才可用；用户目录里的包（`user`）在磁盘上即已装。不要为了"体验好一点"让 bundled 自动可用，那会把扩展平台退化成桌面工具。
 2. **两个宿主，一套桥**。画布里的 `WidgetFrame.tsx` 和桌面上的 `widgetHost.ts` 都必须走 `runtime/bridge.ts` 的同一张方法表。**任何"只在预览能用"或"只在桌面能用"的分叉都是 bug**，不是特性。画布在桌面模式下退成静态卡（`poster`）不算分叉：那一份根本没在跑，跑的是真窗口那一份，两条路仍是同一张方法表 —— 谁要"修"它，先看 `runtime/widget-tools.ts::canvasNeedsLiveFrame` 和 PITFALLS「可见性与调度」最后一条。
@@ -280,6 +283,12 @@ docs/                     架构、组件规范、路线图与踩坑、代码签
     - **删除是明确动作，不是猜出来的**。`write_config` 只"有值就封"，**从不删**；删只有两条路：`llm_set_key("")` 和 `llm_profile_remove`。反过来写（空 key 就删密封那一条）会在"换 Windows 账户、解不开"的那一次把密文抹掉 —— 而换回原账户本来还能用。
     - **解不开 ≠ 没有**。`secrets.bin` 读不出来时 `load_checked` 直接 `Err` 并**拒绝任何写入**；`secret.get` 回错误而不是 `{value: null}`，界面说的是"读不出来，请重新填一次"。文件本身永远不删。
     - **DPAPI 不是密码学保险箱**。它绑当前 Windows 账户：挡得住别的用户和拷走的文件，**挡不住以这个账户跑的任何程序**。权限文案和组件 `help` 里必须写明，别让用户以为"加密了所以安全"。
+
+22. **组件的保存只能递给平台一个名字，落点在系统对话框里，不在组件的参数里**。`file.save`（权限 `file:save`，`bridge.ts` → `export.rs`）是组件唯一一条"往盘上写"的路，四条别改成别的形状：
+    - **参数里没有路径，只有文件名**。`name` 带 `\ / : * ? " < > |`、带 `..`、超过 120 个字符一律 `bad_params`（`save-file.ts::cleanSaveName` 与 `export_policy::clean_name` 各判一遍 —— 一层挡"组件写错了"，一层挡"有人绕过了第一层"）。别把它换成 `fs_policy::normalize_path`：那个函数是给**用户指的路径**用的，它允许目录，组件拿到目录就意味着"写到哪儿由它说了算"。每次调用都弹保存对话框，位置由用户选。
+    - **它是 `file.write` 的另一件事，名字不许共用**。`file.write` 是 assistant 的手：带审批、能覆盖任意路径；`file.save` 是"用户当场挑一个地方存出去"。一个词两个意思，后面所有人都会搞混。
+    - **写一个文件还是打一个 zip 由内容决定**。一个文件、给的是 `text` → 写那个文件；多于一个文件、或任意一条给了 `base64` → 打成一个 zip（`files[].name` 是 zip 内的相对路径）。**先全部解码、全部合格再写包** —— 任何一条坏就整趟失败，不许留半个 zip、也不许悄悄丢掉坏的那张图。
+    - **取消不是错误**。回 `{ ok: false, cancelled: true }`，没有 `code`、没有 `message`，组件界面上一个字都不说。把它当 `internal` 弹红字，就是"点了取消却像出错了"——这个仓库为这句话踩过不止一次。
 
 ---
 

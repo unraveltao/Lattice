@@ -8,8 +8,8 @@
 | --- | --- |
 | [1. 组件包结构](#1-组件包结构) | 一个目录、两个文件、没有构建步骤 |
 | [2. manifest.json](#2-manifestjson) | 清单的全部字段，含尺寸、配置项、双语文案 |
-| [3. 权限](#3-权限) | 12 项能力各自意味着什么，以及什么时候该拒绝 |
-| [4. 桥 API](#4-桥-api) | 23 个方法、参数、错误码 |
+| [3. 权限](#3-权限) | 15 项能力各自意味着什么，以及什么时候该拒绝 |
+| [4. 桥 API](#4-桥-api) | 31 个方法、参数、错误码 |
 | [5. 沙箱限制](#5-沙箱限制) | 为什么有些最普通的写法在这里不成立 |
 | [6. 排版](#6-排版) | 卡片里能用的单位、字号、留白 |
 | [7. 最小示例](#7-最小示例) | 从零到能跑，一个完整组件 |
@@ -477,6 +477,7 @@ if (data.type === "config-changed") {
 | `media:control` | `media.get` / `media.control`（系统媒体会话，见 §4.5） | 可用 |
 | `audio:level` | `audio.level`（扬声器现在的响度，见 §4.6） | 可用 |
 | `shell:open` | `shell.open`（用系统默认浏览器打开 http/https 链接，见 §3.3） | 可用 |
+| `file:save` | `file.save`（弹一次系统保存框，把内容写成文件或 zip，位置永远由用户选，见 §3.8） | 可用 |
 | `agent:activity` | `agent.activity`（本机 agent 做过的操作，读的是审计日志） | 可用 |
 | `llm:chat` | `llm.chat`（用**用户自己配的**模型说一句话，花的是用户的额度，见 §3.4） | 可用 |
 | `desktop:control` | `assistant.ask`（让平台的模型**替你动桌面**，见 §3.5） | 可用 |
@@ -740,6 +741,24 @@ const response = await call("network.fetch", {
 
 平台只存**值**，不存别的东西：没有"备注"、没有过期时间、没有每条的名字列表。要提示用户"填没填"，读一次看是不是 `null` 就够。
 
+### 3.8 把东西存到用户挑的地方（`file.save`）
+
+组件要把做好的东西交出去（一份 Markdown、一张图、一个 zip），唯一的路是 `file.save`，它要 `file:save`。
+
+| 方法 | 参数 | 返回 |
+| --- | --- | --- |
+| `file.save` | `{ name, files: [{ name, text?, base64? }] }` | `{ ok: true, path }`，或者用户取消 `{ ok: false, cancelled: true }` |
+
+三条要说清楚的：
+
+- **`name` 只是文件名，不是路径。** 带 `\ / : * ? " < > |`、带 `..`、超过 120 个字符，一律 `bad_params` —— 组件**没有**"写到哪里"这个参数。位置永远由用户在系统保存对话框里选，也不记"上次的目录"。`hands.rs` 的 `file.write` 是助手的手（带审批、能覆盖任意路径），这条路和它是两样东西，所以名字不许共用（`design/0028`）。
+- **写一个文件还是打一个 zip，由内容决定，不由用户决定。** 一个文件且给的是 `text` → 就写那个文件；多于一个文件、或者任意一条给了 `base64` → 打成一个 zip，`files[].name` 是 zip 内的相对路径（`note.md` / `images/1.webp`）。**先全部解码、全部合格，再写包**：任何一条坏了就整趟失败，绝不留下半个 zip。
+- **用户取消不是错误。** 回的是 `{ ok: false, cancelled: true }` —— 没有 `code`、没有 `message`，界面一个字都不要说。把它当 `internal` 弹红字，等于"点了取消看起来像出错了"。
+
+扩展名由**内容**补：没有扩展名补 `.md` / `.zip`，是 `.md` / `.markdown` / `.zip` / `.txt` 里的另一个就换掉（用户写 `note.zip` 但内容是正文 → `note.md`），其余（`图表.v2`）接在后面。别信用户在对话框里输的名字，也别自己拼路径。
+
+浏览器预览里没有系统对话框：这条调用直接回 `internal`（"saving a file needs the desktop app"），组件照常显示"这个功能要装到桌面才能用"。
+
 ## 4. 桥 API
 
 ### 消息格式
@@ -786,6 +805,7 @@ parent.postMessage(
 | `media.control` | `media:control` | `{ action }` | `{ ok }`；`action` 是 `playPause` / `next` / `previous` / `stop` |
 | `audio.level` | `audio:level` | — | `{ level, running }`；`level` 是 0..1，没有设备时 `running: false`，见 §4.6 |
 | `shell.open` | `shell:open` | `{ url }` | `{ ok: true }`；只收 http/https（`github.com` 这类会补成 https），见 §3.3 |
+| `file.save` | `file:save` | `{ name, files }` | `{ ok: true, path }` 或 `{ ok: false, cancelled: true }`；名字不是路径、取消不是错误，见 §3.8 |
 | `agent.activity` | `agent:activity` | `{ limit? }` | `{ enabled, entries }`；`entries` 是审计日志最后几条，新的在**后**（组件自己倒序） |
 | `llm.status` | — | — | `{ configured, model }`；只是"用户配没配模型"，拿不到 key，见 §3.4 |
 | `llm.chat` | `llm:chat` | `{ messages }` | `{ text }`；`messages` 是 `{role, content}` 数组，role 只认 `system` / `user` / `assistant`，见 §3.4 |

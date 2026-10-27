@@ -1,17 +1,17 @@
 {
   "id": "lattice.note",
   "name": { "zh": "便签", "en": "Note" },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": {
-    "zh": "随手写点什么，认一点点 Markdown；自动存进组件存储",
-    "en": "Jot something down with a little Markdown; saved automatically to widget storage"
+    "zh": "随手写点什么，认一点点 Markdown 和图片；自动存进组件存储，也能导出成 zip",
+    "en": "Jot something down with a little Markdown and images; saved automatically to widget storage, exportable as a zip"
   },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
   "size": { "w": 260, "h": 200, "minW": 180, "minH": 120 },
   "layer": "desktop",
-  "permissions": ["storage"],
+  "permissions": ["storage", "file:save"],
   "help": {
     "sections": [
       {
@@ -49,6 +49,14 @@
           {
             "zh": "尖括号和标签一律当字面量显示 —— 便签里写 HTML 不会被执行。",
             "en": "Angle brackets and tags are shown as text; HTML in a note is never executed."
+          },
+          {
+            "zh": "图片只能贴进来：对着正文 Ctrl+V，或者把图片文件拖到卡片上。它直接写进正文，关掉卡片也还在。",
+            "en": "Images come in by paste only: Ctrl+V in the text, or drop a file on the card. The picture is written into the text itself and survives a reload."
+          },
+          {
+            "zh": "预览里图片右下角那颗百分比，点一下在 25% / 50% / 100% 之间换 —— 它改的是正文里那行宽度。",
+            "en": "The little percentage on an image in preview cycles 25% / 50% / 100%, and it rewrites the width written in the text."
           }
         ]
       },
@@ -87,15 +95,27 @@
         ]
       },
       {
-        "title": { "zh": "字数", "en": "The character count" },
+        "title": { "zh": "字数与导出", "en": "Count and export" },
         "items": [
           {
-            "zh": "数的是字数而不是词数，好让你知道换行之前还剩多少地方。",
-            "en": "It counts characters, not words, so you can see how much room is left before the line wraps."
+            "zh": "数的是字数而不是词数，好让你知道换行之前还剩多少地方；贴进来的图片不算在内。",
+            "en": "It counts characters, not words, so you can see how much room is left; pasted images are left out of the count."
           },
           {
             "zh": "状态行被截断时，把鼠标停上去能看全。",
             "en": "Hover the status line when it is truncated to read the full message."
+          },
+          {
+            "zh": "底栏那颗「导出」存成一份 zip：note.md 加 images/ 里的图。宽度改写成了 <img width>，GitHub 认这个。",
+            "en": "The Export button saves a zip: note.md plus the pictures under images/. Widths become <img width>, which GitHub understands."
+          },
+          {
+            "zh": "图先压成 WebP；压完每张超过 120 KB、超过 8 张、或者合计过 1 MB，就拒收并说清是哪一条。",
+            "en": "Images are squeezed to WebP first; over 120 KB each, more than 8 of them, or past 1 MB in total is refused, and the card names the limit it hit."
+          },
+          {
+            "zh": "导出第一次会问一次「保存文件」权限；存到哪儿每次都由你在对话框里挑，便签只递名字。",
+            "en": "The first export asks for the Save files permission. Where it lands is chosen in the dialog every time; the note only supplies a name."
           }
         ]
       },
@@ -119,6 +139,24 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.3.0",
+      "date": "2026-10-27",
+      "changes": [
+        {
+          "zh": "图片能贴了：对着正文 Ctrl+V、或者把图片拖到卡片上，正文里留下的是图片本身（WebP），关掉重开也还在。",
+          "en": "Paste or drop an image into a note: the picture itself (WebP) is kept in the text, so it is still there after a reload."
+        },
+        {
+          "zh": "预览里点图片右下角的百分比，可以在 25% / 50% / 100% 三档之间缩，改的是正文里写着的那个宽度。",
+          "en": "Click the percentage on an image in preview to shrink it to 25% / 50% / 100%; it rewrites the width stored in the text."
+        },
+        {
+          "zh": "底栏加了「导出」：存成 zip（note.md + images/），每张图变成一个 <img width>，宽度在 GitHub 上也认。",
+          "en": "A new Export button saves a zip (note.md plus images/); each picture becomes an <img width>, so widths survive on GitHub too."
+        }
+      ]
+    },
     {
       "version": "0.2.0",
       "date": "2026-10-27",

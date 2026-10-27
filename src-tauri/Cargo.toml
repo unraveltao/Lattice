@@ -30,6 +30,10 @@ tauri-plugin-global-shortcut = "2"
 # 平台自身的自动更新（组件更新是另一套：目录 + .lattice 包 + ed25519）。
 # 两者别混：组件更新由前端 `runtime/catalogue.ts` 驱动，这个只管"Lattice 本身要不要升级"
 tauri-plugin-updater = "2"
+# 组件的 `file.save`：要让用户自己选落点，就得有一个系统保存框。
+# 自己写 GetSaveFileNameW 也行，但那套 COM 接口（IFileSaveDialog）是"能跑但随时会坏"的一类，
+# 而 Tauri 官方插件已经把 owner / 过滤器 / 默认名都包好了
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 raw-window-handle = "0.6"

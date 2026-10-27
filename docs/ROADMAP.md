@@ -319,6 +319,10 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **专注没有加"计正"模式**：`lattice.stopwatch` 已经是一个计正的计时器，再在番茄钟里开一个模式等于同一个功能两处维护；补的是"今天做了多久"这件番茄钟真正缺的事。
     - **日历导入必须是"粘贴"，不是"选文件"**：桥没有文件对话框，而 `.ics` 就是纯文本 —— 导出、记事本打开、全选粘贴，全程不需要新权限。
   - [x] **本地目录和公开目录对齐了（2026-10-26）**：本地 19 个官方包，`unraveltao/lattice-registry` 从 14 个补到 19 —— 差的正是后加的那五个：`lattice.anki`、`lattice.battery`、`lattice.diagram`、`lattice.pet`、`lattice.habit`。每个走一条 `npm run publish:widget -- public/widgets/<id> --key ../lattice-registry/.keys/publisher.key`（打包、签名、写 sidecar、重建 `registry.json` 一次做完），五个图标顺手补进 `icons/`（另外 14 个都有，缺了在目录里是一块空白）。Pages 部署之后线上 `registry.json` 就是 19 个，挑一个包直链验过 200。流程与判据在 [`reference/build.md`](./reference/build.md) 第四节。
+  - [x] **便签能贴图、能缩、能带着图导出（`lattice.note` 0.3.0，2026-10-27）** —— 正文里多了一种写法 `![](data:image/webp;base64,…){width=240}`：图片字节就压在正文里，所以"文档"还是一份自包含的 Markdown。进来只有两条路（textarea 的 `paste`、卡片的 `drop`），**没有文件选择器、不认 URL**；压缩在插入时做（长边 > 2000 先降采样，再缩到长边 480 / 质量 0.8，浏览器不支持 webp 就退 jpeg）。预览里图片右下角一颗胶囊点一下循环 25% / 50% / 100%，改的是源文本里的 `{width=N}` —— 所见即所存。导出走新桥方法 `file.save`（新权限 `file:save`，第 15 项）：扫正文把 data URL 抽成 `images/1.webp`…、`{width=N}` 改写成 `<img src="images/1.webp" width="N">`（Markdown 没有尺寸语法，HTML 是唯一所有渲染器都认的写法），多文件就打一个 zip（`note.md` + `images/`）。文件名默认取正文第一行的 `# 标题`，否则 `便签 2026-10-27 10-44.md`。断言：`tests/note-images.html` 49 条、`tests/export.html` 27 条、`tests/note-md.html` 加到 64 条，`export_policy.rs` 14 条 `rustc --test`。
+    - **为什么图片字节不另存一个键**：存储是一整个 JSON 文件，改一个键也要整份读上来写回去还留一份 `.bak` —— 字节放哪个键写盘量一模一样，换来的只是"正文好看"，代价是正文不再自包含。代价要写明：编辑态会看到一行 50KB 的 base64，缓解只有两条（字数先剥图片再数、插入后光标落到图片下一行）—— 这条改不了，除非换成 contenteditable，那是重写编辑器。
+    - **`file:save` 不是 `file:write`**：`file.write` 是 assistant 的手（带审批、能覆盖任意路径），组件这条路**每次弹系统保存对话框、位置由用户选**，组件递给平台的只有一个文件名。名字不许共用，理由与四条形状写进 AGENTS.md 不变量 22。
+    - **先全部解码再弹对话框、再写包**：任何一张坏就整趟失败 —— 不许留半个 zip，也不许悄悄丢掉坏的那张。**取消不是错误**（`{ok:false, cancelled:true}`，界面一个字都不说），这条坑这个仓库踩过不止一次。
 
 **明确不做**：账号、云端评分、下载计数、组件市场首页。这些全都要服务端，而 v0.5 的整个前提是"没有服务端"。评分和举报继续落本地文件（`reports/*.json`），作者自己收 —— 假装有云端比没有更糟。
 
