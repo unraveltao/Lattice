@@ -40,7 +40,7 @@
 | 样式 CSS | 6 204 行 | 纯手写，无 UI 库（`styles.css` + `widgetHost.css` + `assistant-window.css`） |
 | Rust | 24 353 行 | 窗口、协议、落盘、壁纸采样、指标采样、诊断、单实例、CSP、出网闸门、托盘、自启、目录监听、崩溃守卫、网络代理、媒体会话、声音回环、电源读数、打开外链、包解压、验签、备份与回滚、商店命令、遮挡轮询、参考线叠层、agent 端点、LLM 客户端与策略、assistant 小窗、手（文件 / 命令 / 网页 / 屏幕 / 键鼠 / MCP 服务）、终端（常驻 shell、哨兵切分、环形补发） |
 | 组件 SDK | 943 行 | 零依赖 ES module + 类型声明（`lattice.js` + `lattice.d.ts`） |
-| 官方组件 + 示例 | 29 368 行 | 21 个官方包 + 1 个示例（含每个包里的 SDK 副本） |
+| 官方组件 + 示例 | 34 676 行 | 24 个官方包 + 1 个示例（含每个包里的 SDK 副本） |
 | 构建脚本 | 5 499 行 | 组件索引、脚手架、打包、签名、商店索引、SDK 同步、tauri 包装、注入 + 单测、agent CLI + 客户端测试、winget 清单生成器 + 单测、样式与文档的守门人 |
 | 浏览器断言 | 2 816 条 | 56 个自检页，跑一遍的真实计数（0 failed） |
 | Node 断言 | 72 条 | 注入规则 9 条 + SDK 副本一致性 2 条 + agent CLI 14 条 + 样式表 8 条 + winget 清单生成器 11 条 + 浏览器预览那条通道 28 条，都不依赖 dev server；CI 六条全跑（72 条） |
@@ -281,7 +281,25 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **位置不进磁盘，只存 `view`**：节点是 `{ id, text, collapsed, tone, children[] }`，坐标每次从树算。于是"换个父节点"就是换个数组位置，不用挪任何框，agent 也不用编造坐标。
     - **读坏 ≠ 没有数据**：`storage.get` 回 `null` 才种一份空的并落盘；reject（权限被拒 / IPC 挂了）只把界面标成"没读到"，一个字节都不写。`version` 不认识同理 —— 回 `{ trusted: false }`，界面按空图显示但不写盘。
     - **折叠只影响看，不影响导出**：`+N` 角标是视图的事，三种导出都走数据里那棵完整的树；长节点的省略号同理（全文进 `title`）。
-  - **本地目录和公开目录对齐了（2026-10-26）**：本地 19 个官方包，`unraveltao/lattice-registry` 从 14 个补到 19 —— 差的正是后加的那五个：`lattice.anki`、`lattice.battery`、`lattice.diagram`、`lattice.pet`、`lattice.habit`。每个走一条 `npm run publish:widget -- public/widgets/<id> --key ../lattice-registry/.keys/publisher.key`（打包、签名、写 sidecar、重建 `registry.json` 一次做完），五个图标顺手补进 `icons/`（另外 14 个都有，缺了在目录里是一块空白）。Pages 部署之后线上 `registry.json` 就是 19 个，挑一个包直链验过 200。流程与判据在 [`reference/build.md`](./reference/build.md) 第四节。
+  - [x] **环境音（`lattice.ambience`，22 个官方组件）** —— 雨 / 咖啡厅 / 篝火 / 白噪四种背景声，全部 Web Audio 现场合成，包里没有一个音频文件；权限只有 `storage`（记住场景与音量），**桥方法一条没加、Tauri 命令一条没加**。默认 260×160，最小 210×132；`tests/ambience.html` 65 条、`tests/ambience-layout.html` 40 条。
+    - **出声只能从点击开始**：页面加载就建 `AudioContext` 会被自动播放策略按在 `suspended`，界面写着"播放中"、耳朵里没有声音 —— 那比不做更糟。所以 `play()` 只在按钮的点击处理里调。
+    - **播放态不落盘**：记住的是"选了什么、多大声"，不是"刚才在放"。一个会自己出声的组件，用户在会议室里打开它是要骂人的。
+    - **合成参数搬自 vela-cleanroom 的 `ambience.ts`（MIT）**，只留合成那一半 —— 那边的 localStorage、Tauri 事件和"媒体让位"都属于它自己的宿主。
+    - **心跳只服务篝火的爆裂**，且只在播放时挂（250ms）；窗口藏起来时平台把心跳停掉，雨声继续、火声变闷。雨和咖啡厅的"呼吸感"用 LFO，一个定时器都不占。
+  - [x] **农历（`lattice.almanac`，23 个官方组件）** —— 今天的农历月日 + 干支生肖 + 下一个节气 + 下一个法定节日，各差多少天；权限只有 `clock`（拒绝时退回本机时钟，日期照样对）。默认 260×180，最小 220×150；`tests/almanac.html` 61 条、`tests/almanac-layout.html` 33 条。
+    - **农历不抄万年历表**：用运行时自带的 ICU 中国历法（`Intl.DateTimeFormat` + `-u-ca-chinese`），闰月、大小月、干支都由历法本身决定 —— 零依赖、零网络，包里没有一份会过期的数据。
+    - **节气是算出来的，不是查出来的**：太阳黄经每 15° 一个节气，低精度太阳位置公式 + 牛顿迭代，误差约 15 分钟，任意年份都能算。最硬的那条断言是自洽的：每个节气时刻的黄经必须等于它的目标度数。
+    - **一律按本地日期**：机器不在东八区时，贴着午夜的那个节气会和国内印刷日历差一天 —— 那是"按你的时钟"该有的样子，写进了 help。
+    - **七个法定节日**：农历那三个用 ICU 反查，清明直接用算出来的节气时刻（它每年在 4/4–4/6 之间晃）。
+  - [x] **截止日期（`lattice.deadline`，24 个官方组件）** —— 一行一件事、日期写在最后（`还书 3/15`、`猫粮 +3`、`体检 2026-05-01`、`交房租 明天`），倒数列按逾期 / 三天内 / 更远分色；权限 `clock` + `storage`。默认 240×200，最小 200×140；`tests/deadline.html` 71 条、`tests/deadline-layout.html` 46 条。
+    - **为什么是"打字"而不是日期选择器**：卡片小，而且原生 `input[type=date]` 在沙箱里颜色是错的（`color-scheme` 被钉成 normal）；一次记好几件事时，为每件事摆一个日期控件既挤又慢。
+    - **认不出日期不拒绝**：按明天算，并在顶上明说"没写日期，按明天算"；只写了日期没写标题也提示一句。一条被吞掉的输入比一条猜错日期的输入更让人恼火。
+    - **写盘串行**：每改动一次写整份列表；两次并发的话，旧的那份可能后完成，把新加的条目整块抹掉。
+    - **删除给 6 秒撤销**：行尾那颗 × 和标题挨得太近，而删掉一条截止日期是不可逆的（它不在组件回收站里）。
+  - [x] **四处旧组件的补强（同一天，2026-10-27）** —— `lattice.clock` 0.3.0 补了模拟表盘与其他时区（`Intl` 现算，夏令时、半小时时区和 5:45 都交给运行时），`lattice.focus` 0.2.0 补了每日目标（分钟数从 `done` 的时刻里数出来，不是计数器加出来的），便签 0.2.0 补了 Markdown 预览与"清空之后找回上一版"，日历 0.1.3 补了粘贴 `.ics` 导入（重复规则展开一年、单个最多 120 条）。断言：`tests/clock-zones.html` 41 条、`tests/focus-goal.html` 21 条、`tests/note-md.html` 56 条 + `tests/note-preview.html` 30 条、`tests/calendar-ics.html` 75 条 + `tests/calendar-import.html` 30 条。
+    - **专注没有加"计正"模式**：`lattice.stopwatch` 已经是一个计正的计时器，再在番茄钟里开一个模式等于同一个功能两处维护；补的是"今天做了多久"这件番茄钟真正缺的事。
+    - **日历导入必须是"粘贴"，不是"选文件"**：桥没有文件对话框，而 `.ics` 就是纯文本 —— 导出、记事本打开、全选粘贴，全程不需要新权限。
+  - [x] **本地目录和公开目录对齐了（2026-10-26）**：本地 19 个官方包，`unraveltao/lattice-registry` 从 14 个补到 19 —— 差的正是后加的那五个：`lattice.anki`、`lattice.battery`、`lattice.diagram`、`lattice.pet`、`lattice.habit`。每个走一条 `npm run publish:widget -- public/widgets/<id> --key ../lattice-registry/.keys/publisher.key`（打包、签名、写 sidecar、重建 `registry.json` 一次做完），五个图标顺手补进 `icons/`（另外 14 个都有，缺了在目录里是一块空白）。Pages 部署之后线上 `registry.json` 就是 19 个，挑一个包直链验过 200。流程与判据在 [`reference/build.md`](./reference/build.md) 第四节。
 
 **明确不做**：账号、云端评分、下载计数、组件市场首页。这些全都要服务端，而 v0.5 的整个前提是"没有服务端"。评分和举报继续落本地文件（`reports/*.json`），作者自己收 —— 假装有云端比没有更糟。
 

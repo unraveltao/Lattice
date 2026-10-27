@@ -31,7 +31,7 @@ Nothing from a real desktop is in the frame.</sub></p>
 
 Lattice puts small windows on your Windows desktop: a clock, a to-do list, system stats, whatever is playing. They are not pictures of widgets — they are real frameless windows, absent from the taskbar, that never steal focus from what you are typing into. Pin them above everything or tuck them under your ordinary windows; position is remembered per monitor, and everything is back where it was after a restart.
 
-The difference from other desktop toys: **widgets are not built in, they are installed.** All 21 official widgets go through the same install path as any third-party one — the platform ships empty, so the ceiling is what you can write in HTML.
+The difference from other desktop toys: **widgets are not built in, they are installed.** All 24 official widgets go through the same install path as any third-party one — the platform ships empty, so the ceiling is what you can write in HTML.
 
 It speaks Chinese and English all the way down: the shell, each widget's name and options, and the words drawn *inside* the cards. No restart, no reload.
 
@@ -162,10 +162,10 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 
 | Metric | Value |
 | --- | --- |
-| Official widgets | 21 |
+| Official widgets | 24 |
 | Permissions | 13 |
 | Tauri commands | 99 |
-| Browser assertions | 2 961 over 57 pages |
+| Browser assertions | 3 530 over 69 pages |
 | Rust tests | 439 |
 | Documented pitfalls | 99 |
 
@@ -179,7 +179,7 @@ Every one of those is enforced by something. The browser assertions run a real d
 | CSS | 6 206 lines |
 | Rust | 24 353 lines |
 | SDK | 961 lines |
-| Widgets + example | 29 368 lines |
+| Widgets + example | 34 676 lines |
 | Scripts | 5 614 lines |
 
 </details>
