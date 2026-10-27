@@ -1,10 +1,10 @@
 {
   "id": "lattice.clock",
   "name": { "zh": "时钟", "en": "Clock" },
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": {
-    "zh": "大字时间加一行日期；12/24 小时制和秒数按每一份单独调",
-    "en": "A large clock with the date; 12/24-hour and seconds are set per copy"
+    "zh": "大字时间或模拟表盘，加一行日期和最多三个其他时区；每份单独调",
+    "en": "Large digits or an analog dial, with the date and up to three other time zones; set per copy"
   },
   "author": "Lattice",
   "entry": "index.html",
@@ -26,6 +26,32 @@
       "type": "toggle",
       "label": { "zh": "显示秒", "en": "Show seconds" },
       "default": false
+    },
+    {
+      "key": "face",
+      "type": "select",
+      "label": { "zh": "表盘形态", "en": "Face" },
+      "default": "digital",
+      "options": [
+        { "value": "digital", "label": { "zh": "大字", "en": "Digits" } },
+        { "value": "analog", "label": { "zh": "模拟表盘", "en": "Analog" } }
+      ],
+      "help": {
+        "zh": "模拟表盘是一张 SVG，三根针按连续角度转；选它时大字那一行收起来，日期照旧。",
+        "en": "The analog face is an SVG dial whose hands move continuously; picking it hides the digits and keeps the date line."
+      }
+    },
+    {
+      "key": "zones",
+      "type": "text",
+      "label": { "zh": "其他时区", "en": "Other time zones" },
+      "default": "",
+      "placeholder": { "zh": "Asia/Tokyo, Europe/London", "en": "Asia/Tokyo, Europe/London" },
+      "maxLength": 80,
+      "help": {
+        "zh": "最多三个，用逗号隔开，写 IANA 名（Asia/Tokyo、America/New_York）。留空就只显示本地时间。",
+        "en": "Up to three, comma-separated, written as IANA names (Asia/Tokyo, America/New_York). Empty shows local time only."
+      }
     }
   ],
   "help": {
@@ -68,10 +94,41 @@
         ]
       },
       {
-        "title": {
-          "zh": "每一份各有各的设置",
-          "en": "Each copy keeps its own settings"
-        },
+        "title": { "zh": "模拟表盘", "en": "The analog face" },
+        "items": [
+          {
+            "zh": "在属性面板里把「表盘形态」改成模拟表盘，大字换成一张 SVG 圆盘。",
+            "en": "Switch Face to Analog in the inspector and the digits become an SVG dial."
+          },
+          {
+            "zh": "三根针是连续转的：分针带着时针、秒针带着分针，不会出现「13:59 时针正指 1 点」。",
+            "en": "The hands move continuously: the minutes carry the hour hand and the seconds carry the minute hand, so 13:59 never looks like a stopped clock."
+          },
+          {
+            "zh": "卡片矮的时候表盘跟着缩；日期和时区那几行照旧在下面。",
+            "en": "A short card shrinks the dial; the date and time-zone rows stay underneath."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "其他时区", "en": "Other time zones" },
+        "items": [
+          {
+            "zh": "在属性面板的「其他时区」里写时区名，逗号隔开，最多三个：Asia/Tokyo, Europe/London。",
+            "en": "Write zone names into Other time zones, comma-separated, up to three: Asia/Tokyo, Europe/London."
+          },
+          {
+            "zh": "用的是 IANA 名字，不是 GMT+9 —— 夏令时、半小时时区、5:45 那种都交给运行时算，不会差一截。",
+            "en": "They are IANA names, not GMT+9 — daylight saving, half-hour zones and the 5:45 kind are left to the runtime, so nothing drifts."
+          },
+          {
+            "zh": "名字写错时那一行显示 --:--（城市名还在），不会让整张卡片变空白。",
+            "en": "A misspelled zone shows --:-- on its row (the city name stays) instead of blanking the card."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "每一份各有各的设置", "en": "Each copy keeps its own settings" },
         "items": [
           {
             "zh": "桌面上摆两个钟可以一个 24 小时制、一个 12 小时制 —— 设置属于这一份，不属于这个组件。",
@@ -99,6 +156,24 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.3.0",
+      "date": "2026-10-27",
+      "changes": [
+        {
+          "zh": "可以摆成模拟表盘：一张 SVG 圆盘，三根针连续走，秒针是强调色。",
+          "en": "An analog face: an SVG dial with three continuously moving hands, the seconds in the accent colour."
+        },
+        {
+          "zh": "能同时显示最多三个其他时区（属性面板里写 IANA 名，逗号隔开）；夏令时和半小时时区都现算。",
+          "en": "Up to three other time zones (IANA names in the inspector, comma-separated); daylight saving and half-hour zones are computed live."
+        },
+        {
+          "zh": "时区名写错时那一行写 --:--，不会让整张卡片变空白。",
+          "en": "A misspelled zone shows --:-- on that row instead of blanking the card."
+        }
+      ]
+    },
     {
       "version": "0.2.1",
       "date": "2026-10-24",

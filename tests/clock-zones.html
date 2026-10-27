@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>clock / dial and other zones</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 时钟的两处新东西：模拟表盘和「其他时区」。
+       *
+       * 时间是钉死的（本地字段 2026-10-27 09:30:15），三根针的角度就是
+       * 手算出来的值：时针 9:30.25 → 285.1°，分针 30.25 分 → 181.5°，
+       * 秒针 15 秒 → 90°。断的是"连续角度"这件事，不是公式本身。
+       *
+       * 其他时区的期望值用同一个 Intl 现算：这里要验的是"行画出来了、
+       * 用的是那个时区"，而不是时区数据库对不对。
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const NOW = new Date(2026, 9, 27, 9, 30, 15);
+
+      function zoneExpected(zone) {
+        try {
+          return new Intl.DateTimeFormat("en-GB", {
+            timeZone: zone,
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+          }).format(NOW);
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function mount(options) {
+        const config = options.config || {};
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+        frame.style.width = (options.width || 240) + "px";
+        frame.style.height = (options.height || 140) + "px";
+        frame.src = "/widgets/lattice.clock/index.html";
+        document.body.appendChild(frame);
+
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+            if (data.method === "lang.get") return reply({ ok: true, result: { lang: "zh" } });
+            if (data.method === "config.get") return reply({ ok: true, result: config });
+            if (data.method === "clock.now") {
+              return reply({
+                ok: true,
+                result: {
+                  now: NOW.toISOString(),
+                  epochMs: NOW.getTime(),
+                  timeZone: "Test/Zone",
+                  utcOffsetMinutes: 0,
+                },
+              });
+            }
+            if (data.method === "schedule.every") return reply({ ok: true, result: { id: 3 } });
+            reply({ ok: false, code: "unknown_method", error: "unknown" });
+          });
+        });
+
+        return {
+          frame,
+          ready,
+          doc: () => frame.contentDocument,
+          api: () => frame.contentWindow.__latticeClock,
+          send(type, payload) {
+            frame.contentWindow.postMessage({ __lattice: 1, type, payload }, "*");
+            return sleep(90);
+          },
+        };
+      }
+
+      // ---------- 纯函数 ----------
+
+      {
+        const view = mount({ config: {} });
+        await view.ready;
+        await sleep(120);
+        const api = view.api();
+
+        log(api.parseZones("Asia/Tokyo, Europe/London, America/New_York").length === 3, "三个时区都收下");
+        log(api.parseZones("a, b, c, d").length === api.MAX_ZONES, `最多 ${api.MAX_ZONES} 个`);
+        log(api.parseZones(" a ,, b ").join("|") === "a|b", "空格和空段被跳过");
+        log(api.parseZones("").length === 0, "空串就是没有");
+        log(api.zoneLabel("America/New_York") === "New York", "城市名去下划线");
+        log(api.zoneLabel("Asia/Tokyo") === "Tokyo", "取最后一段");
+        log(api.zoneLabel("UTC") === "UTC", "没有斜杠就原样");
+
+        const at = api.angles(NOW);
+        log(at.hour === 285.1, `时针角度 285.1（现在 ${at.hour}）`);
+        log(at.minute === 181.5, `分针角度 181.5（现在 ${at.minute}）`);
+        log(at.second === 90, `秒针角度 90（现在 ${at.second}）`);
+        log(api.angles(new Date(2026, 9, 27, 0, 0, 0)).hour === 0, "零点时针指 0°");
+        log(api.angles(new Date(2026, 9, 27, 12, 0, 0)).hour === 0, "十二点也是 0°（不是 360°）");
+        view.frame.remove();
+      }
+
+      // ---------- 大字 + 三个时区（其中一个写错） ----------
+      {
+        const view = mount({
+          config: {
+            hour12: false,
+            showSeconds: false,
+            face: "digital",
+            zones: "Asia/Tokyo, Europe/London, Nowhere/Bad",
+          },
+        });
+        await view.ready;
+        await sleep(150);
+        const doc = view.doc();
+
+        log(doc.getElementById("time").textContent === "09:30", `大字时间（${doc.getElementById("time").textContent}）`);
+        log(doc.getElementById("date").textContent === "10月27日 周二", `日期那一行（${doc.getElementById("date").textContent}）`);
+
+        const rows = [...doc.querySelectorAll(".clock-zone")];
+        log(rows.length === 3, `画出三行时区（现在 ${rows.length} 行）`);
+        log(rows[0].querySelector(".clock-zone-name").textContent === "Tokyo", "第一行是 Tokyo");
+        log(
+          rows[0].querySelector(".clock-zone-time").textContent === zoneExpected("Asia/Tokyo"),
+          `Tokyo 时间是 ${zoneExpected("Asia/Tokyo")}（实际 ${rows[0].querySelector(".clock-zone-time").textContent}）`,
+        );
+        log(
+          rows[1].querySelector(".clock-zone-time").textContent === zoneExpected("Europe/London"),
+          `London 时间是 ${zoneExpected("Europe/London")}`,
+        );
+        log(rows[2].querySelector(".clock-zone-time").textContent === "--:--", "写错的时区显示 --:--");
+        log(rows[2].querySelector(".clock-zone-name").textContent === "Bad", "写错也保留城市名，方便改");
+        log(
+          getComputedStyle(doc.getElementById("dial")).display === "none",
+          "大字模式下表盘是藏着的",
+        );
+        log(doc.documentElement.scrollHeight <= 140, `140 高的卡片没有纵向溢出（${doc.documentElement.scrollHeight}）`);
+
+        // 12 小时制 + 秒
+        await view.send("config-changed", { config: { hour12: true, showSeconds: true, zones: "" } });
+        log(doc.getElementById("time").textContent === "9:30:15", `12 小时制带秒（${doc.getElementById("time").textContent}）`);
+        log(doc.getElementById("suffix").textContent === "上午", "上午挂在数字右边");
+        log(doc.getElementById("zones").hidden === true, "时区清空之后那一段收起来");
+
+        // 换语言
+        await view.send("language", { lang: "en" });
+        log(doc.getElementById("date").textContent === "Oct 27, Tue", `英文日期（${doc.getElementById("date").textContent}）`);
+        log(doc.getElementById("suffix").textContent === "AM", "英文挂 AM");
+        log(doc.title === "Clock", `窗口标题（${doc.title}）`);
+        view.frame.remove();
+      }
+
+      // ---------- 模拟表盘 ----------
+      {
+        const view = mount({
+          config: { face: "analog", hour12: false, showSeconds: false, zones: "Asia/Tokyo, Europe/London" },
+        });
+        await view.ready;
+        await sleep(150);
+        const doc = view.doc();
+        const dial = doc.getElementById("dial");
+
+        log(getComputedStyle(dial).display !== "none", "模拟模式下表盘显示出来");
+        log(getComputedStyle(doc.querySelector(".clock-time")).display === "none", "大字那一行收起来");
+        log(
+          doc.getElementById("hand-hour").getAttribute("transform") === "rotate(285.1 50 50)",
+          `时针转 285.1°（${doc.getElementById("hand-hour").getAttribute("transform")}）`,
+        );
+        log(
+          doc.getElementById("hand-minute").getAttribute("transform") === "rotate(181.5 50 50)",
+          `分针转 181.5°（${doc.getElementById("hand-minute").getAttribute("transform")}）`,
+        );
+        log(
+          doc.getElementById("hand-second").getAttribute("transform") === "rotate(90 50 50)",
+          "秒针转 90°",
+        );
+        log(dial.querySelectorAll(".dial-tick").length === 12, "12 个刻度");
+        log(dial.querySelectorAll(".dial-tick.is-major").length === 4, "3 / 6 / 9 / 12 点是粗刻度");
+        log(dial.getAttribute("aria-label") === "09:30", `表盘的无障碍标签（${dial.getAttribute("aria-label")}）`);
+        log(doc.getElementById("date").textContent === "10月27日 周二", "日期还在");
+        log(doc.querySelectorAll(".clock-zone").length === 2, "时区行也还在");
+        const size = dial.getBoundingClientRect();
+        log(size.width <= 84 && size.width > 20, `表盘尺寸 ${size.width.toFixed(1)}px（矮卡片上会缩）`);
+        log(doc.documentElement.scrollHeight <= 140, `模拟模式下也没有纵向溢出（${doc.documentElement.scrollHeight}）`);
+        view.frame.remove();
+      }
+
+      // ---------- 高一点的卡片：表盘回到 84px ----------
+      {
+        const view = mount({ width: 240, height: 220, config: { face: "analog", zones: "" } });
+        await view.ready;
+        await sleep(150);
+        const size = view.doc().getElementById("dial").getBoundingClientRect();
+        log(size.width === 84, `220 高的卡片上表盘是 84px（${size.width}px）`);
+        view.frame.remove();
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

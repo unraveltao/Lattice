@@ -5,14 +5,21 @@
  * 只通过 postMessage 跟宿主说话。等 @lattice/sdk 发布后，
  * 下面这段 call / 主题同步会被 SDK 取代，组件业务代码不用改。
  *
- * 这个版本有两处值得对照着看（都是 v0.3 改的）：
+ * 这个版本有三处值得对照着看：
  *
- * 1. **12/24 小时制不再是卡片上的一颗按钮**，而是清单里的 `config`。
- *    以前那颗按钮把偏好写进 `storage`，粒度是"这个组件"—— 桌面上摆两个
- *    时钟，切一个另一个跟着变。现在配置按**实例**存在 `state.json` 里，
- *    由属性面板调，卡片把那一行空间还给了时间本身。
+ * 1. **12/24 小时制、秒数、表盘形态、其他时区都不是卡片上的按钮**，而是
+ *    清单里的 `config`。以前那颗按钮把偏好写进 `storage`，粒度是"这个组件"
+ *    —— 桌面上摆两个时钟，切一个另一个跟着变。现在配置按**实例**存在
+ *    `state.json` 里，由属性面板调，卡片把那一行空间还给了时间本身。
  * 2. **心跳挂在平台调度器上**，不是 `setInterval`。窗口最小化 / 收起时
  *    整条时间轴停摆，用户看不见的时钟不烧电；回来只补一拍。
+ * 3. **其他时区用 `Intl` 现算**，不是自己加偏移量。偏移量里有夏令时、
+ *    有半小时时区（Asia/Kolkata）、有永久偏移（Asia/Kathmandu 是 5:45），
+ *    手算这些不如把时区名交给运行时。
+ *
+ * 表盘是一张内联 SVG：时针 / 分针 / 秒针各自转一个角度。角度按"连续"算
+ * （分针带着时针走、秒针带着分针走），否则 13:59 的时针会直挺挺指着 1 点，
+ * 看着像停了。
  */
 (function () {
   "use strict";
@@ -85,14 +92,41 @@
    * 配置。默认值写在这里**只是**为了在 `config.get` 回来之前有个能画的东西 ——
    * 真值永远以宿主给的为准（它已经按清单的 schema 合并过出厂值）。
    */
-  var config = { hour12: false, showSeconds: false };
+  var config = { hour12: false, showSeconds: false, face: "digital", zones: "" };
+  /** 解析后的时区表（最多 3 条），`config.zones` 是用户写的那串原文 */
+  var zoneList = [];
+
+  var MAX_ZONES = 3;
+
+  /** `"Asia/Tokyo, Europe/London"` → `["Asia/Tokyo", "Europe/London"]` */
+  function parseZones(raw) {
+    var out = [];
+    String(raw == null ? "" : raw)
+      .split(",")
+      .forEach(function (piece) {
+        var zone = piece.trim();
+        if (!zone || out.length >= MAX_ZONES) return;
+        out.push(zone);
+      });
+    return out;
+  }
+
+  /** `America/New_York` → `New York`：卡片上写时区 ID 没人想读 */
+  function zoneLabel(zone) {
+    var pieces = String(zone || "").split("/");
+    var city = pieces[pieces.length - 1] || String(zone || "");
+    return city.replace(/_/g, " ");
+  }
 
   function applyConfig(next) {
     if (!next) return;
     config = {
       hour12: next.hour12 === true,
       showSeconds: next.showSeconds === true,
+      face: next.face === "analog" ? "analog" : "digital",
+      zones: typeof next.zones === "string" ? next.zones : "",
     };
+    zoneList = parseZones(config.zones);
     render();
   }
 
@@ -141,6 +175,11 @@
   var timeEl = document.getElementById("time");
   var suffixEl = document.getElementById("suffix");
   var dateEl = document.getElementById("date");
+  var dialEl = document.getElementById("dial");
+  var hourHand = document.getElementById("hand-hour");
+  var minuteHand = document.getElementById("hand-minute");
+  var secondHand = document.getElementById("hand-second");
+  var zonesEl = document.getElementById("zones");
   var tickId = 0;
 
   var WEEKDAYS = {
@@ -152,6 +191,133 @@
   function pad(value) {
     return value < 10 ? "0" + value : String(value);
   }
+
+  // ---------- 表盘 ----------
+
+  /**
+   * 三根针的角度。按连续角度算：13:59 的时针在 1 和 2 之间，不是正指 1 点；
+   * 分针带着秒走，秒针跳一格分针也挪一点 —— 不然看着像停了。
+   */
+  function angles(date) {
+    var seconds = date.getSeconds();
+    var minutes = date.getMinutes() + seconds / 60;
+    var hours = (date.getHours() % 12) + minutes / 60;
+    return {
+      hour: round1(hours * 30),
+      minute: round1(minutes * 6),
+      second: round1(seconds * 6),
+    };
+  }
+
+  function round1(value) {
+    return Math.round(value * 10) / 10;
+  }
+
+  /** 12 个刻度，每三个粗一档（3、6、9、12 点） */
+  function buildTicks() {
+    var group = document.getElementById("dial-ticks");
+    if (!group) return;
+    var ns = "http://www.w3.org/2000/svg";
+    for (var i = 0; i < 12; i += 1) {
+      var line = document.createElementNS(ns, "line");
+      var major = i % 3 === 0;
+      line.setAttribute("x1", "50");
+      line.setAttribute("y1", major ? "5.5" : "7.5");
+      line.setAttribute("x2", "50");
+      line.setAttribute("y2", "11");
+      line.setAttribute("class", major ? "dial-tick is-major" : "dial-tick");
+      line.setAttribute("transform", "rotate(" + i * 30 + " 50 50)");
+      group.appendChild(line);
+    }
+  }
+
+  function paintDial(date) {
+    if (!hourHand) return;
+    var at = angles(date);
+    hourHand.setAttribute("transform", "rotate(" + at.hour + " 50 50)");
+    minuteHand.setAttribute("transform", "rotate(" + at.minute + " 50 50)");
+    secondHand.setAttribute("transform", "rotate(" + at.second + " 50 50)");
+  }
+
+  // ---------- 其他时区 ----------
+
+  var zoneFormats = {};
+
+  /**
+   * 每个时区一个 `Intl.DateTimeFormat`，认不出（写错名字）就缓存 null。
+   * 缓存键带上 12/24 小时制 —— 换制式要换 formatter。
+   */
+  function zoneFormatter(zone) {
+    var key = (config.hour12 ? "h12:" : "h23:") + zone;
+    if (key in zoneFormats) return zoneFormats[key];
+    var formatter = null;
+    try {
+      formatter = config.hour12
+        ? new Intl.DateTimeFormat("en-US", {
+            timeZone: zone,
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          })
+        : new Intl.DateTimeFormat("en-GB", {
+            timeZone: zone,
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+          });
+    } catch (error) {
+      // 时区名写错：不抛、不猜，那一行下面会画 "--:--"
+      formatter = null;
+    }
+    zoneFormats[key] = formatter;
+    return formatter;
+  }
+
+  /** 某个时区的 `HH:MM`（或 12 小时制带上午 / 下午）；认不出返回 null */
+  function zoneTime(date, zone) {
+    var formatter = zoneFormatter(zone);
+    if (!formatter) return null;
+    var hour = "";
+    var minute = "";
+    var period = "";
+    var parts = formatter.formatToParts(date);
+    for (var i = 0; i < parts.length; i += 1) {
+      if (parts[i].type === "hour") hour = parts[i].value;
+      else if (parts[i].type === "minute") minute = parts[i].value;
+      else if (parts[i].type === "dayPeriod") period = parts[i].value;
+    }
+    if (!config.hour12) return hour + ":" + minute;
+    var number = Number(hour) % 12 || 12;
+    var suffix = String(period).toUpperCase() === "PM" ? say("下午", "PM") : say("上午", "AM");
+    return number + ":" + minute + " " + suffix;
+  }
+
+  function renderZones(date) {
+    if (!zonesEl) return;
+    zonesEl.textContent = "";
+    zonesEl.hidden = zoneList.length === 0;
+    for (var i = 0; i < zoneList.length; i += 1) {
+      var zone = zoneList[i];
+      var row = document.createElement("div");
+      row.className = "clock-zone";
+
+      var name = document.createElement("span");
+      name.className = "clock-zone-name";
+      name.textContent = zoneLabel(zone);
+      name.title = zone;
+
+      var value = document.createElement("span");
+      value.className = "clock-zone-time";
+      var text = zoneTime(date, zone);
+      value.textContent = text === null ? "--:--" : text;
+
+      row.appendChild(name);
+      row.appendChild(value);
+      zonesEl.appendChild(row);
+    }
+  }
+
+  // ---------- 主时钟 ----------
 
   function render() {
     call("clock.now")
@@ -171,6 +337,7 @@
         // 上午/下午、AM/PM 用 12px 挂在数字右边：跟数字一样大的话会宽到折行
         suffixEl.textContent = suffix.trim();
         root.classList.toggle("is-long", config.showSeconds);
+        root.classList.toggle("is-analog", config.face === "analog");
 
         // 日期：英文是 "Oct 22, Thu"（月份缩写 + 日 + 星期），中文是 "10月22日 周四"。
         // 时区 ID（Asia/Shanghai）是给程序看的，桌面时钟上没人想读它，
@@ -179,6 +346,14 @@
           lang === "en"
             ? MONTHS[date.getMonth()] + " " + date.getDate() + ", " + WEEKDAYS.en[date.getDay()]
             : date.getMonth() + 1 + "月" + date.getDate() + "日 " + WEEKDAYS.zh[date.getDay()];
+
+        if (config.face === "analog") {
+          paintDial(date);
+          // 表盘上没有文字，读屏器就靠这一句
+          dialEl.setAttribute("aria-label", text + (suffix ? " " + suffix.trim() : ""));
+        }
+
+        renderZones(date);
       })
       .catch(function (error) {
         timeEl.textContent = "--:--";
@@ -195,6 +370,8 @@
    * `ready` 之后宿主还会推一次主题和配置 —— 那是给"宿主先加载、组件后到"
    * 这种时序兜底的，重复应用一次没有副作用。
    */
+  buildTicks();
+
   // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
   // 不该拖住配置和心跳
   call("lang.get")
@@ -225,4 +402,18 @@
     .then(function () {
       parent.postMessage({ __lattice: 1, type: "ready" }, "*");
     });
+
+  /* 自检页用：解析时区、算角度、读当前配置 */
+  window.__latticeClock = {
+    parseZones: parseZones,
+    zoneLabel: zoneLabel,
+    angles: angles,
+    zoneTime: function (date, zone) {
+      return zoneTime(date, zone);
+    },
+    MAX_ZONES: MAX_ZONES,
+    snapshot: function () {
+      return { config: config, zones: zoneList.slice() };
+    },
+  };
 })();

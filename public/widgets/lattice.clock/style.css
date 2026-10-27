@@ -71,3 +71,107 @@ body {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- 表盘 ---------- */
+
+/*
+ * 表盘默认不出现：配置里选了「模拟表盘」才显示，大字那一行同时收起来。
+ * 卡片矮的时候表盘跟着缩 —— 140 高的卡片上，固定 84px 会把日期顶出去。
+ */
+.clock-dial {
+  display: none;
+  flex: 0 0 auto;
+  --dial-size: min(84px, calc(100vh - 96px));
+  width: var(--dial-size);
+  height: var(--dial-size);
+}
+
+.clock.is-analog .clock-dial {
+  display: block;
+}
+
+.clock.is-analog .clock-time {
+  display: none;
+}
+
+.dial-face {
+  fill: none;
+  stroke: color-mix(in srgb, var(--fg) 16%, transparent);
+  stroke-width: 1.2;
+}
+
+.dial-tick {
+  stroke: color-mix(in srgb, var(--fg) 26%, transparent);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
+/* 3 / 6 / 9 / 12 点的刻度粗一档，一眼能分出上下左右 */
+.dial-tick.is-major {
+  stroke: color-mix(in srgb, var(--fg) 52%, transparent);
+  stroke-width: 2;
+}
+
+.dial-hand {
+  stroke: var(--fg);
+  stroke-linecap: round;
+}
+
+.dial-hour {
+  stroke-width: 3.4;
+}
+
+.dial-minute {
+  stroke-width: 2.2;
+}
+
+.dial-second {
+  stroke: var(--accent);
+  stroke-width: 1.2;
+}
+
+.dial-pin {
+  fill: var(--accent);
+}
+
+/* ---------- 其他时区 ---------- */
+
+.clock-zones {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  margin-top: 2px;
+  overflow: hidden;
+}
+
+/*
+ * `hidden` 在这里必须自己写一条：上面那句 `display: flex` 的优先级高于
+ * 浏览器的 `[hidden] { display: none }`，不补这一条藏不住。
+ */
+.clock-zones[hidden] {
+  display: none;
+}
+
+.clock-zone {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.clock-zone-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clock-zone-time {
+  flex: none;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}

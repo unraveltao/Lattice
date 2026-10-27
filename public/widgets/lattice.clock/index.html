@@ -7,16 +7,30 @@
   </head>
   <body>
     <!--
-      没有设置按钮：12/24 小时制和秒数都走清单里的 `config`，
-      由属性面板按实例调。卡片本来就只有 240×140，少一颗按钮，
+      没有设置按钮：12/24 小时制、秒数、表盘形态和其他时区都走清单里的
+      `config`，由属性面板按实例调。卡片本来就只有 240×140，少一颗按钮，
       时间就能多占一行。
 
       AM/PM 单独一个 span：它跟数字一样大的话，12 小时制 + 秒会宽到换行，
       把日期挤出卡片（真机上撞到过，整块变成两行）。
+
+      表盘是一张内联 SVG，三根针各自转角度（见 widget.js 的 angles）。
+      它平时是 `display: none`，只有配置里选了「模拟表盘」才出现。
     -->
     <main class="clock" id="clock">
       <div class="clock-time"><span id="time">--:--</span><span class="clock-suffix" id="suffix"></span></div>
+
+      <svg class="clock-dial" id="dial" viewBox="0 0 100 100" role="img" aria-label="--:--">
+        <circle class="dial-face" cx="50" cy="50" r="47" />
+        <g id="dial-ticks"></g>
+        <line class="dial-hand dial-hour" id="hand-hour" x1="50" y1="50" x2="50" y2="27" />
+        <line class="dial-hand dial-minute" id="hand-minute" x1="50" y1="50" x2="50" y2="16" />
+        <line class="dial-hand dial-second" id="hand-second" x1="50" y1="56" x2="50" y2="13" />
+        <circle class="dial-pin" cx="50" cy="50" r="2.6" />
+      </svg>
+
       <div class="clock-date" id="date">…</div>
+      <div class="clock-zones" id="zones" hidden></div>
     </main>
     <script src="widget.js"></script>
   </body>
