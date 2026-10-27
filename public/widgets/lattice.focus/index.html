@@ -14,6 +14,12 @@
 
       <p class="focus-time" id="time">25:00</p>
 
+      <!-- 每日目标：没设目标时整块收起来（display: none），不占位置 -->
+      <div class="focus-goal" id="goal" hidden>
+        <div class="focus-goal-track"><div class="focus-goal-fill" id="goal-fill"></div></div>
+        <span class="focus-goal-text" id="goal-text"></span>
+      </div>
+
       <div class="focus-actions">
         <button type="button" class="focus-btn is-primary" id="toggle">开始</button>
         <button type="button" class="focus-btn" id="reset">重置</button>

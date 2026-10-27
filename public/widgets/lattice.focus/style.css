@@ -54,7 +54,11 @@ body {
 
 .focus-time {
   margin: 10px 0 0;
-  font-size: 50px;
+  /*
+   * 卡片高度可变（默认 180，最小 150），所以字号跟着高度走：
+   * 矮卡片上 50px 的大字会把每日目标那一条挤出卡片。
+   */
+  font-size: clamp(32px, 26vh, 50px);
   font-weight: 300;
   line-height: 1;
   letter-spacing: -0.02em;
@@ -63,6 +67,51 @@ body {
    * 46px 的字号下那个抖动非常明显。
    */
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 每日目标 ---------- */
+
+.focus-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+/* 上面那条 `display: flex` 的优先级高于浏览器的 `[hidden]`，得自己补一条 */
+.focus-goal[hidden] {
+  display: none;
+}
+
+.focus-goal-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgb(127 127 127 / 0.22);
+  overflow: hidden;
+}
+
+.focus-goal-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--muted, #6b6b70);
+  transition: width 240ms ease;
+}
+
+.focus-goal-text {
+  font-size: 9.5px;
+  line-height: 1.35;
+  color: var(--muted, #6b6b70);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 达标：整条换成强调色，不用读数字也知道今天够了 */
+.focus-goal.is-met .focus-goal-fill {
+  background: var(--accent, #3b7ddd);
+}
+
+.focus-goal.is-met .focus-goal-text {
+  color: var(--accent, #3b7ddd);
 }
 
 /* 休息阶段把数字调暗一档：一眼能看出"现在不是在专注" */

@@ -144,6 +144,11 @@
     };
   }
 
+  /** 每日目标（分钟）。0 = 没设，卡片上不出现那一条进度。 */
+  function goalOf(config) {
+    return clampInt(config && config.goalMinutes, 0, 600, 0);
+  }
+
   function fresh(config) {
     return {
       v: SCHEMA,
@@ -234,6 +239,9 @@
     toggle: document.getElementById("toggle"),
     reset: document.getElementById("reset"),
     hint: document.getElementById("hint"),
+    goal: document.getElementById("goal"),
+    goalFill: document.getElementById("goal-fill"),
+    goalText: document.getElementById("goal-text"),
   };
 
   function left() {
@@ -258,6 +266,51 @@
   function signature(value) {
     if (!value) return "";
     return [value.phase, value.endsAt, Math.round(value.remainingMs), value.done.length].join("|");
+  }
+
+  // -------------------------------------------------------------------------
+  // 每日目标
+  // -------------------------------------------------------------------------
+
+  function dayKey(ms) {
+    var date = new Date(ms);
+    return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
+  }
+
+  /**
+   * 今天完成的专注分钟数。
+   *
+   * `done` 存的是"每个完成时刻"，不是计数器 —— 所以这里能按日期筛，而且两个
+   * 实例看到的 `done` 一样、算出来的数字也一样（不存在"加两次"）。
+   *
+   * 分钟数按**现在的**专注时长折算：改时长会让今天的历史跟着重算。这是刻意的
+   * 取舍 —— 要精确到每一轮的时长就得改 schema、存一条数组，代价比这一行数字大。
+   */
+  function todayMinutes() {
+    if (!state) return 0;
+    var perRound = Math.round(durations(config).work / 60000);
+    var key = dayKey(Date.now());
+    var count = 0;
+    for (var i = 0; i < state.done.length; i += 1) {
+      if (dayKey(state.done[i]) === key) count += 1;
+    }
+    return count * perRound;
+  }
+
+  function renderGoal() {
+    if (!el.goal) return;
+    var goal = goalOf(config);
+    el.goal.hidden = goal <= 0;
+    if (goal <= 0) return;
+    var minutes = todayMinutes();
+    var ratio = Math.min(1, minutes / goal);
+    el.goalFill.style.width = Math.round(ratio * 100) + "%";
+    el.goalText.textContent = say(
+      "今日 " + minutes + " / " + goal + " 分钟",
+      "Today " + minutes + " / " + goal + " min",
+    );
+    // 达标之后整条换成强调色：扫一眼就知道今天够了
+    el.goal.classList.toggle("is-met", minutes >= goal);
   }
 
   // -------------------------------------------------------------------------
@@ -299,6 +352,7 @@
     el.reset.textContent = say("重置", "Reset");
 
     renderTime();
+    renderGoal();
     paintHint();
   }
 
@@ -365,6 +419,36 @@
     if (!running && tickId) {
       call("schedule.clear", { id: tickId }).catch(noop);
       tickId = 0;
+    }
+  }
+
+  /*
+   * 每日目标那条数字要靠自己的心跳翻篇：跨过午夜之后"今日"要变成 0，
+   * 而计时器停着的时候本来一次都不会醒。所以只在设了目标时挂一条 60 秒的
+   * 心跳 —— 没设目标就一分钟也不多醒。
+   */
+  var goalTickId = 0;
+
+  function syncGoalTicker() {
+    var wanted = goalOf(config) > 0;
+
+    if (wanted && !goalTickId) {
+      call("schedule.every", { every: 60000 })
+        .then(function (grant) {
+          goalTickId = grant.id;
+          // 回来的时候目标可能已经被关掉了
+          if (goalOf(config) <= 0) {
+            call("schedule.clear", { id: goalTickId }).catch(noop);
+            goalTickId = 0;
+          }
+        })
+        .catch(noop);
+      return;
+    }
+
+    if (!wanted && goalTickId) {
+      call("schedule.clear", { id: goalTickId }).catch(noop);
+      goalTickId = 0;
     }
   }
 
@@ -495,6 +579,7 @@
 
   function start(nextConfig) {
     config = nextConfig;
+    syncGoalTicker();
 
     load()
       .then(function (raw) {
@@ -541,7 +626,9 @@
     }
 
     if (data.type === "tick") {
-      if (data.payload && data.payload.id === tickId) onTick();
+      if (!data.payload) return;
+      if (data.payload.id === tickId) onTick();
+      else if (data.payload.id === goalTickId) renderGoal();
       return;
     }
 
@@ -567,6 +654,8 @@
       var before = durations(config);
       config = data.payload && data.payload.config;
       var after = durations(config);
+      // 目标可能刚被打开或关掉：那条 60 秒的心跳跟着挂 / 摘
+      syncGoalTicker();
       if (!state) return;
 
       if (state.endsAt === null) {
@@ -583,6 +672,7 @@
         // 正在跑：不动它的 endsAt，只重画（"第几个 / 共几个"可能变了）
         render();
       }
+      renderGoal();
       return;
     }
 

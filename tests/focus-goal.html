@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>focus goal / daily progress</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 「每日目标」这一条：数字从哪来、什么时候归零、达标怎么画。
+       *
+       * 存的是"每个完成时刻"，所以今天做了几轮是**数出来**的，不是计数器
+       * 加出来的 —— 两个实例同时到点也只会记一次。这一页就是验这件事：
+       * 播种一份 done、看卡片算出的分钟数对不对。
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const SCHEMA = 1;
+      const BASE_CONFIG = {
+        workMinutes: 25,
+        breakMinutes: 5,
+        longBreakEvery: 4,
+        longBreakMinutes: 15,
+        autoStart: false,
+        goalMinutes: 50,
+      };
+
+      /** 今天 09:00 / 10:00（本地字段），保证落在"今天"里 */
+      function todayAt(hour) {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0).getTime();
+      }
+
+      function timerState(patch) {
+        return Object.assign(
+          { v: SCHEMA, phase: "work", endsAt: null, remainingMs: 25 * 60000, done: [] },
+          patch,
+        );
+      }
+
+      function mount(options) {
+        const config = options.config || BASE_CONFIG;
+        const store = { state: options.state || timerState({}), sets: [], calls: [] };
+        let nextId = 100;
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+        frame.style.width = (options.width || 240) + "px";
+        frame.style.height = (options.height || 180) + "px";
+        frame.src = "/widgets/lattice.focus/index.html";
+        document.body.appendChild(frame);
+
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+            store.calls.push({ method: data.method, params: data.params });
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+            if (data.method === "lang.get") return reply({ ok: true, result: { lang: "zh" } });
+            if (data.method === "config.get") return reply({ ok: true, result: config });
+            if (data.method === "storage.get") return reply({ ok: true, result: store.state });
+            if (data.method === "storage.set") {
+              store.state = data.params.value;
+              store.sets.push(data.params.value);
+              return reply({ ok: true, result: { ok: true } });
+            }
+            if (data.method === "schedule.every") {
+              nextId += 1;
+              return reply({ ok: true, result: { id: nextId } });
+            }
+            if (data.method === "schedule.clear") return reply({ ok: true, result: { ok: true } });
+            reply({ ok: false, code: "unknown_method", error: "unknown" });
+          });
+        });
+
+        return {
+          frame,
+          store,
+          ready,
+          doc: () => frame.contentDocument,
+          send(type, payload) {
+            frame.contentWindow.postMessage({ __lattice: 1, type, payload }, "*");
+            return sleep(120);
+          },
+        };
+      }
+
+      const goalText = (doc) => doc.getElementById("goal-text").textContent;
+      const goalHidden = (doc) => doc.getElementById("goal").hidden;
+
+      // ---------- 场景 1：两轮已完成，目标 50 ----------
+      {
+        const view = mount({
+          state: timerState({ done: [todayAt(10), todayAt(9)] }),
+        });
+        await view.ready;
+        await sleep(160);
+        const doc = view.doc();
+        const goal = doc.getElementById("goal");
+
+        log(goalHidden(doc) === false, "设了目标就有那一条进度");
+        log(goalText(doc) === "今日 50 / 50 分钟", `数字是「${goalText(doc)}」`);
+        log(doc.getElementById("goal-fill").style.width === "100%", "进度条满格");
+        log(goal.classList.contains("is-met"), "达标时整条换上强调色");
+
+        const every = view.store.calls.filter((call) => call.method === "schedule.every");
+        log(
+          every.some((call) => call.params && call.params.every === 60000),
+          "设了目标就挂一条 60 秒的心跳（跨午夜要归零）",
+        );
+
+        await view.send("language", { lang: "en" });
+        log(goalText(doc) === "Today 50 / 50 min", `英文写法是「${goalText(doc)}」`);
+
+        await view.send("config-changed", { config: Object.assign({}, BASE_CONFIG, { goalMinutes: 100 }) });
+        log(goalText(doc) === "Today 50 / 100 min", `改目标后立刻重算（「${goalText(doc)}」）`);
+        log(doc.getElementById("goal-fill").style.width === "50%", "进度条一半");
+        log(!goal.classList.contains("is-met"), "没达标就不上色");
+
+        const clears = view.store.calls.filter((call) => call.method === "schedule.clear").length;
+        await view.send("config-changed", { config: Object.assign({}, BASE_CONFIG, { goalMinutes: 0 }) });
+        log(goalHidden(doc) === true, "目标关掉之后那一条收起来");
+        log(
+          view.store.calls.filter((call) => call.method === "schedule.clear").length > clears,
+          "关掉目标时把那条心跳摘掉（不留孤儿订阅）",
+        );
+        view.frame.remove();
+      }
+
+      // ---------- 场景 2：今天还没做 ----------
+      {
+        const view = mount({ state: timerState({ done: [] }) });
+        await view.ready;
+        await sleep(160);
+        const doc = view.doc();
+        log(goalText(doc) === "今日 0 / 50 分钟", `零轮时写「${goalText(doc)}」`);
+        log(doc.getElementById("goal-fill").style.width === "0%", "进度条是空的");
+        log(!doc.getElementById("goal").classList.contains("is-met"), "没达标");
+        view.frame.remove();
+      }
+
+      // ---------- 场景 3：到点之后今天多一轮 ----------
+      {
+        const view = mount({
+          state: timerState({ done: [todayAt(9)], endsAt: Date.now() - 5000 }),
+        });
+        await view.ready;
+        await sleep(200);
+        const doc = view.doc();
+        log(view.store.state.done.length === 2, `补账之后 done 有两条（现在 ${view.store.state.done.length}）`);
+        log(goalText(doc) === "今日 50 / 50 分钟", `两轮 25 分钟 = 50（「${goalText(doc)}」）`);
+        log(doc.getElementById("goal").classList.contains("is-met"), "刚好达标也上色");
+        view.frame.remove();
+      }
+
+      // ---------- 场景 4：昨天的轮次不算今天 ----------
+      {
+        const yesterday = todayAt(9) - 24 * 3600 * 1000;
+        const view = mount({ state: timerState({ done: [yesterday] }) });
+        await view.ready;
+        await sleep(160);
+        log(goalText(view.doc()) === "今日 0 / 50 分钟", "昨天完成的轮次不进今天的进度");
+        view.frame.remove();
+      }
+
+      // ---------- 场景 5：最小尺寸放得下 ----------
+      {
+        const view = mount({ state: timerState({ done: [todayAt(9)] }), width: 200, height: 150 });
+        await view.ready;
+        await sleep(160);
+        const doc = view.doc();
+        const goal = doc.getElementById("goal").getBoundingClientRect();
+        const actions = doc.querySelector(".focus-actions").getBoundingClientRect();
+        log(goal.bottom <= actions.top + 0.5, `进度条在按钮上方（${goal.bottom.toFixed(1)} ≤ ${actions.top.toFixed(1)}）`);
+        log(actions.bottom <= 150 - 8, `按钮没有顶出卡片（${actions.bottom.toFixed(1)}）`);
+        log(doc.documentElement.scrollHeight <= 150, `没有纵向溢出（${doc.documentElement.scrollHeight}）`);
+        view.frame.remove();
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>
