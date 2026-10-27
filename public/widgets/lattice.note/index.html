@@ -11,10 +11,15 @@
         <span id="status">正在载入…</span>
       </div>
       <textarea id="text" placeholder="写点什么…" spellcheck="false"></textarea>
+      <!-- 预览和输入框占同一块地方，同一时刻只显示一个 -->
+      <div class="note-preview" id="preview" hidden></div>
       <footer class="note-foot">
+        <button class="note-toggle" type="button" id="mode" aria-pressed="false">预览</button>
+        <button class="note-restore" type="button" id="restore" hidden>恢复上一版</button>
         <span id="count">0 字</span>
       </footer>
     </main>
+    <script src="note-md.js"></script>
     <script src="widget.js"></script>
   </body>
 </html>

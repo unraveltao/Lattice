@@ -87,13 +87,155 @@ body {
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
   font-size: 11px;
   line-height: 1.4;
   color: var(--muted);
   /* 字数会跳动，用等宽数字免得整行左右晃 */
   font-variant-numeric: tabular-nums;
+}
+
+/* 字数永远贴右；左边那两颗是视图与恢复 */
+.note-foot #count {
+  margin-left: auto;
+}
+
+.note-toggle,
+.note-restore {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.note-toggle:hover {
+  color: var(--fg);
+}
+
+.note-toggle[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.note-restore {
+  color: var(--accent);
+}
+
+.note-restore:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.note-toggle:focus-visible,
+.note-restore:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- Markdown 预览 ---------- */
+
+.note-preview {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.7;
+  letter-spacing: 0.01em;
+  /* 长链接和代码块不该把卡片撑出横向滚动 */
+  overflow-wrap: anywhere;
+}
+
+/* 空正文的预览不是一块白板：写一句"还没有内容"，比什么都没有诚实 */
+.note-preview:empty::before {
+  content: attr(data-empty);
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.note-preview p {
+  margin: 0 0 4px;
+}
+
+.note-preview h1,
+.note-preview h2,
+.note-preview h3 {
+  margin: 2px 0 4px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.note-preview h1 {
+  font-size: 15px;
+}
+
+.note-preview h2 {
+  font-size: 13px;
+}
+
+.note-preview h3 {
+  font-size: 12px;
+}
+
+.note-preview ul,
+.note-preview ol {
+  margin: 0 0 4px;
+  padding-left: 16px;
+}
+
+.note-preview blockquote {
+  margin: 0 0 4px;
+  padding-left: 6px;
+  border-left: 2px solid color-mix(in srgb, var(--fg) 22%, transparent);
+  color: var(--muted);
+}
+
+.note-preview code {
+  padding: 1px 3px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  font-family: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 11px;
+}
+
+.note-preview pre {
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  overflow-x: auto;
+}
+
+.note-preview pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.note-preview hr {
+  margin: 6px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.note-preview strong {
+  font-weight: 600;
+}
+
+/* 链接只显示、不跳转：沙箱里点它就是一次导航（桌面端会被拦，预览里会真跳走） */
+.note-preview .md-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: default;
+}
+
+.note-preview .md-alt {
+  color: var(--muted);
 }
 
 #status.is-saved {

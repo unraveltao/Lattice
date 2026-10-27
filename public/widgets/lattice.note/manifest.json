@@ -1,10 +1,10 @@
 {
   "id": "lattice.note",
   "name": { "zh": "便签", "en": "Note" },
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": {
-    "zh": "随手写点什么；自动存进组件存储",
-    "en": "Jot something down; saved automatically to widget storage"
+    "zh": "随手写点什么，认一点点 Markdown；自动存进组件存储",
+    "en": "Jot something down with a little Markdown; saved automatically to widget storage"
   },
   "author": "Lattice",
   "entry": "index.html",
@@ -28,6 +28,44 @@
           {
             "zh": "在桌面窗口里也能打 —— 那扇窗自己从不抢焦点。",
             "en": "It also types inside a desktop window, where the window itself never takes focus."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "写一点点 Markdown", "en": "A little Markdown" },
+        "items": [
+          {
+            "zh": "底栏那颗「预览」把正文按 Markdown 渲染出来，再点一下回到编辑。",
+            "en": "The Preview button in the footer renders the text as Markdown; press it again to get back to editing."
+          },
+          {
+            "zh": "认这些：# 标题、- 列表、1. 编号、> 引用、代码块，还有 **粗体**、*斜体*、~~删除线~~、`行内代码`。",
+            "en": "It knows # headings, - lists, 1. numbers, > quotes, code blocks, plus **bold**, *italic*, ~~strike~~ and `inline code`."
+          },
+          {
+            "zh": "链接显示成带下划线的文字、点不开：把鼠标停上去能看到地址。",
+            "en": "Links show as underlined text and do not open; hover one to see where it points."
+          },
+          {
+            "zh": "尖括号和标签一律当字面量显示 —— 便签里写 HTML 不会被执行。",
+            "en": "Angle brackets and tags are shown as text; HTML in a note is never executed."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "清空之后还能找回", "en": "Undoing a wipe" },
+        "items": [
+          {
+            "zh": "把整段文字删光并保存时，上一版会存成备份，底栏出现「恢复上一版」。",
+            "en": "When you clear the whole note and it saves, the previous version is kept and Restore appears in the footer."
+          },
+          {
+            "zh": "它只在正文为空时出现 —— 否则按下去等于删掉你新写的东西。",
+            "en": "It only appears while the note is empty; otherwise pressing it would delete what you just wrote."
+          },
+          {
+            "zh": "备份只留 24 小时，过期自动清掉，不会一直躺在盘上。",
+            "en": "The backup lives for 24 hours and is then cleared, so it does not sit on disk forever."
           }
         ]
       },
@@ -69,6 +107,10 @@
             "en": "Every Note widget shows the same text — they are views of one note, not separate notes."
           },
           {
+            "zh": "预览还是编辑，是每张卡片自己的选择，不跟着别的卡片走。",
+            "en": "Whether a card shows the preview or the editor is that card's own choice."
+          },
+          {
             "zh": "想要第二张便签，就换个 id 再装一份。",
             "en": "If you want a second note, install a copy under a different id."
           }
@@ -77,6 +119,20 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.2.0",
+      "date": "2026-10-27",
+      "changes": [
+        {
+          "zh": "底栏加了「预览」：标题、列表、引用、代码、粗斜体按 Markdown 渲染，链接只显示、点不开。",
+          "en": "A Preview button in the footer renders headings, lists, quotes, code and emphasis as Markdown; links are shown but do not open."
+        },
+        {
+          "zh": "把便签删光时留下上一版，24 小时内可以点「恢复上一版」找回。",
+          "en": "Clearing the note now keeps the previous version, and Restore brings it back for 24 hours."
+        }
+      ]
+    },
     {
       "version": "0.1.1",
       "date": "2026-10-25",

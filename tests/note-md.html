@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>note markdown / renderer</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.note/note-md.js"></script>
+    <script type="module">
+      /*
+       * 便签的 Markdown 渲染器。
+       *
+       * 它是"先转义、再拼标签"的，所以这里有一半断言是在验转义：
+       * 便签里写着 script 标签时，卡片上必须看见那几个字，而不是执行它。
+       * 另一半验方言 —— 和平台自己那份（src/runtime/markdown.ts）同一套写法。
+       */
+      const md = window.__latticeNoteMarkdown;
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const has = (html, ...parts) => parts.every((part) => html.includes(part));
+
+      // ---------- 转义 ----------
+
+      log(
+        md.escapeHtml('a & b < c > d "e"') === "a &amp; b &lt; c &gt; d &quot;e&quot;",
+        "& < > \" 都换成实体",
+      );
+      log(md.escapeHtml("普通中文不变") === "普通中文不变", "普通文字原样保留");
+      log(md.escapeHtml("") === "", "空串还是空串");
+
+      // ---------- 链接白名单 ----------
+
+      log(md.safeHref("https://example.com") === "https://example.com", "https 放行");
+      log(md.safeHref("http://example.com") === "http://example.com", "http 放行");
+      log(md.safeHref("#section") === "#section", "页内锚点放行");
+      log(md.safeHref("./doc.md") === "./doc.md", "相对路径放行");
+      log(md.safeHref("javascript:alert(1)") === null, "javascript: 不给");
+      log(md.safeHref("file:///C:/x") === null, "file: 不给");
+      log(md.safeHref("   ") === null, "空地址不给");
+      log(md.safeHref(" https://example.com ") === "https://example.com", "两头空格被去掉");
+
+      // ---------- 行内语法 ----------
+
+      log(md.inline("**粗**") === "<strong>粗</strong>", "** 是粗体");
+      log(md.inline("__粗__") === "<strong>粗</strong>", "__ 也是粗体");
+      log(md.inline("*斜*") === "<em>斜</em>", "行首的 *…* 是斜体");
+      log(md.inline("这是 *斜* 的") === "这是 <em>斜</em> 的", "空格之间的斜体");
+      log(md.inline("a*b*c") === "a*b*c", "词中间的星号不算语法");
+      log(md.inline("~~删~~") === "<del>删</del>", "~~ 是删除线");
+      log(md.inline("`code`") === "<code>code</code>", "反引号是行内代码");
+
+      {
+        const html = md.inline("`**不是粗体**`");
+        log(has(html, "<code>**不是粗体**</code>"), "代码里的星号不被当成语法");
+        log(!html.includes("<strong>"), "代码里没有粗体标签");
+      }
+      {
+        const html = md.inline("`<b>`");
+        log(has(html, "&lt;b&gt;"), "代码里的尖括号被转义");
+        log(!html.includes("<b>"), "没有真的标签");
+      }
+
+      {
+        const html = md.inline("[点我](https://example.com)");
+        log(has(html, 'class="md-link"', 'title="https://example.com"', "点我"), "链接渲染成带地址的 span");
+        log(!html.includes("<a "), "不是 <a>：沙箱里点它等于一次导航");
+      }
+      log(
+        md.inline("[x](javascript:void)") === "x",
+        "javascript: 链接降级成纯文字（连 title 都不给）",
+      );
+      log(
+        !md.inline("[x](javascript:alert(1))").includes("md-link"),
+        "带括号的 javascript: 也不会变成链接",
+      );
+      log(has(md.inline("![图](https://x/y.png)"), 'class="md-alt"', "图"), "图片只渲染 alt 文字");
+      log(!md.inline("![图](https://x/y.png)").includes("<img"), "不会去加载图片");
+
+      {
+        // 拼出来而不是写字面量：内联脚本里出现结束标签会把 script 提前关掉
+        const raw = "<" + "script>alert(1)" + "<" + "/script>";
+        const html = md.inline(raw);
+        log(has(html, "&lt;script&gt;"), "正文里的 script 标签变成字面量");
+        log(!html.includes("<script"), "没有真的 script 标签");
+      }
+      log(has(md.inline("a & b"), "a &amp; b"), "正文里的 & 转义");
+      log(has(md.inline("[**粗**](https://x)"), 'class="md-link"', "<strong>粗</strong>"), "链接文字里可以套粗体");
+
+      // ---------- 块级语法 ----------
+
+      log(md.render("# 标题") === "<h1>标题</h1>", "一级标题");
+      log(md.render("### 标题") === "<h3>标题</h3>", "三级标题");
+      log(md.render("#### 很深") === "<h3>很深</h3>", "四级也压到 h3（卡片上再小就看不见了）");
+      log(md.render("### 有 # 号 ###") === "<h3>有 # 号</h3>", "标题行尾的 # 被去掉");
+      log(md.render("正文") === "<p>正文</p>", "普通一行是一段");
+      log(md.render("第一行\n第二行") === "<p>第一行 第二行</p>", "两行合成一段（用空格接）");
+      log(md.render("") === "" && md.render("   \n  ") === "", "空白什么都不画");
+      log(md.render(null) === "", "null 当空文本");
+      log(md.render("---") === "<hr />", "三个横线是分隔线");
+      log(md.render("a\r\nb") === "<p>a b</p>", "CRLF 也能读");
+
+      {
+        const html = md.render("- 一\n- 二");
+        log(has(html, "<ul>", "<li>一</li>", "<li>二</li>"), "无序列表");
+        log((html.match(/<li>/g) || []).length === 2, "两条 li");
+      }
+      {
+        const html = md.render("1. 一\n2. 二");
+        log(has(html, "<ol>", "<li>一</li>", "<li>二</li>"), "有序列表");
+        log(!html.includes("<ul>"), "有序列表没有套 ul");
+      }
+      {
+        const html = md.render("- 一\n  - 一点一\n- 二");
+        log(has(html, "<ul>", "<li>一<ul><li>一点一</li></ul></li>"), "缩进的行成为上一项的子列表");
+        log((html.match(/<ul>/g) || []).length === 2, "两层 ul");
+      }
+      {
+        const html = md.render("> 引用");
+        log(has(html, "<blockquote>", "<p>引用</p>", "</blockquote>"), "引用");
+      }
+      {
+        const html = md.render("> 第一行\n> 第二行");
+        log(has(html, "<blockquote>", "第一行 第二行"), "多行引用合成一段");
+      }
+      {
+        const html = md.render("```\nconst a = 1 < 2;\n```");
+        log(has(html, "<pre><code>", "const a = 1 &lt; 2;"), "代码块保留换行、尖括号转义");
+        log(!html.includes("<strong>"), "代码块里没有行内语法");
+      }
+      {
+        const html = md.render("```js\nlet a = 1;\n```");
+        log(has(html, "<pre><code>let a = 1;"), "带语言标记的代码块也能认");
+      }
+      {
+        const html = md.render("|");
+        log(has(html, "<p>|</p>"), "认不出的残行被当成一段文字吃掉（不会空转）");
+      }
+      {
+        const html = md.render("# 标题\n\n正文\n\n- 一\n- 二\n\n> 引用\n\n```\nx\n```");
+        log(
+          has(html, "<h1>", "<p>正文</p>", "<ul>", "<blockquote>", "<pre><code>"),
+          "一份混排文档每块都画出来",
+        );
+        log(!/<script|<img|<a .*href=/i.test(html), "整份文档里没有任何可执行的标签");
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

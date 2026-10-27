@@ -5,6 +5,13 @@
  * 组件里能不能正常输入。桌面端窗口是 WS_EX_NOACTIVATE（永不激活）的，
  * 输入框要打字就必须有焦点 —— 这两件事在 Win32 层是打架的。
  * 在浏览器预览里它只是普通 textarea，到了独立窗口才见真章。
+ *
+ * 0.2 起多两件事：
+ *  1. **预览**：底栏那颗按钮把正文按 Markdown 子集渲染出来（渲染器在
+ *     `note-md.js` 里，和平台自己那份同一套方言）。默认仍然是"写"。
+ *  2. **清空之后能找回**：把整段文字删光并落盘时，上一版正文会存进
+ *     `backup` 这个键，24 小时内卡片上会出现一颗「恢复」。删掉一张便签的
+ *     全部内容是不可逆的，而这颗「恢复」是它唯一的退路。
  */
 (function () {
   "use strict";
@@ -47,9 +54,9 @@
   /*
    * 界面语言。
    *
-   * 便签上的字（状态行、字数、占位符）都是这个组件自己的，平台不知道中文
-   * 怎么写。所以两件事都要做：启动时问一次 `lang.get`，用户中途换语言再收
-   * `language` 推送，把已经画出去的字原地换掉。
+   * 便签上的字（状态行、字数、占位符、预览按钮）都是这个组件自己的，平台
+   * 不知道中文怎么写。所以两件事都要做：启动时问一次 `lang.get`，用户中途
+   * 换语言再收 `language` 推送，把已经画出去的字原地换掉。
    *
    * 首帧按 HTML 里写死的中文画（不变量 18）；英文界面等桥回来那一趟再翻，
    * 不为这几十毫秒画"加载中"。
@@ -71,6 +78,9 @@
     updateCount();
     // 状态行的文字由状态机给，重画当前那一条，别把"保存中…"写成别的
     setStatus(statusKey, statusKind);
+    // 预览按钮、恢复按钮、空预览的提示语都跟语言有关
+    renderMode();
+    updateRestore();
   }
 
   window.addEventListener("message", function (event) {
@@ -88,6 +98,7 @@
     if (data.type === "store-changed") {
       var key = data.payload && data.payload.key;
       if (!key || key === "text") reloadText();
+      if (!key || key === "backup") reloadBackup();
       return;
     }
     if (data.type !== "response") return;
@@ -104,9 +115,14 @@
   });
 
   // ---------- 业务 ----------
+  var md = window.__latticeNoteMarkdown;
+
   var textEl = document.getElementById("text");
+  var previewEl = document.getElementById("preview");
   var statusEl = document.getElementById("status");
   var countEl = document.getElementById("count");
+  var modeEl = document.getElementById("mode");
+  var restoreEl = document.getElementById("restore");
 
   var timer = null;
 
@@ -126,6 +142,13 @@
   var revision = 0;
   var saved = 0;
   var saving = false;
+
+  /** 上一次确认落盘的正文。清空检测靠它（null = 还不知道磁盘上是什么） */
+  var lastSaved = null;
+  /** 清空时留下的上一版：{ text, at }，24 小时内可恢复 */
+  var backup = null;
+  /** 视图：write（默认）/ read（Markdown 预览） */
+  var mode = "write";
 
   /*
    * 状态行按"键"存，不存已经翻好的字：换语言时要能重画当前那一条。
@@ -177,16 +200,99 @@
     );
   }
 
+  // ---------- 预览 ----------
+
+  function renderPreview() {
+    if (!previewEl) return;
+    previewEl.setAttribute("data-empty", say("还没有内容", "Nothing here yet"));
+    previewEl.innerHTML = md ? md.render(textEl.value) : "";
+  }
+
+  function renderMode() {
+    var read = mode === "read";
+    textEl.hidden = read;
+    previewEl.hidden = !read;
+    modeEl.textContent = read ? say("编辑", "Edit") : say("预览", "Preview");
+    modeEl.setAttribute("aria-pressed", read ? "true" : "false");
+    modeEl.setAttribute("aria-label", read ? say("回到编辑", "Back to editing") : say("预览 Markdown", "Preview Markdown"));
+    if (read) renderPreview();
+  }
+
+  // ---------- 清空之后的退路 ----------
+
+  /** 存档里那条备份能不能用：正文非空、时间是个数、还没过期（24 小时） */
+  function normalizeBackup(value) {
+    if (!value || typeof value !== "object") return null;
+    if (typeof value.text !== "string" || !value.text.trim()) return null;
+    if (typeof value.at !== "number" || !isFinite(value.at)) return null;
+    if (Date.now() - value.at > 86400000) return null;
+    return { text: value.text, at: value.at };
+  }
+
+  /**
+   * 那颗「恢复」只在"正文是空的、而且还有上一版"的时候出现 ——
+   * 正文非空时给它一颗恢复按钮，按下去等于把用户新写的东西删掉。
+   */
+  function updateRestore() {
+    var visible = !!backup && textEl.value.trim() === "";
+    restoreEl.hidden = !visible;
+    restoreEl.textContent = say("恢复上一版", "Restore");
+    restoreEl.title = backup
+      ? say("恢复清空之前的文字", "Bring back the text from before you cleared it")
+      : "";
+  }
+
+  function restore() {
+    if (!backup) return;
+    textEl.value = backup.text;
+    backup = null;
+    revision += 1;
+    updateCount();
+    updateRestore();
+    clearTimeout(timer);
+    // 备份用过就删掉：再留 24 小时只会让「恢复」在下次清空时指向更老的内容
+    call("storage.remove", { key: "backup" }).catch(function () {});
+    save();
+    if (mode === "read") renderPreview();
+    else textEl.focus();
+  }
+
+  restoreEl.addEventListener("click", restore);
+
+  // ---------- 保存 ----------
+
   function save() {
     // 上一次还没回来就什么都不做：它回来时会发现 revision 更大，自己再存一次
     if (saving || saved >= revision) return;
     saving = true;
     var target = revision;
+    var value = textEl.value;
+    /*
+     * 清空检测：正文被删光、而磁盘上还有一段非空的内容 —— 这就是"手滑"。
+     * 先把上一版存进 backup，再写空的正文；顺序反过来的话，中间那一刻
+     * 断电就两样都没了。
+     *
+     * 只在还没有备份时记录：连清两次不该把第一次的备份冲掉。
+     */
+    var wiped = value.trim() === "" && typeof lastSaved === "string" && lastSaved.trim() !== "" && !backup;
     setStatus("saving", "");
-    call("storage.set", { key: "text", value: textEl.value })
+    var chain = Promise.resolve();
+    if (wiped) {
+      backup = { text: lastSaved, at: Date.now() };
+      chain = call("storage.set", { key: "backup", value: backup }).catch(function () {
+        /* 备份写不进去不该拦住正文的保存 */
+      });
+      updateRestore();
+    }
+    chain
       .then(function () {
+        return call("storage.set", { key: "text", value: value });
+      })
+      .then(function () {
+        lastSaved = value;
         saved = target;
         saving = false;
+        updateRestore();
         if (revision > saved) {
           save();
           return;
@@ -202,6 +308,7 @@
   textEl.addEventListener("input", function () {
     revision += 1;
     updateCount();
+    updateRestore();
     // 正在保存时别把"保存中…"改回"未保存"，那会让人以为存完了又退回
     if (!saving) setStatus("unsaved", "");
     clearTimeout(timer);
@@ -212,6 +319,12 @@
   textEl.addEventListener("blur", function () {
     clearTimeout(timer);
     save();
+  });
+
+  modeEl.addEventListener("click", function () {
+    mode = mode === "read" ? "write" : "read";
+    renderMode();
+    if (mode === "write") textEl.focus();
   });
 
   /**
@@ -230,8 +343,23 @@
         if (typeof value !== "string") return;
         if (value === textEl.value) return;
         textEl.value = value;
+        lastSaved = value;
         updateCount();
+        updateRestore();
+        if (mode === "read") renderPreview();
         setStatus("saved", "saved");
+      })
+      .catch(function () {});
+  }
+
+  /** 备份可能是别的实例刚留下的：它一出现，「恢复」就该跟着出现 */
+  function reloadBackup() {
+    call("storage.get", { key: "backup" })
+      .then(function (value) {
+        var next = normalizeBackup(value);
+        if (backup && next && backup.at === next.at) return;
+        backup = next;
+        updateRestore();
       })
       .catch(function () {});
   }
@@ -266,7 +394,12 @@
         setStatus("unsaved", "");
         return;
       }
-      if (typeof value === "string") textEl.value = value;
+      if (typeof value === "string") {
+        textEl.value = value;
+        lastSaved = value;
+      } else {
+        lastSaved = "";
+      }
       updateCount();
       setStatus("saved", "saved");
     })
@@ -276,6 +409,23 @@
       setStatus(error.code === "permission_denied" ? "noPermission" : "loadFailed", "error");
     })
     .then(function () {
+      updateRestore();
+      return call("storage.get", { key: "backup" });
+    })
+    .then(function (value) {
+      var next = normalizeBackup(value);
+      if (!next && value) {
+        // 过期或坏掉的备份不该永远躺在盘上
+        call("storage.remove", { key: "backup" }).catch(function () {});
+      }
+      backup = next;
+      updateRestore();
+    })
+    .catch(function () {
+      /* 没有备份是常态 */
+    })
+    .then(function () {
+      renderMode();
       parent.postMessage({ __lattice: 1, type: "ready" }, "*");
     });
 })();

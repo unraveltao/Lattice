@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>note preview / markdown view and undo</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 便签的两个新行为：底栏的「预览」和「恢复上一版」。
+       *
+       * 假桥按 key 分开存（text / backup），和真平台一样 —— 这里最容易出的
+       * 错是把两个键当成同一个，于是清空检测和恢复都跟着错。
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const PILL_BOTTOM = 34;
+
+      function mountNote(options) {
+        const config = options || {};
+        const state = {
+          keys: { text: config.initial ?? "", backup: config.backup ?? null },
+          sets: [],
+          removes: [],
+        };
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+        frame.style.width = (config.width || 260) + "px";
+        frame.style.height = (config.height || 200) + "px";
+        frame.src = "/widgets/lattice.note/index.html";
+        document.body.appendChild(frame);
+
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+            if (data.method === "lang.get") return reply({ ok: true, result: { lang: "zh" } });
+            if (data.method === "storage.get") {
+              const key = data.params && data.params.key;
+              return reply({ ok: true, result: key in state.keys ? state.keys[key] : null });
+            }
+            if (data.method === "storage.set") {
+              state.keys[data.params.key] = data.params.value;
+              state.sets.push({ key: data.params.key, value: data.params.value });
+              return reply({ ok: true, result: { ok: true } });
+            }
+            if (data.method === "storage.remove") {
+              state.removes.push(data.params.key);
+              delete state.keys[data.params.key];
+              return reply({ ok: true, result: { ok: true } });
+            }
+            reply({ ok: false, code: "unknown_method", error: "unknown" });
+          });
+        });
+
+        return {
+          frame,
+          state,
+          ready,
+          doc: () => frame.contentDocument,
+          send(type, payload) {
+            frame.contentWindow.postMessage({ __lattice: 1, type, payload }, "*");
+            return sleep(60);
+          },
+        };
+      }
+
+      function typeInto(doc, value) {
+        const text = doc.getElementById("text");
+        text.value = value;
+        text.dispatchEvent(new Event("input", { bubbles: true }));
+        return sleep(650);
+      }
+
+      // ---------- 场景 1：预览、清空、恢复 ----------
+      {
+        const view = mountNote({ initial: "今天的重点：**写完** 这页" });
+        await view.ready;
+        await sleep(120);
+        const doc = view.doc();
+        const text = doc.getElementById("text");
+        const preview = doc.getElementById("preview");
+        const mode = doc.getElementById("mode");
+        const restore = doc.getElementById("restore");
+
+        log(text.hidden === false && preview.hidden === true, "默认是编辑态：输入框在，预览是藏着的");
+        log(mode.textContent === "预览" && mode.getAttribute("aria-pressed") === "false", "底栏那颗写「预览」");
+
+        mode.click();
+        await sleep(80);
+        log(text.hidden === true && preview.hidden === false, "点一下切成预览：输入框藏起来");
+        log(preview.innerHTML.includes("<strong>写完</strong>"), "正文里的 **粗体** 被渲染了");
+        log(mode.textContent === "编辑" && mode.getAttribute("aria-pressed") === "true", "按钮翻成「编辑」");
+        log(preview.getBoundingClientRect().top >= PILL_BOTTOM, `预览从 ${PILL_BOTTOM}px 之下开始`);
+
+        mode.click();
+        await sleep(80);
+        log(text.hidden === false && preview.hidden === true, "再点一下回到编辑");
+        log(text.value === "今天的重点：**写完** 这页", "切来切去正文没丢");
+
+        // 列表与标题
+        await typeInto(doc, "# 清单\n\n- 苹果\n- 梨");
+        mode.click();
+        await sleep(80);
+        log(preview.innerHTML.includes("<h1>清单</h1>"), "一级标题画出来了");
+        log(
+          preview.innerHTML.includes("<ul>") && (preview.innerHTML.match(/<li>/g) || []).length === 2,
+          "列表两项都画出来了",
+        );
+        mode.click();
+        await sleep(60);
+
+        // 清空 = 留备份
+        const previous = text.value;
+        await typeInto(doc, "");
+        log(
+          !!view.state.keys.backup && view.state.keys.backup.text === previous,
+          "清空时把上一版存进 backup",
+        );
+        log(view.state.keys.text === "", "正文本身写成了空串");
+        log(view.state.keys.backup && typeof view.state.keys.backup.at === "number", "备份带时间戳");
+        log(restore.hidden === false, "「恢复上一版」出现了");
+        log(doc.getElementById("status").textContent === "已保存", "清空之后状态是「已保存」");
+
+        restore.click();
+        await sleep(250);
+        log(text.value === previous, "点恢复，正文回来了");
+        log(restore.hidden === true, "恢复之后按钮收起来");
+        log(view.state.keys.backup === undefined, "备份用过就删掉");
+        log(view.state.keys.text === previous, "恢复出来的正文也落了盘");
+
+        // 有正文时不该出现恢复
+        log(restore.hidden === true, "正文非空时不给恢复按钮（否则会删掉新写的）");
+
+        view.frame.remove();
+      }
+
+      // ---------- 场景 2：已经有备份、正文是空的 ----------
+      {
+        const view = mountNote({
+          initial: "",
+          backup: { text: "昨天的草稿", at: Date.now() - 60000 },
+        });
+        await view.ready;
+        await sleep(120);
+        const doc = view.doc();
+        const restore = doc.getElementById("restore");
+        log(restore.hidden === false, "打开就看见恢复（正文空、备份还在 24 小时内）");
+        log(restore.textContent === "恢复上一版", `按钮写「${restore.textContent}」`);
+
+        await view.send("language", { lang: "en" });
+        log(restore.textContent === "Restore", `英文按钮写「${restore.textContent}」`);
+        log(doc.getElementById("mode").textContent === "Preview", "预览按钮也翻了");
+
+        restore.click();
+        await sleep(250);
+        log(doc.getElementById("text").value === "昨天的草稿", "英文界面下恢复照样有效");
+        view.frame.remove();
+      }
+
+      // ---------- 场景 3：过期的备份自己消失 ----------
+      {
+        const view = mountNote({
+          initial: "",
+          backup: { text: "很久以前", at: Date.now() - 30 * 3600 * 1000 },
+        });
+        await view.ready;
+        await sleep(150);
+        log(view.doc().getElementById("restore").hidden === true, "超过 24 小时的备份不提供恢复");
+        log(view.state.removes.includes("backup"), "过期备份顺手从盘上删掉");
+        view.frame.remove();
+      }
+
+      // ---------- 场景 4：最小尺寸下预览也放得下 ----------
+      {
+        const view = mountNote({ initial: "# 标题\n\n正文", width: 180, height: 120 });
+        await view.ready;
+        await sleep(120);
+        const doc = view.doc();
+        doc.getElementById("mode").click();
+        await sleep(80);
+        const preview = doc.getElementById("preview");
+        log(preview.getBoundingClientRect().height > 20, `最小尺寸下预览高 ${preview.getBoundingClientRect().height.toFixed(1)}px`);
+        log(doc.documentElement.scrollHeight <= 120, `没有纵向溢出（${doc.documentElement.scrollHeight}）`);
+        log(
+          doc.getElementById("count").getBoundingClientRect().right <= 180 - 12 + 0.5,
+          "字数没有顶出右内边距",
+        );
+        view.frame.remove();
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>
