@@ -204,9 +204,17 @@ trait Recognizer {
 这不在原来那五种里，又不能假装成功）和 `cancelled`（用户在面板里按了 Esc：一个字都不落，
 但状态要回 idle，面板据此清掉提示而不是显示"没听到"）。
 
-**还有两件没量到的事**，实现的第一步就是量它们，别先写界面：
-- **本机装没装中文语音包**。`reg.exe` 在黑名单里、PowerShell 工具报沙箱错，所以没查成。实现时用 `SystemSpeechLanguage()` 直接读，一行就够。
-- **本地中文识别的准确率和标点**。这决定 §3 那条"什么时候该推翻它"。
+**写这份时没量到、实现时量了的一件事：这台开发机上一条语音识别语言都没有。**
+
+用 `SpeechRecognizer::SupportedTopicLanguages()` 直接读（`.scratch/lang-probe.rs`，MTA 与 STA 各试一次，
+结果一致）：`supported = 0`，`SystemSpeechLanguage()` 直接失败。所以 `dictation_status.available` 在这台
+机器上恒 `false`：面板那颗麦克风是灰的，点旁边的字跳 `ms-settings:speech`。**这不是 bug，是这台机器的
+样子** —— Windows 自带的 `Win+H` 走云端，所以"Win+H 能用"不代表本地识别能用，本机识别要先装「语音识别」
+组件（或给中文补一个语音识别语言包）。所以 Rust 侧那两句提示是分开的：`SupportedTopicLanguages()`
+回 0 → "去装组件"；非 0 但没有中文 → "去切语言"。
+
+**还剩一件没量**：本地中文语法的准确率与标点（决定 §3 那条"什么时候该推翻它"）。它只能在**装了语音
+识别语言**的机器上量，走 §6 的手工第 1 步。
 
 ## 8. 明确不做
 

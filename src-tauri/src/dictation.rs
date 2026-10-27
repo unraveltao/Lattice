@@ -140,8 +140,9 @@ struct Probe {
     usable: Option<String>,
     /// `SystemSpeechLanguage()` 报的那个，设置页要显示出来
     system: String,
-    /// 探测本身出错时的那句话（不是"没装"，别混）
-    error: Option<String>,
+    /// `SupportedTopicLanguages()` 列出来几种。**0 = 这台机器一条语音识别语言都没有**，
+    /// 那和"装了但不是中文"是两句完全不同的话（前者要去装组件，后者要去切语言）
+    supported: usize,
 }
 
 fn lock_live() -> std::sync::MutexGuard<'static, Live> {
@@ -195,7 +196,7 @@ fn probe() -> &'static Probe {
         Probe {
             usable: policy::pick_language(&system, &supported),
             system,
-            error: None,
+            supported: supported.len(),
         }
     })
 }
@@ -205,7 +206,8 @@ fn broken(error: String) -> Probe {
     Probe {
         usable: None,
         system: String::new(),
-        error: Some(error),
+        // 探测失败时说成"一条都没有"：用户要做的动作是一样的（去装 / 去切语音语言）
+        supported: 0,
     }
 }
 
@@ -410,16 +412,25 @@ pub fn dictation_start(app: AppHandle, target: String) -> Result<(), String> {
 
     let probe = probe();
     let Some(tag) = probe.usable.clone() else {
-        let message = match &probe.error {
-            Some(error) => format!("Windows 的语音识别没有起来：{error}"),
-            None => format!(
-                "系统语音语言是 {}，这台机器也没有中文听写语言。把 Windows 的语音语言改成中文(简体)，或者装一个中文语音包。",
+        // 两句话必须分开：`SupportedTopicLanguages()` 回 0 是"这台机器没装语音识别组件"，
+        // 非 0 但没有中文是"装了、没切过去"。前者要去装，后者要去切 —— 合成一句
+        // "把语音语言改成中文"会把第一类用户指到错的地方。
+        let message = if probe.supported == 0 {
+            "这台机器没有装语音识别语言，本地听写起不来。去「设置 → 时间和语言 → 语言和区域」\
+             给中文装上「语音识别」，再回来试。Windows 自带的 Win+H 走的是云端，\
+             所以它能用不代表这里能用。"
+                .to_string()
+        } else {
+            format!(
+                "系统语音语言是 {}，这台机器上装的语音识别语言里没有中文（共 {} 种）。\
+                 把它切成中文(简体)，或者给中文补一个语音识别语言包。",
                 if probe.system.is_empty() {
                     "(读不出来)"
                 } else {
                     probe.system.as_str()
-                }
-            ),
+                },
+                probe.supported
+            )
         };
         emit_error(&app, "wrong_language", message.clone());
         return Err("wrong_language".to_string());
