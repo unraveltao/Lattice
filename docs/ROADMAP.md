@@ -236,6 +236,15 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
   - **"清空"两段式**。这一栏本身就是撤销的最后一层，一下点掉就没有下一层了 —— 第一下只把按钮换成"确定清空？"，旁边留"留着"。
   - 判据全在 `runtime/trash.ts`（纯函数，`tests/trash.html` 20 条钉着过期边界、条数上限、去重、未来时间戳、`canRestore`），`tests/store-ui.tsx` 75 → 94 条（回收站那一段的接线：空着连标题都不出、组件装不装决定 Restore 灰不灰、两颗删除按钮叫到的回调、清空两段式）。**真机还没走**：删一个组件 → 等 8 秒撤销条消失 → 组件库底部的"最近删除"里恢复它（位置与设置都在）→ 卸载那个包后再看恢复按钮是按灰的 → 清空一次。
 
+- [ ] **长势（`lattice.momentum`）** —— 两个页签：查一个项目的活跃度（52 周提交曲线 + 近 4 周对比 + 发版节奏 + 判定），和看 `github.com/trending` 的榜单（带本周新增 star）。设计在 [`design/0025-momentum-widget.md`](./design/0025-momentum-widget.md)。
+  - **star 曲线不做**：`/stargazers` 要翻页，10 万 star 是 1000 次请求。而 trending 页一次请求就白送"本周新增 star" —— 那个数 API 永远给不了。
+  - **抓页面是会断的**：解析 0 条必须报"页面结构变了"，不能报"今天没有热门"。白名单要为它开 `github.com`，月度页 707 KB 已经贴着 `network.fetch` 的 1 MB 上限。
+  - **`participation` 的最后一桶是本周进行中**，对比要跳过它（`weeks[-5:-1]`），否则近 4 周系统性偏低。
+  - **数据没拿到就不下结论**。把 403 限流说成"停更"是这个组件最严重的错误。
+- [ ] **密封的密钥（DPAPI）** —— `assistant.json` 里的 key 现在是**明文**。改成 DPAPI 封一个 `secrets.bin`，同时给组件开一条按 id 隔离的 `secret.*`。设计在 [`design/0026-sealed-secrets.md`](./design/0026-sealed-secrets.md)。
+  - **这不是加密**：DPAPI 绑 Windows 账户，挡别的用户和拷走的文件，挡不住本机同账户的程序。文档与权限文案都要这么写，否则它会被当成"有主密码"。
+  - **迁移失败不吞**：写不进密封就保留明文并挂一行提示，绝不为了"迁移成功"把 key 删掉。
+  - 做完之后，`lattice.related` 这类组件才能从匿名 60 次/小时升到 5000 次/小时。
 - [ ] **相似项目（`lattice.related`）** —— 粘一个 GitHub 地址进来，列出做同一件事的其他项目，按 star 排前 10。**零平台改动**（只用 `network.fetch` / `llm.chat` / `shell.open` / `storage`），设计在 [`design/0024-github-related-widget.md`](./design/0024-github-related-widget.md)。
   - **模型提名、代码核对**：实测过，纯 topic 检索给的是"同类"不是"同题" —— 搜 `tauri-apps/tauri` 的前六全是**用 Tauri 写出来的应用**；`in:readme` 检索则被 `awesome-*` 霸榜（它们 README 里什么都提一句）。模型知道 electron / wails / neutralinojs 是它的替代品，代码负责把名字换成真实 star。
   - **一次查询只花 1 次核心 + 1 次搜索**（未认证额度 60 次/小时、搜索 10 次/分）。所以不拉候选 README，也用一次 `OR` 搜索批量核对全部名字。
