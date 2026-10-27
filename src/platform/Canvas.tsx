@@ -8,9 +8,11 @@
 import { useCallback, useRef, useState } from "react";
 import { useLattice } from "./store";
 import { WidgetFrame } from "./WidgetFrame";
+import { WidgetMenu, type WidgetMenuTarget } from "./WidgetMenu";
 import { guideLines, type AlignGuideState } from "../runtime/align-guides";
 import { canvasNeedsLiveFrame } from "../runtime/widget-tools";
 import { useT } from "../runtime/i18n";
+import { useText } from "../runtime/widget-text";
 import type { WidgetRecord } from "../runtime/registry";
 
 interface CanvasProps {
@@ -22,6 +24,8 @@ interface CanvasProps {
 
 export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
   const t = useT();
+  /** 组件名是作者写的（可能两门），右键菜单上那一行按当前语言取 */
+  const text = useText();
   const placements = useLattice((state) => state.placements);
   const snapToGrid = useLattice((state) => state.snapToGrid);
   const desktopMode = useLattice((state) => state.desktopMode);
@@ -38,6 +42,20 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
    */
   const [guides, setGuides] = useState<AlignGuideState | null>(null);
   const onGuides = useCallback((next: AlignGuideState | null) => setGuides(next), []);
+
+  /*
+   * 右键菜单只活在这一层（和参考线同一个理由：它不属于"用户摆好的布局"，
+   * 也不该跟着 store 一起落盘）。坐标记的是视口坐标，菜单自己 portal 到 body。
+   */
+  const [menu, setMenu] = useState<WidgetMenuTarget | null>(null);
+  const openMenu = useCallback(
+    (target: WidgetMenuTarget) => {
+      select(target.instanceId);
+      setMenu(target);
+    },
+    [select],
+  );
+  const closeMenu = useCallback(() => setMenu(null), []);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   /*
@@ -128,6 +146,21 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
                 width: placement.w,
                 height: placement.h,
               }}
+              /*
+               * 坏卡也得能右键：它没有清单，属性检查器根本打不开 ——
+               * 在此之前"删掉一份找不到的组件"只能去改 state.json
+               */
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openMenu({
+                  instanceId: placement.instanceId,
+                  name: record ? text(record.manifest.name) : placement.widgetId,
+                  iconUrl: record?.iconUrl,
+                  x: event.clientX,
+                  y: event.clientY,
+                });
+              }}
             >
               <div className="lattice-broken-body">
                 <span className="lattice-broken-title">
@@ -144,6 +177,7 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
             record={record}
             placement={placement}
             onGuides={onGuides}
+            onMenu={openMenu}
             /*
              * 桌面模式下桌面上的那个真窗口已经在跑，画布这份只画静态卡 ——
              * 不然同一个组件跑两遍（桌宠空转 0.3 核 × 每份）。三个例外（设计态、
@@ -160,6 +194,8 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
           />
         );
       })}
+
+      {menu && <WidgetMenu target={menu} onClose={closeMenu} />}
     </div>
   );
 }

@@ -1,18 +1,19 @@
 /**
- * 属性面板的结构检查：三段折叠 + 危险动作的位置。
+ * 属性面板的结构检查：三段折叠 + "移除不在这页"。
  *
  * `tests/store-ui.tsx` 管的是组件库那一列；这一页只管 320px 的右栏，验两件事：
  *
  *   1. **一个面板只回答三件事**：它在哪儿（层级与尺寸）/ 它长什么样（外观）/
  *      它被允许做什么（权限与选项）。十一项控件平铺在一条滚不完的列里时，
  *      每一件看起来都同等要紧 —— 它们不是。
- *   2. **危险动作贴着名字，但不进标题行**：`Remove` 必须出现在说明下面第一格。
- *      它曾经在标题行里、紧挨着"收起来"，想收面板的人点了它会删掉一个组件；
- *      后来沉到面板最底下，换来的毛病是"想删一份得滚过三段设置"。两头都钉着：
- *      不许进 header，也不许沉底。
+ *   2. **移除不在这页**：它搬到了卡片的右键菜单（`WidgetMenu`，断言在
+ *      `tests/widget-menu.tsx`）。这页能钉的是"它没有回来"：面板里**一颗红色
+ *      危险按钮都不许有**。这颗按钮在 2026-10 里搬过三次家（标题行 → 面板底部
+ *      → 内容区第一格），每次都换来另一种"找不到"或者"点错"；根子是"面板本来
+ *      就不是对某一份动手的地方"。只留一行指路的小字。
  *
- * 这两条都是"布局对了、某个星期一改又回去了"那一类：没有断言的话，谁把
- * `.lattice-danger-zone` 挪回 header 都不会报错，只会在用户那儿少一个组件。
+ * 这条是"布局对了、某个星期一改又回去了"那一类：没有断言的话，谁把那颗按钮
+ * 加回面板都不会报错，只会在用户那儿多一次误触。
  */
 
 import { createRoot } from "react-dom/client";
@@ -146,30 +147,28 @@ async function main() {
   );
 
   /*
-   * ---- 2. 移除贴着名字，但不在标题行 ----
+   * ---- 2. 移除不在这页（2026-10-27 搬到右键菜单）----
    *
-   * 判据是**位置**，两条都要：它是内容区的第二格（紧跟说明），并且离顶端足够近；
-   * 同时它不在 header 里。三条一起才能同时挡住"删错"和"找不到"。
+   * 钉的是"它没有回来"：不是"不在标题行"，是**面板里哪儿都没有**。
+   * 同一个动作只留一个入口（右键那张卡），所以连"再放一颗小的"也算回退。
    */
   const body = panel.querySelector<HTMLElement>(".lattice-panel-body")!;
-  const dangerZone = body.querySelector<HTMLElement>(".lattice-danger-zone");
-  log(Boolean(dangerZone), "面板有一条危险区");
+  log(panel.querySelector(".lattice-danger-zone") === null, "面板里没有危险区");
+  log(panel.querySelector(".lattice-btn.is-danger") === null, "面板里没有任何红色的危险按钮");
   log(
-    body.children[1] === dangerZone,
-    "危险区是内容区第二格（说明之后的第一件事），不用滚就看得见",
+    panel.querySelector(".lattice-panel-head .lattice-btn.is-danger") === null,
+    "标题行里也没有红色的危险按钮",
   );
-  const gapFromTop = Math.round(
-    dangerZone!.getBoundingClientRect().top - body.getBoundingClientRect().top,
-  );
-  log(gapFromTop < 120, `危险区离内容区顶端 ${gapFromTop}px（一屏之内）`);
+
+  /*
+   * 但得留一行指路：没有它，"怎么把这一份弄走"只能靠右键碰运气。
+   * 判据是位置（说明下面第一格）+ 文案里点名右键，两样都写死。
+   */
+  const pointer = body.children[1] as HTMLElement | undefined;
+  log(pointer?.classList.contains("lattice-hint") === true, "说明下面第一格是一行小字");
   log(
-    parseFloat(getComputedStyle(dangerZone!).borderBottomWidth) > 0,
-    "危险区和下面那些设置隔了一条线（线在它下面，上面是说明）",
-  );
-  log(
-    dangerZone?.querySelector<HTMLElement>("button.lattice-btn.is-danger") !== null &&
-      panel.querySelector(".lattice-panel-head .lattice-btn.is-danger") === null,
-    "移除按钮在危险区里（不在标题行）",
+    /right-click/i.test(pointer?.textContent ?? ""),
+    "这行小字说的是「右键点组件」（唯一的入口在卡片上）",
   );
 
   /*

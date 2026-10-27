@@ -36,6 +36,7 @@ import { useText } from "../runtime/widget-text";
 import { isWidgetLog, trace } from "../runtime/debug";
 import type { TermEvent } from "../runtime/term";
 import { WidgetIconMark } from "./icons";
+import type { WidgetMenuTarget } from "./WidgetMenu";
 import { registerCanvasWidgetTools, unregisterCanvasWidgetTools } from "./widget-tools";
 import { snap, useLattice, type Placement } from "./store";
 
@@ -69,9 +70,16 @@ interface WidgetFrameProps {
    * 这里只负责"长什么样"。
    */
   poster?: boolean;
+  /**
+   * 右键卡片（标题条 / 边框 / 报错条 / 静态卡）时喊一声，由画布弹菜单。
+   *
+   * **iframe 里面不接管**：组件的右键是组件自己的（桌宠靠它关窗），
+   * 平台抢过来等于把它的退出口弄没。所以这里只挂在外层卡片上。
+   */
+  onMenu?: (target: WidgetMenuTarget) => void;
 }
 
-export function WidgetFrame({ record, placement, onGuides, poster = false }: WidgetFrameProps) {
+export function WidgetFrame({ record, placement, onGuides, poster = false, onMenu }: WidgetFrameProps) {
   const t = useT();
   /** 组件名是作者写的（可能两门），按当前语言取一份 */
   const text = useText();
@@ -461,6 +469,12 @@ export function WidgetFrame({ record, placement, onGuides, poster = false }: Wid
   } | null>(null);
 
   const onDragStart = (event: React.PointerEvent) => {
+    /*
+     * 右键是"弹菜单"，不是"开始拖"。`pointerdown` 本身不看键：右键也会把拖拽
+     * 状态立起来，然后用户顺手挪一下鼠标再松手 —— 那一下位移就真的写进
+     * placement 了。菜单和拖拽抢同一次按下，先按的赢，所以这里先让开。
+     */
+    if (event.button !== 0) return;
     event.preventDefault();
     select(placement.instanceId);
     /*
@@ -545,6 +559,8 @@ export function WidgetFrame({ record, placement, onGuides, poster = false }: Wid
   } | null>(null);
 
   const onResizeStart = (event: React.PointerEvent) => {
+    // 同上：右键落在把手上的时候，用户要的是菜单
+    if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     select(placement.instanceId);
@@ -616,6 +632,20 @@ export function WidgetFrame({ record, placement, onGuides, poster = false }: Wid
         background: previewBackdrop,
       }}
       onPointerDown={() => select(placement.instanceId)}
+      onContextMenu={(event) => {
+        if (!onMenu) return;
+        // 顺手把这份选中：右键之后用户多半要看属性面板，而面板跟着选中走
+        select(placement.instanceId);
+        event.preventDefault();
+        event.stopPropagation();
+        onMenu({
+          instanceId: placement.instanceId,
+          name: text(record.manifest.name),
+          iconUrl: record.iconUrl,
+          x: event.clientX,
+          y: event.clientY,
+        });
+      }}
     >
       <div
         className="lattice-widget-bar"

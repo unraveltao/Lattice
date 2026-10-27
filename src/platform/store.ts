@@ -359,6 +359,17 @@ interface LatticeState {
   setPanelOpen: (panel: "library" | "inspector", open: boolean) => void;
 
   addPlacement: (placement: Placement) => void;
+  /**
+   * 再摆一份：几何与层级跟着原件，**每实例配置也复制一份**，选中跟着新的那份。
+   *
+   * 为什么这是个 store 动作、而不是界面自己拼一个 placement 再 `addPlacement`：
+   * "配置跟着摆放走"这条不变量归 store 管（`removePlacement` / 回收站 /
+   * `restoreTrashed` 都在这里一起搬 `configs`）。界面自己拼只会搬一半 ——
+   * 复制出来那份长得一样，设置却悄悄回到出厂值。
+   *
+   * 返回新实例的 id；原件已经不在了就返回 `null`（什么都不做）。
+   */
+  duplicatePlacement: (instanceId: string) => string | null;
   removePlacement: (instanceId: string) => void;
   /** 把 `lastClosed` 塞回画布（含桌面窗口的矩形），然后清空它 */
   restoreLastClosed: () => void;
@@ -522,6 +533,29 @@ export const useLattice = create<LatticeState>()(
           placements: [...state.placements, placement],
           selectedInstanceId: placement.instanceId,
         })),
+
+      duplicatePlacement: (instanceId) => {
+        let created: string | null = null;
+        set((state) => {
+          const source = state.placements.find((item) => item.instanceId === instanceId);
+          if (!source) return state;
+          const nextId = instanceIdFor(source.widgetId);
+          created = nextId;
+          const config = state.configs[instanceId];
+          return {
+            // 挪一格（画布上看得见的格子是 16px，见 `.lattice-canvas` 的
+            // `background-size`；`GRID` 是吸附步长 8，别拿它当"一格"用）：
+            // 两份叠在同一个像素上，用户看不出"多了一份"
+            placements: [
+              ...state.placements,
+              { ...source, instanceId: nextId, x: source.x + 16, y: source.y + 16 },
+            ],
+            configs: config ? { ...state.configs, [nextId]: { ...config } } : state.configs,
+            selectedInstanceId: nextId,
+          };
+        });
+        return created;
+      },
 
       removePlacement: (instanceId) =>
         set((state) => {

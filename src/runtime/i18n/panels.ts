@@ -29,9 +29,16 @@ export const PANELS_ZH: Record<string, string> = {
   "Layer & size": "层级与尺寸",
   "Permissions & options": "权限与选项",
 
-  // —— 属性面板：底部的移除区 ——
-  "Takes this copy off the canvas and the desktop. The widget itself stays in your library.":
-    "把这一份从画布和桌面上拿走。组件本身还在组件库里，再拖出来就又是一份。",
+  // —— 卡片右键菜单（`WidgetMenu`）：层级 / 复制 / 移除 ——
+  // 层级那一行是**切换**：标签写的是点下去会变成什么，所以两句话都得在
+  "Bring to top": "提到最上层",
+  "Send to back": "沉到桌面层",
+  Duplicate: "复制一份",
+
+  // —— 移除那件事搬到了卡片的右键菜单（`WidgetMenu`），面板里只留指路 ——
+  "To remove it, right-click the widget on the canvas.":
+    "想拿走这一份，就在画布上右键点它。",
+  "Stays in your library.": "组件本身还在组件库里。",
 
   // —— 属性面板：层级 / 穿透（Desktop / On top 两档的译名在 common） ——
   Layer: "层级",

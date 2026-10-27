@@ -61,7 +61,8 @@ src/
     CatalogueSection.tsx  商店区：目录条目的一行（可展开：版本 / 权限差集 / 指纹）、安装 / 更新 / 换钥匙确认
     HelpContent.tsx       组件的"怎么用"：分节正文 + 可折叠变更记录；属性面板与卡片 `?` 共用这一份
     ReportDialog.tsx      举报与评分对话框（没有服务端，落成一份 JSON 文件）
-    InspectorPanel.tsx    属性面板：三段折叠（层级与尺寸 / 外观 / 权限与选项）+ 底部移除区
+    InspectorPanel.tsx    属性面板：三段折叠（层级与尺寸 / 外观 / 权限与选项）；**没有移除按钮** —— 那件事在卡片右键菜单里（`WidgetMenu`），这页只留一行指路的小字
+    WidgetMenu.tsx        卡片的右键菜单（portal 到 body）：组件名一行 + 层级切换（标签跟着当前层级翻）+ 复制一份（`duplicatePlacement`：几何 / 层级 / 配置跟着原件，挪 16px，选中新的）+ 移除（红的那一行沉底）；iframe 里面的右键**不接管**（组件自己的退出口）
     SettingsMenu.tsx      设置面板：左导航七区（Account / Appearance / Language / Desktop / Widgets / Assistant / About）+ 焦点陷阱（Ctrl+, 唤出）
     ProfilePanel.tsx      档案页：资料编辑 + 使用热力图（53 周）+ 清除记录 / Sign out（危险区沉底）
     Avatar.tsx            共用的首字母头像（顶栏齿轮、设置身份块、档案页）

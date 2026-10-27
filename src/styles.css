@@ -1891,32 +1891,14 @@ button {
 }
 
 /*
- * 危险动作沉在面板最底下 —— 离"收起来"最远的一格，上下隔一条线。
+ * 「移除这一份」这颗按钮和它的容器（`.lattice-danger-zone`）2026-10-27 从属性
+ * 面板删掉了 —— 那个动作搬到了卡片的右键菜单（`WidgetMenu`），同一个动作只留
+ * 一个入口。面板里只剩一行指路的小字（`.lattice-hint`）。
  *
- * 别把这颗 `Remove` 挪回标题行：上一版它就在那儿，和折叠按钮之间只有 8px，
- * 想收面板的人点了它会删掉一个组件（`removePlacement` 留了 8 秒撤销，那是
- * 兜底，不是设计）。同一条规矩在组件库里也有一份：举报与卸载沉在展开区底部。
+ * 别再把它加回来：这颗按钮在 2026-10 里搬过三次家（标题行 → 面板底部 → 内容区
+ * 第一格），每次都换来另一种"找不到"或者"点错"。根子是**面板本来就不是对某
+ * 一份动手的地方**。`tests/inspector.html` 钉着"面板里一颗红色危险按钮都没有"。
  */
-/*
- * 移除这一份 —— 面板内容区的第一格，紧跟说明。
- *
- * 位置换过两次，两次都是"用户想找它的时候找不到"：
- *   1. 标题行里，挨着"收起来" —— 想收面板的人删掉了一个组件；
- *   2. 面板最底下 —— 安全了，但要滚过三段设置才够得着（`Layer & size` 默认展开，
- *      一屏根本翻不到）。
- * 现在是第三种：贴着名字、离开合按钮一整列远。线画在**下面**（上面是说明，
- * 不需要再分一次），把危险动作和下面那些"随便点点也没事"的设置隔开。
- */
-.lattice-danger-zone {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0;
-  padding: 0 0 12px;
-  border-bottom: 1px solid var(--lattice-border);
-}
-
 .lattice-label {
   font-size: 11px;
   font-weight: 500;
@@ -2428,6 +2410,22 @@ button.lattice-chip[aria-pressed="true"] {
   animation: lattice-menu-in 0.13s ease-out;
 }
 
+/*
+ * 右键菜单：同一个壳（圆角 / 描边 / 阴影 / 入场动画），只换锚点。
+ *
+ * 上面那版挂在触发器下面（`top: calc(100% + 10px); right: 0`），右键菜单没有
+ * 触发器可对齐 —— 它钉在光标上，坐标由 JS 按视口算好塞进 style，所以这里
+ * 只剩 `position: fixed` 和"别继承右边对齐"。宽度也收窄：300px 是给一列开关
+ * 用的，一行"移除"加一句说明，232px 刚好，再宽就空得慌。
+ */
+.lattice-menu.is-cursor {
+  position: fixed;
+  top: 0;
+  right: auto;
+  width: 232px;
+  transform-origin: top left;
+}
+
 @keyframes lattice-menu-in {
   from {
     opacity: 0;
@@ -2534,7 +2532,16 @@ button.lattice-chip[aria-pressed="true"] {
   cursor: default;
 }
 
-.lattice-menu-row:not(.is-static):hover {
+/*
+ * 读不到那一份时（菜单开着的这几百毫秒里被别处删了）整行置灰。
+ * `:disabled` 的按钮本来就不吃 click，这里补的只是"看得出来"和"别亮"。
+ */
+.lattice-menu-row:disabled {
+  color: var(--lattice-text-faint);
+  cursor: default;
+}
+
+.lattice-menu-row:not(.is-static):not(:disabled):hover {
   background: var(--lattice-surface-3);
 }
 

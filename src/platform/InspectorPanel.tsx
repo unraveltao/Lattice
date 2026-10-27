@@ -9,11 +9,16 @@
  * 怎么用 / 层级与尺寸 / 外观 / 权限与选项。只有"层级与尺寸"默认展开 ——
  * 那是选中一个组件之后最常做的事；开合状态只活在会话里，不落盘。
  *
- * 最上面第一格 `.lattice-danger-zone` 放 `Remove` —— 紧贴名字，在说明下面。
- * 它**仍然不许**回到标题行：那颗按钮的邻居是"收起来"，而移除会拿走用户摆好的
- * 一个实例（`removePlacement` 留了 8 秒撤销，那是兜底，不是设计）。沉到底部
- * 是上一版的做法，代价是"想删一份得滚过三段设置"，一样是错的 —— 位置要对准
- * 用户想找它的时候在哪儿找，不是对准"离危险按钮越远越好"。
+ * # 「移除这一份」不在这页（2026-10-27）
+ *
+ * 它搬到了卡片自己的右键菜单（`WidgetMenu`）。那个动作只对**这一份**成立，
+ * 而右键点在哪张卡上，指向已经说清楚了 —— 不用先选中、再回这列里找按钮。
+ * 同一个动作只留一个入口，才不会出现"面板里删了一次、菜单里又删一次"。
+ *
+ * 这页只留一行小字提一句（在说明下面）："怎么把它弄走"是选中一份之后第二常问
+ * 的问题，不提一句，用户只能去右键碰运气。那一行**不许**再长回一颗按钮 ——
+ * 这里已经有过三次搬家（标题行 → 面板底部 → 内容区第一格），每次都换来另一
+ * 种"找不到"，根子是"面板本来就不是对某一份动手的地方"。
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -281,7 +286,6 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
   const desktopRects = useLattice((state) => state.desktopRects);
   const setDesktopRect = useLattice((state) => state.setDesktopRect);
   const update = useLattice((state) => state.updatePlacement);
-  const remove = useLattice((state) => state.removePlacement);
   const grant = useLattice((state) => state.grant);
   const revoke = useLattice((state) => state.revoke);
   const configs = useLattice((state) => state.configs);
@@ -436,9 +440,8 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
 
             上一版这颗"移除"就长在收起按钮左边，中间隔 8px —— 想收面板、
             结果删掉了一个组件（好在 `removePlacement` 留了 8 秒撤销）。
-            它后来沉到面板最底部，那条规矩换来了另一个毛病：要滚过三段设置
-            才够得着。现在它在内容区第一格（见 `.lattice-danger-zone`）——
-            **离开合按钮一整列远**，同时不用滚。别挪回这一行。
+            现在"移除"根本不在这页（右键卡片，见 `WidgetMenu`），这一行更不该
+            再长出第二颗按钮。
           */}
           <button
             type="button"
@@ -457,29 +460,11 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
         <p className="lattice-card-desc">{text(manifest.description) || t("No description")}</p>
 
         {/*
-          面板最顶上那一件"会真的动用户东西"的事：把这一份从画布和桌面上拿走。
-
-          三条规矩：
-            · 它**紧贴名字**，在说明下面第一格 —— 上一版沉在面板最底下，要滚过
-              三段设置才看得见（`Layer & size` 默认展开，那一屏根本够不着它）。
-              "想删一份却找不到删除"和"想收面板却删掉一份"是同一类错，方向相反。
-            · 它仍然**不在标题行里**。那颗按钮的邻居是"收起来"，两件事隔 8px 时
-              真的有人点错过；现在它落在内容区左边缘，和右上角那颗隔了大半列。
-            · 旁边写清它**不是**卸载 —— 包还在组件库里，再拖出来又是一份。
-              用户把"移除一个实例"当成"删掉这个组件"是这个面板最容易误读的一句话。
+          这一行是**指路**，不是那颗按钮：移除搬到了卡片的右键菜单（见文件头）。
+          用 `.lattice-hint` 而不是链接样式 —— 它不是一个"点这里"的动作，
+          写成一个按钮等于把同一个入口又开了一次。
         */}
-        <div className="lattice-danger-zone">
-          <p className="lattice-hint">
-            {t("Takes this copy off the canvas and the desktop. The widget itself stays in your library.")}
-          </p>
-          <button
-            type="button"
-            className="lattice-btn is-danger"
-            onClick={() => remove(placement.instanceId)}
-          >
-            {t("Remove")}
-          </button>
-        </div>
+        <p className="lattice-hint">{t("To remove it, right-click the widget on the canvas.")}</p>
 
         {/*
           "怎么用"放在最上面、默认收起：它是选中共一个组件时最先想知道的事，
