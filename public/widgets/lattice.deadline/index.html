@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>截止日期</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-empty="true">
+    <!--
+      顶上那条 24px 给窗饰让出 120px。它不是标题：没有内容时写"还没有截止
+      日期"，删除之后 6 秒内变成可点的"撤销"。
+    -->
+    <main class="dl">
+      <div class="dl-head">
+        <button class="dl-head-btn" type="button" id="head" aria-disabled="true"></button>
+      </div>
+
+      <ul class="dl-list" id="list"></ul>
+
+      <input
+        class="dl-add"
+        id="add"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        maxlength="140"
+        placeholder="还书 3/15"
+        aria-label="添加一条截止日期"
+      />
+    </main>
+    <script src="deadline-core.js"></script>
+    <script src="widget.js"></script>
+  </body>
+</html>

@@ -1,0 +1,117 @@
+{
+  "id": "lattice.deadline",
+  "name": { "zh": "截止日期", "en": "Deadlines" },
+  "version": "0.1.0",
+  "description": {
+    "zh": "一行写一件事、日期放最后，卡片替你数还剩几天",
+    "en": "One line per thing with the date at the end; the card counts the days for you"
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 240, "h": 200, "minW": 200, "minH": 140 },
+  "layer": "desktop",
+  "permissions": ["clock", "storage"],
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "一行就是一条", "en": "One line, one deadline" },
+        "items": [
+          {
+            "zh": "在下面那个框里写一句话，日期放在最后，回车就加进来。",
+            "en": "Type a line in the box at the bottom with the date last, then press Enter."
+          },
+          {
+            "zh": "四种日期写法：3/15、+3（三天后）、2026-05-01、明天（还有今天和后天）。",
+            "en": "Four ways to write it: 3/15, +3 (in three days), 2026-05-01, or the words today / tomorrow."
+          },
+          {
+            "zh": "日期前面留个空格，标题里带数字也不会被误认（「报告 v1.2」不会被吃掉）。",
+            "en": "Keep a space before the date, so numbers inside a title are not swallowed (\"report v1.2\" stays whole)."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "认不出日期的时候", "en": "When the date is unreadable" },
+        "items": [
+          {
+            "zh": "不拒绝也不报错：按明天算，并在卡片顶上明说「没写日期，按明天算」。",
+            "en": "Nothing is rejected: it assumes tomorrow and says so on the top line."
+          },
+          {
+            "zh": "只写 3/15 已经过了今年那天，就算明年 —— 记已经逾期的事请写全年份。",
+            "en": "A short date that already passed this year rolls to next year; to log something overdue, write the full year."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "右边那列倒数", "en": "The countdown column" },
+        "items": [
+          {
+            "zh": "写「今天 / 明天 / 后天 / N 天后」，超过一周就写日期本身（3 月 15 日）。",
+            "en": "It reads today / tomorrow / in N days, and beyond a week it shows the date itself (Mar 15)."
+          },
+          {
+            "zh": "逾期标红、三天之内标成强调色，扫一眼就知道该动哪一条。",
+            "en": "Overdue ones go red and anything within three days takes the accent colour, so a glance is enough."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "完成与删除", "en": "Done and delete" },
+        "items": [
+          {
+            "zh": "点左边那个圈就算完成，完成的条目会沉到底部并划掉。",
+            "en": "Click the circle to finish something; done items sink to the bottom and get struck through."
+          },
+          {
+            "zh": "删除的 × 在行尾、鼠标停上去才出现，删掉之后顶上给 6 秒撤销。",
+            "en": "The × appears at the end of a row on hover, and after deleting you get six seconds to undo it at the top."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "几张卡片一份清单", "en": "Several cards, one list" },
+        "items": [
+          {
+            "zh": "所有「截止日期」卡片看的是同一份清单，不是各记各的。",
+            "en": "Every Deadlines card shows the same list; they are views, not separate lists."
+          },
+          {
+            "zh": "别的卡片改动时，正在输入的那张不会跟着跳，等你停手再对齐。",
+            "en": "While you are typing, another card's change does not jump in; it waits until you stop."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "权限", "en": "Permissions" },
+        "items": [
+          {
+            "zh": "「时钟」用来知道今天是哪天（拒绝时退回本机日期，倒数照样对）。",
+            "en": "Clock tells it what day it is (without it the machine date is used, and the countdown still works)."
+          },
+          {
+            "zh": "「存储」用来记住清单；拒绝时卡片照常能用，但关掉就没了。",
+            "en": "Storage remembers the list; without it the card still works but forgets everything when closed."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "changes": [
+        {
+          "zh": "第一个版本：一行文字加日期，倒数列按逾期 / 三天内 / 更远分色。",
+          "en": "First release: one line of text plus a date, with the countdown coloured by overdue, within three days, and further out."
+        },
+        {
+          "zh": "删除给 6 秒撤销；写盘是串行的，连点也不会丢条目。",
+          "en": "Deleting offers six seconds of undo, and writes are serialized so rapid clicks cannot drop an entry."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

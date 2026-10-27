@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>deadline ui / bridge, add, undo and layout</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 截止日期组件的界面断言：真组件 + 假桥。
+       *
+       * 时间钉在 2026-03-10（本地字段），清单是三条：一条逾期、一条五天后、
+       * 一条已完成。盯的是「加一条 / 打勾 / 删掉再撤销 / 别的实例改了列表」
+       * 这几条真实路径，以及顶上那条状态栏有没有把窗饰的 120px 让干净。
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const PILL_BOTTOM = 34;
+      const PILL_WIDTH = 120;
+      const NOW = new Date(2026, 2, 10, 11, 0, 0);
+
+      const SEED = [
+        { id: "rent", title: "交房租", due: "2026-03-08", done: false },
+        { id: "book", title: "还书", due: "2026-03-15", done: false },
+        { id: "wash", title: "洗车", due: "2026-03-20", done: true },
+      ];
+
+      function mount(w, h, store) {
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+        frame.style.width = w + "px";
+        frame.style.height = h + "px";
+        frame.src = "/widgets/lattice.deadline/index.html";
+        document.body.appendChild(frame);
+
+        const calls = [];
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+            calls.push({ method: data.method, params: data.params });
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+
+            if (data.method === "lang.get") return reply({ ok: true, result: { lang: "zh" } });
+            if (data.method === "clock.now") {
+              return reply({
+                ok: true,
+                result: { now: NOW.toISOString(), epochMs: NOW.getTime(), timeZone: "Test/Zone", utcOffsetMinutes: 0 },
+              });
+            }
+            if (data.method === "storage.get") return reply({ ok: true, result: store.value });
+            if (data.method === "storage.set") {
+              store.value = data.params.value;
+              store.sets.push(data.params.value);
+              return reply({ ok: true, result: { ok: true } });
+            }
+            if (data.method === "schedule.every") return reply({ ok: true, result: { id: 9 } });
+            if (data.method === "schedule.clear") return reply({ ok: true, result: { ok: true } });
+            reply({ ok: false, code: "unknown_method", error: "unknown" });
+          });
+        });
+
+        return {
+          frame,
+          calls,
+          ready,
+          doc: () => frame.contentDocument,
+          send(type, payload) {
+            frame.contentWindow.postMessage({ __lattice: 1, type, payload }, "*");
+            return sleep(60);
+          },
+        };
+      }
+
+      const head = (doc) => doc.getElementById("head").textContent;
+      const rows = (doc) => [...doc.querySelectorAll(".dl-row")];
+      const rowByTitle = (doc, title) =>
+        rows(doc).find((row) => row.querySelector(".dl-title").textContent === title);
+
+      function type(doc, text) {
+        const input = doc.getElementById("add");
+        input.value = text;
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        return sleep(90);
+      }
+
+      // ---------- 场景 1：中文界面，加 / 打勾 / 删除撤销 ----------
+      {
+        const store = { value: SEED.slice(), sets: [] };
+        const view = mount(240, 200, store);
+        await view.ready;
+        await sleep(90);
+        const doc = view.doc();
+
+        log(head(doc) === "2 件 · 1 件完成 · 1 件逾期", `顶上那行统计（「${head(doc)}」）`);
+        log(rows(doc).length === 3, `画出三条（现在 ${rows(doc).length} 条）`);
+        log(
+          rows(doc).map((row) => row.querySelector(".dl-title").textContent).join(",") === "交房租,还书,洗车",
+          "未完成按日期在前，完成的沉底",
+        );
+
+        const rent = rowByTitle(doc, "交房租");
+        log(rent.getAttribute("data-overdue") === "true", "交房租标成逾期");
+        log(rent.querySelector(".dl-when").textContent === "逾期 2 天", `倒数写「${rent.querySelector(".dl-when").textContent}」`);
+        const book = rowByTitle(doc, "还书");
+        log(book.getAttribute("data-soon") === "false", "还书在五天后，不算「三天之内」");
+        log(book.querySelector(".dl-when").textContent === "5 天后", `还书写「${book.querySelector(".dl-when").textContent}」`);
+        const wash = rowByTitle(doc, "洗车");
+        log(wash.getAttribute("data-done") === "true", "洗车标成完成");
+        log(wash.querySelector(".dl-when").textContent === "3月20日", `完成的条目写日期本身（「${wash.querySelector(".dl-when").textContent}」）`);
+
+        // 布局
+        const headEl = doc.querySelector(".dl-head");
+        log(parseFloat(getComputedStyle(headEl).paddingRight) >= PILL_WIDTH, "状态条右侧让出窗饰的位置");
+        log(headEl.getBoundingClientRect().height === 24, "状态条 24px 高");
+        log(doc.querySelector(".dl-list").getBoundingClientRect().top >= PILL_BOTTOM, `列表从 ${PILL_BOTTOM}px 之下开始`);
+        log(
+          doc.getElementById("add").getBoundingClientRect().bottom <= 200 - 12 + 0.5,
+          "输入框贴着下内边距，没有顶出卡片",
+        );
+        log(
+          getComputedStyle(rows(doc)[0].querySelector(".dl-del")).opacity === "0",
+          "行尾的 × 平时不显示（避免误点）",
+        );
+        log(doc.documentElement.scrollHeight <= 200, `页面没有纵向溢出（${doc.documentElement.scrollHeight}）`);
+
+        // 换语言
+        await view.send("language", { lang: "en" });
+        log(head(doc) === "2 items · 1 done · 1 overdue", `英文统计（「${head(doc)}」）`);
+        log(
+          rowByTitle(doc, "交房租").querySelector(".dl-when").textContent === "2 days overdue",
+          "英文的逾期写法",
+        );
+        log(rowByTitle(doc, "洗车").querySelector(".dl-when").textContent === "Mar 20", "英文超过一周写日期");
+        log(doc.getElementById("add").placeholder === "Return book 3/15", "英文占位符");
+        log(doc.title === "Deadlines", `窗口标题（「${doc.title}」）`);
+        await view.send("language", { lang: "zh" });
+
+        // 加一条
+        await type(doc, "买猫粮 +2");
+        log(rows(doc).length === 4, "回车之后多出一条");
+        log(!!rowByTitle(doc, "买猫粮"), "标题就是日期前面的那几个字");
+        log(rowByTitle(doc, "买猫粮").querySelector(".dl-when").textContent === "后天", "+2 的倒数是「后天」");
+        log(store.value.length === 4, "立刻写盘（一次 storage.set）");
+        log(head(doc) === "3 件 · 1 件完成 · 1 件逾期", `统计跟着变（「${head(doc)}」）`);
+
+        // 打勾
+        const before = store.value;
+        rowByTitle(doc, "交房租").querySelector(".dl-check").click();
+        await sleep(90);
+        const updated = store.value.find((item) => item.id === "rent");
+        log(updated && updated.done === true, "打勾落盘了");
+        log(before !== store.value, "写的是新数组，不是就地改");
+        log(
+          rows(doc)
+            .slice(-2)
+            .every((row) => row.getAttribute("data-done") === "true"),
+          "完成的两条沉到底部",
+        );
+
+        // 删掉再撤销
+        const count = rows(doc).length;
+        rowByTitle(doc, "还书").querySelector(".dl-del").click();
+        await sleep(90);
+        log(rows(doc).length === count - 1, "删除当场生效");
+        log(head(doc).startsWith("已删除"), `顶上给撤销（「${head(doc)}」）`);
+        log(
+          getComputedStyle(doc.querySelector(".dl-head-btn")).textDecorationLine.includes("underline"),
+          "撤销那行带下划线（能看出这里能点）",
+        );
+        doc.getElementById("head").click();
+        await sleep(90);
+        log(rows(doc).length === count, "点一下就恢复");
+        log(!!rowByTitle(doc, "还书"), "恢复的还是原来那条");
+        log(head(doc).startsWith("2 件 · 2 件完成"), `恢复之后回到统计（「${head(doc)}」）`);
+
+        // 只写日期：不加，但要提示
+        await type(doc, "3/15");
+        log(rows(doc).length === count, "只有日期不加条目");
+        log(head(doc) === "先写一件事，再加日期", `提示「${head(doc)}」`);
+
+        // 认不出日期：按明天算，并说明
+        await type(doc, "报告 v1.2");
+        log(rows(doc).length === count + 1, "认不出日期也照样加");
+        log(!!rowByTitle(doc, "报告 v1.2"), "标题一个字符都没吃掉");
+        log(head(doc) === "没写日期，按明天算", `顶上说明是猜的（「${head(doc)}」）`);
+
+        view.frame.remove();
+      }
+
+      // ---------- 场景 2：别的实例改了列表 ----------
+      {
+        const store = { value: SEED.slice(), sets: [] };
+        const view = mount(240, 200, store);
+        await view.ready;
+        await sleep(90);
+        const doc = view.doc();
+        log(rows(doc).length === 3, "起始三条");
+
+        store.value = [{ id: "new", title: "新条目", due: "2026-03-11", done: false }];
+        await view.send("store-changed", { key: "items" });
+        await sleep(120);
+        log(rows(doc).length === 1, "store-changed 之后重读成一条");
+        log(rows(doc)[0].querySelector(".dl-title").textContent === "新条目", "读到的就是别人的那条");
+        log(head(doc).startsWith("1 件"), "统计跟着重算");
+        view.frame.remove();
+      }
+
+      // ---------- 场景 3：最小尺寸 ----------
+      {
+        const store = { value: SEED.slice(), sets: [] };
+        const view = mount(200, 140, store);
+        await view.ready;
+        await sleep(90);
+        const doc = view.doc();
+        log(
+          doc.getElementById("add").getBoundingClientRect().bottom <= 140 - 12 + 0.5,
+          "最小尺寸下输入框没有顶出卡片",
+        );
+        log(doc.documentElement.scrollHeight <= 140, `最小尺寸没有纵向溢出（${doc.documentElement.scrollHeight}）`);
+        log(doc.querySelector(".dl-list").getBoundingClientRect().height > 0, "列表还能滚");
+        view.frame.remove();
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

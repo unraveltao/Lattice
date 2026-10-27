@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>deadline core / parsing and sorting</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.deadline/deadline-core.js"></script>
+    <script type="module">
+      /*
+       * 截止日期的解析与排序断言。
+       *
+       * 「今天」钉在本地字段上（2026-03-10），所以换机器、换时区结论一样。
+       * 重点在 parseLine：它是整个组件的入口，写错一条就会把用户的标题吃掉
+       * 或者把日期算到明年去。
+       */
+      const core = window.__latticeDeadlineCore;
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const TODAY = new Date(2026, 2, 10, 15, 0);
+      const key = (date) => (date ? core.dateKey(date) : "null");
+
+      function parsed(text) {
+        return core.parseLine(text, TODAY);
+      }
+
+      // ---------- 完整日期 ----------
+
+      {
+        const one = parsed("体检 2026-05-01");
+        log(one && one.title === "体检", `标题是「${one && one.title}」`);
+        log(key(one && one.due) === "2026-05-01" && one.guessed === false, "完整日期照写的算");
+        log(key(parsed("体检 2026/5/1").due) === "2026-05-01", "斜线写法也认");
+        log(key(parsed("体检 2026年5月1日").due) === "2026-05-01", "「年…月…日」也认");
+      }
+
+      // ---------- 短日期 ----------
+
+      {
+        const later = parsed("还书 3/15");
+        log(later && later.title === "还书", `短日期：标题「${later && later.title}」`);
+        log(key(later.due) === "2026-03-15" && !later.guessed, "3/15 就是今年 3 月 15 日");
+        log(key(parsed("还书 3-15").due) === "2026-03-15", "横线写法也认");
+        log(key(parsed("还书 3月15日").due) === "2026-03-15", "「3月15日」也认");
+        log(key(parsed("还书 12/28").due) === "2026-12-28", "还没到的日子留在今年");
+        log(key(parsed("过年 1/5").due) === "2027-01-05", "已经过去的短日期算明年");
+        log(parsed("还书 3/15 前") === null || parsed("还书 3/15 前").guessed === true, "日期不在行尾就不硬猜");
+      }
+
+      // ---------- 相对日期 ----------
+
+      log(key(parsed("猫粮 +3").due) === "2026-03-13", "+3 是三天后");
+      log(key(parsed("猫粮 +3天").due) === "2026-03-13", "「+3天」也一样");
+      log(parsed("猫粮+3").title === "猫粮", "加号前面没空格也认");
+      {
+        const plus = parsed("猫粮 +30");
+        log(key(plus.due) === "2026-04-09", `+30 跨到下个月（${key(plus.due)}）`);
+      }
+      log(key(parsed("交房租 明天").due) === "2026-03-11", "「明天」");
+      log(key(parsed("交房租 今天").due) === "2026-03-10", "「今天」");
+      log(key(parsed("买菜 后天").due) === "2026-03-12", "「后天」");
+      log(parsed("交房租明天").title === "交房租", "中文没有词间空格，「交房租明天」也拆得开");
+      log(key(parsed("return book tomorrow").due) === "2026-03-11", "英文的 tomorrow");
+      log(parsed("return book tomorrow").title === "return book", "英文标题不带日期");
+      log(key(parsed("pay rent today").due) === "2026-03-10", "英文的 today");
+
+      // ---------- 认不出来的时候 ----------
+
+      {
+        const guess = parsed("报告 v1.2");
+        log(guess.guessed === true, "认不出日期时标记 guessed");
+        log(guess.title === "报告 v1.2", "标题一个字符都不吃掉（v1.2 不是日期）");
+        log(key(guess.due) === "2026-03-11", "猜的日期是明天");
+      }
+      {
+        const bad = parsed("体检 2/30");
+        log(bad.guessed === true, "2 月 30 日不是日期，退回明天");
+        log(bad.title === "体检 2/30", "标题保留原样，用户看得见自己写了什么");
+      }
+      log(parsed("") === null && parsed("   ") === null, "空输入不加任何条目");
+      log(parsed("3/15") === null, "只有日期、没有标题时不加");
+      log(parsed("：3/15") === null, "只有分隔符加日期也不行");
+      log(parsed(null) === null, "null 也不炸");
+      log(parsed("还书：3/15").title === "还书", "中文冒号当分隔符");
+      log(parsed("还书，3/15").title === "还书", "中文逗号当分隔符");
+      log(parsed("还书 3/15 ").due && core.dateKey(parsed("还书 3/15 ").due) === "2026-03-15", "行尾空格不影响");
+
+      // ---------- 日期键 ----------
+
+      log(core.dateKey(new Date(2026, 0, 5)) === "2026-01-05", "日期键补零");
+      log(core.parseDateKey("2026-01-05") instanceof Date, "日期键读得回来");
+      log(core.parseDateKey("2026-02-30") === null, "2 月 30 日读不回来");
+      log(core.parseDateKey("2026-13-01") === null, "13 月读不回来");
+      log(core.parseDateKey("随便") === null && core.parseDateKey(null) === null, "坏键一律 null");
+      log(core.dateKey(core.parseDateKey("2026-12-31")) === "2026-12-31", "读写一圈不变");
+
+      // ---------- 倒数怎么说 ----------
+
+      log(core.dueText(TODAY, "2026-03-10", "zh") === "今天", "今天是「今天」");
+      log(core.dueText(TODAY, "2026-03-11", "zh") === "明天", "明天是「明天」");
+      log(core.dueText(TODAY, "2026-03-12", "zh") === "后天", "后天有专门的说法");
+      log(core.dueText(TODAY, "2026-03-15", "zh") === "5 天后", "一周内写「N 天后」");
+      log(core.dueText(TODAY, "2026-03-20", "zh") === "3月20日", "超过一周写日期");
+      log(core.dueText(TODAY, "2026-03-08", "zh") === "逾期 2 天", "过去的日子说逾期");
+      log(core.dueText(TODAY, "2026-03-09", "zh") === "逾期 1 天", "逾期一天也是「天」");
+      log(core.dueText(TODAY, "2026-03-09", "en") === "1 day overdue", "英文单数");
+      log(core.dueText(TODAY, "2026-03-08", "en") === "2 days overdue", "英文复数");
+      log(core.dueText(TODAY, "2026-03-15", "en") === "in 5 days", "英文的「还有 N 天」");
+      log(core.dueText(TODAY, "2026-03-20", "en") === "Mar 20", "英文超过一周写日期");
+      log(core.dueText(TODAY, "不是日期", "zh") === "", "坏日期不画字");
+
+      // ---------- 排序 ----------
+
+      {
+        const items = [
+          { id: "a", title: "晚", due: "2026-03-20", done: false },
+          { id: "b", title: "早", due: "2026-03-12", done: false },
+          { id: "c", title: "已完成", due: "2026-03-10", done: true },
+          { id: "d", title: "逾期", due: "2026-03-01", done: false },
+        ];
+        const sorted = core.sortItems(items);
+        log(sorted.map((item) => item.id).join(",") === "d,b,a,c", `未完成按日期在前、完成沉底（${sorted.map((item) => item.id).join(",")}）`);
+        log(items[0].id === "a", "排序不改原数组");
+      }
+
+      // ---------- 增删改 ----------
+
+      {
+        const items = [];
+        const withItem = core.addItem(items, { title: "还书", due: new Date(2026, 2, 15) }, 1);
+        log(withItem.length === 1 && items.length === 0, "加一条不动原数组");
+        log(withItem[0].due === "2026-03-15" && withItem[0].done === false, "新条目未完成、日期是键");
+        log(typeof withItem[0].id === "string" && withItem[0].id.length > 0, "有 id");
+
+        const toggled = core.toggleItem(withItem, withItem[0].id);
+        log(toggled[0].done === true && withItem[0].done === false, "打勾不改原条目");
+        log(core.toggleItem(toggled, withItem[0].id)[0].done === false, "再点一下取消完成");
+
+        const removed = core.removeItem(toggled, withItem[0].id);
+        log(removed.length === 0 && toggled.length === 1, "删掉不改原数组");
+        log(core.removeItem(toggled, "不存在的 id").length === 1, "删不存在的 id 无害");
+
+        log(core.makeId(1) !== core.makeId(1), "同一个种子也不会撞 id（尾巴有随机）");
+      }
+
+      // ---------- 存档归一化 ----------
+
+      {
+        const raw = [
+          { id: "a", title: "还书", due: "2026-03-15", done: false },
+          { id: "b", title: "  ", due: "2026-03-15" },
+          { id: "c", title: "没日期" },
+          { id: "d", title: "坏日期", due: "2026-02-30" },
+          { title: "没 id", due: "2026-03-16", done: "yes" },
+          "不是对象",
+          null,
+        ];
+        const items = core.normalizeItems(raw);
+        log(items.length === 2, `坏条目逐条丢（留下 ${items.length} 条）`);
+        log(items[0].id === "a" && items[0].done === false, "好的那条原样留下");
+        log(items[1].done === false, "done 不是 true 就当未完成");
+        log(core.normalizeItems(null).length === 0 && core.normalizeItems("x").length === 0, "非数组当空清单");
+
+        const long = Array.from({ length: 250 }, (_, index) => ({
+          id: String(index),
+          title: "第 " + index + " 条",
+          due: "2026-03-15",
+          done: false,
+        }));
+        log(core.normalizeItems(long).length === 200, "最多留 200 条");
+        log(
+          core.normalizeItems([{ id: "x", title: "很".repeat(200), due: "2026-03-15" }])[0].title.length === 120,
+          "标题最长 120 字",
+        );
+      }
+
+      // ---------- 顶上那行的统计 ----------
+
+      {
+        const items = [
+          { id: "a", title: "逾期", due: "2026-03-01", done: false },
+          { id: "b", title: "今天", due: "2026-03-10", done: false },
+          { id: "c", title: "完成", due: "2026-03-05", done: true },
+        ];
+        const stats = core.summary(items, TODAY);
+        log(stats.open === 2 && stats.overdue === 1 && stats.done === 1 && stats.total === 3, "未完成 2 / 逾期 1 / 完成 1");
+        const empty = core.summary([], TODAY);
+        log(empty.total === 0 && empty.overdue === 0, "空清单统计为零");
+        const doneOnly = core.summary([{ id: "z", title: "完成", due: "2026-03-01", done: true }], TODAY);
+        log(doneOnly.open === 0 && doneOnly.overdue === 0, "完成的条目不进逾期数");
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>
