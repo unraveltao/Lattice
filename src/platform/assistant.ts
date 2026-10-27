@@ -144,6 +144,31 @@ export async function activateLlmProfile(id: string): Promise<ProfilesView> {
 }
 
 /**
+ * 密封库（`secrets.bin`）的状态。
+ *
+ * 只回答一句话：**这些 key 到底加密存进去了没有**。`error` 是上一次 DPAPI
+ * 失败的原因 —— 那一刻明文还留在 `assistant.json` 里（宁可没加密，也不能把
+ * key 弄丢），界面必须把这件事说出来，否则用户以为"已经安全了"。
+ *
+ * 浏览器预览里没有这条命令，回 `null`，那一行就不显示。
+ */
+export interface SecretsStatus {
+  path: string;
+  exists: boolean;
+  count: number;
+  error: string | null;
+}
+
+export async function readSecretsStatus(): Promise<SecretsStatus | null> {
+  if (!hasRust()) return null;
+  try {
+    return await callCommand<SecretsStatus>("secrets_status");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 配置文件的绝对路径（`…/assistant.json`）。设置里那行小字要显示它。
  *
  * 浏览器预览里没有这条命令，调用方要自己 catch —— 预览里没有"磁盘上的文件"

@@ -86,6 +86,8 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Key removed from this machine.": "key 已从本机删掉。",
   "This key comes from the environment, not from this machine's settings.":
     "这把 key 来自环境变量，不是这台机器的设置。",
+  "This key is still stored as plain text ({reason}). It works, but it is not encrypted at rest.":
+    "这把 key 还是明文存着的（{reason}）。它照样能用，只是没有加密落盘。",
 
   // —— 预设（只是填表的按钮，产品名不翻） ——
   "DeepSeek's own endpoint, OpenAI-compatible": "DeepSeek 官方接口，OpenAI 兼容",

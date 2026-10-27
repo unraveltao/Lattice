@@ -46,11 +46,13 @@ import {
   configPath,
   listModels,
   readLlmProfiles,
+  readSecretsStatus,
   removeLlmProfile,
   saveLlmKey,
   saveLlmProfile,
   type ProfileView,
   type ProfilesView,
+  type SecretsStatus,
 } from "./assistant";
 import { hasRust } from "./devLlm";
 import { AUTH_SHAPES, PRESETS, knownModel, type AuthShape, type Preset } from "../runtime/llm-models";
@@ -126,6 +128,11 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
   const [error, setError] = useState<string | null>(null);
   /** 配置文件路径。浏览器预览里拿不到（也没有这个文件），拿不到就不显示那一行 */
   const [file, setFile] = useState<string | null>(null);
+  /**
+   * 密封库的状态。**只在"存不进去"时说话** —— `error` 非空意味着这一把 key
+   * 还以明文躺在 `assistant.json` 里。那是"没加密"，不是"丢了"，但用户得知道。
+   */
+  const [seal, setSeal] = useState<SecretsStatus | null>(null);
   /** 每档最后一次「测试连接」的结果。键是档 id，没保存的那张表用 `DRAFT_KEY` */
   const [probes, setProbes] = useState<Record<string, Probe>>({});
 
@@ -203,6 +210,9 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
         .catch(() => {
           // 预览里没有这条命令：那一行不显示就是了
         });
+      void readSecretsStatus().then((next) => {
+        if (!cancelled) setSeal(next);
+      });
     }
     return () => {
       cancelled = true;
@@ -258,7 +268,11 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
         temperature,
       });
       let next = saved.view;
-      if (key.trim()) next = await saveLlmKey(saved.id, key);
+      if (key.trim()) {
+        next = await saveLlmKey(saved.id, key);
+        // 刚存了一把 key —— 这一句是"它到底加密了没有"的唯一答案
+        void readSecretsStatus().then(setSeal);
+      }
       apply(next);
       setKey("");
       const stored = next.profiles.find((item) => item.id === saved.id);
@@ -497,6 +511,18 @@ export function ModelProfiles({ variant = "settings", onChange, onReady, reloadT
       {editingProfile?.keySource === "env" && (
         <p className="lattice-settings-hint">
           {t("This key comes from the environment, not from this machine's settings.")}
+        </p>
+      )}
+      {/*
+        密封失败时唯一的那句话。**不是"存不进去"** —— key 照样能用，它只是
+        还以明文躺在 assistant.json 里。两件事必须说成两件事：说成"保存失败"
+        用户会以为 key 丢了，然后去后台重新生成一把。
+      */}
+      {seal?.error && (
+        <p className="lattice-assistant-hint is-warn">
+          {t("This key is still stored as plain text ({reason}). It works, but it is not encrypted at rest.", {
+            reason: seal.error,
+          })}
         </p>
       )}
 

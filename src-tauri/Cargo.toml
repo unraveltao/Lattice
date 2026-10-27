@@ -75,6 +75,9 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_NetworkManagement_Ndis",
   "Win32_Networking_WinHttp",
   "Win32_Security",
+  # CryptProtectData / CryptUnprotectData：密封密钥（secrets.rs）。
+  # DPAPI 不自己写 —— 那是密码学，不是布局
+  "Win32_Security_Cryptography",
   "Win32_Storage_FileSystem",
   "Win32_System_IO",
   # GetModuleHandleW：参考线叠层窗口要注册一个自己的窗口类

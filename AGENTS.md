@@ -196,6 +196,8 @@ src-tauri/src/
   instance.rs             单实例：命名互斥体 + 命名事件
   state.rs                平台状态落盘（state.json，原子替换）；**读的时候先剥 BOM** —— 这份文件可手改、可备份回去，而记事本 / `Set-Content -Encoding utf8` 会写 `EF BB BF`，前端 `JSON.parse` 一抛就落默认值、再整份写回去（布局静默归零，见 PITFALLS「状态落盘」那条）
   widget_store.rs         组件私有存储落盘（widget-data/<id>.json）
+  secrets.rs              密封密钥（0026）：`secrets.bin` = 文件头 + DPAPI blob（`CryptProtectData`），一个文件一次原子写 + 一代 `.bak`；四条命令（secret_set / secret_get / secret_delete / secrets_status）；**解不开就拒绝写** —— 覆盖一份换回原账户还能用的密文等于把它弄丢
+  secrets_policy.rs       上面那道的纯逻辑：键名拼接（组件够不到 `llm.*`）、magic 头、迁移判定与 seal → verify → clear 的顺序（16 条 `rustc --test`，**不引 crate**）
   widgets.rs              用户组件的扫描 / 安装 / 卸载
 src-tauri/installer-hooks.nsh  NSIS 钩子：卸载时删掉 Run 注册表项（只此一处）
 src-tauri/capabilities/
@@ -273,9 +275,13 @@ docs/                     架构、组件规范、路线图与踩坑、代码签
     - **常驻进程要有两条收尸路，少一条就漏**。一条是实例销毁（画布：宿主页卸载时 `term_dispose`；桌面：`runner.rs` 的 `WindowEvent::Destroyed` → `term::kill_instance`），另一条是应用退出（`RunEvent::Exit` → `term::kill_all`）。只挂第一条，"组件早删了、进程还在"会一直留到重启；只挂第二条，用户关一张卡片就多一个 `powershell.exe`，而任务管理器里没人知道它是谁的。
     - **每个实例一条进程，别按命令起进程**。实测每条命令 480ms 起步（常驻之后约 40ms），而"每条命令起一个"还会顺手丢掉 `cd` 和变量 —— 于是"终端"就变成了"命令输入框"。代价要写在组件说明里：跑不了 `vim` / `ssh`，没有 `Ctrl+C`（停 = 杀 shell），没有 ANSI 颜色。
 
----
+21. **密钥只进密封库，明文只当迁移兜底**。模型 key 和组件要用的 token 都存在 `secrets.bin`（`CryptProtectData` 封的一个文件，见 `secrets.rs` / 设计 0026），`assistant.json` 里的 `apiKey` 只在"密封写不进去"时留作兜底。四条别改回去：
+    - **组件碰不到 `llm.*`**。键名一律由平台拼（`widget.<组件 id>.<name>`），组件只递名字片段。`widget_id` 确实来自宿主上下文（组件递不上来），但它最终来自**磁盘上的清单**，所以 `secrets_policy::widget_id_ok` 要按 `manifest.ts` 的 `ID_RE` 再判一次 —— 这是命名空间隔离唯一的那道墙。
+    - **删除是明确动作，不是猜出来的**。`write_config` 只"有值就封"，**从不删**；删只有两条路：`llm_set_key("")` 和 `llm_profile_remove`。反过来写（空 key 就删密封那一条）会在"换 Windows 账户、解不开"的那一次把密文抹掉 —— 而换回原账户本来还能用。
+    - **解不开 ≠ 没有**。`secrets.bin` 读不出来时 `load_checked` 直接 `Err` 并**拒绝任何写入**；`secret.get` 回错误而不是 `{value: null}`，界面说的是"读不出来，请重新填一次"。文件本身永远不删。
+    - **DPAPI 不是密码学保险箱**。它绑当前 Windows 账户：挡得住别的用户和拷走的文件，**挡不住以这个账户跑的任何程序**。权限文案和组件 `help` 里必须写明，别让用户以为"加密了所以安全"。
 
-## 5. 一次组件渲染，链路上有谁
+---
 
 ![渲染链路五跳：布局数据 → 建窗口 → 宿主页（设计态 WidgetFrame / 运行态 widget-host）→ 沙箱组件 → 桥（先查权限再执行）](./docs/render-chain.svg)
 
@@ -554,6 +560,7 @@ public/widgets/<id>/
 
 | 缺口 | 差的是什么 | 怎么算完 |
 | --- | --- | --- |
+| **密封密钥只验了"失败"那一半**（v0.13，见 [0026](./docs/design/0026-sealed-secrets.md)） | `secrets_policy.rs` 16 条 + `tests/secret.html` 17 条全过，`cargo check` 干净，**迁移与"失败保留明文"这条真的跑到了**（这台机器的 agent 进程树里 `LoadLibraryW("dpapi.dll")` 回 NULL，`CryptProtectData` 一律 127，于是设置页那行按设计亮了出来）。**没验的是成功那半**：DPAPI 封出来的字节、`secrets.bin` 真的能读回、换账户真的解不开 | 正常用户会话里：填一个模型 key → 关掉设置 → `assistant.json` 的 `apiKey` 是空的、`secrets.bin` 在 → 重启后模型仍可用 → 把 `secrets.bin` 拷到另一个 Windows 账户下，确认读不出来**且文件还在** → 用一块临时组件试 `secret.get`，确认它读不到 `llm.*`。**别为了"验通"把 DPAPI 换掉** —— 那是密码学，不是布局 |
 | **电池读数只在断言里验过**（v0.12 的 `lattice.battery`） | `tests/battery.html` 90 条 + `power_policy.rs` 6 条全过，`cargo check --all-targets` 干净 —— 但全是"哨兵值认不认 / 百分比夹没夹"和"拿假读数画得对不对"。**真硬件一次没插拔过**：插电、拔电、低电量、省电模式，以及台式机（没有电池）上画的是「No battery」而不是 0% | 装 Battery 摆一张：插电看得到在充电与百分比 → 拔掉电源，几十秒内剩余时间出来、交流那行消失 → 台式机上确认画的是「No battery」→ 撤掉 `system:monitor` 再点，卡片该说它缺这一项。**别在平台侧加缓存或后台线程来"验"它** —— 那是把节流从组件的 `schedule.every` 挪走 |
 | **assistant 小窗的窗口行为只在断言里验过**（v0.13，见 [0007 §6](./docs/design/0007-assistant-on-desktop.md)） | 八条命令都接了线（`AssistantWindow.tsx` 真的在 invoke，不再是"看着能点"），`tests/assistant-window.html` 33 条 + `assistant_window_policy.rs` 11 条全过 —— 但那是"夹进屏幕对不对 / 坏值退得对不对 / 界面读到的状态对不对"。**真窗口没验**：桌面模式按 Win+D、被别的应用整个盖住之后还在不在；点它能不能拿到键盘焦点；锁上之后标题栏与三个手柄是不是一起失效 | `Ctrl+K` 开小窗 → 底板面板切到桌面 → Win+D 再回来 → 点输入框敲一行 → 上锁后拖标题栏与右下角手柄（都不该动）→ 拉到 900×700 松手 → 退出重进（尺寸 / 模式 / 底板都还在）→ 切回浮窗，刚聊的那轮还在。**模式开关在底板面板里，别再往标题栏放一颗** —— 它长得像最大化，2026-10-25 删过一次 |
 | **终端还有四处没在真机上走过**（v0.13 的 `lattice.term`，见 [0018](./docs/design/0018-terminal-widget.md)） | **整条链路验通了**（2026-10-26，桌面窗口 + 探针组件）：中文不乱码；`Start-Sleep 350ms` 的四次到齐在 322 / 696 / 1053 / 1416 / 1775ms（一条条到，不是最后一起到）；stderr 三段 + `done code=1`；`cd` 保留；哨兵一个字没漏进正文；`term.state { since }` 重放；`term.stop` 之后 id 从 `c1` 重新数；退出应用那只 `powershell.exe` 跟着没了。**没走的四处**：① 卡片上的 **Stop 按钮**本身 ② **删掉卡片**那条收尸路（`term_dispose` / `WindowEvent::Destroyed`）③ `dir` 那种上百行长输出、240px 窄卡上**长行折不折** ④ `ping -n 10` 的真实节奏（这次用 `Start-Sleep` 循环代替） | `cd C:\Windows` 再 `dir`（列出来的必须是 `C:\Windows` 的东西）→ `ping -n 10 127.0.0.1` 一行一行出 → 点 Stop，任务管理器里那只 `powershell.exe` 真没了 → 删卡、退出，`Get-Process powershell` 干净。**别用"输出出现了"当通过**：这条能力要验的是顺序与收尸 |

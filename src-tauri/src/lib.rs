@@ -54,6 +54,8 @@ pub mod power_policy;
 pub mod protocol;
 pub mod runner;
 pub mod screen_policy;
+pub mod secrets;
+pub mod secrets_policy;
 pub mod signature;
 pub mod signature_policy;
 pub mod shell_policy;
@@ -112,6 +114,10 @@ pub fn run() {
         .setup(|app| {
             // 第二次启动 → 唤回主窗口的那条线程
             instance::listen(app.handle().clone());
+            // 明文 key 搬进密封库（0026 §4）。放在最前面：后面任何一处读
+            // `assistant.json` 都该看到"key 在密封库里"这个事实，而不是先读到
+            // 明文、再由某次保存顺带搬走。失败不拦启动 —— 最坏情况是"还没加密"
+            llm::migrate_keys(app.handle());
             guard_main_close(app.handle());
             // 主窗口最小化时 `document.visibilityState` 不会变，画布上的组件
             // 会继续按心跳空转 —— 可见性得从这里发下去（见 visibility.rs）
@@ -237,6 +243,10 @@ pub fn run() {
             term::term_stop,
             term::term_state,
             term::term_dispose,
+            secrets::secret_set,
+            secrets::secret_get,
+            secrets::secret_delete,
+            secrets::secrets_status,
             quit_app,
             show_main_window,
             restart_app,

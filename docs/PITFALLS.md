@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **99 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **104 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -107,6 +107,9 @@
 | 在小窗里让它"把这个组件挪一下"，挪完主窗口里的布局像退回到启动那一刻（新摆的组件没了、主题也换回去了） | `state.json` 不是状态本身，它只是主窗口那份 store 的**磁盘副本**。小窗是第二个 webview、也是第二个 store：它拿启动时的快照跑执行器、再把整份状态写回磁盘，等于把主窗口这一段时间的所有改动整块盖掉 | 执行器只留在主窗口。`platform/assistant.ts` 抽出 `AssistantSurface`：抽屉 `localSurface(records)` 本地跑，小窗 `remoteSurface()` 把 `assistant_snapshot` / `assistant_act` 交给 `agent.rs`，走 agent 端点**同一条** `call_frontend` 通道，动作照旧先过 `agent_policy` 的白名单。**判据**：凡是"要改桌面"的东西只能在持有 store 的那个窗口里发生，别的窗口最多转发 |
 | 手改了一次 `state.json`（加了张卡），再打开应用 —— 桌面上只剩一只桌宠，**已装的组件、授权、摆放全没了**，而且过后看那个文件已经是被重写过的完整默认值 | 我用 PowerShell 的 `Set-Content -Encoding utf8` 写它，那个参数会写 **UTF-8 BOM**（`EF BB BF`）。`state_read` 原样把文本交给前端，`JSON.parse` 见到开头的 BOM 直接抛，zustand persist 落到默认值、`onRehydrateStorage` 只打一行日志；但 `hydrated` 已经被置真，于是**下一次 `set` 就把默认值整份写回磁盘** —— 用户的布局在没有任何报错的情况下归零 | `state_read` 在边界上剥掉 BOM（`text.trim_start_matches('\u{feff}')`）。真机验过：把 BOM 写回 `state.json` 再启动，文件被重写成**无 BOM** 的同一份数据（桌宠的摆放、`lattice.anki` 的授权、已装列表一条不少）。教训有两条：**"读失败"和"没有数据"必须分开处理**（这里读了、没坏，只是解析失败）；手改这份文件用 `[System.IO.File]::WriteAllText($p, $json, [System.Text.UTF8Encoding]::new($false))`，别用 `Set-Content` |
 | 在浏览器预览里改一个设置，回到桌面应用发现 `assistant.json` 里**另一个字段没了**（用户的技能清单被洗成空、新加的配置回到默认） | 浏览器里没有 Rust，`scripts/dev-llm-proxy.mjs` 是 `llm.rs` 的替身，**也是同一个 `assistant.json` 的第二个写者**：它是"造一份空配置、再逐个字段搬"，`llm.rs` 新加的字段不在搬运名单里，保存时就被洗掉了 —— 没有报错、没有日志，用户只会觉得"我明明开过" | 认得的字段照旧逐个归一化（判据只有一处），**不认识的顶层键原样带回去**（[0015](./design/0015-preview-config-mirror.md)）。`npm run test:llm-proxy` 钉一条"种一份带陌生字段的配置、存一次、那个键还在"。别改回逐字段白名单 |
+| 在设置里点「清掉这把 key」，重启之后模型又能用了 —— 清了个寂寞 | 密封库优先、明文兜底（`read_config`），所以光把 `assistant.json` 里的 `apiKey` 写成空串没用：密封库里那一条还在，下次读配置照样把它填回来 | 删除必须是**明确动作**：`llm_set_key("")` 和 `llm_profile_remove` 各自调 `secrets::delete`。`write_config` 只"有值就封"、**从不删** —— 让它按"空 key 就删"办事，会在"换账户解不开、key 读成空串"的那一次把密文抹掉，而换回原账户本来还能用 |
+| 换了一台电脑（或重装了系统），所有模型都显示"没配置"；用户重新填了一把，回头再用原来那台机器 —— 旧 key 也没了 | DPAPI 绑账户，`secrets.bin` 在别的账户下解不开。要是"解不开就当空表、下次保存顺手覆盖"，那份还能救回来的密文就被一份新密文盖掉了 | `load_checked` 把"文件不在"（空表）和"解不开"（`Err`）分开，后者**拒绝任何写入**；`secret.get` 回错误而不是 `{value: null}`；文件永远不删。界面上那句是"读不出来，请重新填一次"，不是"你还没填过" |
+| 手改过 `assistant.json` 的人把 key 写成 `api_key`（snake_case），迁移之后再打开 —— 那一档整个消失了 | 迁移写回时若只把 `apiKey` 置空、留着 `api_key`，serde 那边两者是**同一个字段**（`alias`），同时出现就是 "duplicate field"，`parse_config` 落默认值，用户的档全没 | 迁移清字段时 `apiKey` 置空串、`api_key` **整个删掉**（`clear_plaintext_keys`）；读的时候两个名字都认（`plan_migration` 也是） |
 
 ## 组件排版与渲染
 
@@ -157,6 +160,8 @@
 | 终端卡片上第三条命令开始**再也没有反应**：输出不出来、停止按钮一直在转，而 shell 还活着（`term.state` 的 `running: true`、`seq` 冻住不动）；卡片正文里还多出一行 `LATTICE:c3:0:C:\Windows`（`\x1e` 这个控制符看不见，只看见后半截） | PowerShell 把**一行字和它的换行分两次写**（`\r\n` 是两次 `WriteFile`）。于是送进 `drain_stdout` 的缓冲里第一次只有"整行哨兵、没有 `\n`"：`find_done` 要求同一段缓冲里有换行返回 `None`，而 `safe_prefix_len` 当时只留"**半个**哨兵"的尾巴，整行都算安全前缀被当输出发了出去 —— 哨兵从此离开缓冲区，`find_done` 永远收不到它，那条命令永远不结束（队列头不弹，后面全堵着） | `safe_prefix_len` 里加一条：缓冲区里只要出现**整段**这一条自己的 marker（`\x1eLATTICE:<id>:`，只认当前这条的 id），从 marker 起一律留住 —— 这一行一定会被下一次 read 补上换行，那时 `find_done` 就收得下。判据：`term_policy` 的 `a_whole_sentinel_without_its_newline_is_not_output` 钉着这个到达顺序；真机上第三条命令（`cd C:\Windows; Get-Location`）必须报 done、`cwd` 必须是 `C:\Windows`。**"留半个哨兵"和"留整个哨兵"是两件事**，少写后半句就是卡死一条命令 |
 | 组件里"发一条命令、等结果"的写法偶尔会整条命令**一个字都没显示**（编号 `c7` 的事件全被当成"不认识的主人"丢掉），而同样的代码在别的命令上又是好的 | `term.write` 的**回话比输出慢**：Rust 是先写进 shell 的 stdin、再回编号，真机上快命令（`cd C:\Windows`）的输出比回话早到 **5ms**。组件此刻还不知道 `id`，就认不出这些事件是谁的 | 组件必须**从第一条事件里认领编号**：`feed` 里 `if (event.id && !next.active) next.active = event.id`，回话到达时只在 `active` 还空着的情况下才填（`public/widgets/lattice.term/widget.js` 那两处就是这个顺序，`tests/term.html` 钉着"回话还没到也要认领"）。别写"先拿到 `id` 再挂监听" —— 那是把顺序当成了契约 |
 | 换完 `src-tauri/icons/` 之后 `cargo build` 过、`tauri dev` 也重启过 app，可任务栏 / 标题栏 / 托盘 / 安装包上的图标**还是旧的**：`icons/icon.ico` 明明是新的，exe 里一处都没变 | Windows 图标是**编译期嵌进 PE 资源**的（`tauri-build` 把 `icons/icon.ico` 交给 `embed-resource` 编进 `.rsrc`），而 `.ico` 变了 `cargo` 不会重跑 build script。`tauri dev` 那句 `File src-tauri\icons\… changed. Rebuilding application…` 只是重新 `cargo run` —— 紧跟的 `Finished in 0.41s` 就等于"一个文件都没编" | 换完图标先 `cargo clean -p lattice`（或 `touch src-tauri/build.rs`）再构建。判据是**字节级**的：把 `icons/icon.ico` 的每一帧取出来，去 exe 的字节里搜索，必须"新帧 6/6 命中、旧帧 0/6"；只看 exe 的 mtime 会漏掉这条（mtime 变了而资源没换是常态，一次实测就是这么挂着旧 logo 跑了半天） |
+| 想单验 DPAPI 的调用形状，写个 `rustc` 小探针，`CryptProtectData` 一律回 0、`GetLastError` 是 **127**（`ERROR_PROC_NOT_FOUND`），可 `crypt32.dll` 明明加载成功、`CryptProtectData` 的地址也拿到了 | `crypt32!CryptProtectData` 是个**转发导出**，实现在 `dpapi.dll` 里 —— 而 agent 这个进程树里 `LoadLibraryW("dpapi.dll")` 直接回 NULL（DLL 在 `System32` 里、40 KB，看得见、加载不了）。不是参数写错，也不是 `windows-sys` 少开了 `Win32_Security_Cryptography`（少了那个根本编不过） | 分两步量：`LoadLibraryW` + `GetProcAddress` 各打一行，`crypt32` 能加载、`dpapi` 不能，就到此为止，别再改自己的 BLOB。**代码路径是按"失败保留明文"写的，所以这个故障是安全的**：key 照旧能用，设置页那一行带着这句 127。DPAPI 的真机验收只能在正常用户会话里做（ROADMAP 里那条还挂着） |
+| 只想 `cargo check` 看一眼自己的 Rust 改动，却报 `failed to run custom build command for lattice`，末尾一句 `The process cannot access the file because it is being used by another process. (os error 32)`，指着 `out/libresource.a` | 这个仓库的常态：另一个 agent 的 `tauri dev`（`cargo run`）正活着，它和你的 `cargo check` 共用 `src-tauri/target/debug/build/lattice-*/out`，`tauri-build` 写 PE 资源那一步撞在一起 | 换一个 target 目录：`CARGO_TARGET_DIR=src-tauri/target/check cargo check`。**必须在 `target/` 里面** —— 放到 `.scratch/` 这类目录会被安全策略拦在"build script 写探针 exe"那一步（`Failed to create …/out/probe: OS Error 5`，看着像代码问题，其实是目录问题）。代价是依赖重编一遍（约 3.5 分钟），之后增量几秒 |
 
 ## 目录、签名与网络
 

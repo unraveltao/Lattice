@@ -245,9 +245,15 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
   - **切块比一条大正则稳**。trending 页按 `<article class="Box-row"` 切块，最后一块被 1 MB 上限截断时只丢它自己；一条跨块的全局正则会把前面十几天全丢掉。真实样本（15 条）连同它的 `tmp-pr-4` 类名一起进了夹具 —— 设计稿里写的 `pr-4` 和真实页面对不上，是抓下来才看见的。
   - **302 之外还有 202**：`stats/participation` 会在 GitHub 还没算完时回 202，隔 2 秒重试两次、仍不行就只缺曲线（其余照常）。把它当失败，一个很活跃的仓库会因为没有曲线落到"没读到"。
   - 判据全在 `momentum-core.js`（纯函数，`tests/momentum.html` 112 条钉着判定顺序、跳过最后一桶、四道小样本门槛、发版按日期去重、真样本解析、实体反转义、截断、缓存容错与两条 TTL）。**真机还没走**：查 `tauri-apps/tauri` 与 `wailsapp/wails` → 切三个时间窗 → 断网看是不是"没读到"。受限的是这台机器的出口 IP：不带 token 时 GitHub 一小时只给 60 次。
-- [ ] **密封的密钥（DPAPI）** —— `assistant.json` 里的 key 现在是**明文**。改成 DPAPI 封一个 `secrets.bin`，同时给组件开一条按 id 隔离的 `secret.*`。设计在 [`design/0026-sealed-secrets.md`](./design/0026-sealed-secrets.md)。
+- [x] **密封的密钥（DPAPI）** —— `assistant.json` 里的 key 现在是**明文**。改成 DPAPI 封一个 `secrets.bin`，同时给组件开一条按 id 隔离的 `secret.*`。设计在 [`design/0026-sealed-secrets.md`](./design/0026-sealed-secrets.md)。
   - **这不是加密**：DPAPI 绑 Windows 账户，挡别的用户和拷走的文件，挡不住本机同账户的程序。文档与权限文案都要这么写，否则它会被当成"有主密码"。
   - **迁移失败不吞**：写不进密封就保留明文并挂一行提示，绝不为了"迁移成功"把 key 删掉。
+  - **校验提到清明文之前**。设计稿写的是"先写密封、再清明文、最后校验"，实现改成 seal → **verify** → clear：校验放在后面的话，它失败时明文已经没了，而那一把 key 用户再也拿不回来。三步的先后依赖没变（清明文永远是最后一步），失败面却只剩"什么都没发生"。顺序在 `secrets_policy::run_migration` 里，而且是**注入闭包**的形式 —— 所以"第 2 条密封失败，明文一行不动"有单测钉着，不是靠人读一遍 `if` 缩进。
+  - **解不开就拒绝写**，这条比"迁移成功"重要。`load_checked` 把"文件不在"（空表）和"解不开"（`Err`）分开，后者拒绝任何写入 —— 否则一次换账户之后的保存会用新密文盖掉那份"换回来还能用"的旧密文。
+  - **删除是明确动作**。`write_config` 只"有值就封"、从不删；删只有 `llm_set_key("")` 和 `llm_profile_remove` 两条路。反过来的写法会在"key 读成空串"的那一次把密文抹掉。
+  - **落点其实是 `app_config_dir`**，和 `assistant.json`、`state.json` 同一个目录（设计稿写的是 `%APPDATA%\…`，两者在这台机器上是同一个地方，但判据以 `config_dir` 为准）。文件头 15 字节不是 8。
+  - 判据全在 `secrets_policy.rs`（16 条 `rustc --test`：命名空间拼接、`widget_id` 按 `manifest.ts` 的 `ID_RE` 逐字对齐、magic 头三种损坏、迁移幂等与三步顺序），桥那一侧 `tests/secret.html` 17 条（`name` 形状、**组件递上来的 `widgetId` 被忽略**、`null` 与"读不出来"不合并、浏览器预览不退回 localStorage）。`secrets.rs` 的 DPAPI 与原子写只有 review —— `cargo test` 跑不了，那部分只能真机验。
+  - **真机还没走**（设计 0026 §6）：填一个模型 key → 关掉设置 → 看 `assistant.json` 里 `apiKey` 是空的、`secrets.bin` 在 → 重启后模型仍可用 → 把 `secrets.bin` 拷到另一个 Windows 账户下确认读不出来**且文件还在** → 用一块临时组件试 `secret.get`，确认它读不到 `llm.*`。
   - 做完之后，`lattice.related` 这类组件才能从匿名 60 次/小时升到 5000 次/小时。
 - [ ] **相似项目（`lattice.related`）** —— 粘一个 GitHub 地址进来，列出做同一件事的其他项目，按 star 排前 10。**零平台改动**（只用 `network.fetch` / `llm.chat` / `shell.open` / `storage`），设计在 [`design/0024-github-related-widget.md`](./design/0024-github-related-widget.md)。
   - **模型提名、代码核对**：实测过，纯 topic 检索给的是"同类"不是"同题" —— 搜 `tauri-apps/tauri` 的前六全是**用 Tauri 写出来的应用**；`in:readme` 检索则被 `awesome-*` 霸榜（它们 README 里什么都提一句）。模型知道 electron / wails / neutralinojs 是它的替代品，代码负责把名字换成真实 star。

@@ -43,6 +43,7 @@ export type Permission =
   | "llm:chat" // 用用户配的模型说话（花的是用户自己的额度）
   | "agent:tools" // 让 agent / assistant 调用这个组件自己声明的工具（数据平面）
   | "terminal:exec" // 在这个终端卡片里跑命令（每个实例一条常驻 PowerShell）
+  | "secret" // 在平台的密封库里存/取这个组件自己的 token（按组件 id 隔离）
   | "desktop:control"; // 让平台替你动桌面（借的是那八个白名单动作）
 
 export interface WidgetSize {
@@ -314,6 +315,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "llm:chat": "Use my AI model",
   "agent:tools": "Agent tool calls",
   "terminal:exec": "Run commands",
+  secret: "Store a secret for me",
   "desktop:control": "Rearrange my desktop",
 };
 
@@ -334,9 +336,10 @@ export function permissionLabel(permission: Permission): string {
  * `normalizePermissions` 也读这一份 —— 以前那里另抄了一份同样的名单，两处
  * 各改各的，漏一处的表现是"清单里写了、界面上没有"，不报错。
  *
- * 十三项现在全齐了（`media:control` 在 v0.4、`agent:activity` 在 v0.8、
+ * 十四项现在全齐了（`media:control` 在 v0.4、`agent:activity` 在 v0.8、
  * `audio:level` / `shell:open` 在 v0.9 补上、`desktop:control` 在 v0.10 末尾补上、
- * `agent:tools` 在数据平面那一版补上、`terminal:exec` 跟着终端组件补上）。
+ * `agent:tools` 在数据平面那一版补上、`terminal:exec` 跟着终端组件补上、
+ * `secret` 跟着 DPAPI 密封库补上）。
  * 加一项权限要**四处一起改**：
  *
  * 1. `Permission` 联合类型
@@ -365,6 +368,7 @@ export const PERMISSION_READY: ReadonlySet<Permission> = new Set<Permission>([
   "llm:chat",
   "agent:tools",
   "terminal:exec",
+  "secret",
   "desktop:control",
 ]);
 

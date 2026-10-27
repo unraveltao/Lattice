@@ -111,7 +111,7 @@ npm run pack:widget -- demo.mine      # folder → .lattice, drag straight into 
 
 ## How it works
 
-A widget *becomes* a window without ever touching Windows. It runs in a sandboxed iframe with an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge. There are thirteen permissions, nothing is granted by default, and installing a widget grants it nothing: you approve each capability once per widget, and revoking one takes effect in the windows already open.
+A widget *becomes* a window without ever touching Windows. It runs in a sandboxed iframe with an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge. There are fourteen permissions, nothing is granted by default, and installing a widget grants it nothing: you approve each capability once per widget, and revoking one takes effect in the windows already open.
 
 <p align="center"><a href="docs/screenshot-editor.png"><img src="docs/screenshot-editor.png" width="880" alt="The main window: widget library, canvas and inspector"></a></p>
 
@@ -163,11 +163,11 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 | Metric | Value |
 | --- | --- |
 | Official widgets | 25 |
-| Permissions | 13 |
-| Tauri commands | 99 |
-| Browser assertions | 3 642 over 70 pages |
-| Rust tests | 439 |
-| Documented pitfalls | 99 |
+| Permissions | 14 |
+| Tauri commands | 103 |
+| Browser assertions | 3 643 over 70 pages |
+| Rust tests | 455 |
+| Documented pitfalls | 104 |
 
 Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split pure-logic cases from the ones that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
@@ -175,9 +175,9 @@ Every one of those is enforced by something. The browser assertions run a real d
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 24 180 lines |
-| CSS | 6 206 lines |
-| Rust | 24 353 lines |
+| TypeScript | 24 482 lines |
+| CSS | 6 231 lines |
+| Rust | 25 376 lines |
 | SDK | 961 lines |
 | Widgets + example | 37 180 lines |
 | Scripts | 5 614 lines |

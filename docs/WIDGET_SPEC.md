@@ -481,6 +481,7 @@ if (data.type === "config-changed") {
 | `llm:chat` | `llm.chat`（用**用户自己配的**模型说一句话，花的是用户的额度，见 §3.4） | 可用 |
 | `desktop:control` | `assistant.ask`（让平台的模型**替你动桌面**，见 §3.5） | 可用 |
 | `agent:tools` | 组件清单里 `agent.tools` 声明的那几条工具可以被 agent / assistant 调用（见 §3.6） | 可用 |
+| `secret` | `secret.set` / `secret.get` / `secret.delete`（在平台的密封库里存这个组件自己的 token，按组件 id 隔离，见 §3.7） | 可用 |
 | `terminal:exec` | `term.write` / `term.stop` / `term.state`（在这个卡片里跑命令，见 §4.9） | 可用 |
 
 只申请你真正用到的。申请一堆用不上的权限，用户会直接不装。
@@ -704,6 +705,38 @@ window.addEventListener("message", (event) => {
 
 还没解决的两件事（写在 `docs/AGENT_ACCESS.md` §2.2）：**答话的是画布上那一份实例**（桌面窗口那份不参与，但它和画布那份共用同一份 `widget-data`，收到 `store-changed` 会自己重读；你的工具实现按"跑在自己的 iframe 里"写就行。这也是画布上一处例外：桌面模式下画布本来就只画一张静态卡，**声明了 `agent.tools` 并且授了 `agent:tools` 的组件才会留一份活的实例专门用来答话**，判据是 `runtime/widget-tools.ts::canvasNeedsLiveFrame` —— 所以你的工具实现不能假设"屏幕上看得见那个 iframe"）；组件没装、或者画布上那张已经是破卡时，调用回 `not-running` —— v1 **不唤醒**窗口（建窗口 → 等宿主页 boot → 再投递是一串会输的竞态），模型会转述给用户而不是重试。另外 `npm run dev` 的浏览器预览里没有模型，这条链路只有桌面应用能跑完整。
 
+### 3.7 存一个 token：`secret`
+
+组件要接第三方服务（GitHub、Notion、某个自建 API），就得有一把 token。**别把它放进 `config`，也别放进 `storage`** —— 那两处都是明文落盘（`state.json` / `widget-data/<id>.json`），一次备份同步、一次截图、一次日志就把用户的 token 送出去了。`secret.*` 是平台给这件事准备的抽屉：一个 DPAPI 密封的 `secrets.bin`，和模型 key 放同一个文件。
+
+```js
+const { value } = await call("secret.get", { name: "github" });   // 没填过是 null
+if (!value) {
+  // 让用户去设置里填，而不是自己弹一个输入框
+  return showNotice("Add a GitHub token in this widget's settings");
+}
+const response = await call("network.fetch", {
+  url: "https://api.github.com/repos/tauri-apps/tauri",
+  headers: { authorization: `Bearer ${value}` },
+});
+```
+
+| 方法 | 参数 | 返回 |
+| --- | --- | --- |
+| `secret.set` | `{ name, value }` | `{ ok: true }` |
+| `secret.get` | `{ name }` | `{ value }`；没填过是 `{ value: null }` |
+| `secret.delete` | `{ name }` | `{ ok: true }` |
+
+`name` 的形状是 `[a-z][a-z0-9_-]{0,31}` —— 小写字母开头，最多 32 个字符。**它不是键名，只是一个片段**：平台拼成 `widget.<你这个组件的 id>.<name>` 再落盘。所以你拿不到 `llm.*`（用户的模型 key），也拿不到别的组件的 —— 不这么拼的话，一个组件装上就能读走全部。
+
+四条要说清楚的边界：
+
+- **`secret.get` 会把明文交给组件的 JS。** 这是这条能力**故意**打开的口子（组件要拿它去发请求），所以授权界面上那行字叫 "Store a secret for me"，而且组件自己的 `help` 里要写明"这个组件能看到你填的密钥"。别指望它挡得住自己的代码。
+- **不是密码学意义上的保险箱。** DPAPI 绑当前 Windows 账户：**挡别的用户、挡把文件拷到另一台机器**，**挡不住以这个用户身份跑的任何程序**（它同样能解开）。想挡那个只能上口令，而桌面组件每次启动弹一次密码框等于废掉"摆着不用管"。
+- **换 Windows 账户 / 重装系统之后解不开。** 这时 `secret.get` 回的是**错误**（`internal`），不是 `{ value: null }` —— 这两句在界面上完全不同（"请重新填一次" vs "你还没填过"），别把它们并成一个分支。文件本身不会被删：换回原来那个账户还能用。
+- **浏览器预览里直接报错。** 不退回 `localStorage`：一个"预览时明文、装到桌面就加密"的落差比"预览里用不了"危险得多。
+
+平台只存**值**，不存别的东西：没有"备注"、没有过期时间、没有每条的名字列表。要提示用户"填没填"，读一次看是不是 `null` 就够。
 
 ## 4. 桥 API
 
@@ -735,6 +768,9 @@ parent.postMessage(
 | `storage.get` | `storage` | `{ key }` | 存进去的值，不存在返回 `null` |
 | `storage.set` | `storage` | `{ key, value }` | `{ ok: true }`；`value` 为 `null` 等同于删除 |
 | `storage.remove` | `storage` | `{ key }` | `{ ok: true }` |
+| `secret.set` | `secret` | `{ name, value }` | `{ ok: true }`；`name` 是 `[a-z][a-z0-9_-]{0,31}`，平台拼成 `widget.<你的 id>.<name>`，见 §3.7 |
+| `secret.get` | `secret` | `{ name }` | `{ value }`；没填过是 `{ value: null }`，**解不开是错误**（两者别合并），见 §3.7 |
+| `secret.delete` | `secret` | `{ name }` | `{ ok: true }` |
 | `clipboard.write` | `clipboard:write` | `{ text }` | `{ ok: true }` |
 | `system.metrics` | `system:monitor` | — | `{ cpu, memory, disk, network, system, sampledAt }`，见 4.2 |
 | `power.status` | `system:monitor` | — | `{ ac, percent, charging, noBattery, critical, saver, minutesLeft }`，没有电池的机器照样回（`noBattery: true`），见 §4.3 |

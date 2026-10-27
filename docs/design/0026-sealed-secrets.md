@@ -1,8 +1,8 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-27
 supersedes:
-code:
+code: src-tauri/src/{secrets.rs,secrets_policy.rs,llm.rs,lib.rs}, src-tauri/Cargo.toml, src/runtime/{bridge.ts,manifest.ts,catalogue.ts}, src/runtime/i18n/misc.ts, tests/secret.html, docs/{WIDGET_SPEC.md,PITFALLS.md,ROADMAP.md}, AGENTS.md
 ---
 
 # 0026 —— 给密钥一个密封的抽屉（DPAPI）
@@ -109,3 +109,13 @@ secrets::keys(app)            -> Vec<String>        // 只回名字，永不回�
 | `tests/secret.html` | ~12 | 桥这一侧的 `name` 校验与错误码、`null` 与错误的区分 |
 
 **手工验一次**：填一个模型 key → 关掉设置 → 看 `assistant.json` 里 `api_key` 是空的、`secrets.bin` 存在 → 重启后模型仍可用 → 把 `secrets.bin` 复制到另一台机器（或另一个 Windows 账户）下，确认它读不出来且**文件还在** → 用一块临时组件试 `secret.get`，确认它读不到 `llm.*`。
+
+## 7. 实现之后（三处修正 + 一处补强）
+
+> 上面几节是动手前的推理，**保留原样**。这一节只记"真写下去才发现对不上的地方"。
+
+1. **文件不在 `%APPDATA%\com.iron-tom.lattice`，在 `app_config_dir()`。** 在这台机器上两者恰好是同一个目录（`assistant.json`、`state.json` 都在那儿），但判据要以 `llm::config_dir` 为准 —— 别在代码里手拼 `%APPDATA%`，那会在换 bundle id 之后静默分叉出两个库。
+2. **文件头是 15 字节，不是 8。** `LATTICESECRET1\n` 就这么长。写"8 字节"会让人以为后面还有版本号字段 —— 没有，版本编在 magic 里（换格式就改这一串，旧文件一眼认不出来）。
+3. **§3.8 实际落成了 §3.7。** 权限那一节当时只写到 3.6。
+4. **补强：校验从"清明文之后"提到"清明文之前"。** 原文的第三步是"最后校验"，但校验失败时明文已经没了 —— 那一把 key 用户再也拿不回来。现在 `secrets_policy::run_migration` 是 seal → verify → clear：先后依赖没变（清明文永远是最后一步），失败面却只剩"什么都没发生"。这条是**改了设计的顺序**，不是改了设计的结论，所以记在这里而不是新开一份。
+5. **多了一条 `secrets_status` 命令。** 原文的"失败不吞 → 在设置页挂一行"没有说那行字从哪来。现在由 `secrets_status` 回 `{ path, exists, count, error }`，`error` 是上一次 DPAPI 失败的原因（`secrets::last_error`）。只回条数不回键名 —— 键名里有组件 id，而那一行要回答的是"存了几把钥匙"。

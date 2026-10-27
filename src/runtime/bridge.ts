@@ -316,6 +316,72 @@ defineMethod("storage.remove", "storage", async (params, ctx) => {
   return { ok: true };
 });
 
+/*
+ * 密封密钥（`secret`）：组件要用的 token 存进平台的 DPAPI 密封库。
+ *
+ * 三个不一样的地方，都是故意的：
+ *
+ * 1. **名字不是键**。组件递的 `name` 只是一个片段（`github`），平台拼成
+ *    `widget.<这个组件的 id>.github` 再落盘。所以组件够不到 `llm.*`（用户的
+ *    模型 key），也够不到别的组件的。没有这一层，一个组件装上就能读走全部。
+ * 2. **明文只在这条路上出过一次**。`secret.get` 会把值交给组件的 JS —— 这是
+ *    这条能力**故意**打开的口子：组件要拿 token 去发请求。所以 `help` 和权限
+ *    文案里必须写明"这个组件能看到你填的密钥"。
+ * 3. **不是保险箱**。DPAPI 绑当前 Windows 账户：挡别的用户、挡拷走的文件，
+ *    **挡不住本机同账户的任何程序**。别把这条能力说成"加密了所以安全"。
+ *
+ * 存的是 `%APPDATA%\com.iron-tom.lattice\secrets.bin`（一个 DPAPI blob），
+ * 不进 `state.json`、不进组件存储 —— 那两份都是明文。
+ *
+ * 浏览器预览里直接报错，不退回 localStorage：一个"预览时明文、装到桌面就
+ * 加密"的落差比"预览里用不了"危险得多。
+ */
+const SECRET_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
+
+function readSecretName(params: unknown): string {
+  const name = (params as { name?: unknown } | undefined)?.name;
+  if (typeof name !== "string" || !SECRET_NAME_RE.test(name)) {
+    throw new BridgeError(
+      "bad_params",
+      "a secret name is 1-32 characters of a-z, 0-9, _ or -, starting with a letter",
+    );
+  }
+  return name;
+}
+
+defineMethod("secret.set", "secret", async (params, ctx) => {
+  const name = readSecretName(params);
+  const value = (params as { value?: unknown } | undefined)?.value;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new BridgeError("bad_params", "secret.set requires a non-empty string \"value\"");
+  }
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "saving a secret needs the desktop app");
+  }
+  await invoke("secret_set", { widgetId: ctx.widgetId, name, value });
+  return { ok: true };
+});
+
+defineMethod("secret.get", "secret", async (params, ctx) => {
+  const name = readSecretName(params);
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "reading a secret needs the desktop app");
+  }
+  // `null` = 没填过；抛错 = 这台机器读不出来（换了 Windows 账户 / 文件坏了）。
+  // 两者在界面上是两句不同的话，所以别把后者吞成前者
+  const value = await invoke<string | null>("secret_get", { widgetId: ctx.widgetId, name });
+  return { value: value ?? null };
+});
+
+defineMethod("secret.delete", "secret", async (params, ctx) => {
+  const name = readSecretName(params);
+  if (!bridgeInTauri()) {
+    throw new BridgeError("internal", "deleting a secret needs the desktop app");
+  }
+  await invoke("secret_delete", { widgetId: ctx.widgetId, name });
+  return { ok: true };
+});
+
 defineMethod("clipboard.write", "clipboard:write", async (params) => {
   const text = (params as { text?: unknown } | undefined)?.text;
   if (typeof text !== "string") {

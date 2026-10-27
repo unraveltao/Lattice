@@ -4,7 +4,8 @@
 //!
 //! 三件事只有 Rust 做得到：
 //!
-//! 1. **key 不进前端**。它落在 `%APPDATA%\com.iron-tom.lattice\assistant.json`，
+//! 1. **key 不进前端**。它落在密封库（`%APPDATA%\com.iron-tom.lattice\secrets.bin`，
+//!    DPAPI 封着，见 `secrets.rs` 与 `docs/design/0026-sealed-secrets.md`），
 //!    前端拿到的永远只有 `sk-1…cdef` 这种掩码。key 一旦进了 JS 状态，就会跟着
 //!    调试面板、截图、某次 `JSON.stringify` 一起外泄，而它换不了（用户得去后台吊销）。
 //! 2. **出网只有一个出口**。请求走 `network::send`（WinHTTP），和组件联网**同一条**
@@ -40,6 +41,8 @@ use crate::hands_policy;
 use crate::llm_policy;
 use crate::network;
 use crate::network_policy::parse_url;
+use crate::secrets;
+use crate::secrets_policy;
 use crate::skills_policy;
 
 /// 两次请求之间至少隔这么久。组件的 `llm.chat` 也是走这条路 —— 没有这一层，
@@ -54,8 +57,9 @@ fn last_call() -> &'static Mutex<Option<Instant>> {
 /// 出厂温度。0.6 是"能干活、又不会每句话都不一样"的经验值
 const DEFAULT_TEMPERATURE: f64 = 0.6;
 
-/// 磁盘上的一档。**key 和其它字段放同一个文件**：拆成两个文件不会更安全
-/// （同一个目录、同一个账户），只会多一处"改了一半"的机会
+/// 磁盘上的一档。**key 不在这儿**：它走 `secrets`（DPAPI 密封），
+/// 这个文件里只留一个空字段。明文那一份只作为"密封写不进去"时的兜底
+/// （0026 §4 第 3 条），迁移成功后就是空的
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Profile {
@@ -672,25 +676,151 @@ fn read_config(app: &AppHandle) -> AssistantConfig {
     let Ok(path) = config_path(app) else {
         return AssistantConfig::default();
     };
-    match std::fs::read_to_string(&path) {
+    let mut config = match std::fs::read_to_string(&path) {
         Ok(text) => parse_config(&text),
         // 坏文件不该让应用起不来，也不该把用户的 key 悄悄清掉 —— 读不出来就当没配。
         // **注意：这里绝不写回**（见 parse_config 的注释）
         Err(_) => AssistantConfig::default(),
+    };
+    // **密封库优先，明文兜底**（0026 §4 第 4 条）。
+    //
+    // 兜底那一条是给"迁移失败的老机器"留的：密封写不进去时明文还在文件里，
+    // 照旧能用。反过来说，密封里有值时永远用它 —— 否则用户改了 key、明文
+    // 那份是旧的，就会拿旧 key 去请求，症状是 401 而界面显示"已配置"。
+    let sealed = secrets::all(app);
+    if !sealed.is_empty() {
+        for profile in config.profiles.iter_mut() {
+            if let Ok(key) = secrets_policy::llm_key(&profile.id) {
+                if let Some(value) = sealed.get(&key) {
+                    profile.api_key = value.clone();
+                }
+            }
+        }
     }
+    config
 }
 
-/// 先写 `.tmp` 再改名，和 `state.rs` 同一条规矩
+/// 写盘。**落盘的这一份永远不带 key** —— key 走 `secrets`。
+///
+/// 密封失败时把明文留在文件里（并记一行给设置页）：一次 DPAPI 故障不该变成
+/// "用户的 key 没了"，那比"key 还没加密"严重得多（0026 §4 第 3 条）。
+///
+/// 删 key 不走这里：这里只"有值就封"，从不删除。原因是 `read_config` 在
+/// 解不开的时候会把 `api_key` 读成空串，而空串如果被当成"用户要删掉"，
+/// 一次换账户就会把密文抹了。删除是 `llm_set_key` 的明确动作。
 fn write_config(app: &AppHandle, config: &AssistantConfig) -> Result<(), String> {
     let path = config_path(app)?;
+    let mut on_disk = config.clone();
+    for profile in on_disk.profiles.iter_mut() {
+        let key = profile.api_key.trim().to_string();
+        if key.is_empty() {
+            profile.api_key.clear();
+            continue;
+        }
+        match secrets_policy::llm_key(&profile.id) {
+            Ok(name) => match secrets::set(app, &name, &key) {
+                // 封进去了：盘上那份只留空字段，界面靠 `key_hint` 显示掩码
+                Ok(()) => profile.api_key.clear(),
+                // 没封进去：明文留着（下次启动还能用），界面会挂一行
+                Err(error) => {
+                    eprintln!("[lattice] could not seal the key for {}: {error}", profile.id);
+                }
+            },
+            Err(_) => {
+                // 档 id 不合法 —— `normalize` 早就该把它丢了，走到这里说明
+                // 是新建档那条路。不封，明文留着，行为和老版本一致
+            }
+        }
+    }
     let temp = path.with_extension("json.tmp");
-    let text = serde_json::to_string_pretty(config)
+    let text = serde_json::to_string_pretty(&on_disk)
         .map_err(|error| format!("failed to serialize the assistant settings: {error}"))?;
     std::fs::write(&temp, text.as_bytes())
         .map_err(|error| format!("failed to write the assistant settings: {error}"))?;
     std::fs::rename(&temp, &path)
         .map_err(|error| format!("failed to replace the assistant settings: {error}"))?;
     Ok(())
+}
+
+/// 启动时把 `assistant.json` 里的明文 key 搬进密封库（0026 §4 的迁移）。
+///
+/// 三步的顺序在 `secrets_policy::run_migration` 里，而且**它接受注入的闭包**，
+/// 所以"密封失败时明文一行不动"这条有单测钉着，不是靠这里读一遍 if 缩进。
+///
+/// 幂等：清掉之后字段是空串，下一次启动 `plan_migration` 就是空计划，连文件
+/// 都不碰。失败不吞：原因进 `secrets::last_error()`，设置页那一行会显示。
+pub(crate) fn migrate_keys(app: &AppHandle) {
+    let Ok(path) = config_path(app) else {
+        return;
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let plan = secrets_policy::plan_migration(&text);
+    if !plan.skipped.is_empty() {
+        eprintln!(
+            "[lattice] these profiles cannot have their key sealed (bad id): {}",
+            plan.skipped.join(", ")
+        );
+    }
+    if plan.is_empty() {
+        return;
+    }
+
+    let result = secrets_policy::run_migration(
+        &plan,
+        |name, value| secrets::set(app, name, value),
+        |name, value| secrets::get(app, name).as_deref() == Some(value),
+        || clear_plaintext_keys(&path, &text, &plan),
+    );
+    match result {
+        Ok(count) => eprintln!("[lattice] moved {count} model key(s) into the sealed store"),
+        Err(error) => eprintln!("[lattice] could not seal the stored model keys: {error}"),
+    }
+}
+
+/// 迁移的第三步：把已经搬走的那几条字段清空。**只动这几个字段**，别的一行不碰。
+///
+/// 用 `serde_json::Value` 而不是 `read_config` + `write_config`：后者会跑一遍
+/// `normalize`，把用户的坏档丢掉、把 `version` 改写 —— 迁移不该顺手改别的。
+///
+/// `api_key` 这个别名要**整个删掉**而不是写成空串：serde 那边它和 `apiKey`
+/// 是同一个字段，两个都在会解析成"duplicate field"，下一次读配置直接落默认值，
+/// 用户的档全没了。
+fn clear_plaintext_keys(
+    path: &std::path::Path,
+    text: &str,
+    plan: &secrets_policy::MigrationPlan,
+) -> Result<(), String> {
+    let mut root: serde_json::Value = serde_json::from_str(text)
+        .map_err(|error| format!("failed to re-read the settings while migrating: {error}"))?;
+    let Some(profiles) = root.get_mut("profiles").and_then(|value| value.as_array_mut()) else {
+        return Ok(());
+    };
+    for profile in profiles.iter_mut() {
+        let Some(object) = profile.as_object_mut() else {
+            continue;
+        };
+        let Some(id) = object.get("id").and_then(|value| value.as_str()).map(str::to_string) else {
+            continue;
+        };
+        let Ok(name) = secrets_policy::llm_key(&id) else {
+            continue;
+        };
+        if !plan.entries.iter().any(|(entry, _)| entry == &name) {
+            continue;
+        }
+        object.insert("apiKey".to_string(), serde_json::Value::String(String::new()));
+        object.remove("api_key");
+    }
+
+    let temp = path.with_extension("json.tmp");
+    let text = serde_json::to_string_pretty(&root)
+        .map_err(|error| format!("failed to serialize the settings while migrating: {error}"))?;
+    std::fs::write(&temp, text.as_bytes())
+        .map_err(|error| format!("failed to write the settings while migrating: {error}"))?;
+    std::fs::rename(&temp, path)
+        .map_err(|error| format!("failed to replace the settings while migrating: {error}"))
 }
 
 /// 把磁盘上的文本读成配置。**纯函数**（有单测）：v2/v3 直接用，v1 就地迁移。
@@ -982,6 +1112,13 @@ pub fn llm_profile_remove(app: AppHandle, id: String) -> Result<ProfilesView, St
         config.active_id = config.profiles.first().map(|profile| profile.id.clone()).unwrap_or_default();
     }
     write_config(&app, &config)?;
+    // 档删了，密封库里那条也该走。留着的话：以后新建的档拿到同一个 id（不会，
+    // 但手工改文件会）就会白捡一把旧 key，而用户以为已经删干净了
+    if let Ok(name) = secrets_policy::llm_key(&id) {
+        if let Err(error) = secrets::delete(&app, &name) {
+            eprintln!("[lattice] could not drop the sealed key of {id}: {error}");
+        }
+    }
     Ok(views(&config, &env_overrides()))
 }
 
@@ -1016,8 +1153,15 @@ pub fn llm_set_key(app: AppHandle, id: String, key: String) -> Result<ProfilesVi
         .iter_mut()
         .find(|profile| profile.id == id)
         .ok_or_else(|| "that profile is gone — reload the assistant".to_string())?;
-    profile.api_key = trimmed;
+    profile.api_key = trimmed.clone();
     write_config(&app, &config)?;
+    // **删除是这里明确说的，不是 `write_config` 猜的**（见那个函数上面那段）：
+    // 空串 = 用户点了"清掉这把 key"。不删密封库那一条的话，下一次
+    // `read_config` 会把它读回来 —— 用户清了个寂寞
+    if trimmed.is_empty() {
+        let name = secrets_policy::llm_key(&id)?;
+        secrets::delete(&app, &name)?;
+    }
     Ok(views(&config, &env_overrides()))
 }
 
