@@ -11,9 +11,8 @@ export const SETTINGS_ZH: Record<string, string> = {
   "Settings (Ctrl+,)": "设置（Ctrl+,）",
 
   // —— 账号卡 ——
-  "Not signed in": "未登录",
   "Local profile": "本机档案",
-  "Sign in to keep your preferences": "登录后，偏好就记在这台电脑上",
+  "Stays on this PC": "只存在这台电脑",
   "On canvas": "画布上",
   "Edit profile": "编辑资料",
   "Sign in": "登录",

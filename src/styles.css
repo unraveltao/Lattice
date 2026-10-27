@@ -5043,7 +5043,9 @@ button.lattice-chip[aria-pressed="true"] {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 420px;
+  /* 和别的设置页对齐：`.lattice-settings-form` 也是 560。原来 420，
+     在 566px 宽的正文里右半边整块空着，切到 Get help 那种通栏页会像换了个版面 */
+  max-width: 560px;
   padding: 14px;
   border: 1px solid var(--lattice-border);
   border-radius: 12px;

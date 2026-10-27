@@ -579,8 +579,12 @@ export function SettingsMenu({
                 >
                   <Avatar name={profile?.name} size={30} />
                   <span className="lattice-settings-identity-text">
-                    <b>{profile?.name ?? t("Not signed in")}</b>
-                    <small>{profile ? t("Local profile") : t("Sign in to keep your preferences")}</small>
+                    {/* 这里原来写的是 "Not signed in" / "Sign in to keep your …" —— 一个
+                        没有账号系统的应用说"登录"，而且后半句在 130px 的列里被省略号截掉。
+                        现在两行都说的是**状态**，不是动作：没有档案时告诉它这是什么，
+                        有档案时告诉它档案在哪儿（"Local profile"）。 */}
+                    <b>{profile?.name ?? t("No profile yet")}</b>
+                    <small>{profile ? t("Local profile") : t("Stays on this PC")}</small>
                   </span>
                 </button>
 
