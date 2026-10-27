@@ -217,3 +217,21 @@ export function reduceDictation(view: DictationView, event: DictationEvent): Dic
   // 空文本 = 没听到。状态已经回 idle，这里只留一句话
   return { listening: false, append: null, notice: t("I did not hear anything"), focus: false };
 }
+
+/** 顶栏那颗按钮现在是什么样。判据只有这一处，按钮与测试都从这里读 */
+export type DictationHint = "loading" | "unavailable" | "listening" | "ready";
+
+/**
+ * `null` = 还没问过（这时不画"不可用"的样子，免得闪一下灰的再变亮）。
+ * 顺序不能换：**没装语音语言**比起"在听"要紧 —— 灰着的时候按下去是把用户
+ * 送到系统设置，而不是开麦。
+ */
+export function dictationTooltip(
+  status: DictationStatus | null,
+  listening: boolean,
+): DictationHint {
+  if (!status) return "loading";
+  if (!status.available) return "unavailable";
+  if (listening) return "listening";
+  return "ready";
+}

@@ -15,6 +15,7 @@ import { startAgentBridge, type AgentReply, type AgentRequest } from "./platform
 import { runWidgetTurn } from "./platform/assistant";
 import { normalizeAskMessages, parseAskMessages, MAX_PERSONA } from "./runtime/assistant";
 import { AssistantPanel } from "./platform/AssistantPanel";
+import { DictationButton } from "./platform/DictationButton";
 import { DebugPanel } from "./platform/DebugPanel";
 import { InspectorPanel } from "./platform/InspectorPanel";
 import { LibraryPanel, type InstallNotice } from "./platform/LibraryPanel";
@@ -1190,6 +1191,13 @@ export default function App() {
           >
             <Glyph d={ICON.agent} />
           </button>
+
+          {/*
+            听写的顶栏入口（0027 §4）：光标在这个窗口的某个输入框里时，按它
+            说完就把字落进那个框。它和浮钮、热键、面板里那颗是同一个引擎 ——
+            只是"人在哪"不同。组件够不到麦克风，所以它只能活在平台这一层。
+          */}
+          <DictationButton />
 
           <button
             type="button"

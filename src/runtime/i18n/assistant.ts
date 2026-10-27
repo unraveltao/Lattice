@@ -344,4 +344,9 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Say it instead of typing it. The panel has a button; the desktop button and the hotkey work in any window.":
     "说出来，不用敲。面板里有一颗按钮；桌面上那颗浮钮和热键在任何窗口都能用。",
   "Unplugging a monitor can leave the button off screen": "拔掉显示器之后浮钮可能跑到屏幕外",
+
+  "Dictation — speak into the field you are in": "听写 —— 说出来的字落进你正在用的那个框",
+  "Copy the text": "复制这段",
+  "Copied": "已复制",
+  // "Dismiss" 的家在 shell.ts（关闭），这里不再重复一份
 };

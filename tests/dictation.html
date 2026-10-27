@@ -42,6 +42,7 @@
         dictationStart,
         dictationStatus,
         dictationStop,
+        dictationTooltip,
         IDLE_DICTATION,
         onDictation,
         openDictationSettingsPage,
@@ -222,7 +223,30 @@
         `空文本当"没听到"（${silent.notice}）`,
       );
 
-      // --- 19. 组件永远够不到麦克风 -----------------------------------------
+      // --- 19–22. 顶栏那颗按钮该长什么样（纯判据）---------------------------
+      const ready = {
+        available: true,
+        language: "zh-CN",
+        enabled: true,
+        hotkey: "Ctrl+Alt+Space",
+        hotkeyError: null,
+      };
+      log(
+        dictationTooltip(null, false) === "loading",
+        "还没问过 → loading（不先画成灰的，免得闪一下）",
+      );
+      log(
+        dictationTooltip({ ...ready, available: false }, false) === "unavailable" &&
+          dictationTooltip({ ...ready, available: false }, true) === "unavailable",
+        "没装语音语言时永远是 unavailable —— 在听也盖不过它",
+      );
+      log(
+        dictationTooltip(ready, true) === "listening" &&
+          dictationTooltip(ready, false) === "ready",
+        "能用的时候：在听 → listening，否则 → ready",
+      );
+
+      // --- 23. 组件永远够不到麦克风 -----------------------------------------
       const bridgeSource = await fetch("/src/runtime/bridge.ts").then((response) => response.text());
       log(
         !/dictation/i.test(bridgeSource),

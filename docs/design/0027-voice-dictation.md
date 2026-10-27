@@ -114,6 +114,30 @@ trait Recognizer {
 
 **托盘右键菜单里有"隐藏浮钮"** —— 钮上不再加第二颗小叉，28px 放不下两个命中区。
 
+### 第四个入口：顶栏那颗（实现时加的）
+
+设计写到这里只有三个入口。实现时补了第四个，理由不是"多一个按钮"，而是
+**"人已经在这个窗口里、光标停在某个框里"**这一种姿势原先没有入口：
+
+- 面板那颗只在 assistant 的输入框里；浮钮和热键是"人在别处"时用的；
+- 而用户经常是在**自己的窗口里**打字：组件配置、设置项、画布上的搜索框。
+
+顶栏那颗（`src/platform/DictationButton.tsx`，摆在 Assistant 与 Theme 之间）走 `target: "system"`：
+此刻的前台窗口就是这个窗口，`SendInput` 打进去的字直接落进**光标所在的那个框**。
+它和另外三个入口**共用同一份状态与同一套事件**（`reduceDictation` 是唯一的判据），
+所以浮钮亮着的时候顶栏这颗也亮着。
+
+三条实现时的取舍：
+
+1. **灰着的时候点它不是"没反应"**：直接把 `ms-settings:speech` 打开 —— 用户想用它却不知道
+   差什么，这是唯一有用的一句话。
+2. **"刚才那个窗口没了"不许把字吞掉**：那一路 Rust 会把整句交回来，顶栏冒一条提示并给出
+   「复制这段」（面板开着时也照样追加进 assistant 的输入框）。
+3. **提示是短命的**（6 秒、固定在顶栏下方）：顶栏在各种宽度下都可能靠边，把它挂进布局里
+   会把顶栏撑歪。
+
+它不改任何权限、不加任何桥方法 —— 组件仍然够不到麦克风（§8 那条不变）。
+
 ### 落盘
 
 `app_config_dir/dictation.json`，四个字段：
@@ -133,7 +157,7 @@ trait Recognizer {
 2. `src-tauri/src/lib.rs`：三个 `pub mod`、六个命令进 `generate_handler!`、`setup` 里按 `enabled` 建浮钮 + 注册热键
 3. `src-tauri/Cargo.toml`：`windows` 加 `Media_SpeechRecognition` / `Globalization`（`Media_Audio` 已有）；加 `tauri-plugin-global-shortcut`。GDI 那套 `windows-sys` feature 已经有了（`Win32_Graphics_Gdi`、`Win32_UI_WindowsAndMessaging`）
 4. `src-tauri/assets/dictation/*.png`（四张，`listening` 两张相位）
-5. `src/platform/dictation.ts`（新）+ `AssistantPanel.tsx` 输入区那一排
+5. `src/platform/dictation.ts`（新）+ `DictationButton.tsx`（新，顶栏那颗）+ `AssistantPanel.tsx` 输入区那一排
 6. `src/runtime/i18n/assistant.ts`
 7. 文档：`ROADMAP`（勾掉）、`GLOSSARY`（已有"听写""浮钮"词条）、`PITFALLS`（实测踩到的才写）、`WIDGET_SPEC`（加一句"没有 `speech` 权限"）
 
@@ -161,7 +185,7 @@ trait Recognizer {
 
 | 文件 | 条数 | 钉住什么 |
 | --- | --- | --- |
-| `tests/dictation.html` | 21 | 桥契约（stub `invoke`）：`start` 带 `target`、`stop`/`cancel` 分开、事件 `listening → done` 追加到输入框、`cancel` 一个字都不落、`error` 之后状态回 idle、`wrong_language` 时按钮灰且文案指向 `ms-settings:speech`、`focus_changed` 时文本进输入框而不是 `SendInput`、`too_long` 不截断 |
+| `tests/dictation.html` | 24 | 桥契约（stub `invoke`）：`start` 带 `target`、`stop`/`cancel` 分开、事件 `listening → done` 追加到输入框、`cancel` 一个字都不落、`error` 之后状态回 idle、`wrong_language` 时按钮灰且文案指向 `ms-settings:speech`、`focus_changed` 时文本进输入框而不是 `SendInput`、`too_long` 不截断 |
 | `src-tauri/src/dictation_policy.rs` | 28 | 纯逻辑，`rustc --test`：`zh-*` 才 `Ready`（`zh-CN` / `zh-TW` / `zh-Hans` 过，`en-US` / 空串不过）、文本清洗（首尾空白、纯空白当"没听到"）、`type_plan` 边界（4000 过、4001 拒）、焦点判据（同 HWND 才注入、`0` 不算）、热键字符串校验（复用 `input_policy::parse_chord`）、`dictation.json` 坏值回默认、**浮钮偏移钳进工作区**（右下角偏移在、拔屏之后偏移越界要夹回来）、**点击判据**（位移 3px 算点击、5px 算拖动） |
 | `src-tauri/src/agent_policy.rs` | 2 | `ACTIONS` 里没有 `dictation_*`；`DENIED` 里有一条写明理由 |
 | `src/runtime/bridge.ts` 的表 | 1 | 方法表里搜不到 `dictation` —— 组件永远够不到麦克风 |

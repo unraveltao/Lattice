@@ -165,7 +165,7 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 | Official widgets | 25 |
 | Permissions | 14 |
 | Tauri commands | 111 |
-| Browser assertions | 3 707 over 73 pages |
+| Browser assertions | 3 710 over 73 pages |
 | Rust tests | 487 |
 | Documented pitfalls | 104 |
 

@@ -551,19 +551,23 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
    现在已是部件装配（`pet-rig.js`），于是 `bangs` / `bow` / `brows` 全被判成"不是一套图"。
    要接的话，IoU 那一条得改成读 rig 的部件清单，只保留"单张图自身"的那三项。
    **怎么算完**：对今天的官方组件跑绿，并进 CI 的 frontend job。
-- [x] **听写（说中文变文字）** —— 三个入口同一套引擎：面板输入区的麦克风、**桌面上一颗常驻浮钮**
+- [x] **听写（说中文变文字）** —— 四个入口同一套引擎：面板输入区的麦克风、**顶栏一颗**
+  （`DictationButton.tsx`，光标在这个窗口的某个框里时按它，字就落进那个框）、**桌面上一颗常驻浮钮**
   （28px GDI 分层窗，`WS_EX_NOACTIVATE`，点了不抢焦点，所以前台窗口从头到尾还是那个要插字的窗口）、
   全局热键 `Ctrl+Alt+Space`（`tauri-plugin-global-shortcut`）。识别走 WinRT 本地语法（听写场景约束、
   停顿 1 秒收尾），结果走 `lattice:dictation` 事件；`target: "system"` 那条判"开听时的 HWND ==
   出字前的 HWND"，不一致就把字交回面板而不是乱打。见 [design/0027](./design/0027-voice-dictation.md)。
   - **语言判据是两段，不是"系统是不是中文"**：`SpeechRecognizer::Create(language)` 是有的（设计里
     写错成"没有 setter"），所以英文系统上只要装了中文听写包也照用（`dictation_policy::pick_language`）。
+  - **顶栏那颗是第四个入口**（0027 §4）：走 `target: "system"` —— 前台窗口就是自己，所以字落进
+    光标所在的框；灰着的时候点它直接打开 `ms-settings:speech`；"刚才那个窗口没了"那一路把整句
+    交回来并给「复制这段」，不吞字。它不改权限、不加桥方法，组件仍然够不到麦克风。
   - **浮钮自己一套样式**：`LAYERED | NOACTIVATE | TOOLWINDOW | TOPMOST`，**不带** `WS_EX_TRANSPARENT`
     （那是参考线要的点透，抄错就是"看得见点不动"）；位置记"相对工作区右下角的偏移"，读回来钳进当前
     工作区，拖动与点击用 4px 位移分开。
   - **`ms-settings:` 走专用命令**：`open_external` 只放 http/https（不变量 14），跳系统语音设置是平台
     自己的动作，字面量写死在 `dictation_open_settings` 里。
-  - 断言：`tests/dictation.html` **21 条**（命令形状 + `reduceDictation` 的判据 + 桥表里搜不到
+  - 断言：`tests/dictation.html` **24 条**（命令形状 + `reduceDictation` 的判据 + 桥表里搜不到
     `dictation` + 没有 Rust 时不假装能听）、`dictation_policy.rs` **28 条** `rustc --test`、
     `agent_policy.rs` 2 条（`dictation_*` 不在 `ACTIONS`、拒绝清单里有理由）、`npm run typecheck` 与
     `check:tokens` 干净、`cargo check --all-targets` 干净。

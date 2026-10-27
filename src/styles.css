@@ -4054,6 +4054,54 @@ button.lattice-chip[aria-pressed="true"] {
   border-color: var(--lattice-accent);
 }
 
+/* ---- 顶栏麦克风的提示（0027 §4 的第四个入口）
+ *
+ * 它是**短命的**：说完一句、被占用、没听到，冒 6 秒就走。位置固定在顶栏下面，
+ * 因为那颗按钮在各种宽度下都可能靠边 —— 挂进布局里会把顶栏撑歪。
+ */
+.lattice-dictation-toast {
+  position: fixed;
+  top: 58px;
+  right: 18px;
+  z-index: 60;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: 380px;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text);
+  background: var(--lattice-surface);
+  border: 1px solid var(--lattice-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+}
+
+.lattice-dictation-toast-text {
+  min-width: 0;
+}
+
+.lattice-dictation-toast button {
+  flex: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--lattice-accent);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.lattice-dictation-toast button:hover {
+  text-decoration: underline;
+}
+
+.lattice-dictation-toast-close {
+  display: inline-flex;
+  color: var(--lattice-text-faint) !important;
+  text-decoration: none !important;
+}
+
 /* ---- 完全访问那颗药丸（0009 的入口，常驻输入框左下）
  *
  * 形状照用户给的参考图：圆圈叹号 + 一句话 + 一个箭头，整颗是警示色。
