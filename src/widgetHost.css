@@ -230,6 +230,38 @@ body.is-dragging iframe {
   pointer-events: none;
 }
 
+/*
+ * 拖动 / 缩放期间胶囊别消失。
+ *
+ * 它平时靠 `body:hover` 淡入，而拖动时窗口跟着指针走 —— 指针在窗口里的相对
+ * 位置一直在变，一滑出卡片那块 `:hover` 就断，胶囊当场淡出。手里抓着的东西
+ * 消失，用户第一反应是"拖失败了"，然后松手再试一次。
+ */
+body.is-dragging .lw-pill {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/*
+ * 整颗胶囊都能拖，光标就要说实话。
+ *
+ * 这是"这里能拖"唯一的主动提示 —— 点阵只有 12px，用户不会去猜它是什么。
+ * 四颗按钮各自写着 `cursor: pointer`，直接声明压过继承，所以按钮上还是
+ * "能点"，只有空白处是"能拖"。
+ */
+.lw-pill {
+  cursor: grab;
+}
+
+.lw-pill:active {
+  cursor: grabbing;
+}
+
+body.is-pinned .lw-pill {
+  cursor: default;
+}
+
 /* ------------------------------------------------------------------ *
  * 组件出错时贴底的那张说明卡
  *

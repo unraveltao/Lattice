@@ -883,48 +883,62 @@ function buildChrome(config: HostConfig) {
   };
 
   // ---- 拖动 ----
-  grip.addEventListener("pointerdown", (event) => {
+  /*
+   * **整颗胶囊都能拖，不只是最左边那 6 个点。**
+   *
+   * 用户反馈"这些组件都不好拖动"。原来唯一能抓的是那颗 22×22 的点阵，而且它
+   * 只在鼠标进卡片之后才淡入 —— 要先发现它、再瞄准一个 22px 的靶子，手一抖
+   * 就落空（落空的那一下什么都不会发生，看起来就是"拖不动"）。现在
+   * `pointerdown` 挂在胶囊本身上：抓取面积 120×28，点阵退化成"这里能拖"的
+   * 说明。另外四颗按钮照旧各管各的 —— 按它们不该把窗口拖走。
+   *
+   * 还有一处比面积更要命：`track()`（指针捕获 + move 监听）以前挂在五六个
+   * `await` **之后**。那段空窗期里指针动了是没人接的，按一下就松手的快速拖动
+   * 干脆什么都不发生。现在 `track()` 同步挂上，IPC 读数在后台跑，回来之后
+   * 立刻把攒下的最新位移应用一次 —— 拖动第一帧不必等任何一次 IPC。
+   */
+  const surface: HTMLElement = pill ?? grip;
+
+  surface.addEventListener("pointerdown", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    // 别针 / 层级 / 重载 / 关闭：按它们是在点按钮，不是要搬窗口
+    if (target?.closest(".lw-btn") && !target.closest(".lw-grip")) return;
     if (pinned || event.button !== 0) return;
     event.preventDefault();
-    const element = event.currentTarget as HTMLElement;
 
-    void (async () => {
-      /*
-       * 全程物理像素。
-       *
-       * `outerPosition()` / `innerSize()` / `availableMonitors()` 报的都是
-       * PerMonitorV2 下的真实物理像素，跨屏连续；只有指针位移是 CSS px，
-       * 需要乘一次当次的 `scaleFactor` 才换过去。
-       *
-       * 为什么不用逻辑像素：两块屏缩放不同时，"逻辑像素"不是同一套空间 ——
-       * 拿一个 scale 去折算所有屏，夹紧会落在幻影位置上（见 screen-fit.ts）。
-       */
-      let scale = await win.scaleFactor();
-      let start = await win.outerPosition();
-      const size = await win.innerSize();
-      // 显示器信息拖一次只取一次：拖拽期间显示器不会变（缩放变了会重取）
-      let screens = await screenBoxes();
-      // 同理：邻居的矩形也在拖动期间静止。取不到就退化成"只有网格般的自由摆放"
-      let targets = await alignTargets();
-      startGuideHeartbeat();
+    const element = surface;
 
-      /**
-       * 跨到另一块屏时的重锚。
-       *
-       * 缩放一变，说明指针进了另一块屏，Windows 会按 `WM_DPICHANGED` 的建议
-       * 矩形把窗口重摆一遍 —— 我们记的 `start` 就此作废。继续按老起点算，
-       * 窗口会从光标底下"滑走"。所以重新读一次真实位置，并把当前的指针
-       * 位移当成新起点。
-       */
-      let baseDx = 0;
-      let baseDy = 0;
+    /*
+     * 一次拖动需要的"静止事实"：缩放、起点、尺寸、显示器工作区、邻居矩形。
+     * 先给一组占位值，`ready` 翻真之后才会被真正使用 —— 读失败就整趟放弃，
+     * 但监听已经挂上了，松手照样能正常收尾，不会留下半条 track。
+     */
+    let scale = 1;
+    let start = new PhysicalPosition(0, 0);
+    let size = new PhysicalSize(0, 0);
+    let screens: ScreenBox[] = [];
+    let targets: AlignTargets | null = null;
+    let ready = false;
 
-      // 指针事件比 IPC 快，攒到下一帧再发，避免把窗口位置请求堆成队列
-      let pending: { dx: number; dy: number } | null = null;
-      let busy = false;
-      const pump = async () => {
-        if (busy) return;
-        busy = true;
+    /**
+     * 跨到另一块屏时的重锚。
+     *
+     * 缩放一变，说明指针进了另一块屏，Windows 会按 `WM_DPICHANGED` 的建议
+     * 矩形把窗口重摆一遍 —— 我们记的 `start` 就此作废。继续按老起点算，
+     * 窗口会从光标底下"滑走"。所以重新读一次真实位置，并把当前的指针
+     * 位移当成新起点。
+     */
+    let baseDx = 0;
+    let baseDy = 0;
+
+    // 指针事件比 IPC 快，攒到下一帧再发，避免把窗口位置请求堆成队列
+    let pending: { dx: number; dy: number } | null = null;
+    let busy = false;
+
+    const pump = async () => {
+      if (busy || !ready) return;
+      busy = true;
+      try {
         while (pending) {
           const step = pending;
           pending = null;
@@ -996,21 +1010,57 @@ function buildChrome(config: HostConfig) {
             pushGuides(null, null);
           }
         }
+      } finally {
         busy = false;
-      };
+      }
+    };
 
-      track(
-        element,
-        event,
-        (dx, dy) => {
-          pending = { dx, dy };
-          void pump();
-        },
-        () => {
-          endGuides();
-          void reportRect();
-        },
-      );
+    /*
+     * 先把指针收下来，再去问 IPC 要那几个数。
+     *
+     * 顺序反过来就是"按下去到窗口开始动"之间有一段什么都不发生的空窗 ——
+     * 机器越忙越长，而用户只会说"拖不动"。
+     */
+    track(
+      element,
+      event,
+      (dx, dy) => {
+        pending = { dx, dy };
+        void pump();
+      },
+      () => {
+        endGuides();
+        void reportRect();
+      },
+    );
+
+    void (async () => {
+      /*
+       * 全程物理像素。
+       *
+       * `outerPosition()` / `innerSize()` / `availableMonitors()` 报的都是
+       * PerMonitorV2 下的真实物理像素，跨屏连续；只有指针位移是 CSS px，
+       * 需要乘一次当次的 `scaleFactor` 才换过去。
+       *
+       * 为什么不用逻辑像素：两块屏缩放不同时，"逻辑像素"不是同一套空间 ——
+       * 拿一个 scale 去折算所有屏，夹紧会落在幻影位置上（见 screen-fit.ts）。
+       */
+      try {
+        scale = await win.scaleFactor();
+        start = await win.outerPosition();
+        size = await win.innerSize();
+        // 显示器信息拖一次只取一次：拖拽期间显示器不会变（缩放变了会重取）
+        screens = await screenBoxes();
+        // 同理：邻居的矩形也在拖动期间静止。取不到就退化成"只有网格般的自由摆放"
+        targets = await alignTargets();
+      } catch {
+        // 读不到就当这一下不是拖动：监听已经挂着，松手会自己收尾
+        return;
+      }
+      startGuideHeartbeat();
+      ready = true;
+      // 空窗期攒下的位移，现在一次性补上（pending 里永远是"最新那一帧"）
+      void pump();
     })();
   });
 
@@ -1105,17 +1155,38 @@ function buildChrome(config: HostConfig) {
     });
   });
 
+  /*
+   * 平台调用失败要留痕。
+   *
+   * 以前这两颗按钮是 `void invoke(...)` —— 一个没有 `.catch` 的 promise，
+   * 被拒的时候什么都不会发生，控制台里也只有一条 unhandled rejection。
+   * "点了没效果"就是这么被藏了整整几个版本的。现在失败至少进调试面板。
+   */
+  const reportFailure = (name: string, error: unknown) => {
+    trace({
+      kind: "call",
+      widgetId: config.widgetId,
+      instanceId: config.instanceId,
+      name,
+      ok: false,
+      ms: 0,
+      text: String(error),
+    });
+  };
+
   // ---- 层级 / 别针 / 重载 / 收回 ----
   layerBtn.addEventListener("click", () => {
     layer = nextLayer(layer);
     paint();
-    void invoke("widget_set_layer", { layer });
+    void invoke("widget_set_layer", { layer }).catch((error) => reportFailure("widget_set_layer", error));
   });
 
   pinBtn.addEventListener("click", () => {
     pinned = nextPinned(pinned);
     paint();
-    void invoke("widget_set_pinned", { pinned });
+    void invoke("widget_set_pinned", { pinned }).catch((error) =>
+      reportFailure("widget_set_pinned", error),
+    );
   });
 
   /*

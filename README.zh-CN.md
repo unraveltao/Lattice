@@ -167,7 +167,7 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖进窗口
 | Tauri 命令 | 112 |
 | 浏览器断言 | 76 页 3 828 条 |
 | Rust 单测 | 487 |
-| 记下来的坑 | 105 |
+| 记下来的坑 | 107 |
 
 每一个都有人在守。浏览器断言在 CI 里起真的 dev server 和真的 Chrome；Rust 单测分成纯逻辑的和必须跑完整 `cargo test` 的两批；坑是那些真的咬过人的，每条都带着"为什么不会再犯"的推理。
 

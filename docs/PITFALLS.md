@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **105 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **107 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -39,6 +39,8 @@
 | 切"置顶"没反应，组件还趴在桌面层                                         | 守卫摘得比 `HWND_TOPMOST` 晚：那一下 SetWindowPos 被守卫改写掉了                                                | 守卫状态用窗口属性做开关，`apply_to` 里**先翻开关再落层级**                                  |
 | 暂停中的组件窗口恢复之后跑到最前面来了 | `window.show()` 就是 `ShowWindow`，它会把窗口提到最前 —— 而恢复之后层级还停在 `HWND_BOTTOM` / `WorkerW` 的旧印象里 | 恢复时先 `show()` 再重放一次层级（`desktop::apply_to`），顺序反了就等于没压下去 |
 | 属性面板里点了「置顶」，桌面上那颗箭头按钮还画着「贴桌面」，再点一下毫无反应 | 层级有**两份副本**：store（`placement.layer`）和宿主页建窗口时从 `HostConfig` 取的那份。`sync_widget_windows` 只把新层级写进 Win32，从来没告诉宿主页 —— 于是按钮画的是旧状态，点下去又是从旧副本算新副本，送回去的值等于没变 | `runner::set_layer` / `set_pinned` 返回「真的变了没有」，变了就 `emit_to(label, "lattice:widget-layer" / "lattice:widget-pinned")`；宿主页用 `adoptLayer` / `adoptPinned` 认下再重画。**别针同理** —— agent 的 `placement.pin` 也走这条同步。`tests/chrome-state.html` 钉着 |
+| 桌面窗饰上那颗箭头点了没反应：图标会翻，窗口不换层；只有去属性面板调 layer 才管用 | `widget_set_layer` 当时是「就地 `apply_to` + `patch_layer`」。`patch_layer` 把 `Applied.layer` 写成新值，等于告诉后面的同步"这一位已经落过了" —— 于是只要就地那一次没真的落到窗口上（窗口还挂在 WorkerW 下、守卫没摘、tao 的样式重排把顶层位抹回去），**同步就再也不会重试**，状态、面板、图标全都说置顶，窗口老老实实趴在桌面层 | 这条命令**只发意图**（`emit_to("main")`），由主窗口 `updatePlacement` → 120ms 防抖同步 → `diff` → `apply_to` 落 Win32，也就是"面板里那条路"。`patch_layer` 整个删掉：runner 不许自己写"已应用"，`Applied` 只由 `diff` 和 `widget_report_rect` 写。代价是点完多 120ms |
+| 用户说"这些组件都不好拖动"：按下去要愣一下才动，快速点一下拖干脆什么都不发生 | `track()`（指针捕获 + move 监听）挂在五六个 `await` **之后**：那段空窗期里指针动了没人接，按一下就松手的整趟拖动直接丢掉。而且唯一能抓的是胶囊最左边那颗 22×22 的点阵 | `track()` 同步挂上，IPC 读数在后台跑、回来再补一次最新位移；`pointerdown` 挂到整颗胶囊（120×28）上，另外四颗按钮放行 |
 
 ## 形状、透明与底板
 

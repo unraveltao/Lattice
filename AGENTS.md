@@ -679,6 +679,10 @@ public/widgets/<id>/
 
 已修（别再改回去）：**层级和别针是"活的事实"，不是建窗口那一刻的快照**。属性面板 / 卡片右键菜单 / agent 改 `placement.layer` 之后，`sync_widget_windows` 只把新层级写进 Win32 —— 宿主页窗饰那颗箭头按钮手里的 `HostConfig.layer` 副本没人更新，于是按钮画着旧状态；更糟的是点下去它是**从旧副本算新副本**，送回去的值等于没变，那颗按钮看起来就是死的（用户报的原话："置顶是有问题的"）。现在 `Runner::set_layer` / `set_pinned` 返回"真的变了没有"，变了就 `emit_to(label, "lattice:widget-layer" / "lattice:widget-pinned")`，宿主页用 `runtime/chrome-state.ts` 的 `adoptLayer` / `adoptPinned` 认下再重画（载荷带 `instanceId`，不变量 9）。**图标和提示语的对应关系也搬进了那个模块** —— 拆开写就会长出"箭头说在置顶层、提示语说点一下会置顶"这种自相矛盾的按钮，`tests/chrome-state.html` 34 条钉着。加任何"平台也会改"的窗口属性时先问一句：宿主页手里那份副本谁来更新？
 
+已修（别再改回去）：**窗饰那颗层级按钮只发意图，不在命令里就地应用**。`widget_set_layer` 以前是「`apply_to` + `patch_layer`」一起干，而 `patch_layer` 把 `Applied.layer` 写成新值等于告诉后面的同步"这一位已经落过了"—— 只要就地那一次没真的落到窗口上（窗口还挂在 WorkerW 下、守卫没摘、tao 的样式重排把顶层位抹回去），**同步就再也不会重试**，界面全说置顶、窗口趴在桌面层。用户的原话是"这里点了没效果，我在面板里调节 layer 才有用"。现在这条命令只 `emit_to("main")`，由主窗口 `updatePlacement` → 120ms 同步 → `diff` → `apply_to`，**就是面板里那条路**；`patch_layer` 整个删掉，`Applied` 只由 `diff` 和 `widget_report_rect` 写。同理 `widget_set_pinned` 也不再自己写 `HostConfig`。多 120ms 换"界面说的和窗口做的一定是同一件事"，值得。
+
+已修（别再改回去）：**拖动要按下去就动，不能等 IPC**。`track()`（指针捕获 + move 监听）以前挂在五六个 `await` 之后 —— 那段空窗期里的移动没人接，按一下就松手的快速拖动整趟丢掉，机器越忙空窗越长，用户只会说"拖不动"。现在 `track()` 同步挂上、IPC 读数在后台跑，回来补一次最新位移。同时 `pointerdown` 挂到**整颗胶囊**（120×28）而不是那颗 22×22 的点阵：先发现一个隐藏按钮、再瞄准 22px，本身就是"不好拖"的一部分。另外四颗按钮照旧放行。改这块之前先读 `widgetHost.ts` 里那段注释，别把 `track` 挪回 `await` 后面。
+
 已修（别再改回去）：属性面板改尺寸要**同时写 `placement` 和 `desktopRects`**。`buildSpecs` 优先用 `desktopRects` 里的尺寸（那是用户拖边缘改过的真实值），只写 `placement` 的话，已经投放到桌面的组件不会变。
 
 已修（别再改回去）：iframe 的沙箱必须带 `allow-forms`。少了这一位，浏览器会把表单提交整条拦掉 —— `submit` 事件不触发、控制台不报错，组件里"输入框 + 回车"这种最普通的写法静默失效（待办清单就这么空转了一整版：字打得进去，回车没反应，列表永远是"Nothing here yet"）。`tests/todo-add.html` 钉住了这件事：同一条提交路径，有 `allow-forms` 就写盘，没有就 0 次写盘。改沙箱属性时两处一起改：`src/widgetHost.ts`（桌面窗口）和 `src/platform/WidgetFrame.tsx`（画布）。

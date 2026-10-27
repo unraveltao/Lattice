@@ -339,19 +339,6 @@ impl Runner {
             .unwrap_or_default()
     }
 
-    /// 只改层级那一格，位置和尺寸保持原样。
-    ///
-    /// 这里必须"就地改"，不能整条覆盖 —— 覆盖成 0 的话，下一次同步会以为
-    /// 位置变了，把窗口 set_position 到左上角去。
-    fn patch_layer(&self, label: &str, layer: WindowLayer, click_through: bool) {
-        if let Ok(mut map) = self.applied.lock() {
-            if let Some(entry) = map.get_mut(label) {
-                entry.layer = layer;
-                entry.click_through = click_through;
-            }
-        }
-    }
-
     /// 换外观，返回 true 表示确实变了（没变就别再发一遍事件）
     fn set_appearance(&self, label: &str, appearance: Appearance) -> bool {
         if let Ok(mut map) = self.configs.lock() {
@@ -1066,7 +1053,11 @@ pub fn widget_report_rect(
     Ok(())
 }
 
-/// 别针开关
+/// 别针开关：**只把意图送回主窗口**，不在这里改 `HostConfig`。
+///
+/// 别针和层级一样只有**一个家** —— store 里的 `placement.pinned`。这条命令
+/// 以前顺手写了 `HostConfig.pinned`，于是下一轮同步的 `set_pinned` 认为
+/// "没变化"，宿主页那份副本再也等不到确认。
 #[tauri::command]
 pub fn widget_set_pinned(
     app: AppHandle,
@@ -1074,24 +1065,41 @@ pub fn widget_set_pinned(
     runner: State<'_, Runner>,
     pinned: bool,
 ) -> Result<(), String> {
-    let mut config = runner
+    let config = runner
         .get(window.label())
         .ok_or_else(|| "this window is not a registered widget window".to_string())?;
-    config.pinned = pinned;
-    runner.put(window.label(), config.clone());
 
-    let _ = app.emit_to(
+    app.emit_to(
         "main",
         "lattice:widget-pinned",
         PinnedPayload {
             instance_id: config.instance_id,
             pinned,
         },
-    );
-    Ok(())
+    )
+    .map_err(|error| error.to_string())
 }
 
-/// 层级切换：贴桌面 / 置顶
+/// 层级切换：贴桌面 / 置顶。**只把意图送回主窗口，不在这里碰 Win32。**
+///
+/// # 为什么改掉"就地应用"
+///
+/// 以前这里是 `apply_to(...)` + `patch_layer(...)` 连着做。两件事一起干会
+/// 留下一个**说谎的记录**：`patch_layer` 把 `Applied.layer` 写成新值，等于
+/// 告诉后面的同步"这一位已经落过了"。于是只要就地那一次因为任何原因没真的
+/// 落到窗口上（窗口还挂在 WorkerW 下、守卫还没摘、tao 的样式重排把顶层位抹
+/// 回去、命令所在线程不是平时那条…），**同步就再也不会重试** ——
+/// `state.json` 说置顶、属性面板说置顶、窗饰图标也点亮，窗口其实老老实实趴在
+/// 桌面层。用户看到的正是"这里点了没效果，只有去面板里调 layer 才有用"
+/// （那条路走 `diff`，会真的重试）。
+///
+/// 现在只做一件事：把意图发给主窗口。
+///   1. 主窗口 `updatePlacement(instanceId, { layer })` —— 层级回到唯一的家
+///   2. 120ms 防抖的 `sync_widget_windows` `diff` 出层级变了，`apply_to` 落 Win32
+///   3. 顺手 `emit_to(label, "lattice:widget-layer")` 把确认推回宿主页
+///
+/// 代价是点完到窗口真的换层多 120ms。层级是离散操作，这个延迟买的是
+/// **"界面说的和窗口做的一定是同一件事"**，值得。
 #[tauri::command]
 pub fn widget_set_layer(
     app: AppHandle,
@@ -1099,31 +1107,19 @@ pub fn widget_set_layer(
     runner: State<'_, Runner>,
     layer: WindowLayer,
 ) -> Result<(), String> {
-    let mut config = runner
+    let config = runner
         .get(window.label())
         .ok_or_else(|| "this window is not a registered widget window".to_string())?;
-    config.layer = layer;
-    runner.put(window.label(), config.clone());
 
-    // 立即落到 Win32，不等主窗口那一圈同步，点完马上就能看到效果
-    desktop::apply_to(
-        &window,
-        layer,
-        config.click_through,
-        config.interactive,
-        config.shape,
-    )?;
-    runner.patch_layer(window.label(), layer, config.click_through);
-
-    let _ = app.emit_to(
+    app.emit_to(
         "main",
         "lattice:widget-layer",
         LayerPayload {
             instance_id: config.instance_id,
             layer,
         },
-    );
-    Ok(())
+    )
+    .map_err(|error| error.to_string())
 }
 
 /// 组件上报自己的轮廓（桥方法 `window.setRegion`）。
