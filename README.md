@@ -175,9 +175,9 @@ Every one of those is enforced by something. The browser assertions run a real d
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 25 121 lines |
-| CSS | 6 332 lines |
-| Rust | 27 912 lines |
+| TypeScript | 24 858 lines |
+| CSS | 6 317 lines |
+| Rust | 27 923 lines |
 | SDK | 961 lines |
 | Widgets + example | 37 180 lines |
 | Scripts | 5 614 lines |
