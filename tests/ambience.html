@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ambience core / synthesis parameters</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.ambience/ambience-core.js"></script>
+    <script type="module">
+      /*
+       * 环境音引擎的断言。
+       *
+       * 声音没法听，所以这里验的是"图"：用一只记录式的假 AudioContext 搭图，
+       * 直接读节点属性（滤波类型/频率/Q、振荡器频率、主增益的调度调用）和
+       * 播放器状态。最后再用一次真 AudioContext 做冒烟，证明这些调用在真实现
+       * 上也成立（假的能过、真的抛错，那种"绿"是最坑的）。
+       */
+      const core = window.__latticeAmbienceCore;
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const near = (a, b) => Math.abs(a - b) < 1e-9;
+
+      // ---------- 假 AudioContext：只记录，不出声 ----------
+
+      function param(value) {
+        const calls = [];
+        return {
+          value,
+          calls,
+          setValueAtTime(v, t) {
+            calls.push(["value", v, t]);
+            this.value = v;
+            return this;
+          },
+          exponentialRampToValueAtTime(v, t) {
+            calls.push(["exp", v, t]);
+            this.value = v;
+            return this;
+          },
+          setTargetAtTime(v, t, tc) {
+            calls.push(["target", v, t, tc]);
+            this.value = v;
+            return this;
+          },
+          cancelScheduledValues(t) {
+            calls.push(["cancel", t]);
+            return this;
+          },
+        };
+      }
+
+      function node(extra) {
+        return Object.assign(
+          {
+            _out: [],
+            connect(dest) {
+              this._out.push(dest);
+              return dest;
+            },
+            disconnect() {
+              this._out.length = 0;
+            },
+          },
+          extra,
+        );
+      }
+
+      function fakeContext() {
+        const ctx = {
+          state: "running",
+          currentTime: 0,
+          sampleRate: 8000,
+          destination: node({ kind: "destination" }),
+          created: [],
+          resumes: 0,
+          closes: 0,
+          createGain() {
+            const n = node({ kind: "gain", gain: param(1) });
+            ctx.created.push(n);
+            return n;
+          },
+          createBiquadFilter() {
+            const n = node({ kind: "filter", type: "lowpass", frequency: param(350), Q: param(1) });
+            ctx.created.push(n);
+            return n;
+          },
+          createOscillator() {
+            const n = node({
+              kind: "osc",
+              type: "sine",
+              frequency: param(440),
+              started: [],
+              stopped: [],
+              start(t) {
+                this.started.push(t);
+              },
+              stop(t) {
+                this.stopped.push(t);
+              },
+            });
+            ctx.created.push(n);
+            return n;
+          },
+          createBufferSource() {
+            const n = node({
+              kind: "source",
+              buffer: null,
+              loop: false,
+              started: [],
+              stopped: [],
+              start(t) {
+                this.started.push(t);
+              },
+              stop(t) {
+                this.stopped.push(t);
+              },
+            });
+            ctx.created.push(n);
+            return n;
+          },
+          createBuffer(channels, length, rate) {
+            const data = new Float32Array(length);
+            return {
+              length,
+              sampleRate: rate,
+              numberOfChannels: channels,
+              getChannelData() {
+                return data;
+              },
+            };
+          },
+          resume() {
+            ctx.resumes += 1;
+            ctx.state = "running";
+            return Promise.resolve();
+          },
+          close() {
+            ctx.closes += 1;
+            ctx.state = "closed";
+            return Promise.resolve();
+          },
+        };
+        return ctx;
+      }
+
+      // ---------- 场景表 ----------
+
+      log(core.SCENES.length === 4, `四个场景（现在 ${core.SCENES.length} 个）`);
+      log(
+        core.SCENES.map((s) => s.id).join(",") === "rain,cafe,fire,white",
+        `场景顺序固定：${core.SCENES.map((s) => s.id).join(",")}`,
+      );
+      log(
+        core.SCENES.every((s) => s.zh && s.en),
+        "每个场景都有中英两个名字（换语言时卡片上的按钮不能空着）",
+      );
+      log(
+        core.SCENES.filter((s) => s.crackle > 0).length === 1 &&
+          core.sceneById("fire").crackle > 0,
+        "只有篝火需要离散脉冲，其余三个场景不开定时器",
+      );
+      log(core.sceneById("kiwi") === null, "不认识的场景 id 返回 null（nope 不是场景）");
+
+      // ---------- 存档归一化 ----------
+
+      const defaults = core.normalizePrefs(null);
+      log(defaults.kind === "rain" && defaults.volume === 0.4, "空存档退回雨声 40%");
+      log(core.normalizePrefs({ kind: "fire", volume: 2 }).volume === 1, "音量上限夹到 1");
+      log(core.normalizePrefs({ kind: "fire", volume: -3 }).volume === 0, "音量下限夹到 0");
+      log(core.normalizePrefs({ kind: "fire", volume: NaN }).volume === 0.4, "NaN 音量退回出厂值");
+      log(core.normalizePrefs({ kind: "fire", volume: "0.9" }).volume === 0.4, "字符串音量不认，退回出厂");
+      log(core.normalizePrefs({ kind: "kiwi" }).kind === "rain", "不认识的场景落回雨声");
+      log(core.normalizePrefs("rain").kind === "rain", "存档不是对象也不炸");
+      log(
+        core.normalizePrefs({ kind: "cafe", volume: 0.3, playing: true }).playing === undefined,
+        "归一化只留 kind / volume —— 播放状态不落盘的约定从这里开始",
+      );
+
+      // ---------- 响度曲线 ----------
+
+      log(core.amplitude(0) === 0, "音量 0 = 主增益 0");
+      log(near(core.amplitude(1), 0.85), `满音量是 0.85（现在 ${core.amplitude(1)}）`);
+      log(core.amplitude(0.5) < 0.85 * 0.5, "半点音量比线性的一半轻（幂 1.6）");
+      log(
+        core.amplitude(0.2) < core.amplitude(0.4) && core.amplitude(0.4) < core.amplitude(0.8),
+        "曲线单调递增",
+      );
+      log(core.amplitude(-1) === 0 && near(core.amplitude(9), 0.85), "越界参数被夹住");
+
+      // ---------- 搭图：每个场景的节点参数 ----------
+
+      {
+        const ctx = fakeContext();
+        const graph = core.buildGraph(ctx, "rain", 0.5, Math.random);
+        log(graph.kind === "rain", "雨声图记住了自己的场景");
+        log(graph.filter.type === "lowpass", "雨声过的是低通");
+        log(graph.filter.frequency.value === 1200, "低通截止 1.2 kHz");
+        log(near(graph.filter.Q.value, 0.7), "低通 Q = 0.7");
+        log(graph.source.loop === true, "噪声底是循环的（否则两秒后就静了）");
+        log(!!graph.source.buffer && graph.source.buffer.length === 16000, "2 秒 @ 8 kHz = 16000 个采样");
+        log(graph.lfo !== null && graph.lfo.frequency.value === 0.09, "雨声有 0.09 Hz 的呼吸");
+        log(graph.drift === null, "雨声没有第二条漂移振荡器");
+        log(
+          graph.master.gain.calls.some((c) => c[0] === "target" && near(c[1], core.amplitude(0.5))),
+          "主增益用 setTargetAtTime 淡入到目标值（赋值会「啪」一声）",
+        );
+        log(
+          graph.master._out.includes(ctx.destination),
+          "主增益接到 destination",
+        );
+        log(!!ctx.__latticeNoise && !!ctx.__latticeNoise.white, "噪声 buffer 按 ctx 缓存");
+        const again = core.buildGraph(ctx, "rain", 0.5, Math.random);
+        log(again.source.buffer === graph.source.buffer, "同一个 ctx 第二次搭图复用同一份 buffer");
+      }
+
+      {
+        const ctx = fakeContext();
+        const graph = core.buildGraph(ctx, "cafe", 0.4, Math.random);
+        log(graph.filter.type === "bandpass", "咖啡厅过的是带通");
+        log(graph.filter.frequency.value === 520, "带通中心 520 Hz");
+        log(graph.drift !== null && graph.drift.frequency.value === 0.037, "咖啡厅有第二条更慢的漂移");
+        log(!!ctx.__latticeNoise.brown, "咖啡厅用的是棕噪");
+      }
+
+      {
+        const ctx = fakeContext();
+        const graph = core.buildGraph(ctx, "fire", 0.4, Math.random);
+        log(graph.filter.type === "lowpass" && graph.filter.frequency.value === 700, "篝火：700 Hz 低通");
+        log(graph.scene.crackle > 0, "篝火记下了自己的爆裂概率");
+        const before = ctx.created.length;
+        const engine = core.createEngine({ createContext: () => ctx, random: () => 0.1 });
+        engine.play("fire", 0.4);
+        const fired = engine.tick();
+        log(fired === true, "随机数落在概率里 = 这一拍响一下");
+        log(ctx.created.length > before + 2, "一次爆裂至少多出振荡器 + 增益两个节点");
+        const osc = ctx.created.filter((n) => n.kind === "osc").pop();
+        log(osc.type === "triangle", "爆裂是三角波，不是正弦（更像木头）");
+        const envelope = ctx.created.filter((n) => n.kind === "gain").pop();
+        log(
+          envelope.gain.calls.length === 3 && envelope.gain.calls[2][0] === "exp",
+          "爆裂包络是 起音 / 峰值 / 回落 三段",
+        );
+        engine.close();
+      }
+
+      {
+        const ctx = fakeContext();
+        const graph = core.buildGraph(ctx, "white", 0.4, Math.random);
+        log(graph.filter === null, "白噪不过滤波");
+        log(graph.lfo !== null, "白噪也有一层极浅的呼吸（0.02 Hz）");
+      }
+
+      // ---------- 播放器 ----------
+
+      {
+        const ctx = fakeContext();
+        const engine = core.createEngine({ createContext: () => ctx, random: () => 0.5 });
+        log(engine.state().context === "none", "没播放之前一个 AudioContext 都不建");
+        log(engine.play("rain", 0.6) === true, "play 返回 true");
+        log(engine.state().playing === true && engine.state().kind === "rain", "状态变成播放中 / 雨");
+        log(engine.context() === ctx && ctx.resumes === 1, "建完图 resume 一次（自动播放策略）");
+
+        engine.setVolume(0.2);
+        log(
+          engine.graph().master.gain.calls.some((c) => c[0] === "target" && near(c[1], core.amplitude(0.2))),
+          "调音量走同一段 0.1s 平滑",
+        );
+
+        // 换场景：旧图停、新图起
+        const rainGraph = engine.graph();
+        engine.play("cafe", 0.2);
+        log(engine.state().kind === "cafe", "换场景后播放器记的是新场景");
+        log(rainGraph.source.stopped.length === 1, "旧图的噪声源被 stop 掉了（不叠着放）");
+
+        log(engine.pause() === true, "pause 返回 true");
+        log(engine.state().playing === false, "暂停后状态是未播放");
+        log(engine.graph() === null, "暂停后不再持有图");
+        log(engine.pause() === false, "重复暂停是无害的 no-op");
+
+        engine.play("fire", 0.4);
+        log(engine.tick() === false, "随机数 0.5 大于爆裂概率 0.42：这一拍不响");
+
+        const quiet = core.createEngine({ createContext: () => fakeContext(), random: () => 0.1 });
+        quiet.play("rain", 0.4);
+        log(quiet.tick() === false, "雨声没有爆裂，心跳空转一拍不算响");
+        quiet.close();
+      }
+
+      {
+        const engine = core.createEngine({
+          createContext: () => {
+            throw new Error("no audio device");
+          },
+        });
+        log(engine.play("rain", 0.4) === false, "建不出 AudioContext 时 play 返回 false，不装作在放");
+        log(engine.state().playing === false, "那种情况下状态仍然是未播放");
+      }
+
+      {
+        const ctx = fakeContext();
+        const engine = core.createEngine({ createContext: () => ctx });
+        engine.play("white", 0.4);
+        engine.close();
+        log(ctx.closes === 1 && ctx.state === "closed", "close 真的把 ctx 关了（卡片删掉不留后台播放器）");
+        log(engine.state().playing === false, "close 之后状态回到未播放");
+      }
+
+      // ---------- 真 AudioContext 冒烟 ----------
+
+      {
+        const Ctor = window.AudioContext || window.webkitAudioContext;
+        if (!Ctor) {
+          log(false, "这个浏览器没有 Web Audio —— 组件在它上面也不会出声");
+        } else {
+          const ctx = new Ctor();
+          const graph = core.buildGraph(ctx, "rain", 0.5, Math.random);
+          log(graph.filter instanceof BiquadFilterNode, "真实现里过的是一个 BiquadFilterNode");
+          log(graph.filter.type === "lowpass" && graph.filter.frequency.value === 1200, "真实现里截止频率也是 1200");
+          log(graph.source.buffer instanceof AudioBuffer, "真实现里噪声底是 AudioBuffer");
+          log(graph.source.buffer.length > 0 && graph.source.loop === true, "真实现里 buffer 非空且循环");
+          log(graph.lfo instanceof OscillatorNode, "真实现里呼吸是 OscillatorNode");
+          log(graph.master.gain.value >= 0, "真实现里主增益读得出数值");
+          void ctx.close();
+        }
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

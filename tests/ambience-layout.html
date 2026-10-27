@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ambience ui / bridge and layout</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 环境音组件的界面断言：把真组件放进一个 iframe，喂它一条假桥，
+       * 然后真的去点按钮、拖滑杆、推语言。
+       *
+       * 这一页盯三件事：
+       *  1. 出声只在点击里发生（`player.state().playing` 由点击翻转）；
+       *  2. 偏好真的写进了 storage.set，且播放态不写；
+       *  3. 顶上 24px 状态条把窗饰的 120px 让干净了（和 tests/note-layout.html 同一条判据）。
+       *
+       * 假桥只回四种方法：lang.get / storage.get / storage.set / schedule.*。
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const near = (a, b, e = 0.02) => Math.abs(a - b) < e;
+
+      // 和 src/widgetHost.css 的 .lw-pill 一致（见 tests/note-layout.html）
+      const PILL_BOTTOM = 34;
+      const PILL_WIDTH = 120;
+
+      function mount(w, h, store) {
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+        frame.style.width = w + "px";
+        frame.style.height = h + "px";
+        frame.src = "/widgets/lattice.ambience/index.html";
+        document.body.appendChild(frame);
+
+        const calls = [];
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+            calls.push({ method: data.method, params: data.params });
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+
+            if (data.method === "lang.get") return reply({ ok: true, result: { lang: "zh" } });
+            if (data.method === "storage.get") {
+              if (store.denied) return reply({ ok: false, code: "permission_denied", error: "denied" });
+              return reply({ ok: true, result: store.value ?? null });
+            }
+            if (data.method === "storage.set") {
+              if (store.denied) return reply({ ok: false, code: "permission_denied", error: "denied" });
+              store.value = data.params.value;
+              return reply({ ok: true, result: { ok: true } });
+            }
+            if (data.method === "schedule.every") return reply({ ok: true, result: { id: 7 } });
+            if (data.method === "schedule.clear") return reply({ ok: true, result: { ok: true } });
+            reply({ ok: false, code: "unknown_method", error: "unknown" });
+          });
+        });
+
+        const api = {
+          frame,
+          calls,
+          ready,
+          doc: () => frame.contentDocument,
+          engine: () => frame.contentWindow.__latticeAmbienceCore.player,
+          send(type, payload) {
+            frame.contentWindow.postMessage({ __lattice: 1, type, payload }, "*");
+            return sleep(60);
+          },
+          last(method) {
+            const hit = calls.filter((call) => call.method === method).pop();
+            return hit ? hit.params : null;
+          },
+        };
+        return api;
+      }
+
+      // ---------- 场景 1：默认尺寸，默认状态，点一下出声 ----------
+      {
+        const store = { value: null };
+        const view = mount(260, 160, store);
+        await view.ready;
+        await sleep(80);
+
+        const doc = view.doc();
+        const chips = [...doc.querySelectorAll(".ab-chip")];
+        const playBtn = doc.getElementById("play");
+        const state = doc.getElementById("state");
+
+        log(chips.length === 4, `四个场景按钮（现在 ${chips.length} 个）`);
+        log(
+          chips[0].getAttribute("aria-pressed") === "true",
+          "出厂选中雨声（HTML 首帧就画出来了，不等桥）",
+        );
+        log(state.textContent === "已暂停", `首帧状态是「${state.textContent}」`);
+        log(playBtn.getAttribute("data-playing") === "false", "首帧按钮是三角形（未播放）");
+        log(doc.getElementById("pct").textContent === "40%", "出厂音量 40%");
+
+        // 窗饰安全区
+        const head = doc.querySelector(".ab-head");
+        const padRight = parseFloat(getComputedStyle(head).paddingRight);
+        log(padRight >= PILL_WIDTH, `状态条右侧让出 ${padRight}px（窗饰占 ${PILL_WIDTH}px）`);
+        log(
+          head.getBoundingClientRect().height === 24,
+          `状态条高 ${head.getBoundingClientRect().height}px（正文从 ${PILL_BOTTOM} 之下开始）`,
+        );
+        log(
+          doc.querySelector(".ab-scenes").getBoundingClientRect().top >= PILL_BOTTOM,
+          "场景按钮整行在窗饰下沿之下",
+        );
+
+        // 尺寸配比：滑杆要拖得动，四个场景名要放得下
+        const volWidth = doc.getElementById("vol").getBoundingClientRect().width;
+        log(volWidth >= 100, `滑杆宽 ${volWidth.toFixed(1)}px（拖得动）`);
+        const narrowest = Math.min(...chips.map((chip) => chip.getBoundingClientRect().width));
+        log(narrowest >= 40, `最窄的场景按钮 ${narrowest.toFixed(1)}px（「咖啡厅」放得下）`);
+        log(
+          doc.getElementById("pct").getBoundingClientRect().right <= 260 - 12 + 0.5,
+          "百分数没有顶出卡片右内边距",
+        );
+
+        // 点播放
+        playBtn.click();
+        await sleep(80);
+        log(view.engine().state().playing === true, "点一下按钮，播放器真的开工（不是画出来的）");
+        log(playBtn.getAttribute("data-playing") === "true", "按钮翻成两根竖条");
+        log(
+          state.textContent.startsWith("雨"),
+          `状态行变成场景名 + 音量（现在是「${state.textContent}」）`,
+        );
+        const beat = view.last("schedule.every");
+        log(!!beat && beat.every === 250, "只有播放时挂 250ms 心跳（篝火爆裂用）");
+
+        // 点场景：只换选，不重载
+        chips[1].click();
+        await sleep(80);
+        log(view.engine().state().kind === "cafe", "点「咖啡厅」当场换场景");
+        const saved = store.value;
+        log(!!saved && saved.kind === "cafe" && near(saved.volume, 0.4), "偏好写进 storage.set");
+        log(saved && saved.playing === undefined, "播放状态没有跟着落盘");
+
+        // 拖滑杆到 80%
+        const vol = doc.getElementById("vol");
+        const rect = vol.getBoundingClientRect();
+        const pointer = (type, x) =>
+          vol.dispatchEvent(
+            new PointerEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              pointerId: 1,
+              pointerType: "mouse",
+              isPrimary: true,
+              button: type === "pointerup" ? 0 : 0,
+              buttons: type === "pointerup" ? 0 : 1,
+              clientX: x,
+              clientY: rect.top + rect.height / 2,
+            }),
+          );
+        pointer("pointerdown", rect.left + rect.width * 0.8);
+        await sleep(30);
+        pointer("pointermove", rect.left + rect.width * 0.8);
+        await sleep(30);
+        pointer("pointerup", rect.left + rect.width * 0.8);
+        await sleep(80);
+        log(doc.getElementById("pct").textContent === "80%", `拖到八成，数字是「${doc.getElementById("pct").textContent}」`);
+        log(near(view.engine().state().volume, 0.8), "播放器的音量跟着走");
+        log(store.value && near(store.value.volume, 0.8), "抬手才落盘一次新音量");
+        log(
+          vol.getAttribute("aria-valuenow") === "80",
+          "滑杆的 aria-valuenow 同步（读屏器才看得见）",
+        );
+
+        // 方向键
+        vol.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+        await sleep(60);
+        log(doc.getElementById("pct").textContent === "0%", "Home 键把音量推到 0");
+        log(view.engine().state().volume === 0, "播放器音量也是 0");
+
+        // 再点一下：停
+        playBtn.click();
+        await sleep(80);
+        log(view.engine().state().playing === false, "再点一下，播放器停");
+        const cleared = view.last("schedule.clear");
+        log(!!cleared && cleared.id === 7, "暂停时把心跳摘掉（不留孤儿订阅）");
+
+        // 换语言
+        await view.send("language", { lang: "en" });
+        log(chips[0].textContent === "Rain", `切英文后按钮是「${chips[0].textContent}」`);
+        log(state.textContent === "Paused", `切英文后状态是「${state.textContent}」`);
+        log(playBtn.getAttribute("aria-label") === "Play", "播放按钮的无障碍标签也翻了");
+        log(doc.title === "Ambience", `窗口标题是「${doc.title}」`);
+
+        view.frame.remove();
+      }
+
+      // ---------- 场景 2：存档回来之前不画默认值 ----------
+      {
+        const store = { value: { kind: "fire", volume: 0.8 } };
+        const view = mount(260, 160, store);
+        await view.ready;
+        await sleep(80);
+        const doc = view.doc();
+        const fire = doc.querySelector('.ab-chip[data-scene="fire"]');
+        log(fire.getAttribute("aria-pressed") === "true", "存档里的场景点亮了篝火");
+        log(doc.getElementById("pct").textContent === "80%", "存档里的音量是 80%");
+        log(view.engine().state().playing === false, "存档只恢复偏好，不自动播放");
+
+        // 另一个还在开着的实例改了偏好：这张没被动过的卡片跟过去
+        store.value = { kind: "white", volume: 0.2 };
+        await view.send("store-changed", { key: "ambience" });
+        await sleep(120);
+        log(
+          doc.querySelector('.ab-chip[data-scene="white"]').getAttribute("aria-pressed") === "true",
+          "别人的写入被跟进了（store-changed 之后重读）",
+        );
+        log(doc.getElementById("pct").textContent === "20%", "音量也跟着换了");
+
+        view.frame.remove();
+      }
+
+      // ---------- 场景 3：没有存储权限 ----------
+      {
+        const view = mount(260, 160, { value: null, denied: true });
+        await view.ready;
+        await sleep(80);
+        const state = view.doc().getElementById("state");
+        log(
+          state.textContent.includes("不记住"),
+          `没有存储权限时状态行说清楚（「${state.textContent}」）`,
+        );
+        log(view.engine().state().playing === false, "没有权限也照样是暂停态，不误报");
+        view.frame.remove();
+      }
+
+      // ---------- 场景 4：最小尺寸不溢出 ----------
+      {
+        const view = mount(210, 132, { value: null });
+        await view.ready;
+        await sleep(80);
+        const doc = view.doc();
+        const controls = doc.querySelector(".ab-controls").getBoundingClientRect();
+        const scenes = doc.querySelector(".ab-scenes");
+        log(
+          controls.bottom <= 132 + 0.5,
+          `最小尺寸下控制区下沿 ${controls.bottom.toFixed(1)}（≤ 132）`,
+        );
+        log(
+          scenes.scrollWidth <= scenes.clientWidth + 0.5,
+          `四个按钮没有被挤出卡片（${scenes.scrollWidth} ≤ ${scenes.clientWidth}）`,
+        );
+        log(
+          doc.documentElement.scrollHeight <= 132,
+          `页面没有纵向溢出（${doc.documentElement.scrollHeight} ≤ 132）`,
+        );
+        view.frame.remove();
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

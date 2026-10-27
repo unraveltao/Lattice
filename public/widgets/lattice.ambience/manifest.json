@@ -1,0 +1,149 @@
+{
+  "id": "lattice.ambience",
+  "name": { "zh": "环境音", "en": "Ambience" },
+  "version": "0.1.0",
+  "description": {
+    "zh": "雨、咖啡厅、篝火与白噪，全部在卡片里现场合成，不带一个音频文件",
+    "en": "Rain, café, fire and white noise, synthesized in the card itself with no audio files"
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 260, "h": 160, "minW": 210, "minH": 132 },
+  "layer": "desktop",
+  "permissions": ["storage"],
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "怎么出声", "en": "Getting sound" },
+        "items": [
+          {
+            "zh": "点左边那个圆按钮才开始，再点一次就停。",
+            "en": "Press the round button to start; press it again to stop."
+          },
+          {
+            "zh": "卡片打开时是暂停的 —— 它不会自己出声。",
+            "en": "It opens paused. It never starts making noise on its own."
+          },
+          {
+            "zh": "卡片被收起来时声音继续；把卡片删掉，声音才停。",
+            "en": "Hiding the card keeps the sound going; removing the card stops it."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "四个场景", "en": "Four scenes" },
+        "items": [
+          {
+            "zh": "雨：白噪过一道 1.2 kHz 低通，叠一层很慢的起伏。",
+            "en": "Rain: white noise through a 1.2 kHz lowpass with a very slow swell."
+          },
+          {
+            "zh": "咖啡厅：棕噪过带通，中心频率一直慢慢漂，像远处的人声。",
+            "en": "Café: brown noise through a bandpass whose centre keeps drifting, like a distant crowd."
+          },
+          {
+            "zh": "篝火：棕噪做底，随机掉出爆裂声。",
+            "en": "Fire: brown noise as the bed, with crackles dropping in at random."
+          },
+          {
+            "zh": "白噪：不做滤波，均匀掩蔽，适合挡掉说话声。",
+            "en": "White: unfiltered and even, good for masking voices."
+          },
+          {
+            "zh": "暂停时点场景只是换选，下一次播放从它开始。",
+            "en": "While paused, picking a scene only selects it; the next play starts with it."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "音量", "en": "Volume" },
+        "items": [
+          {
+            "zh": "在滑杆上按住拖，或者聚焦后按方向键（Shift 更细，PageUp / PageDown 一大步）。",
+            "en": "Drag the slider, or focus it and use the arrow keys (Shift for finer, PageUp / PageDown for bigger steps)."
+          },
+          {
+            "zh": "右边那个数字是百分数；0% 是静音，不是暂停。",
+            "en": "The number on the right is a percentage; 0% is silence, not pause."
+          },
+          {
+            "zh": "响度不是线性的：50% 听起来比线性滑杆的中间要轻。",
+            "en": "Loudness is not linear: 50% sounds lighter than the middle of a linear slider."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "它不下载任何东西", "en": "Nothing to download" },
+        "items": [
+          {
+            "zh": "四个场景都是 Web Audio 现场合成，包里没有一个 mp3。",
+            "en": "All four scenes are synthesized with Web Audio; the package holds no mp3."
+          },
+          {
+            "zh": "所以它没有联网权限，也不需要读你的音频文件。",
+            "en": "So it asks for no network access and never reads your audio files."
+          },
+          {
+            "zh": "唯一要的权限是存储，用来记住选的场景和音量。",
+            "en": "The only permission it needs is storage, to remember the scene and volume."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "记住什么", "en": "What is remembered" },
+        "items": [
+          {
+            "zh": "场景和音量写在组件存储里，几张开着的卡片看得见彼此的选择。",
+            "en": "Scene and volume live in widget storage, so open cards see each other's choice."
+          },
+          {
+            "zh": "播放状态不记：下次打开仍然是暂停。",
+            "en": "The playing state is not stored: next time it opens paused."
+          },
+          {
+            "zh": "卡片被删掉时 AudioContext 随之释放，不会在后台留一个播放器。",
+            "en": "Removing the card releases the AudioContext, so no player is left running in the background."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "没声音怎么办", "en": "If it is silent" },
+        "items": [
+          {
+            "zh": "先看按钮：三角形 = 没在放，两根竖条 = 在放。",
+            "en": "Look at the button first: a triangle means stopped, two bars mean playing."
+          },
+          {
+            "zh": "系统音量、输出设备，以及 Windows 的「应用音量」都可能是 0。",
+            "en": "The system volume, the output device and Windows' per-app volume can all be zero."
+          },
+          {
+            "zh": "拿不到音频设备时，状态行会写「此环境没有音频输出」。",
+            "en": "When no audio device is available the status line reads No audio output here."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "changes": [
+        {
+          "zh": "第一个版本：雨、咖啡厅、篝火、白噪四种场景，全部现场合成。",
+          "en": "First release: rain, café, fire and white noise, all synthesized on the spot."
+        },
+        {
+          "zh": "点一下出声，场景与音量记在组件存储里，播放状态不落盘。",
+          "en": "One click starts the sound; scene and volume are remembered, while the playing state is not."
+        },
+        {
+          "zh": "滑杆是自绘的，只为它 250ms 的篝火心跳在播放时才挂。",
+          "en": "The volume slider is hand-drawn, and the 250 ms heartbeat for fire crackles only runs while playing."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

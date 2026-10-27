@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>环境音</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-playing="false">
+    <!--
+      卡片上没有设置面板：四个场景和音量都能直接点，偏好记在组件存储里
+      （见 manifest 的 help）。顶上那条 24px 不是标题 —— 它给窗饰让出 120px，
+      否则第一行会钻到窗口按钮底下（tests/ambience-layout.html 量着）。
+    -->
+    <main class="ab">
+      <div class="ab-head"><span id="state">已暂停</span></div>
+
+      <div class="ab-scenes" role="group" aria-label="场景">
+        <button class="ab-chip" type="button" data-scene="rain" aria-pressed="true">雨</button>
+        <button class="ab-chip" type="button" data-scene="cafe" aria-pressed="false">咖啡厅</button>
+        <button class="ab-chip" type="button" data-scene="fire" aria-pressed="false">篝火</button>
+        <button class="ab-chip" type="button" data-scene="white" aria-pressed="false">白噪</button>
+      </div>
+
+      <div class="ab-controls">
+        <button class="ab-play" type="button" id="play" data-playing="false" aria-label="播放">
+          <span class="ab-glyph" aria-hidden="true"></span>
+        </button>
+
+        <div
+          class="ab-vol"
+          id="vol"
+          role="slider"
+          tabindex="0"
+          aria-label="音量"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="40"
+          aria-valuetext="40%"
+        >
+          <div class="ab-vol-track"><div class="ab-vol-fill" id="volFill"></div></div>
+          <div class="ab-vol-thumb" id="volThumb"></div>
+        </div>
+
+        <span class="ab-pct" id="pct">40%</span>
+      </div>
+    </main>
+    <script src="ambience-core.js"></script>
+    <script src="widget.js"></script>
+  </body>
+</html>
