@@ -47,6 +47,15 @@ import {
 } from "./runtime/bridge";
 import { enableMirror, isWidgetLog, trace } from "./runtime/debug";
 import { decideClose, type CloseDecision } from "./runtime/close-guard";
+import {
+  adoptLayer,
+  adoptPinned,
+  layerLook,
+  nextLayer,
+  nextPinned,
+  pinLook,
+  type WindowLayer,
+} from "./runtime/chrome-state";
 import { createScheduler, subscribeWindowVisible, windowVisibleNow } from "./runtime/schedule";
 import { fitAnchor, type FitOptions, type ScreenBox } from "./runtime/screen-fit";
 import type { ConfigValues } from "./runtime/config";
@@ -75,7 +84,7 @@ interface HostConfig {
   pinned: boolean;
   minW: number;
   minH: number;
-  layer: "desktop" | "top";
+  layer: WindowLayer;
   clickThrough: boolean;
   /** `rect` = 平台圆角卡片；`region` = 组件上报轮廓（桌宠），不画底板与窗饰 */
   shape: "rect" | "region";
@@ -334,6 +343,15 @@ let pushLanguage: (() => void) | null = null;
 
 /** 由 buildChrome() 接上：界面语言变了以后重贴窗饰的提示语 */
 let relabelChrome: (() => void) | null = null;
+
+/**
+ * 由 buildChrome() 接上：平台那边改了层级 / 别针，窗饰要跟着重画。
+ *
+ * 和 `relabelChrome` 分开是因为触发源不同（一个是语言，一个是布局事实），
+ * 而且这一条**必须存在** —— 少了它，属性面板里点"置顶"之后那颗箭头按钮
+ * 会一直停在旧状态，再点一下等于原地打转（见 `runtime/chrome-state.ts`）。
+ */
+let syncChrome: ((next: { layer?: WindowLayer; pinned?: boolean }) => void) | null = null;
 
 function postTheme() {
   pushTheme?.();
@@ -812,21 +830,40 @@ function buildChrome(config: HostConfig) {
   const pill = chrome.querySelector<HTMLDivElement>(".lw-pill");
 
   let pinned = config.pinned;
-  let layer = config.layer;
+  let layer: WindowLayer = config.layer === "top" ? "top" : "desktop";
 
   const paint = () => {
     document.body.classList.toggle("is-pinned", pinned);
-    pinBtn.innerHTML = pinned ? ICON.pinned : ICON.pin;
-    pinBtn.classList.toggle("is-on", pinned);
-    pinBtn.title = pinned ? t("Position locked — click to unlock") : t("Lock position and size");
-    pinBtn.setAttribute("aria-label", pinned ? t("Unlock position") : t("Lock position"));
 
-    layerBtn.innerHTML = layer === "top" ? ICON.layerTop : ICON.layerDesktop;
-    layerBtn.classList.toggle("is-on", layer === "top");
-    layerBtn.title = layer === "top" ? t("On top — click to pin to desktop") : t("On desktop — click to keep on top");
-    layerBtn.setAttribute("aria-label", layer === "top" ? t("Send to desktop layer") : t("Keep on top"));
+    const pin = pinLook(pinned);
+    pinBtn.innerHTML = pin.icon === "pinned" ? ICON.pinned : ICON.pin;
+    pinBtn.classList.toggle("is-on", pin.on);
+    pinBtn.title = t(pin.title);
+    pinBtn.setAttribute("aria-label", t(pin.aria));
+
+    const at = layerLook(layer);
+    layerBtn.innerHTML = at.icon === "layer-top" ? ICON.layerTop : ICON.layerDesktop;
+    layerBtn.classList.toggle("is-on", at.on);
+    layerBtn.title = t(at.title);
+    layerBtn.setAttribute("aria-label", t(at.aria));
   };
   paint();
+
+  /*
+   * 平台推来的层级 / 别针。
+   *
+   * 这两条是"置顶按钮是死的"那个 bug 的另一半：平台改层级之后，窗口当场就
+   * 换了层，但宿主页手里那份副本不会自己变。收下它、重画，按钮才和窗口说的
+   * 是同一件事。
+   *
+   * 只认这两格：位置、尺寸、外观各有各的通道，混进来会让拖一次滑杆连带
+   * 重画窗饰。
+   */
+  syncChrome = (next) => {
+    if (next.layer !== undefined) layer = next.layer;
+    if (next.pinned !== undefined) pinned = next.pinned;
+    paint();
+  };
 
   /*
    * 平台切了界面语言：胶囊上那几张牌子的提示语得跟着换。
@@ -1070,13 +1107,13 @@ function buildChrome(config: HostConfig) {
 
   // ---- 层级 / 别针 / 重载 / 收回 ----
   layerBtn.addEventListener("click", () => {
-    layer = layer === "top" ? "desktop" : "top";
+    layer = nextLayer(layer);
     paint();
     void invoke("widget_set_layer", { layer });
   });
 
   pinBtn.addEventListener("click", () => {
-    pinned = !pinned;
+    pinned = nextPinned(pinned);
     paint();
     void invoke("widget_set_pinned", { pinned });
   });
@@ -1497,6 +1534,33 @@ async function boot() {
     if (event.payload.instanceId !== config.instanceId) return;
     applyAppearance(normalizeAppearance(event.payload.appearance));
     void refreshWallpaper();
+  });
+
+  /*
+   * 平台改了层级（属性面板 / 卡片右键菜单 / agent 的 `placement.front`）。
+   *
+   * 以前这里什么都没有：`sync_widget_windows` 只把新层级写进 Win32，窗饰那颗
+   * 箭头按钮手里那份副本停在建窗口那一刻。于是用户点"置顶"，窗口真的上去了，
+   * 按钮却还画着"贴桌面"的箭头 —— 再点一下，它是从旧副本算出 `top` 送回来，
+   * 值没变，按钮看起来就是死的（`docs/PITFALLS.md`「层级、焦点与 z 序」）。
+   *
+   * 认 `instanceId`：`emit_to` 会送到每个窗口的 `Any` 监听器上，不认的话
+   * 改一个组件的层级，桌面上所有组件的窗饰跟着重画。
+   */
+  void listen<{ instanceId: string; layer: WindowLayer }>("lattice:widget-layer", (event) => {
+    const next = adoptLayer(config.instanceId, event.payload);
+    if (next === null) return;
+    syncChrome?.({ layer: next });
+  });
+
+  /*
+   * 别针同理，只是改它的只有 agent（`placement.pin`）—— 用户自己点的时候
+   * 走 `widget_set_pinned`，宿主页已经就地重画过了。
+   */
+  void listen<{ instanceId: string; pinned: boolean }>("lattice:widget-pinned", (event) => {
+    const next = adoptPinned(config.instanceId, event.payload);
+    if (next === null) return;
+    syncChrome?.({ pinned: next });
   });
 
   /*

@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **104 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **105 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -38,6 +38,7 @@
 | 守卫明明加了，窗口还是往上窜                                            | `SetWindowSubclass` 跨线程调用不报错，只返回 0 —— 从同步命令的线程装守卫会静默失败                                    | 用 `window.run_on_main_thread(...)` 回到窗口线程再装                                  |
 | 切"置顶"没反应，组件还趴在桌面层                                         | 守卫摘得比 `HWND_TOPMOST` 晚：那一下 SetWindowPos 被守卫改写掉了                                                | 守卫状态用窗口属性做开关，`apply_to` 里**先翻开关再落层级**                                  |
 | 暂停中的组件窗口恢复之后跑到最前面来了 | `window.show()` 就是 `ShowWindow`，它会把窗口提到最前 —— 而恢复之后层级还停在 `HWND_BOTTOM` / `WorkerW` 的旧印象里 | 恢复时先 `show()` 再重放一次层级（`desktop::apply_to`），顺序反了就等于没压下去 |
+| 属性面板里点了「置顶」，桌面上那颗箭头按钮还画着「贴桌面」，再点一下毫无反应 | 层级有**两份副本**：store（`placement.layer`）和宿主页建窗口时从 `HostConfig` 取的那份。`sync_widget_windows` 只把新层级写进 Win32，从来没告诉宿主页 —— 于是按钮画的是旧状态，点下去又是从旧副本算新副本，送回去的值等于没变 | `runner::set_layer` / `set_pinned` 返回「真的变了没有」，变了就 `emit_to(label, "lattice:widget-layer" / "lattice:widget-pinned")`；宿主页用 `adoptLayer` / `adoptPinned` 认下再重画。**别针同理** —— agent 的 `placement.pin` 也走这条同步。`tests/chrome-state.html` 钉着 |
 
 ## 形状、透明与底板
 

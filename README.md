@@ -165,9 +165,9 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 | Official widgets | 25 |
 | Permissions | 14 |
 | Tauri commands | 111 |
-| Browser assertions | 3 710 over 73 pages |
+| Browser assertions | 3 828 over 76 pages |
 | Rust tests | 487 |
-| Documented pitfalls | 104 |
+| Documented pitfalls | 105 |
 
 Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split pure-logic cases from the ones that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 

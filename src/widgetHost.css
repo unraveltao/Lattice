@@ -114,8 +114,22 @@ body:hover .lw-pill,
   transform: scale(0.94);
 }
 
+/*
+ * 点亮 = "我现在就在这一层" / "位置已锁"。
+ *
+ * 只换颜色不够：13px 的箭头在花底板上认不出是"已经置顶"还是"点了会置顶"，
+ * 而这两件事方向正好相反 —— 图标说现在在哪，提示语说点一下去哪儿。给一层
+ * 底色之后它读起来是"选中"，和画布卡片标题条上那个 `is-accent` 的 chip 同一种
+ * 说法（用户就是拿那两处对照，才发现桌面上那颗箭头没跟上）。
+ */
 .lw-btn.is-on {
   color: var(--lattice-accent);
+  background: color-mix(in srgb, var(--lattice-accent) 18%, transparent);
+}
+
+/* 点亮的那颗也要有悬停反馈：`.is-on` 排在 `:hover` 后面，同权重会把它盖掉 */
+.lw-btn.is-on:hover {
+  background: color-mix(in srgb, var(--lattice-accent) 30%, transparent);
 }
 
 .lw-grip {

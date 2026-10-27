@@ -426,6 +426,45 @@ impl Runner {
         false
     }
 
+    /// 换掉某个窗口的层级，返回"真的变了没有"。
+    ///
+    /// 层级有**两份读者**：Win32（`Applied`）和宿主页窗饰上那颗按钮
+    /// （`HostConfig`）。平台这边改层级走的是 `sync_widget_windows`，它原本
+    /// 只动前者 —— 宿主页那份副本就永远停在建窗口那一刻，按钮画着旧图标；
+    /// 更糟的是点下去它**从旧状态算新状态**，送回来的值等于没变，那颗按钮
+    /// 看起来就是死的。所以这里和 `set_appearance` 一样返回"变了没有"，
+    /// 调用方据此决定要不要推一条 `lattice:widget-layer` 过去。
+    ///
+    /// `click_through` 顺手一起记：`widget_set_layer` 重落层级时要读它。
+    fn set_layer(&self, label: &str, layer: WindowLayer, click_through: bool) -> bool {
+        if let Ok(mut map) = self.configs.lock() {
+            if let Some(config) = map.get_mut(label) {
+                let changed = config.layer != layer;
+                config.layer = layer;
+                config.click_through = click_through;
+                return changed;
+            }
+        }
+        false
+    }
+
+    /// 别针同理。宿主页自己点的时候走 `widget_set_pinned`（那条会 `put`），
+    /// 但 agent 的 `placement.pin` 改的是 store，落到窗口要经过这条同步 ——
+    /// 不推回去的话，窗饰上那颗图钉会一直显示旧状态，而它的悬停提示正是
+    /// "位置已锁定"，说的是一件已经不成立的事。
+    fn set_pinned(&self, label: &str, pinned: bool) -> bool {
+        if let Ok(mut map) = self.configs.lock() {
+            if let Some(config) = map.get_mut(label) {
+                if config.pinned == pinned {
+                    return false;
+                }
+                config.pinned = pinned;
+                return true;
+            }
+        }
+        false
+    }
+
     /// 比对并记录：返回 None 表示这一轮什么都不用做。
     ///
     /// 只写变化的部分不只是省开销 —— 用户在桌面上拖动组件时，
@@ -764,6 +803,39 @@ pub async fn sync_widget_windows(
 
         match app.get_webview_window(&label) {
             Some(window) => {
+                /*
+                 * 层级 / 别针：平台改的，宿主页也得知道。
+                 *
+                 * `diff` 只管 Win32 那一层（pos / size / layer），窗饰上那颗
+                 * 按钮画什么由宿主页自己记着 —— 它只在建窗口时从 `HostConfig`
+                 * 取过一次。属性面板、右键菜单、agent 改层级之后，窗口当场就
+                 * 换了层，按钮却还画着旧图标，而且再点一下是从旧状态算新状态，
+                 * 送回去的值等于没变（`docs/PITFALLS.md`「层级、焦点与 z 序」）。
+                 *
+                 * 只推**真的变了**的那一条：这条 120ms 防抖同步在拖滑杆时每帧
+                 * 都跑，无条件 emit 会让桌面上所有组件跟着重画窗饰。
+                 */
+                if runner.set_layer(&label, spec.layer, spec.click_through) {
+                    let _ = app.emit_to(
+                        &label,
+                        "lattice:widget-layer",
+                        LayerPayload {
+                            instance_id: spec.instance_id.clone(),
+                            layer: spec.layer,
+                        },
+                    );
+                }
+                if runner.set_pinned(&label, spec.pinned) {
+                    let _ = app.emit_to(
+                        &label,
+                        "lattice:widget-pinned",
+                        PinnedPayload {
+                            instance_id: spec.instance_id.clone(),
+                            pinned: spec.pinned,
+                        },
+                    );
+                }
+
                 let next = Applied {
                     x: spec.x,
                     y: spec.y,

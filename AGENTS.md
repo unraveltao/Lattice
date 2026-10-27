@@ -668,6 +668,8 @@ public/widgets/<id>/
 
 已修（别再改回去）：桌面组件能打字了。以前所有桌面窗口都是 `WS_EX_NOACTIVATE` + WorkerW 子窗口，键盘事件进不来。现在按 `manifest.interactive` 分流（见 §7），可输入的窗口压在最底层并挂上底层守卫 —— 点它不会窜到别的窗口前面，也不会在失焦时掉回去，所以不闪。**不要再加"失焦回沉"那套逻辑**：守卫已经保证它一直在最底层，回沉只会多一次 `SetWindowPos`，白白让 z 序抖一下。
 
+已修（别再改回去）：**层级和别针是"活的事实"，不是建窗口那一刻的快照**。属性面板 / 卡片右键菜单 / agent 改 `placement.layer` 之后，`sync_widget_windows` 只把新层级写进 Win32 —— 宿主页窗饰那颗箭头按钮手里的 `HostConfig.layer` 副本没人更新，于是按钮画着旧状态；更糟的是点下去它是**从旧副本算新副本**，送回去的值等于没变，那颗按钮看起来就是死的（用户报的原话："置顶是有问题的"）。现在 `Runner::set_layer` / `set_pinned` 返回"真的变了没有"，变了就 `emit_to(label, "lattice:widget-layer" / "lattice:widget-pinned")`，宿主页用 `runtime/chrome-state.ts` 的 `adoptLayer` / `adoptPinned` 认下再重画（载荷带 `instanceId`，不变量 9）。**图标和提示语的对应关系也搬进了那个模块** —— 拆开写就会长出"箭头说在置顶层、提示语说点一下会置顶"这种自相矛盾的按钮，`tests/chrome-state.html` 34 条钉着。加任何"平台也会改"的窗口属性时先问一句：宿主页手里那份副本谁来更新？
+
 已修（别再改回去）：属性面板改尺寸要**同时写 `placement` 和 `desktopRects`**。`buildSpecs` 优先用 `desktopRects` 里的尺寸（那是用户拖边缘改过的真实值），只写 `placement` 的话，已经投放到桌面的组件不会变。
 
 已修（别再改回去）：iframe 的沙箱必须带 `allow-forms`。少了这一位，浏览器会把表单提交整条拦掉 —— `submit` 事件不触发、控制台不报错，组件里"输入框 + 回车"这种最普通的写法静默失效（待办清单就这么空转了一整版：字打得进去，回车没反应，列表永远是"Nothing here yet"）。`tests/todo-add.html` 钉住了这件事：同一条提交路径，有 `allow-forms` 就写盘，没有就 0 次写盘。改沙箱属性时两处一起改：`src/widgetHost.ts`（桌面窗口）和 `src/platform/WidgetFrame.tsx`（画布）。
