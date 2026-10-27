@@ -1249,10 +1249,20 @@ fn input_type(args: &Value) -> String {
         Ok(text) => text,
         Err(error) => return fail("bad_args", error),
     };
-    let plan = match input_policy::type_plan(text) {
-        Ok(plan) => plan,
+    let events = match type_events(text) {
+        Ok(events) => events,
         Err(error) => return fail("bad_args", error),
     };
+    if let Err(error) = send_inputs(&events) {
+        return fail("internal", error);
+    }
+
+    ok(json!({ "done": true, "characters": text.chars().count() }))
+}
+
+/// 文字 → 一串按键事件。中文 / emoji 全走 `KEYEVENTF_UNICODE`
+fn type_events(text: &str) -> Result<Vec<INPUT>, String> {
+    let plan = input_policy::type_plan(text)?;
 
     let mut events = Vec::with_capacity(plan.len() * 2);
     for step in plan.iter() {
@@ -1273,11 +1283,18 @@ fn input_type(args: &Value) -> String {
             }
         }
     }
-    if let Err(error) = send_inputs(&events) {
-        return fail("internal", error);
-    }
+    Ok(events)
+}
 
-    ok(json!({ "done": true, "characters": text.chars().count() }))
+/// 把一段文字打进**当前前台窗口**。
+///
+/// 听写那条路（`dictation.rs`）用它：判焦点是调用方的事（开听时的 HWND 要等于
+/// 出字前的 HWND），这里只管敲。返回打出去的字符数 —— `Ctrl+Z` 撤几次是用户那边
+/// 的事，我们自己至少要知道"发了多少"。
+pub fn type_text(text: &str) -> Result<usize, String> {
+    let events = type_events(text)?;
+    send_inputs(&events)?;
+    Ok(text.chars().count())
 }
 
 fn input_key(args: &Value) -> String {

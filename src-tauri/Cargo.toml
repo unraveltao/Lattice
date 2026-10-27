@@ -24,6 +24,9 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
+# 听写的全局热键（0027 §3 决定②）。不自己写 RegisterHotKey + 消息泵：那要和
+# Tauri 的事件循环抢窗口过程，是"能跑但随时会坏"的一类
+tauri-plugin-global-shortcut = "2"
 # 平台自身的自动更新（组件更新是另一套：目录 + .lattice 包 + ed25519）。
 # 两者别混：组件更新由前端 `runtime/catalogue.ts` 驱动，这个只管"Lattice 本身要不要升级"
 tauri-plugin-updater = "2"
@@ -40,6 +43,9 @@ sha2 = "0.10"
 # agent 端点的令牌。系统随机数不自己写 —— 那是密码学，不是布局。
 # 0.2 已经在依赖树里（ed25519-dalek 那条链），加这一行不新增编译单元
 getrandom = "0.2"
+# 浮钮那四张图是 PNG。PNG 解码不自己写 —— 那是图像格式，不是布局
+# （和 flate2 / ed25519 同一条理由）；这个 crate 纯 Rust、无 C 依赖
+png = "0.17"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
@@ -59,6 +65,10 @@ webview2-com = "0.39"
 windows = { version = "0.62", features = [
   # 媒体控制走 WinRT 的 SMTC，只有这一份 API
   "Media_Control",
+  # 听写：WinRT 的本地语音识别（SpeechRecognizer / 听写场景约束）
+  "Media_SpeechRecognition",
+  # 上面那个的 `SystemSpeechLanguage()` 回 `Language`，语言标签在这里
+  "Globalization",
   # WinRT 激活要求调用线程初始化过 COM
   "Win32_System_Com",
   # 声音高低走 WASAPI 回环采集：IMMDeviceEnumerator / IAudioClient 在这

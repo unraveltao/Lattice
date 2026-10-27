@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>dictation test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      听写（0027）的两半：**命令契约** + **事件 → 面板该做什么**。
+
+      这一页钉的不是 WinRT（那只有真机能验），而是两件会静默坏掉的事：
+
+        1. 命令名和参数形状（`start` 带 `target`、`stop` / `cancel` 是两条命令、
+           浮钮的开关与位置走同一个 `dictation_settings_set`）；
+        2. `reduceDictation` 的判据（出字追加、取消一个字不落、`focus_changed`
+           把文本交回输入框、`too_long` 不截断、任何分支都回 idle）。
+
+      `__TAURI_INTERNALS__` 是 `@tauri-apps/api` 唯一的入口（`invoke` 与
+      `transformCallback` 都在它上面），所以桩它一个就够 —— 和 `tests/secret.html`
+      同一个办法。事件那条用桩里的 `transformCallback` 拿回回调，再由测试直接喂。
+    -->
+    <pre id="out">running…</pre>
+    <script type="module">
+      import {
+        dictationCancel,
+        dictationSettings,
+        dictationSettingsSet,
+        dictationStart,
+        dictationStatus,
+        dictationStop,
+        IDLE_DICTATION,
+        onDictation,
+        openDictationSettingsPage,
+        reduceDictation,
+      } from "/src/platform/dictation.ts";
+      import { t } from "/src/runtime/i18n.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+
+      /** 假的 Tauri 后端：记下每一次调用，按 `plan` 决定回什么 */
+      let calls = [];
+      let plan = () => null;
+      let callbackSeq = 0;
+      const callbacks = new Map();
+      window.__TAURI_INTERNALS__ = {
+        invoke: async (command, args) => {
+          calls.push({ command, args });
+          // 事件注册走插件命令，回一个 id 就够了
+          if (command === "plugin:event|listen") return ++callbackSeq;
+          if (command === "plugin:event|unlisten") return null;
+          return plan(command, args);
+        },
+        transformCallback: (callback) => {
+          const id = ++callbackSeq;
+          callbacks.set(id, callback);
+          return id;
+        },
+        unregisterCallback: (id) => callbacks.delete(id),
+      };
+
+      const reset = (next) => {
+        calls = [];
+        plan = next;
+      };
+
+      // --- 1–2. 状态 -------------------------------------------------------
+      reset(() => ({
+        available: true,
+        language: "zh-CN",
+        enabled: false,
+        hotkey: "Ctrl+Alt+Space",
+        hotkeyError: null,
+      }));
+      const status = await dictationStatus();
+      log(
+        calls[0]?.command === "dictation_status" && status.language === "zh-CN",
+        `状态读的是 ${calls[0]?.command}（language=${status.language}）`,
+      );
+      log(
+        status.available === true && status.enabled === false && status.hotkey === "Ctrl+Alt+Space",
+        `状态里三件事都照实交回（available=${status.available}, enabled=${status.enabled}）`,
+      );
+
+      // --- 3–4. start 必须带 target -----------------------------------------
+      reset(() => null);
+      await dictationStart("panel");
+      log(
+        calls[0]?.command === "dictation_start" && calls[0]?.args?.target === "panel",
+        `面板那条 start 带 target=${calls[0]?.args?.target}`,
+      );
+      reset(() => null);
+      await dictationStart("system");
+      log(
+        calls[0]?.command === "dictation_start" && calls[0]?.args?.target === "system",
+        `浮钮那条 start 带 target=${calls[0]?.args?.target}`,
+      );
+
+      // --- 5–6. stop 与 cancel 是两条命令，而且 stop 不带 target -------------
+      reset(() => null);
+      await dictationStop();
+      const stopped = calls[0];
+      reset(() => null);
+      await dictationCancel();
+      const cancelled = calls[0];
+      log(stopped?.command === "dictation_stop", `停用的是 ${stopped?.command}`);
+      log(
+        cancelled?.command === "dictation_cancel" &&
+          cancelled?.command !== stopped?.command &&
+          stopped?.args?.target === undefined,
+        `取消是另一条命令（${cancelled?.command}），stop 不重复带 target`,
+      );
+
+      // --- 7–8. 设置：浮钮开关也走同一个命令 ---------------------------------
+      reset(() => ({ enabled: true, hotkey: "Ctrl+Alt+F5", show: true, dx: -120, dy: -120 }));
+      await dictationSettings();
+      log(calls[0]?.command === "dictation_settings", `读设置调 ${calls[0]?.command}`);
+
+      reset(() => ({ enabled: true, hotkey: "Ctrl+Alt+F5", show: false, dx: -200, dy: -80 }));
+      const saved = await dictationSettingsSet({ hotkey: "Ctrl+Alt+F5", show: false, dx: -200, dy: -80 });
+      log(
+        calls[0]?.command === "dictation_settings_set" &&
+          calls[0]?.args?.patch?.hotkey === "Ctrl+Alt+F5" &&
+          calls[0]?.args?.patch?.show === false,
+        `改设置走 ${calls[0]?.command}（patch 里只有给的那几项）`,
+      );
+      log(saved.dx === -200 && saved.show === false, `改完回的是整份设置（dx=${saved.dx}）`);
+
+      // --- 9. 系统设置页：`ms-settings:` 走专用命令，不借 open_external ------
+      reset(() => null);
+      await openDictationSettingsPage("speech");
+      log(
+        calls[0]?.command === "dictation_open_settings" && calls[0]?.args?.page === "speech",
+        `跳系统语音设置走 ${calls[0]?.command}`,
+      );
+
+      // --- 10. 订阅的是那一条事件 -------------------------------------------
+      reset(() => null);
+      const stopListening = onDictation(() => {});
+      await Promise.resolve();
+      const listenCall = calls.find((call) => call.command === "plugin:event|listen");
+      log(
+        listenCall?.args?.event === "lattice:dictation",
+        `订阅的事件名是 ${listenCall?.args?.event}`,
+      );
+      const handler = callbacks.get(listenCall?.args?.handler);
+      stopListening();
+
+      // --- 11–18. 事件 → 面板该做什么（纯函数）------------------------------
+      const listening = reduceDictation(IDLE_DICTATION, { phase: "listening", target: "panel" });
+      log(
+        listening.listening === true && listening.notice === null && listening.append === null,
+        "listening 只把状态翻成「在听」，不往输入框写字",
+      );
+
+      const partial = reduceDictation(listening, { phase: "partial", text: "半句" });
+      log(
+        partial === listening,
+        "partial 原样返回：逐字上屏是输入法该干的事，这里一个字都不追加",
+      );
+
+      const done = reduceDictation(listening, { phase: "done", text: "帮我把这句话记下来。" });
+      log(
+        done.append === "帮我把这句话记下来。" && done.listening === false && done.focus === true,
+        "done 有字 → 追加进输入框、回 idle、把焦点还回去",
+      );
+
+      const moved = reduceDictation(listening, {
+        phase: "done",
+        text: "刚才那半句",
+        code: "focus_changed",
+      });
+      log(
+        moved.append === "刚才那半句" &&
+          moved.notice === t("That window is gone — the text is in the box below"),
+        `focus_changed 的文本进输入框而不是被丢掉（notice=${moved.notice}）`,
+      );
+
+      const typed = reduceDictation(listening, { phase: "done", chars: 42 });
+      log(
+        typed.append === null && typed.notice === t("Typed {count} characters into the window you were in", { count: 42 }),
+        `打进别人窗口时不重复追加，只说一句（${typed.notice}）`,
+      );
+
+      const tooLong = reduceDictation(listening, {
+        phase: "error",
+        code: "too_long",
+        error: "这段话超过 4000 个字了，分两次说",
+      });
+      log(
+        tooLong.listening === false &&
+          tooLong.append === null &&
+          tooLong.notice === "这段话超过 4000 个字了，分两次说",
+        "too_long 不截断也不追加，只把原因说出来",
+      );
+
+      const dropped = reduceDictation(listening, { phase: "done", code: "cancelled" });
+      log(
+        dropped.listening === false && dropped.append === null && dropped.notice === null,
+        "cancelled 一个字都不落，状态照样回 idle",
+      );
+
+      const silent = reduceDictation(listening, { phase: "done" });
+      log(
+        silent.listening === false &&
+          silent.append === null &&
+          silent.notice === t("I did not hear anything"),
+        `空文本当"没听到"（${silent.notice}）`,
+      );
+
+      // --- 19. 组件永远够不到麦克风 -----------------------------------------
+      const bridgeSource = await fetch("/src/runtime/bridge.ts").then((response) => response.text());
+      log(
+        !/dictation/i.test(bridgeSource),
+        "bridge.ts 的方法表里搜不到 dictation —— 组件没有 speech 权限",
+      );
+
+      // --- 20. 浏览器预览里不假装能听 ---------------------------------------
+      reset(() => {
+        throw new Error("should not be called");
+      });
+      delete window.__TAURI_INTERNALS__;
+      const preview = await dictationStatus();
+      log(
+        preview.available === false && preview.hotkey === "" && calls.length === 0,
+        "没有 Rust 的时候如实说不可用，不去调命令、也不落 localStorage",
+      );
+
+      void handler;
+
+      const passed = lines.filter((line) => line.startsWith("PASS")).length;
+      document.getElementById("out").innerHTML =
+        lines
+          .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+          .join("\n") + `\n\n${passed}/${lines.length} passed`;
+    </script>
+  </body>
+</html>

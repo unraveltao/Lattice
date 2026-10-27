@@ -26,12 +26,30 @@ use tauri::{AppHandle, Wry};
 const ID_OPEN: &str = "lattice.open";
 const ID_PAUSE: &str = "lattice.pause";
 const ID_QUIT: &str = "lattice.quit";
+/// 听写浮钮那两项（0027 §4）：钮上没有右键菜单，这里才是它的去处
+const ID_DICTATION_HIDE: &str = "lattice.dictation.hide";
+const ID_DICTATION_RESET: &str = "lattice.dictation.reset";
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, ID_OPEN, "Open Lattice", true, None::<&str>)?;
     let pause = MenuItem::with_id(app, ID_PAUSE, "Pause all widgets", true, None::<&str>)?;
+    // 两条常驻项：关着听写时点它们只会把设置写成"不显示"，不报错
+    let hide_button = MenuItem::with_id(
+        app,
+        ID_DICTATION_HIDE,
+        "Hide the dictation button",
+        true,
+        None::<&str>,
+    )?;
+    let reset_button = MenuItem::with_id(
+        app,
+        ID_DICTATION_RESET,
+        "Put the dictation button back",
+        true,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, ID_QUIT, "Quit Lattice", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &pause, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &pause, &hide_button, &reset_button, &quit])?;
 
     // 暂停项的文字要跟着状态变，所以得把 handle 搬进闭包
     let pause_item: MenuItem<Wry> = pause.clone();
@@ -53,6 +71,8 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 });
             }
             ID_QUIT => app.exit(0),
+            ID_DICTATION_HIDE => crate::dictation::hide_button(app),
+            ID_DICTATION_RESET => crate::dictation::reset_button(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

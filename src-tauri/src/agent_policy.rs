@@ -201,6 +201,11 @@ pub const DENIED: &[(&str, &str)] = &[
     ("storage.write", "组件数据没有 schema，agent 只能瞎猜键名"),
     ("state.clear", "一条命令清空用户桌面"),
     ("agent.set_enabled", "自己给自己开门"),
+    (
+        "dictation_start",
+        "开麦。麦克风是平台自己的那一份能力 —— 组件够不到（没有 speech 权限，桥的方法表里也没有），\
+         agent 更不该有一条绕过界面的口子去听房间里的声音（0027 §8）",
+    ),
 ];
 
 pub fn parse_action(name: &str) -> Option<Action> {
@@ -415,6 +420,32 @@ mod tests {
     fn an_unknown_action_is_none() {
         assert!(parse_action("placement.explode").is_none());
         assert!(parse_action("").is_none());
+    }
+
+    #[test]
+    fn dictation_is_not_an_agent_action() {
+        // 听写是**平台自己**的能力：没有 speech 权限、桥的方法表里也没有它。
+        // 这条断言钉的是"哪天有人把 dictation_* 加进 ACTIONS 就红"
+        for action in ACTIONS {
+            assert!(
+                !action.name().starts_with("dictation"),
+                "{} must never be callable by an agent",
+                action.name()
+            );
+        }
+        assert!(parse_action("dictation_start").is_none());
+        assert!(parse_action("dictation_stop").is_none());
+    }
+
+    #[test]
+    fn the_dictation_denial_says_why() {
+        // 拒绝清单里要有这一条，而且理由要写成"给人看的一句话"，不是占位符
+        let (_, why) = DENIED
+            .iter()
+            .find(|(name, _)| *name == "dictation_start")
+            .expect("dictation_start must be listed in DENIED");
+        assert!(why.chars().count() > 20, "the reason is too short: {why}");
+        assert!(why.contains("麦克风"), "the reason should name the thing: {why}");
     }
 
     #[test]

@@ -322,4 +322,26 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "The TLS handshake failed (a proxy or a certificate problem)": "TLS 握手失败（代理或证书的问题）",
   "The provider did not answer in time": "供应商没有及时回话",
   "The request could not be sent": "请求发不出去",
+
+  // —— 听写（0027）：面板输入区那颗麦克风 ——
+  "Dictation": "听写",
+  "Start dictation": "开始听写",
+  "Stop dictation": "停止听写",
+  "Listening…": "正在听…",
+  "Dictation needs the desktop app": "听写要在桌面应用里用",
+  "Dictation needs a Chinese speech language": "听写要先把 Windows 的语音语言设成中文",
+  "Open the Windows speech settings": "打开 Windows 的语音设置",
+  "I did not hear anything": "没听到",
+  "Typed {count} characters into the window you were in": "已经往刚才那个窗口打了 {count} 个字",
+  "That window is gone — the text is in the box below": "刚才那个窗口已经不在了，字在下面的输入框里",
+  "The dictation hotkey is taken by another program": "这个组合键被别的程序占用了",
+
+  "Needs a Chinese speech language": "需要中文语音语言",
+  "Dictation hotkey": "听写热键",
+  "Turn dictation on": "打开听写",
+  "Put the dictation button back": "浮钮回到右下角",
+  "Hidden": "已隐藏",
+  "Say it instead of typing it. The panel has a button; the desktop button and the hotkey work in any window.":
+    "说出来，不用敲。面板里有一颗按钮；桌面上那颗浮钮和热键在任何窗口都能用。",
+  "Unplugging a monitor can leave the button off screen": "拔掉显示器之后浮钮可能跑到屏幕外",
 };

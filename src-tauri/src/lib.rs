@@ -25,6 +25,9 @@ pub mod crash_policy;
 pub mod csp;
 pub mod desktop;
 pub mod diagnostics;
+pub mod dictation;
+pub mod dictation_button;
+pub mod dictation_policy;
 pub mod egress;
 pub mod fs_policy;
 pub mod guide_policy;
@@ -107,6 +110,18 @@ pub fn run() {
         // 自动更新：只在用户点了"Check for updates"时跑，不后台轮询。
         // 后台轮询一个只发布几次的项目，等于每台机器每天替你发一次请求
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // 听写的全局热键（0027 §3 决定②）。插件只管"按下了"这件事，
+        // 开不开麦、打不打字仍然是 dictation.rs 那一份状态说了算
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    // 只认按下：松开那一次再触发就等于"开了又关"
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        dictation::toggle_system(app);
+                    }
+                })
+                .build(),
+        )
         .manage(runner::Runner::default())
         // agent 端点：默认关，开关在设置菜单里。它要转发请求给主窗口，
         // 所以状态得先 manage 好（见 agent.rs 的模块注释）
@@ -142,6 +157,9 @@ pub fn run() {
             // agent 端点：磁盘上说开着才开。关着的时候**不 bind**，
             // 不是"绑上但拒绝"（见 agent.rs）
             agent::start(app.handle().clone());
+            // 听写：磁盘上说开着才建浮钮、才注册热键（默认关，和 agent 端点同一条规矩）。
+            // 关着的时候**不碰麦克风**、不建窗口、不占热键
+            dictation::boot(app.handle());
             Ok(())
         })
         // 用户组件不在前端资源里，得靠自定义协议把 %APPDATA% 下的文件发给 iframe
@@ -247,6 +265,14 @@ pub fn run() {
             secrets::secret_get,
             secrets::secret_delete,
             secrets::secrets_status,
+            dictation::dictation_status,
+            dictation::dictation_start,
+            dictation::dictation_stop,
+            dictation::dictation_cancel,
+            dictation::dictation_level,
+            dictation::dictation_settings,
+            dictation::dictation_settings_set,
+            dictation::dictation_open_settings,
             quit_app,
             show_main_window,
             restart_app,

@@ -16,6 +16,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  dictationCancel,
+  dictationStart,
+  dictationStatus,
+  dictationStop,
+  onDictation,
+  IDLE_DICTATION,
+  openDictationSettingsPage,
+  reduceDictation,
+  type DictationStatus,
+  type DictationView,
+} from "./dictation";
+import { Glyph, ICON } from "./icons";
+
 import type { WidgetRecord } from "../runtime/registry";
 import {
   cancelActiveTurn,
@@ -202,11 +216,71 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
   const [error, setError] = useState<string | null>(null);
   const [usage, setUsage] = useState<{ prompt: number; completion: number } | null>(null);
 
+  /**
+   * 听写（0027）。**状态只有一份，在 Rust 里**：这个组件只是订阅者 ——
+   * `available === null` 是"还没问过"，这时不画按钮（免得闪一下灰的再变亮）。
+   * 浏览器预览里 `status` 恒 `available: false`，按钮是灰的并说清楚为什么。
+   */
+  const [dictation, setDictation] = useState<DictationStatus | null>(null);
+  /**
+   * 面板照着做的那几件事。判据在 `reduceDictation`（纯函数，`tests/dictation.html`
+   * 钉着），这里只存"现在是什么样"——界面不许自己推断"在不在听"
+   */
+  const [dictationView, setDictationView] = useState<DictationView>(IDLE_DICTATION);
+  const dictationViewRef = useRef<DictationView>(IDLE_DICTATION);
+
   /** 会话本身。**跨越多次编辑保留**：关掉面板再开，刚才聊的还在 */
   const messages = useRef<ChatMessage[]>([]);
   const stopFlag = useRef(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  /** 说出来的字追加进输入框。空框就直接放进去，不先插一个空行 */
+  const appendDictation = useCallback((line: string) => {
+    setDraft((current) => (current.trim().length === 0 ? line : `${current}\n${line}`));
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void dictationStatus()
+      .then((next) => {
+        if (alive) setDictation(next);
+      })
+      // 问不到只意味着"这一颗按钮先不画"，不影响面板别的功能
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /**
+   * 结果事件。四条：`listening` / `partial` / `done` / `error`。
+   *
+   * 判据在 `reduceDictation`（纯逻辑），这里只做三件界面的事：换状态、追字、还焦点。
+   */
+  useEffect(() => {
+    return onDictation((event) => {
+      const next = reduceDictation(dictationViewRef.current, event);
+      dictationViewRef.current = next;
+      setDictationView(next);
+      if (next.append) appendDictation(next.append);
+      // 说完了把焦点还回输入框：下一步多半是按回车发出去
+      if (next.focus) requestAnimationFrame(() => inputRef.current?.focus());
+    });
+  }, [appendDictation]);
+
+  /** 一颗钮两种意思：在听就按停，没在听就开麦 */
+  const toggleDictation = useCallback(async () => {
+    try {
+      if (dictationViewRef.current.listening) await dictationStop();
+      else await dictationStart("panel");
+    } catch (code) {
+      // 失败原因走事件（`wrong_language` / `no_microphone` ...），这里只兜住 reject：
+      // 同一句话也放进提示行，免得命令 reject 了而事件还没到
+      const notice = typeof code === "string" ? code : String(code);
+      setDictationView((current) => ({ ...current, listening: false, notice }));
+    }
+  }, []);
 
   /** 用户拨开的那几只手。读一次、拨一次存一次（和模型档同一份 JSON） */
   const [hands, setHands] = useState<HandsSettings>(HANDS_OFF);
@@ -1589,6 +1663,12 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
+                  // Esc 取消这次听写：已经识别出来的字一个字都不落（0027 §5）
+                  if (event.key === "Escape" && dictationView.listening) {
+                    event.preventDefault();
+                    void dictationCancel();
+                    return;
+                  }
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     void send();
@@ -1598,6 +1678,20 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
                 placeholder={t("Ask it to do something on the desktop (Enter to send, Shift+Enter for a new line)")}
                 disabled={busy}
               />
+              {dictationView.notice && (
+                <p className="lattice-assistant-dictation">
+                  <span>{dictationView.notice}</span>
+                  {dictation && !dictation.available && (
+                    <button
+                      type="button"
+                      className="lattice-assistant-dictation-link"
+                      onClick={() => void openDictationSettingsPage("speech")}
+                    >
+                      {t("Open the Windows speech settings")}
+                    </button>
+                  )}
+                </p>
+              )}
               <div className="lattice-assistant-foot">
                 {/*
                   完全访问的开关在**输入框左下角**：它和「发送」同一行，属于"我要让
@@ -1630,6 +1724,33 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
                   <span>{fullAccess ? t("Turn off full access") : t("Enable Full access")}</span>
                   {!fullAccess && <ChevronIcon />}
                 </button>
+                {/*
+                  听写那颗麦克风：和「发送」同一行、贴在它左边。放别处的话
+                  "说一句然后发出去"要多换一次视线。`available` 之前不画 ——
+                  先问一次系统语音语言，问不到才灰着并说明为什么
+                */}
+                {dictation && (
+                  <button
+                    type="button"
+                    className="lattice-assistant-mic"
+                    data-on={dictationView.listening ? "1" : "0"}
+                    disabled={!dictation.available}
+                    aria-pressed={dictationView.listening}
+                    title={
+                      !dictation.available
+                        ? t("Dictation needs a Chinese speech language")
+                        : dictationView.listening
+                          ? t("Stop dictation")
+                          : t("Start dictation")
+                    }
+                    aria-label={
+                      dictationView.listening ? t("Stop dictation") : t("Start dictation")
+                    }
+                    onClick={() => void toggleDictation()}
+                  >
+                    <Glyph d={ICON.mic} />
+                  </button>
+                )}
                 {/* 元信息在左、按钮在右：按钮固定在右下角，用户按回车之前手就在那儿 */}
                 <span className="lattice-assistant-meta">
                   {usage ? `${usage.prompt} → ${usage.completion} tokens` : ""}

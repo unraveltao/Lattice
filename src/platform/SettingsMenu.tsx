@@ -30,6 +30,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { readAgentStatus, setAgentEnabled, type AgentStatus } from "./agent";
 import { isStaleTarget, readAutostart, writeAutostart, type AutostartState } from "./autostart";
 import { Glyph, ICON, ThemeGlyph } from "./icons";
+import {
+  dictationSettings,
+  dictationSettingsSet,
+  dictationStatus,
+  type DictationSettings,
+  type DictationStatus,
+} from "./dictation";
 import { keyFingerprint, type CatalogueSource } from "../runtime/catalogue";
 import { useLattice, isOfficialCatalogue, type ThemeMode } from "./store";
 import { isTauri } from "../runtime/registry";
@@ -210,6 +217,14 @@ export function SettingsMenu({
   const [agentBusy, setAgentBusy] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
 
+  /** 听写（0027）：状态只有一份在 Rust 里；这里读一次、改完再刷一次 */
+  const [dictation, setDictation] = useState<DictationStatus | null>(null);
+  const [dictationSettingsValue, setDictationSettingsValue] =
+    useState<DictationSettings | null>(null);
+  const [dictationBusy, setDictationBusy] = useState(false);
+  const [dictationError, setDictationError] = useState<string | null>(null);
+  const [hotkeyDraft, setHotkeyDraft] = useState("");
+
   /** 平台更新状态：一次性的，不进 store */
   const [update, setUpdate] = useState<UpdateState>({ status: "idle" });
   const [version, setVersion] = useState("");
@@ -245,6 +260,79 @@ export function SettingsMenu({
 
   useEffect(() => {
     void appVersion().then(setVersion);
+  }, []);
+
+  /**
+   * 听写那一块：`status`（能不能用、热键是什么、注册成没成）与 `settings`
+   * （总开关、浮钮在不在）。两个都读不到就整块画成不可用，不猜。
+   */
+  useEffect(() => {
+    let alive = true;
+    void Promise.all([dictationStatus(), dictationSettings().catch(() => null)])
+      .then(([status, settings]) => {
+        if (!alive) return;
+        setDictation(status);
+        setDictationSettingsValue(settings);
+        if (status.hotkey) setHotkeyDraft(status.hotkey);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const refreshDictation = useCallback(async () => {
+    try {
+      const status = await dictationStatus();
+      setDictation(status);
+      if (status.hotkey) setHotkeyDraft(status.hotkey);
+      setDictationError(null);
+    } catch (error) {
+      setDictationError(String(error));
+    }
+  }, []);
+
+  /** 只拨总开关：关掉之后浮钮、热键、麦克风三样都该当场停手（Rust 那边负责） */
+  const toggleDictation = useCallback(async () => {
+    if (!dictation) return;
+    setDictationBusy(true);
+    try {
+      const settings = await dictationSettingsSet({ enabled: !dictation.enabled });
+      setDictationSettingsValue(settings);
+      await refreshDictation();
+    } catch (error) {
+      setDictationError(String(error));
+    } finally {
+      setDictationBusy(false);
+    }
+  }, [dictation, refreshDictation]);
+
+  /** 热键改了就重注册；被别的程序占了会出现在 `hotkeyError` 里 */
+  const commitHotkey = useCallback(async () => {
+    const next = hotkeyDraft.trim();
+    if (!dictation || !next || next === dictation.hotkey) return;
+    setDictationBusy(true);
+    try {
+      await dictationSettingsSet({ hotkey: next });
+      await refreshDictation();
+    } catch (error) {
+      setDictationError(String(error));
+    } finally {
+      setDictationBusy(false);
+    }
+  }, [dictation, hotkeyDraft, refreshDictation]);
+
+  /** 拔掉外接屏之后浮钮可能飞到屏幕外 —— 这一条永远能把它找回来 */
+  const resetDictationButton = useCallback(async () => {
+    setDictationBusy(true);
+    try {
+      const settings = await dictationSettingsSet({ show: true, dx: -120, dy: -120 });
+      setDictationSettingsValue(settings);
+    } catch (error) {
+      setDictationError(String(error));
+    } finally {
+      setDictationBusy(false);
+    }
   }, []);
 
   // Ctrl+, 开关设置（和大多数桌面应用一致），Esc 关闭
@@ -1025,6 +1113,77 @@ export function SettingsMenu({
                         <span className="lattice-menu-label">{t("AI assistant")}</span>
                         <span className="lattice-menu-note">{t("Model · key · Ctrl+K")}</span>
                         <Glyph d={ICON.chevron} size={13} />
+                      </button>
+
+                      <div className="lattice-menu-row is-static">
+                        <Glyph d={ICON.mic} />
+                        <span className="lattice-menu-label">{t("Dictation")}</span>
+                        <span className="lattice-menu-note">
+                          {dictationError ??
+                            (dictation?.available
+                              ? dictation.language
+                              : t("Needs a Chinese speech language"))}
+                        </span>
+                        <label
+                          className="lattice-switch"
+                          title={t("Say it instead of typing it. The panel has a button; the desktop button and the hotkey work in any window.")}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(dictation?.enabled)}
+                            disabled={!dictation?.available || dictationBusy}
+                            onChange={() => void toggleDictation()}
+                            aria-label={t("Turn dictation on")}
+                          />
+                        </label>
+                      </div>
+
+                      <div className="lattice-menu-row is-static">
+                        <Glyph d={ICON.keyboard} />
+                        <span className="lattice-menu-label">{t("Dictation hotkey")}</span>
+                        {/*
+                          失焦 / 回车才提交：每敲一个字符就注册一次的话，
+                          敲到一半的 `Ctrl+Alt+S` 会先把一个真实热键抢过来
+                        */}
+                        <input
+                          type="text"
+                          className="lattice-dictation-hotkey"
+                          value={hotkeyDraft}
+                          disabled={!dictation?.available || dictationBusy}
+                          onChange={(event) => setHotkeyDraft(event.target.value)}
+                          onBlur={() => void commitHotkey()}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void commitHotkey();
+                            }
+                          }}
+                          aria-label={t("Dictation hotkey")}
+                        />
+                      </div>
+
+                      {dictation?.hotkeyError && (
+                        <p className="lattice-settings-hint">{dictation.hotkeyError}</p>
+                      )}
+
+                      <button
+                        type="button"
+                        className="lattice-menu-row"
+                        onClick={() => void resetDictationButton()}
+                        disabled={dictationBusy}
+                        title={t("Unplugging a monitor can leave the button off screen")}
+                      >
+                        <Glyph d={ICON.mic} />
+                        <span className="lattice-menu-label">
+                          {t("Put the dictation button back")}
+                        </span>
+                        <span className="lattice-menu-note">
+                          {dictationSettingsValue?.show === false
+                            ? t("Hidden")
+                            : `${dictationSettingsValue?.dx ?? -120}, ${
+                                dictationSettingsValue?.dy ?? -120
+                              }`}
+                        </span>
                       </button>
 
                       <p className="lattice-settings-hint">

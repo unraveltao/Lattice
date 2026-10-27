@@ -3962,6 +3962,98 @@ button.lattice-chip[aria-pressed="true"] {
   text-overflow: ellipsis;
 }
 
+/* ---- 听写那颗麦克风（0027）
+ *
+ * 和「发送」同一行、贴在它左边：说一句 → 回车发出去，手上不用换地方。
+ * 在听的时候换成强调色实心 + 一圈呼吸，因为"现在在录"必须一眼看得出来
+ * （说错了只剩目标应用自己的 Ctrl+Z）。灰掉的那一颗是"这台机器没有中文听写"，
+ * 不是"暂时不可用" —— 所以旁边会有一行字指向系统设置。
+ */
+.lattice-assistant-mic {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--lattice-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--lattice-border);
+  border-radius: 999px;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.lattice-assistant-mic:hover:not(:disabled) {
+  color: var(--lattice-text);
+  background: var(--lattice-accent-soft);
+}
+
+.lattice-assistant-mic[data-on="1"] {
+  color: var(--lattice-accent);
+  background: var(--lattice-accent-soft);
+  border-color: color-mix(in srgb, var(--lattice-accent) 50%, transparent);
+  animation: lattice-mic-pulse 1.4s ease-in-out infinite;
+}
+
+.lattice-assistant-mic:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@keyframes lattice-mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--lattice-accent) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+/* 提示行：出了字、热键被占、没听到，都只在这里说一句。
+ * 它不是错误条 —— 一条红底会把整块输入区变成报警灯，而这里多半只是"再说一次" */
+.lattice-assistant-dictation {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 0 0 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-assistant-dictation-link {
+  padding: 0;
+  font-size: 11px;
+  color: var(--lattice-accent);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  text-decoration: underline;
+}
+
+/* 听写热键那个输入框：组合键要看清楚，所以等宽；它在一行里靠右，
+ * 和设置页其它行的"值在右"同一个位置 */
+.lattice-dictation-hotkey {
+  width: 112px;
+  margin-left: auto;
+  padding: 4px 6px;
+  font-family: var(--lattice-mono);
+  font-size: 11px;
+  color: var(--lattice-text);
+  text-align: center;
+  background: transparent;
+  border: 1px solid var(--lattice-border);
+  border-radius: 6px;
+}
+
+.lattice-dictation-hotkey:focus {
+  outline: none;
+  border-color: var(--lattice-accent);
+}
+
 /* ---- 完全访问那颗药丸（0009 的入口，常驻输入框左下）
  *
  * 形状照用户给的参考图：圆圈叹号 + 一句话 + 一个箭头，整颗是警示色。
