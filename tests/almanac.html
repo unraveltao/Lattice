@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>almanac core / lunar, terms, festivals</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.almanac/almanac-core.js"></script>
+    <script type="module">
+      /*
+       * 农历 / 节气 / 节日的断言。
+       *
+       * 两件事让这一页不依赖时区：
+       *  - 断言农历时用 `new Date(y, m, d)`（本地字段）构造，和组件读的是同一天；
+       *  - 只钉"节气落在哪个窗口"，不钉具体日期 —— 机器不在东八区时，贴着午夜的
+       *    那个节气会差一天，那是设计（按你的时钟），不是错误。
+       *
+       * 真正的强断言是那条自洽检查：每个节气时刻的太阳黄经必须等于它的目标度数。
+       * 它不依赖任何外部日期表，却能抓出牛顿迭代写错、跨 0° 折角写错这类问题。
+       */
+      const core = window.__latticeAlmanacCore;
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const norm = (deg) => ((deg % 360) + 360) % 360;
+      const angleDiff = (a, b) => Math.abs(((norm(a) - norm(b) + 540) % 360) - 180);
+
+      // ---------- 太阳黄经 ----------
+
+      log(
+        angleDiff(core.sunLongitude(Date.UTC(2026, 2, 20, 14, 46)), 0) < 0.2,
+        `2026 春分时刻的黄经是 ${core.sunLongitude(Date.UTC(2026, 2, 20, 14, 46)).toFixed(3)}°（该是 0°）`,
+      );
+      log(
+        angleDiff(core.sunLongitude(Date.UTC(2026, 5, 21, 8, 24)), 90) < 0.2,
+        `2026 夏至时刻的黄经该是 90°，实测差 ${angleDiff(core.sunLongitude(Date.UTC(2026, 5, 21, 8, 24)), 90).toFixed(3)}°`,
+      );
+      log(
+        angleDiff(core.sunLongitude(Date.UTC(2026, 11, 21, 20, 50)), 270) < 0.2,
+        `2026 冬至时刻的黄经该是 270°，实测差 ${angleDiff(core.sunLongitude(Date.UTC(2026, 11, 21, 20, 50)), 270).toFixed(3)}°`,
+      );
+      {
+        let previous = core.sunLongitude(Date.UTC(2026, 0, 1));
+        let monotonic = true;
+        for (let day = 1; day < 30; day += 1) {
+          const now = core.sunLongitude(Date.UTC(2026, 0, 1) + day * 86400000);
+          const step = norm(now - previous);
+          if (step < 0.5 || step > 1.5) monotonic = false;
+          previous = now;
+        }
+        log(monotonic, "每天前进约 0.986°（30 天里没有回退，也没有跳跃）");
+      }
+      {
+        const value = core.sunLongitude(Date.UTC(2026, 0, 1));
+        log(value > 275 && value < 285, `1 月 1 日黄经在 280° 附近（${value.toFixed(2)}°）`);
+        log(
+          [0, 90, 180, 270, 359].every((deg) => core.sunLongitude(Date.UTC(2026, 0, 1) + deg * 3600000) >= 0),
+          "返回值永远落在 0..360",
+        );
+      }
+
+      // ---------- 二十四节气 ----------
+
+      const terms = core.termsOfYear(2026);
+      log(terms.length === 24, `一年 24 个节气（现在 ${terms.length} 个）`);
+      log(core.termsOfYear(2026) === terms, "同一年的节气表只算一次（缓存）");
+      log(
+        terms.every((term, index) => index === 0 || term.ms > terms[index - 1].ms),
+        "24 个节气的时刻严格递增",
+      );
+      log(
+        terms.every((term) => angleDiff(core.sunLongitude(term.ms), term.deg) < 0.001),
+        "每个节气时刻的太阳黄经都等于它的目标度数（牛顿迭代收敛了）",
+      );
+      log(
+        angleDiff(core.sunLongitude(core.termTime(2026, 5)), 0) < 0.001,
+        "termTime 单独调用也收敛（春分）",
+      );
+
+      {
+        // 日历顺序：小寒 … 冬至；每个月两个
+        const byName = {};
+        terms.forEach((term) => (byName[term.zh] = term));
+        const order = terms.map((term) => term.zh);
+        log(order[0] === "小寒" && order[23] === "冬至", `从「${order[0]}」到「${order[23]}」`);
+        log(new Set(order).size === 24, "没有重名的节气");
+
+        let windowsOk = true;
+        const loose = [];
+        for (const term of terms) {
+          const source = core.TERMS.find((entry) => entry.zh === term.zh);
+          const monthOk = term.date.getMonth() + 1 === source.month;
+          const dayOk = Math.abs(term.date.getDate() - source.day) <= 2;
+          if (!monthOk) {
+            windowsOk = false;
+            loose.push(term.zh + " 月份 " + (term.date.getMonth() + 1));
+          }
+          if (!dayOk) {
+            windowsOk = false;
+            loose.push(term.zh + " 日期 " + term.date.getDate());
+          }
+        }
+        log(windowsOk, "每个节气都落在它那个月、那前后两天里" + (loose.length ? "：" + loose.join("、") : ""));
+      }
+
+      {
+        const equinox = terms.find((term) => term.zh === "春分");
+        log(equinox.date.getMonth() === 2, "春分在 3 月");
+        const solstice = terms.find((term) => term.zh === "夏至");
+        log(solstice.date.getMonth() === 5, "夏至在 6 月");
+        log(
+          core.termOnDay(equinox.date) && core.termOnDay(equinox.date).zh === "春分",
+          "拿节气那一天去问，答的是它自己（termOnDay）",
+        );
+        log(
+          core.termOnDay(new Date(equinox.date.getFullYear(), equinox.date.getMonth(), equinox.date.getDate() + 1)) === null,
+          "节气第二天就不是节气了",
+        );
+      }
+
+      // ---------- 下一个节气 ----------
+
+      {
+        const from = new Date(2026, 1, 17, 9, 0);
+        const next = core.nextTerm(from);
+        log(next.zh === "雨水", `2 月 17 日的下一个节气是雨水（算出来是「${next.zh}」）`);
+        const days = core.dayDiff(from, next.date);
+        log(days >= 0 && days <= 2, `距雨水 ${days} 天`);
+
+        const self = core.nextTerm(terms[3].date);
+        log(self.zh === terms[3].zh && core.dayDiff(terms[3].date, self.date) === 0, "节气当天问到的就是当天那个");
+      }
+
+      // ---------- 农历 ----------
+
+      log(core.hasLunar === true, "这个运行时的 ICU 带中国历法");
+
+      {
+        const cny2024 = core.lunarOf(new Date(2024, 1, 10, 12));
+        log(cny2024.month === "正月" && cny2024.day === 1, "2024-02-10 是正月初一");
+        log(cny2024.yearName === "甲辰" && cny2024.zodiac.zh === "龙", "2024 是甲辰龙年");
+        log(cny2024.label === "正月初一", `卡片上写「${cny2024.label}」`);
+
+        const cny2025 = core.lunarOf(new Date(2025, 0, 29, 12));
+        log(cny2025.day === 1 && cny2025.monthNumber === 1, "2025-01-29 也是正月初一");
+        log(cny2025.yearName === "乙巳" && cny2025.zodiac.en === "Snake", "2025 是乙巳蛇年");
+
+        const cny2026 = core.lunarOf(new Date(2026, 1, 17, 12));
+        log(cny2026.monthNumber === 1 && cny2026.day === 1, "2026-02-17 是正月初一");
+        log(cny2026.yearName === "丙午" && cny2026.zodiac.zh === "马", "2026 是丙午马年");
+        log(cny2026.gzPinyin === "Bingwu", `干支的拼音是「${cny2026.gzPinyin}」`);
+
+        const midAutumn = core.lunarOf(new Date(2025, 9, 6, 12));
+        log(midAutumn.monthNumber === 8 && midAutumn.day === 15, "2025-10-06 是八月十五");
+        log(midAutumn.label === "八月十五", `卡片上写「${midAutumn.label}」`);
+
+        const eve = core.lunarOf(new Date(2026, 1, 16, 12));
+        log(eve.monthNumber === 12 && !eve.leap, "除夕前一天还在腊月里");
+        log(eve.month === "腊月", `腊月的月名是「${eve.month}」`);
+      }
+
+      {
+        const leap = core.lunarOf(new Date(2025, 6, 25, 12));
+        log(leap.leap === true, "2025-07-25 落在闰月里");
+        log(leap.month === "闰六月" && leap.monthNumber === 6, `闰月的月名是「${leap.month}」`);
+        log(leap.label.startsWith("闰六月"), "卡片的写法也带「闰」字");
+      }
+
+      {
+        log(core.DAY_NAMES[0] === "初一" && core.DAY_NAMES[29] === "三十", "初一和三十的写法");
+        log(core.DAY_NAMES[19] === "二十" && core.DAY_NAMES[20] === "廿一", "二十和廿一的写法");
+        log(
+          core.lunarLabelEn({ monthNumber: 1, day: 1, leap: false }) === "Zhengyue 1",
+          "英文写法是「Zhengyue 1」",
+        );
+        log(
+          core.lunarLabelEn({ monthNumber: 6, day: 1, leap: true }) === "Leap Liuyue 1",
+          "闰月在英文里带 Leap 前缀",
+        );
+        log(core.lunarOf(new Date(2026, 1, 17, 12)) === core.lunarOf(new Date(2026, 1, 17, 12)), "同一天只问 ICU 一次（缓存）");
+      }
+
+      // ---------- 节日 ----------
+
+      {
+        const list = core.festivalsOfYear(2026);
+        log(list.length === 7, `七个法定节日（现在 ${list.length} 个）`);
+        log(
+          list.every((entry, index) => index === 0 || entry.date > list[index - 1].date),
+          "节日按日期升序",
+        );
+        const ids = list.map((entry) => entry.id).join(",");
+        log(ids.startsWith("new-year"), `元旦排第一（${ids}）`);
+        log(ids.endsWith("national"), "国庆排最后");
+
+        const spring = list.find((entry) => entry.id === "spring");
+        log(spring.date.getMonth() === 1 && spring.date.getDate() === 17, "2026 春节是 2 月 17 日");
+        const qingming = list.find((entry) => entry.id === "qingming");
+        const qingmingTerm = terms.find((term) => term.zh === "清明");
+        log(
+          qingming.date.getFullYear() === qingmingTerm.date.getFullYear() &&
+            qingming.date.getMonth() === qingmingTerm.date.getMonth() &&
+            qingming.date.getDate() === qingmingTerm.date.getDate(),
+          "清明的日期就是算出来的节气日期",
+        );
+        for (const id of ["dragon-boat", "mid-autumn"]) {
+          const entry = list.find((festival) => festival.id === id);
+          const lunar = core.lunarOf(entry.date);
+          const wanted = id === "dragon-boat" ? [5, 5] : [8, 15];
+          log(
+            lunar && lunar.monthNumber === wanted[0] && lunar.day === wanted[1],
+            `${id} 反查出来的那天确实是农历 ${wanted[0]}/${wanted[1]}`,
+          );
+        }
+      }
+
+      {
+        const next = core.nextFestival(new Date(2026, 1, 18, 12));
+        log(next.id === "qingming", `春节第二天问，下一个是清明（算出来是「${next.id}」）`);
+        log(core.dayDiff(new Date(2026, 1, 18, 12), next.date) >= 30, "距清明还有一个多月");
+
+        const onIt = core.nextFestival(new Date(2026, 1, 17, 12));
+        log(onIt.id === "spring" && core.dayDiff(new Date(2026, 1, 17, 12), onIt.date) === 0, "节日当天问到的就是它自己");
+      }
+
+      // ---------- 卡片模型 ----------
+
+      {
+        const model = core.cardModel(new Date(2026, 1, 17, 9, 0));
+        log(model.key === "2026-02-17", `日期键是 ${model.key}`);
+        log(model.gregorian.weekday === 2 && model.gregorian.weekdayZh === "周二", "2026-02-17 是周二");
+        log(model.lunar.label === "正月初一", "模型里的农历是正月初一");
+        log(model.festival.id === "spring" && model.festival.today === true, "模型里的节日是今天的春节");
+        log(model.term.zh === "雨水" && model.term.today === false, "模型里的下一个节气是雨水");
+        log(model.term.days >= 0 && model.term.days <= 2, `距雨水 ${model.term.days} 天`);
+        log(model.term.activeToday === false, "「今天是节气」这个开关没被误开");
+
+        const onTerm = core.cardModel(terms[10].date);
+        log(onTerm.term.today === true && onTerm.term.activeToday === true, "节气当天的模型标着「就是今天」");
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

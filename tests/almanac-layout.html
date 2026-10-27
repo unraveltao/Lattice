@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>almanac ui / bridge, language and layout</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.almanac/almanac-core.js"></script>
+    <script type="module">
+      /*
+       * 农历组件的界面断言：真组件 + 假桥，时间钉在 2026-02-17（周二，正月初一，
+       * 也是春节）。日期用本地字段构造，所以这一页在任何时区跑的结论一样。
+       *
+       * 盯四件事：卡片真的把这些字画出来了；换语言整页跟着翻；心跳只在一分钟
+       * 一拍上重算；顶部给窗饰的 120px 让干净了。
+       */
+      const core = window.__latticeAlmanacCore;
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      // 和 src/widgetHost.css 的 .lw-pill 一致（见 tests/note-layout.html）
+      const PILL_BOTTOM = 34;
+      const PILL_WIDTH = 120;
+
+      function mount(w, h, options) {
+        const config = options || {};
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+        frame.style.width = w + "px";
+        frame.style.height = h + "px";
+        frame.src = "/widgets/lattice.almanac/index.html";
+        document.body.appendChild(frame);
+
+        const calls = [];
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+            calls.push({ method: data.method, params: data.params });
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+
+            if (data.method === "lang.get") return reply({ ok: true, result: { lang: "zh" } });
+            if (data.method === "clock.now") {
+              if (config.clockDenied) return reply({ ok: false, code: "permission_denied", error: "denied" });
+              return reply({
+                ok: true,
+                result: {
+                  now: config.now.toISOString(),
+                  epochMs: config.now.getTime(),
+                  timeZone: "Test/Zone",
+                  utcOffsetMinutes: 0,
+                },
+              });
+            }
+            if (data.method === "schedule.every") return reply({ ok: true, result: { id: 5 } });
+            if (data.method === "schedule.clear") return reply({ ok: true, result: { ok: true } });
+            reply({ ok: false, code: "unknown_method", error: "unknown" });
+          });
+        });
+
+        return {
+          frame,
+          calls,
+          ready,
+          doc: () => frame.contentDocument,
+          send(type, payload) {
+            frame.contentWindow.postMessage({ __lattice: 1, type, payload }, "*");
+            return sleep(60);
+          },
+          count(method) {
+            return calls.filter((call) => call.method === method).length;
+          },
+        };
+      }
+
+      const NOW = new Date(2026, 1, 17, 11, 0, 0);
+
+      // ---------- 场景 1：默认尺寸，中文字卡 ----------
+      {
+        const view = mount(260, 180, { now: NOW });
+        await view.ready;
+        await sleep(90);
+        const doc = view.doc();
+
+        log(view.count("clock.now") >= 1, "启动时问了一次平台时钟");
+        const head = doc.getElementById("head").textContent;
+        log(head === "2026年2月17日 周二", `顶上是公历与星期（「${head}」）`);
+        log(doc.getElementById("lunar").textContent === "正月初一", "大字是农历月日");
+        log(doc.getElementById("sub").textContent === "丙午马年", `小字是干支生肖（「${doc.getElementById("sub").textContent}」）`);
+        log(doc.getElementById("term-key").textContent === "节气", "第一行标着「节气」");
+        log(doc.getElementById("fest-key").textContent === "节日", "第二行标着「节日」");
+
+        const termName = doc.getElementById("term-name").textContent;
+        const expected = core.cardModel(NOW);
+        log(termName === expected.term.zh, `下一个节气是「${termName}」`);
+        const when = doc.getElementById("term-when").textContent;
+        log(/^\d+月\d+日 · (今天|明天|还有 \d+ 天)$/.test(when), `节气的日期与倒数（「${when}」）`);
+        log(doc.getElementById("fest-name").textContent === "春节", "下一个节日是春节");
+        log(doc.getElementById("fest-when").textContent === "就是今天", "春节就是今天");
+
+        log(doc.body.getAttribute("data-festival-today") === "true", "节日那行标成「今天」");
+        log(doc.body.getAttribute("data-term-today") === "false", "节气那行没被误标");
+
+        // 布局
+        const headEl = doc.querySelector(".al-head");
+        log(parseFloat(getComputedStyle(headEl).paddingRight) >= PILL_WIDTH, "状态条右侧让出窗饰的位置");
+        log(headEl.getBoundingClientRect().height === 24, "状态条 24px 高，内容都在它下面");
+        log(
+          doc.querySelector(".al-main").getBoundingClientRect().top >= PILL_BOTTOM,
+          `农历那一段从 ${PILL_BOTTOM}px 之下开始`,
+        );
+        log(
+          doc.querySelector(".al-rows").getBoundingClientRect().bottom <= 180 - 12 + 0.5,
+          "两行倒数没有顶出卡片下内边距",
+        );
+        log(doc.documentElement.scrollHeight <= 180, `页面没有纵向溢出（${doc.documentElement.scrollHeight}）`);
+
+        // 换语言
+        await view.send("language", { lang: "en" });
+        const enHead = doc.getElementById("head").textContent;
+        log(enHead === "Feb 17, 2026 · Tue", `英文的顶上那行（「${enHead}」）`);
+        log(doc.getElementById("lunar").textContent === "Zhengyue 1", "农历写成 Zhengyue 1");
+        log(doc.getElementById("sub").textContent === "Bingwu year · Horse", "干支写拼音 + 生肖");
+        log(doc.getElementById("term-key").textContent === "Term", "英文标着 Term");
+        log(doc.getElementById("fest-key").textContent === "Festival", "英文标着 Festival");
+        log(doc.getElementById("term-name").textContent === expected.term.en, `英文节气名（「${doc.getElementById("term-name").textContent}」）`);
+        log(doc.getElementById("fest-when").textContent === "today", "英文里今天写 today");
+        log(doc.title === "Almanac", `窗口标题是「${doc.title}」`);
+
+        // 心跳：同一分钟里重算但不重画
+        const before = view.count("clock.now");
+        const snapshot = doc.getElementById("lunar").textContent;
+        await view.send("tick", { id: 5 });
+        log(view.count("clock.now") === before + 1, "心跳一拍就问一次时钟（为了午夜翻篇）");
+        log(doc.getElementById("lunar").textContent === snapshot, "同一天不重画（字没变）");
+        view.frame.remove();
+      }
+
+      // ---------- 场景 2：没有时钟权限，退回本机时钟 ----------
+      {
+        const view = mount(260, 180, { now: NOW, clockDenied: true });
+        await view.ready;
+        await sleep(90);
+        const doc = view.doc();
+        const head = doc.getElementById("head").textContent;
+        log(head.includes(String(new Date().getFullYear())), `拒绝时钟权限后仍画出今天的日期（「${head}」）`);
+        log(doc.getElementById("lunar").textContent.length > 0, "农历那行也不是空的");
+        log(doc.documentElement.scrollHeight <= 180, "降级路径没有把布局撑坏");
+        view.frame.remove();
+      }
+
+      // ---------- 场景 3：最小尺寸 ----------
+      {
+        const view = mount(220, 150, { now: NOW });
+        await view.ready;
+        await sleep(90);
+        const doc = view.doc();
+        const rows = doc.querySelector(".al-rows").getBoundingClientRect();
+        log(rows.bottom <= 150 - 12 + 0.5, `最小尺寸下两行下沿 ${rows.bottom.toFixed(1)}（≤ 138）`);
+        log(doc.documentElement.scrollHeight <= 150, `最小尺寸没有纵向溢出（${doc.documentElement.scrollHeight}）`);
+        log(
+          doc.getElementById("term-when").getBoundingClientRect().right <= 220 - 12 + 0.5,
+          "最小尺寸下倒数那列没有顶出右边",
+        );
+        view.frame.remove();
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

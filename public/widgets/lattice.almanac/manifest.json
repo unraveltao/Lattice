@@ -1,0 +1,129 @@
+{
+  "id": "lattice.almanac",
+  "name": { "zh": "农历", "en": "Almanac" },
+  "version": "0.1.0",
+  "description": {
+    "zh": "今天的农历日期、干支与生肖，加上下一个节气和一个节日还有几天",
+    "en": "Today's lunar date, the sexagenary year, and how far the next solar term and festival are"
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 260, "h": 180, "minW": 220, "minH": 150 },
+  "layer": "desktop",
+  "permissions": ["clock"],
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "卡片上有什么", "en": "What is on the card" },
+        "items": [
+          {
+            "zh": "最上面一行是公历日期和星期，大字是农历的月与日。",
+            "en": "The top line is the Gregorian date and weekday; the large text is the lunar month and day."
+          },
+          {
+            "zh": "大字下面那行是干支年与生肖，例如「丙午马年」。",
+            "en": "Under it sits the sexagenary year and the animal, for example Bingwu year · Horse."
+          },
+          {
+            "zh": "最下面两行分别是下一个节气和下一个节日，各差多少天。",
+            "en": "The bottom two rows are the next solar term and the next festival, each with how many days away."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "农历从哪来", "en": "Where the lunar date comes from" },
+        "items": [
+          {
+            "zh": "用的是浏览器自带的 ICU 中国历法，不是一张抄来的万年历表。",
+            "en": "It uses the ICU Chinese calendar built into the browser, not a copied lookup table."
+          },
+          {
+            "zh": "所以闰月、大小月都由历法本身决定，包里没有一份会过期的数据。",
+            "en": "So leap months and 29/30-day months come from the calendar itself; the package carries no data that can go stale."
+          },
+          {
+            "zh": "用的是「你这一天」：按本机时区算，和墙上的钟对得上。",
+            "en": "It uses your day, in the machine's own time zone, so it matches the clock on the wall."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "节气怎么算", "en": "How the terms are computed" },
+        "items": [
+          {
+            "zh": "太阳黄经每走 15° 就是一个节气，这里真的按天文位置算，不查表。",
+            "en": "A solar term is where the sun's longitude crosses a multiple of 15°; this card computes it, it does not look it up."
+          },
+          {
+            "zh": "所以任何年份都能算，不会因为表只到某一年就停。",
+            "en": "So any year works; it does not stop at the last year of a table."
+          },
+          {
+            "zh": "用的是低精度公式，误差约 15 分钟；节气贴着午夜的那一年可能和日历差一天。",
+            "en": "The formula is low-precision, about 15 minutes of error; in a year where a term lands near midnight it can differ from a printed calendar by a day."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "哪几个节日", "en": "Which festivals" },
+        "items": [
+          {
+            "zh": "七个法定节日：元旦、春节、清明、劳动节、端午、中秋、国庆。",
+            "en": "Seven public holidays: New Year's Day, Spring Festival, Qingming, Labour Day, Dragon Boat, Mid-Autumn, National Day."
+          },
+          {
+            "zh": "清明直接用算出来的节气日期 —— 它每年在 4 月 4 日到 6 日之间晃。",
+            "en": "Qingming uses the computed term date, because it moves between April 4 and 6 each year."
+          },
+          {
+            "zh": "春节、端午、中秋的农历日期由历法反查，不用你填。",
+            "en": "The lunar dates of Spring Festival, Dragon Boat and Mid-Autumn are looked up backwards, not filled in by hand."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "什么时候会变", "en": "When it changes" },
+        "items": [
+          {
+            "zh": "每分钟看一次，但只有跨过午夜才重画 —— 这一页的粒度是「天」。",
+            "en": "It looks once a minute but only redraws when the date changes; this card is measured in days."
+          },
+          {
+            "zh": "窗口藏起来时心跳停摆，回来补一拍；不会因为藏过就停在昨天。",
+            "en": "The heartbeat pauses while the window is hidden and catches up when it returns, so it never sticks on yesterday."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "读不到时钟的时候", "en": "When the clock is unavailable" },
+        "items": [
+          {
+            "zh": "优先用平台的时钟（「时钟」权限）；拒绝这项权限时退回本机时钟，日期照样对。",
+            "en": "It prefers the platform clock (the clock permission); without it the card falls back to the machine clock, which is usually the same."
+          },
+          {
+            "zh": "运行时的 ICU 若没有中国历法，大字会写「农历不可用」，其余照常。",
+            "en": "If the runtime's ICU has no Chinese calendar, the large text says No Chinese calendar and the rest still works."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "changes": [
+        {
+          "zh": "第一个版本：农历月日、干支生肖、下一个节气、下一个法定节日。",
+          "en": "First release: lunar month and day, sexagenary year and animal, the next solar term and the next public holiday."
+        },
+        {
+          "zh": "节气按太阳黄经现算（任意年份可用），农历走运行时自带的 ICU 中国历法。",
+          "en": "Solar terms are computed from the sun's longitude (any year works); the lunar date comes from the runtime's built-in ICU Chinese calendar."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

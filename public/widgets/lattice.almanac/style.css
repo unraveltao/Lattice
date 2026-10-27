@@ -1,0 +1,141 @@
+:root {
+  --bg: transparent;
+  --fg: #ecebe6;
+  --muted: #97978f;
+  --accent: #5dcaa5;
+  --border: rgba(255, 255, 255, 0.12);
+  --radius: 10px;
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+}
+
+/* 一个颜色都不写死：底板变浅时平台会整体翻转令牌（不变量 6） */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  overflow: hidden;
+  user-select: none;
+}
+
+.al {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 10px 12px 12px;
+}
+
+/* ---------- 状态条（同时给窗饰让位） ---------- */
+
+.al-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding-right: 120px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.al-head #head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 农历日期 ---------- */
+
+.al-main {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.al-lunar {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.al-sub {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 下一个节气 / 节日 ---------- */
+
+/* 贴底：卡片被拉高时多出来的空白留在农历和这两行之间 */
+.al-rows {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.al-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* 固定 42px：「节气」两个字和英文的 Holiday 都放得下，两行才对得齐 */
+.al-key {
+  flex: none;
+  width: 42px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.al-name {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.al-when {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 今天正好是节气 / 节日：那一行的名字和日期换成强调色 */
+body[data-term-today="true"] #term-name,
+body[data-term-today="true"] #term-when,
+body[data-festival-today="true"] #fest-name,
+body[data-festival-today="true"] #fest-when {
+  color: var(--accent);
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>农历</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-term-today="false" data-festival-today="false">
+    <!--
+      顶上那条 24px 给窗饰让出 120px（桌面窗口右上角那排按钮浮在内容之上）。
+      卡片上的字全部由 widget.js 用这台机器自己的时钟算出来，首帧不等桥。
+    -->
+    <main class="al">
+      <div class="al-head"><span id="head"></span></div>
+
+      <div class="al-main">
+        <div class="al-lunar" id="lunar"></div>
+        <div class="al-sub" id="sub"></div>
+      </div>
+
+      <div class="al-rows">
+        <div class="al-row">
+          <span class="al-key" id="term-key">节气</span>
+          <span class="al-name" id="term-name"></span>
+          <span class="al-when" id="term-when"></span>
+        </div>
+        <div class="al-row">
+          <span class="al-key" id="fest-key">节日</span>
+          <span class="al-name" id="fest-name"></span>
+          <span class="al-when" id="fest-when"></span>
+        </div>
+      </div>
+    </main>
+    <script src="almanac-core.js"></script>
+    <script src="widget.js"></script>
+  </body>
+</html>
