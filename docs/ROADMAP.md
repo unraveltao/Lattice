@@ -236,6 +236,10 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
   - **"清空"两段式**。这一栏本身就是撤销的最后一层，一下点掉就没有下一层了 —— 第一下只把按钮换成"确定清空？"，旁边留"留着"。
   - 判据全在 `runtime/trash.ts`（纯函数，`tests/trash.html` 20 条钉着过期边界、条数上限、去重、未来时间戳、`canRestore`），`tests/store-ui.tsx` 75 → 94 条（回收站那一段的接线：空着连标题都不出、组件装不装决定 Restore 灰不灰、两颗删除按钮叫到的回调、清空两段式）。**真机还没走**：删一个组件 → 等 8 秒撤销条消失 → 组件库底部的"最近删除"里恢复它（位置与设置都在）→ 卸载那个包后再看恢复按钮是按灰的 → 清空一次。
 
+- [ ] **相似项目（`lattice.related`）** —— 粘一个 GitHub 地址进来，列出做同一件事的其他项目，按 star 排前 10。**零平台改动**（只用 `network.fetch` / `llm.chat` / `shell.open` / `storage`），设计在 [`design/0024-github-related-widget.md`](./design/0024-github-related-widget.md)。
+  - **模型提名、代码核对**：实测过，纯 topic 检索给的是"同类"不是"同题" —— 搜 `tauri-apps/tauri` 的前六全是**用 Tauri 写出来的应用**；`in:readme` 检索则被 `awesome-*` 霸榜（它们 README 里什么都提一句）。模型知道 electron / wails / neutralinojs 是它的替代品，代码负责把名字换成真实 star。
+  - **一次查询只花 1 次核心 + 1 次搜索**（未认证额度 60 次/小时、搜索 10 次/分）。所以不拉候选 README，也用一次 `OR` 搜索批量核对全部名字。
+  - **相似度当筛子、star 当尺子**。没配模型时降级到 topic 检索，横幅必须写明"同标签，不是替代品"。
 - [ ] **转码器（`lattice.transcode`）与第六族能力** —— 拖进视频/音频，选目标格式，转完在资源管理器里选中。九种目标（mp4 / mkv / webm / mov / mp3 / m4a / flac / wav / opus），串行队列，能取消。取舍、方法表、格式表与失败模式在 [`design/0023-media-transcode.md`](./design/0023-media-transcode.md)。
   - **不复用 `terminal:exec`**，这是这次最值钱的决定。`lattice.term` 那条常驻 shell 让"零平台改动"变得可能 —— 但那等于为了转一个 mp4，把完整 shell 交给第三方组件；接上 `agent.tools` 之后模型就能借"转换"跑任意命令。所以新开一族 `media:transcode`，**权限只有一条**。
   - **Rust 拼参数、算输出路径，组件只递一个枚举**（`format: "mp4"`）。参数是注入面，路径是越权面，两个都不给组件。
