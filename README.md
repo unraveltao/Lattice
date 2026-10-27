@@ -31,9 +31,9 @@ Nothing from a real desktop is in the frame.</sub></p>
 
 Lattice puts small windows on your Windows desktop: a clock, a to-do list, system stats, whatever is playing. Real windows, not pictures. No frame, no taskbar entry, and clicking one never steals focus from what you are typing into. Pin them above everything, or tuck them under your ordinary windows against the wallpaper. Position is remembered per monitor, and everything is back where it was after a restart.
 
-The difference from other desktop toys is here: **the platform ships no widgets.** All 25 official ones go through the same install path as a third-party package, and nothing is preinstalled. So there is no ceiling on what widgets can exist. The ceiling is your HTML.
+The difference from other desktop toys is here: **the platform ships no widgets.** All 25 official ones go through the same install path as a third-party package, and nothing is preinstalled. What widgets can exist depends on the HTML you write.
 
-Chinese and English run the whole length of it: the shell, each widget's name and options, and the words drawn *inside* the cards. No restart, no reload.
+Chinese and English go all the way down: the shell, each widget's name and options, and the words drawn *inside* the cards. Switching needs no restart and no reload.
 
 The name is 棂 (*líng*), the wooden lattice inside a window pane. Every pane is set into it.
 
@@ -55,7 +55,7 @@ The name is 棂 (*líng*), the wooden lattice inside a window pane. Every pane i
 
 ## Install
 
-**Just want to use it.** Take `*-setup.exe` from [Releases](https://github.com/unraveltao/Lattice/releases) and run it. The first launch is stopped by SmartScreen as an "unknown publisher"; the installer is not code-signed yet, so click **More info → Run anyway**. That is a procurement problem, not a technical one, and it sits in the known-gaps table in [AGENTS.md](./AGENTS.md) rather than being quietly ignored.
+**Just want to use it.** Take `*-setup.exe` from [Releases](https://github.com/unraveltao/Lattice/releases) and run it. The first launch is stopped by SmartScreen as an "unknown publisher"; the installer is not code-signed yet, so click **More info → Run anyway**. That is a procurement problem, not a technical one, and it sits in the known-gaps table in [AGENTS.md](./AGENTS.md).
 
 **Changing the code.** Node 22, Rust (the `windows-gnu` toolchain) and the WebView2 runtime: the standard [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/).
 
@@ -111,13 +111,13 @@ npm run pack:widget -- demo.mine      # folder → .lattice, drag straight into 
 
 ## How it works
 
-A widget never touches Windows. It runs in a sandboxed iframe with an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge. Fifteen permissions, nothing granted by default, and installing a widget grants it nothing: you approve each capability once per widget, and revoking one takes effect in the windows already open.
+A widget never touches Windows. It runs in a sandboxed iframe with an opaque origin and a CSP that pins it to its own files, and every capability it has is a request over one message bridge. Fifteen permissions, none granted by default, and installing a widget grants nothing: you approve each capability once per widget, and revoking one takes effect in the windows already open.
 
 <p align="center"><a href="docs/screenshot-editor.png"><img src="docs/screenshot-editor.png" width="880" alt="The main window: widget library, canvas and inspector"></a></p>
 
 <p align="center"><sub>The main window: library on the left, canvas in the middle, inspector on the right. Canvas previews are an approximation; there is no wallpaper to sample inside a window.</sub></p>
 
-Three decisions make it look odd next to a desktop toy. None of them is cheap.
+Three decisions keep it from looking like a desktop toy, and none of them came cheap.
 
 The platform ships empty. First run is an empty desktop and a library you fill yourself. Six preinstalled widgets would look better in a screenshot, and would kill the extension model on day one.
 
@@ -136,7 +136,7 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 
 ## Where it stands
 
-The newest milestone is v0.13: the assistant gets its own window on the desktop. The code has landed and is waiting on real-machine verification, the same gap the four milestones before it are closing. What the installer reports is `0.1.2`; the `v0.x` numbers are milestone labels, not release versions.
+The newest milestone is v0.13: the assistant gets its own window on the desktop. The code has landed and is waiting on real-machine verification, the same gap the four milestones before it are stuck on. What the installer reports is `0.1.3`; the `v0.x` numbers are milestone labels, not release versions.
 
 <details>
 <summary>What each milestone added</summary>
@@ -171,7 +171,7 @@ The newest milestone is v0.13: the assistant gets its own window on the desktop.
 | Rust tests | 487 |
 | Documented pitfalls | 111 |
 
-None of these is estimated. The browser assertions start a real dev server and a real Chrome in CI; the Rust tests split pure-logic cases from the ones that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that keeps it from coming back.
+These are measured: the browser assertions start a real dev server and a real Chrome in CI, and the Rust tests split pure-logic cases from the ones that need a full `cargo test`. The pitfalls are the ones that actually bit, each written up with the reasoning that keeps it from coming back.
 
 **Code, roughly**
 
@@ -198,9 +198,9 @@ None of these is estimated. The browser assertions start a real dev server and a
 | [docs/reference/build.md](./docs/reference/build.md) | Toolchain, build, release: the operational manual |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | The agent endpoint's threat model |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | Keys, trust anchors, what is *not* signed |
-| [AGENTS.md](./AGENTS.md) | 20 invariants, written for whoever touches this next |
+| [AGENTS.md](./AGENTS.md) | 22 invariants, written for whoever touches this next |
 
-If you read only one thing before changing code, read the invariants in [AGENTS.md](./AGENTS.md). They are not style preferences. Each one is a bug that shipped.
+If you read only one thing before changing code, read the invariants in [AGENTS.md](./AGENTS.md). They are not style preferences; each one is a bug that shipped.
 
 ## Credits
 

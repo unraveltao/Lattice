@@ -31,9 +31,9 @@
 
 Lattice 在你桌面上摆几扇小窗口：时钟、待办、系统监控、正在放的音乐。都是真窗口，不是贴图。没有边框，不进任务栏，点它不会把你正在打字的地方抢走。可以钉在所有窗口上面，也可以压在普通窗口底下、贴着壁纸。位置按屏幕记，重启回来还在原处。
 
-跟别的桌面小工具比，最大的区别在这儿：**平台不带组件。** 25 个官方组件和第三方的走同一条安装链路，一个都不预装。所以能有什么组件没有上限，上限是你的 HTML。
+跟别的桌面小工具比，最不一样的地方是：**平台不带组件。** 25 个官方组件和第三方的走同一条安装链路，一个都不预装。组件能有多少种，取决于你写的 HTML。
 
-中英双语是整条链路上的：平台界面、每个组件的名字和配置项、还有卡片里面那些字。不用重启，也不用重载组件。
+中英双语管到最后一层：平台界面、组件的名字和配置项、卡片里面画的字。切换不用重启，也不用重载组件。
 
 名字来自棂（líng），窗户里那层木格栅。每一块玻璃都嵌在它里面。
 
@@ -55,7 +55,7 @@ Lattice 在你桌面上摆几扇小窗口：时钟、待办、系统监控、正
 
 ## 安装
 
-**只想用。** 从 [Releases](https://github.com/unraveltao/Lattice/releases) 取 `*-setup.exe` 双击装。第一次启动会被 SmartScreen 拦成"未知发布者"，安装包还没做代码签名，点 **更多信息 → 仍要运行** 就行。这是采购问题不是技术问题，它写在 [AGENTS.md](./AGENTS.md) 的已知缺口表里，没有藏着。
+**只想用。** 从 [Releases](https://github.com/unraveltao/Lattice/releases) 取 `*-setup.exe` 双击装。第一次启动会被 SmartScreen 拦成"未知发布者"，安装包还没做代码签名，点 **更多信息 → 仍要运行** 就行。这是采购问题，不是技术问题，写在 [AGENTS.md](./AGENTS.md) 的已知缺口表里。
 
 **想改代码。** Node 22、Rust（`windows-gnu` 工具链）、WebView2 运行时，就是标准的 [Tauri 2 前置条件](https://v2.tauri.app/start/prerequisites/)。
 
@@ -68,7 +68,7 @@ npm run tauri:build  # NSIS 安装包 + 更新产物
 
 用包装脚本，别用 `npx tauri`：`scripts/tauri.mjs` 会把自带的 `mingw64` 和 `gcc` shim 塞进 `PATH`，绕过它编译会在 `resource.rc` 里失败，而且不告诉你为什么。
 
-交付之前，跑 CI 跑的那几样：`npm run typecheck`、`npm run check:tokens`、`npm run check:docs`，然后对着起着的 dev server 跑 `npm run test:browser`。完整顺序和每道闸拦什么，在 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+提交之前，把 CI 跑的那几条自己跑一遍：`npm run typecheck`、`npm run check:tokens`、`npm run check:docs`，然后对着起着的 dev server 跑 `npm run test:browser`。完整顺序和每道闸拦什么，在 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ## 写一个组件
 
@@ -111,13 +111,13 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖进窗口
 
 ## 它是怎么做到的
 
-组件从头到尾碰不到 Windows。它跑在一个源不透明、CSP 钉死在自己文件上的沙箱 iframe 里，拥有的每一项能力都是一次过桥请求。一共十五项权限，默认一项都不给，装一个组件也不会顺带给它任何权限：每项能力按组件批一次，撤掉一项，已经开着的窗口当场生效。
+组件从头到尾碰不到 Windows。它跑在一个源不透明、CSP 钉死在自己文件上的沙箱 iframe 里，拥有的每一项能力都是一次过桥请求。十五项权限，默认全不给，装一个组件也不会顺带给它什么：每项按组件批一次，撤掉一项，开着的窗口当场生效。
 
 <p align="center"><a href="docs/screenshot-editor.png"><img src="docs/screenshot-editor.png" width="880" alt="主窗口：左边组件库、中间画布、右边属性面板"></a></p>
 
 <p align="center"><sub>主窗口：左边组件库、中间画布、右边属性面板。画布上的预览是近似值，窗口里没有壁纸可采样。</sub></p>
 
-有三个决定让它看着不像个桌面小玩具。三个都不便宜。
+下面三件事让它不太像个桌面小玩具，代价也都不小。
 
 平台出厂是空的。第一次运行是空桌面，加一个要自己填的库。预装六个组件在截图里更好看，可那样扩展模型第一天就死了。
 
@@ -136,7 +136,7 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖进窗口
 
 ## 走到哪了
 
-最新的里程碑是 v0.13：assistant 有了自己的桌面小窗。代码已经落地，还差一次真机验收，和前面那四个"进行中"缺的是同一件事。安装包报的版本是 `0.1.2`；`v0.x` 是里程碑标签，不是发布版本号。
+最新的里程碑是 v0.13：assistant 有了自己的桌面小窗。代码已经落地，还差一次真机验收，前面那四个"进行中"也卡在同一处。安装包报的版本是 `0.1.3`；`v0.x` 是里程碑标签，不是发布版本号。
 
 <details>
 <summary>每个版本加了什么</summary>
@@ -171,7 +171,7 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖进窗口
 | Rust 单测 | 487 |
 | 记下来的坑 | 111 |
 
-这些数不是估的。浏览器断言在 CI 里起真的 dev server 和真的 Chrome；Rust 单测分成纯逻辑的和必须跑完整 `cargo test` 的两批；坑是那些真咬过人的，每条都带着"为什么不会再犯"的推理。
+这些数是跑出来的：浏览器断言在 CI 里起真的 dev server 和真的 Chrome，Rust 单测分成纯逻辑的和要跑完整 `cargo test` 的两批。坑也是真咬过人的那些，每条都写着为什么不会再犯。
 
 **代码量，大致**
 
@@ -198,9 +198,9 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖进窗口
 | [docs/reference/build.md](./docs/reference/build.md) | 工具链、构建、发版，操作手册 |
 | [docs/AGENT_ACCESS.md](./docs/AGENT_ACCESS.md) | agent 端点的威胁模型 |
 | [docs/CODE_SIGNING.md](./docs/CODE_SIGNING.md) | 钥匙、信任锚，以及什么**没有**被签名 |
-| [AGENTS.md](./AGENTS.md) | 20 条不变量，写给下一个动这份代码的人 |
+| [AGENTS.md](./AGENTS.md) | 22 条不变量，写给下一个动这份代码的人 |
 
-改代码之前只读一样东西的话，读 [AGENTS.md](./AGENTS.md) 里那 20 条不变量。它们不是风格偏好。每一条背后都是一个发出去过的 bug。
+改代码之前只读一样东西的话，读 [AGENTS.md](./AGENTS.md) 里那 22 条不变量。那不是风格偏好，每一条背后都有一个发出去过的 bug。
 
 ## 致谢
 
