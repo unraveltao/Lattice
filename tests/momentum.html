@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>momentum / core</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.momentum/momentum-core.js"></script>
+    <script src="/tests/momentum-trending.js"></script>
+    <script type="module">
+      /*
+       * 长势的纯逻辑。钉的是 0025 §4 那几条"写错了不会报错、只会静静说错话"的地方：
+       *
+       *  - 判定顺序（把"没数据"说成"停更"是这里最严重的错）
+       *  - 近 4 周跳过最后一桶（不跳的话每个项目都在降温）
+       *  - 五条小样本门槛（3 次变 4 次不叫加速）
+       *  - 发版按日期去重（monorepo 一天五个包）
+       *  - trending 的真样本、实体反转义、截断
+       *  - 缓存的三道容错与两条 TTL
+       */
+      const C = window.__latticeMomentumCore;
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(actual === expected, text + " = " + JSON.stringify(actual) + (actual === expected ? "" : " ≠ " + JSON.stringify(expected)));
+      const ok = (value, text) => log(Boolean(value), text);
+      const near = (actual, expected, text) => ok(Math.abs(actual - expected) < 1e-9, text + " ≈ " + actual);
+
+      const DAY = 86400000;
+      const NOW = Date.parse("2026-10-27T00:00:00Z");
+      const flat = (value, count = 52) => new Array(count).fill(value);
+
+      /** 一个健康的仓库：400 天前建、两天前推过。 */
+      const repo = (extra) =>
+        Object.assign(
+          {
+            full: "o/r",
+            description: "",
+            language: "TypeScript",
+            stars: 100,
+            forks: 10,
+            issues: 3,
+            archived: false,
+            pushedAt: NOW - 2 * DAY,
+            createdAt: NOW - 400 * DAY,
+            htmlUrl: "https://github.com/o/r",
+          },
+          extra || {},
+        );
+
+      /**
+       * 用"近 4 周 / 前 4 周各四个数"造一条 52 周的曲线。
+       * 最后一桶（本周进行中）故意给一个夸张的数 —— 它不该被算进任何对比。
+       */
+      const curve = (recent, previous, current = 999) => {
+        const weeks = flat(0);
+        const p = previous && previous.length ? previous : flat(0, 4);
+        const r = recent && recent.length ? recent : flat(0, 4);
+        for (let i = 0; i < 4; i++) weeks[43 + i] = p[i];
+        for (let i = 0; i < 4; i++) weeks[47 + i] = r[i];
+        weeks[51] = current;
+        return weeks;
+      };
+
+      try {
+        // ---------- 仓库名 ----------
+
+        const bare = C.parseRepoRef("tauri-apps/tauri");
+        eq(bare && bare.full, "tauri-apps/tauri", "owner/repo 认出来");
+        eq(bare && bare.key, "tauri-apps/tauri", "缓存键是小写");
+        eq(C.parseRepoRef("  tauri-apps/tauri  ").key, "tauri-apps/tauri", "两头空格去掉");
+        eq(C.parseRepoRef("https://github.com/Tauri-Apps/Tauri").full, "Tauri-Apps/Tauri", "整条地址认出来，大小写留着");
+        eq(C.parseRepoRef("https://github.com/Tauri-Apps/Tauri").key, "tauri-apps/tauri", "地址的缓存键也是小写");
+        eq(C.parseRepoRef("https://github.com/tauri-apps/tauri/tree/dev").name, "tauri", "/tree/dev 这种尾巴剥掉");
+        eq(C.parseRepoRef("https://github.com/tauri-apps/tauri.git").name, "tauri", "结尾的 .git 剥掉");
+        eq(C.parseRepoRef("www.github.com/a/b").key, "a/b", "www. 也认");
+        eq(C.parseRepoRef("tauri-apps"), null, "只有一段不算仓库");
+        eq(C.parseRepoRef("a/b/c"), null, "三段（又不是地址）不算");
+        eq(C.parseRepoRef("   "), null, "空串不算");
+        eq(C.parseRepoRef(null), null, "null 不算");
+
+        // ---------- 52 周 ----------
+
+        eq(C.weeksOf({ all: [1, 2, 3] }).length, 3, "weeksOf 原样给三个数");
+        eq(C.weeksOf({ all: flat(2, 60) }).length, 52, "多于 52 周只留最近 52 个");
+        eq(C.weeksOf({ all: ["3", 4] })[0], 3, "字符串数字也认");
+        eq(C.weeksOf({}), null, "没有 all 就是 null（不是空数组）");
+        eq(C.weeksOf({ all: [] }), null, "空数组也是 null");
+        eq(C.weeksOf(null), null, "null 进 null 出");
+
+        const skipped = C.compare(curve([10, 10, 10, 10], [5, 5, 5, 5]));
+        eq(skipped.recent, 40, "近 4 周 = 四个已过完的桶之和");
+        eq(skipped.previous, 20, "前 4 周 = 再往前四个桶之和");
+        near(skipped.change, 1, "(40-20)/20 = +100%");
+        eq(C.compare(flat(7, 4)).available, false, "只有 4 周 → 比不了（不下结论）");
+        eq(C.compare(flat(0, 5)).previous, null, "5 周只有近 4 周，没有前 4 周");
+        eq(C.compare(flat(0, 5)).change, null, "没有前 4 周就没有百分比");
+        eq(C.compare(curve([0, 0, 0, 0], [0, 0, 0, 0])).change, 0, "前 4 周是 0 时按 1 算，变化是 0 而不是 NaN");
+
+        // ---------- 判定 ----------
+
+        eq(C.judge({ repo: null, now: NOW }).kind, "nodata", "没有仓库 → 不下结论");
+        eq(C.judge({ repo: repo({ archived: true }), weeks: curve([50, 50, 50, 50], [1, 1, 1, 1]), now: NOW }).kind, "archived", "归档优先于任何趋势");
+        eq(C.judge({ repo: repo({ archived: true }), weeks: null, now: NOW }).kind, "archived", "归档时没有曲线也说得出口");
+        eq(C.judge({ repo: repo(), weeks: null, now: NOW }).kind, "nodata", "只有元数据、没有曲线 → 没读到");
+        eq(C.judge({ repo: repo(), weeks: null, now: NOW }).reason, "weeks", "没读到要说清是曲线没到");
+        eq(
+          C.judge({ repo: repo({ createdAt: NOW - 5 * DAY, pushedAt: NOW - 5 * DAY }), weeks: flat(0), now: NOW }).kind,
+          "fresh",
+          "刚建的空仓库不是停更，是还没有提交",
+        );
+        eq(
+          C.judge({ repo: repo({ createdAt: NOW - 31 * DAY }), weeks: flat(0), now: NOW }).kind,
+          "quiet",
+          "31 天前建的、0 提交 → 过了「新」的边界，改叫很安静",
+        );
+        eq(C.judge({ repo: repo({ pushedAt: NOW - 100 * DAY }), weeks: flat(0), now: NOW }).kind, "stalled", "90 天没推 + 近 4 周 0 次 → 停更");
+        eq(C.judge({ repo: repo({ pushedAt: NOW - 90 * DAY }), weeks: flat(0), now: NOW }).kind, "quiet", "正好 90 天不算超（要 > 90）");
+        eq(
+          C.judge({ repo: repo({ pushedAt: NOW - 120 * DAY }), weeks: curve([1, 1, 1, 1], [0, 0, 0, 0]), now: NOW }).kind,
+          "quiet",
+          "久没推、但这四周还有提交 → 不是停更（停更要求近 4 周为 0）",
+        );
+        eq(C.judge({ repo: repo(), weeks: curve([1, 1, 1, 1], [50, 50, 50, 50]), now: NOW }).kind, "quiet", "近 4 周 < 5 次 → 很安静，先别看趋势");
+        eq(
+          C.judge({ repo: repo(), weeks: curve([30, 30, 30, 30], [25, 25, 25, 25]), now: NOW }).kind,
+          "faster",
+          "120 对 100 是 +20% → 加速",
+        );
+        eq(
+          C.judge({ repo: repo(), weeks: curve([18, 18, 17, 17], [25, 25, 25, 25]), now: NOW }).kind,
+          "slower",
+          "70 对 100 是 -30% → 放缓",
+        );
+        eq(
+          C.judge({ repo: repo(), weeks: curve([26, 26, 26, 27], [25, 25, 25, 25]), now: NOW }).kind,
+          "steady",
+          "+5% → 平稳",
+        );
+        eq(
+          C.judge({ repo: repo(), weeks: curve([30, 30, 30, 29], [25, 25, 25, 25]), now: NOW }).kind,
+          "steady",
+          "+19% 还不够 20%，仍是平稳",
+        );
+        eq(
+          C.judge({ repo: repo(), weeks: curve([1, 1, 1, 1], [0, 0, 0, 0]), now: NOW }).kind,
+          "quiet",
+          "3 次变 4 次（+300%）是噪声，不叫加速",
+        );
+
+        // ---------- 发版 ----------
+
+        const rel = (tag, day, extra) =>
+          Object.assign({ tag_name: tag, published_at: day + "T10:00:00Z", created_at: day + "T10:00:00Z", draft: false }, extra || {});
+
+        eq(
+          C.releaseDates([rel("a", "2026-10-01"), rel("b", "2026-10-01"), rel("c", "2026-10-01"), rel("d", "2026-10-01"), rel("e", "2026-10-01")]).length,
+          1,
+          "同一天发五个包，只算一个发版日",
+        );
+        eq(C.releaseDates([rel("a", "2026-10-01"), rel("b", "2026-10-03")]).length, 2, "不同日子的照常两个");
+        eq(C.releaseDates([rel("draft", "2026-10-01", { draft: true })]).length, 0, "草稿不是发版");
+        eq(
+          C.releaseDates([{ tag_name: "old", published_at: null, created_at: "2026-09-01T00:00:00Z" }]).length,
+          1,
+          "没有 published_at 就退 created_at",
+        );
+        const four = C.cadence([
+          rel("a", "2026-01-01"),
+          rel("b", "2026-01-11"),
+          rel("c", "2026-01-31"),
+          rel("d", "2026-03-02"),
+        ]);
+        eq(four.count, 4, "四个发版日");
+        eq(four.medianGapDays, 20, "间隔 10 / 20 / 30 的中位数是 20");
+        eq(four.dates[0], "2026-01-01", "日期升序、第一天在最前");
+        eq(C.cadence([rel("a", "2026-01-01"), rel("b", "2026-01-11"), rel("c", "2026-01-21")]).medianGapDays, 10, "偶数个间隔取中间两个的平均");
+        eq(C.cadence([rel("only", "2026-01-01")]).medianGapDays, null, "只有一个版本就没有节奏");
+        eq(C.cadence([rel("only", "2026-01-01")]).count, 1, "只有一个版本也数得清");
+        eq(C.cadence([]).count, 0, "空列表 = 0 个版本");
+        eq(C.cadence([]).latestAt, null, "空列表没有最新");
+        const newest = C.latestRelease([rel("v1", "2026-01-01"), rel("v2", "2026-02-01")]);
+        eq(newest.tag, "v2", "最新那条按日期挑，不是按列表顺序");
+        eq(newest.day, "2026-02-01", "最新那条的日期");
+
+        // ---------- 榜单：真样本 ----------
+
+        const page = C.parseTrending(window.__momentumTrendingHtml);
+        eq(page.items.length, 15, "真样本解析出 15 条");
+        eq(page.blocks, 15, "切出 15 块");
+        const first = page.items[0];
+        eq(first.full, "cloudflare/security-audit-skill", "第一条的仓库名");
+        eq(first.key, "cloudflare/security-audit-skill", "榜单条目的键也是小写");
+        eq(first.stars, 48575, "总 star 是 /stargazers 后面那个数");
+        eq(first.gained, 16593, "本周新增 star");
+        eq(first.gainedSpan, "this week", "增量说的是 this week");
+        eq(first.language, "JavaScript", "语言从 itemprop 拿");
+        ok(first.description.indexOf("A coding-agent skill") === 0, "描述贴着 p 里的正文");
+        eq(first.url, "https://github.com/cloudflare/security-audit-skill", "条目自带可以打开的地址");
+        ok(page.items.every((item) => typeof item.stars === "number"), "每一条都拿到了 star 数");
+        eq(page.items[14].full, "pingdotgg/t3code", "最后一条也在（说明是按块切的，不是一条大正则）");
+
+        const broken = C.parseTrending("<html><body><p>主页改版了</p></body></html>");
+        eq(broken.items.length, 0, "认不出来的页面 → 0 条（界面据此说“结构变了”）");
+        eq(broken.blocks, 0, "认不出来也算 0 块");
+
+        const cutAt = window.__momentumTrendingHtml.indexOf('<article class="Box-row"', window.__momentumTrendingHtml.indexOf('<article class="Box-row"') + 1);
+        eq(C.parseTrending(window.__momentumTrendingHtml.slice(0, cutAt)).items.length, 1, "只留下第一块时解析得出 1 条");
+
+        const truncatedPage = C.parseTrending(window.__momentumTrendingHtml, true);
+        eq(truncatedPage.truncated, true, "桥说被截了，解析器原样带出来");
+        eq(truncatedPage.items.length, 15, "被截之前已经解析的条目一条不少");
+
+        // ---------- 榜单：合成的边角 ----------
+
+        const block = (owner, name, body) =>
+          '<article class="Box-row"> <h2 class="h3 lh-condensed"> <a href="/' +
+          owner +
+          "/" +
+          name +
+          '" class="Link">' +
+          name +
+          '</a> </h2> <p class="col-9 color-fg-muted my-1 tmp-pr-4">' +
+          body +
+          "</p> </article>";
+
+        const quoted = C.parseTrending(
+          '<article class="Box-row"> <h2 class="h3 lh-condensed"><a href="/a/b">b</a></h2>' +
+            '<p class="col-9 color-fg-muted my-1 tmp-pr-4">It&#39;s a &quot;toy&quot; &amp; more</p>' +
+            '<span itemprop="programmingLanguage">Rust</span>' +
+            '<a href="/a/b/stargazers" class="x"><svg></svg> 1,024</a>' +
+            "<span> 12 stars today</span></article>",
+        );
+        eq(quoted.items[0].description, 'It\'s a "toy" & more', "描述里的 &#39; &quot; &amp; 都反转义");
+        eq(quoted.items[0].gained, 12, "stars today 也认");
+        eq(quoted.items[0].gainedSpan, "today", "增量说的是 today");
+        eq(quoted.items[0].language, "Rust", "语言正常");
+        eq(C.parseTrending(block("a", "b", "只有描述")).items[0].gained, null, "没有增量就是 null（不是 0）");
+        eq(C.parseTrending(block("a", "b", "只有描述")).items[0].stars, null, "没有 star 数也是 null");
+
+        // ---------- 反转义 ----------
+
+        eq(C.unescapeEntities("&#39;"), "'", "十进制实体");
+        eq(C.unescapeEntities("&#x27;"), "'", "十六进制实体");
+        eq(C.unescapeEntities("&amp;"), "&", "&amp;");
+        eq(C.unescapeEntities("&lt;b&gt;"), "<b>", "&lt; &gt;");
+        eq(C.unescapeEntities("&amp;#39;"), "&#39;", "只解一层：&amp;#39; 不该变成引号");
+        eq(C.unescapeEntities("&#8230;"), "…", "省略号这类高位字符也认");
+        eq(C.unescapeEntities("纯中文"), "纯中文", "没有实体就原样");
+        eq(C.plainText("  <em>很</em>   <b>好</b>  "), "很 好", "剥标签 + 压空白");
+        eq(C.plainText("a &amp; b"), "a & b", "plainText 顺手反转义");
+        eq(C.unescapeEntities("&#0;"), "", "0 不是合法码点，丢掉");
+
+        // ---------- 缓存 ----------
+
+        const empty = C.normalizeCache(null);
+        eq(empty.version, 1, "没有缓存 → 版本 1 的空壳");
+        eq(Object.keys(empty.repos).length, 0, "空壳没有仓库");
+        eq(C.normalizeCache({ version: 99, repos: { "a/b": { at: 1, data: { repo: { full: "a/b" } } } } }).version, 1, "版本不认识 → 当空缓存");
+        eq(Object.keys(C.normalizeCache({ version: 99, repos: { "a/b": { at: 1, data: { repo: { full: "a/b" } } } } }).repos).length, 0, "版本不认识 → 里面也不认");
+
+        const good = C.normalizeCache({
+          version: 1,
+          repos: {
+            "a/b": { at: NOW, data: { repo: { full: "a/b" }, weeks: flat(1), releases: [] }, note: { text: "  在做重写  ", at: NOW } },
+          },
+        });
+        eq(Object.keys(good.repos).length, 1, "好条目留着");
+        eq(good.repos["a/b"].note.text, "在做重写", "解读那句话两头空格去掉");
+
+        eq(
+          Object.keys(C.normalizeCache({ version: 1, repos: { "a/b": { at: NOW, data: {} } } }).repos).length,
+          0,
+          "data 里没有 repo 的条目丢掉",
+        );
+        eq(
+          Object.keys(C.normalizeCache({ version: 1, repos: { "a/b": { at: 0, data: { repo: { full: "a/b" } } } } }).repos).length,
+          0,
+          "没有 at 的条目丢掉",
+        );
+        eq(
+          Object.keys(
+            C.normalizeCache({ version: 1, repos: { "a/b": { at: NOW, data: { repo: { full: "a/b" } }, note: { text: "  " } } } }).repos[
+              "a/b"
+            ].note || {},
+          ).length,
+          0,
+          "空白的解读丢掉",
+        );
+
+        const many = { version: 1, repos: {} };
+        for (let i = 0; i < 25; i++) {
+          many.repos["o/r" + i] = { at: NOW - i * 1000, data: { repo: { full: "o/r" + i } } };
+        }
+        const capped = C.normalizeCache(many);
+        eq(Object.keys(capped.repos).length, C.MAX_REPOS, "最多记 20 个仓库");
+        ok(Boolean(capped.repos["o/r0"]), "留下的是最近查的那几个");
+        ok(!capped.repos["o/r24"], "最老的那个被挤掉");
+
+        eq(C.normalizeCache({ version: 1, trending: { weekly: { at: NOW } } }).trending.weekly, undefined, "没有 items 的榜单条目丢掉");
+        eq(
+          C.normalizeCache({ version: 1, trending: { weekly: { at: NOW, items: [{ full: "a/b", key: "a/b" }, { full: "x" }, null] } } })
+            .trending.weekly.items.length,
+          1,
+          "榜单条目逐条挑，坏的丢掉",
+        );
+
+        eq(C.fresh({ at: NOW - 1000 }, 3600 * 1000, NOW), true, "一小时缓存里的一千毫秒前是新的");
+        eq(C.fresh({ at: NOW - 2 * 3600 * 1000 }, 3600 * 1000, NOW), false, "两小时前的超过一小时缓存");
+        eq(C.fresh(null, 3600 * 1000, NOW), false, "没有条目就永远该重查");
+        eq(C.ageMs({ at: NOW + 5000 }, NOW), 0, "时间在未来时不显示负数");
+        near(C.REPO_TTL / 3600000, 24, "体检缓存 24 小时");
+        near(C.TRENDING_TTL / 3600000, 1, "榜单缓存 1 小时");
+
+        eq(C.trendingUrl("daily"), "https://github.com/trending?since=daily", "今天那个地址");
+        eq(C.trendingUrl("monthly"), "https://github.com/trending?since=monthly", "本月那个地址");
+        eq(C.trendingUrl("weekly"), "https://github.com/trending?since=weekly", "本周那个地址");
+        eq(C.trendingUrl("nonsense"), "https://github.com/trending?since=weekly", "不认识的时间窗退回本周");
+      } catch (error) {
+        log(false, "整页抛了：" + (error && error.message));
+      }
+
+      document.getElementById("out").textContent = lines.join("\n");
+    </script>
+  </body>
+</html>

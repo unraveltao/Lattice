@@ -1,0 +1,481 @@
+/*
+ * 长势的样式。
+ *
+ * 颜色全部走平台的 `--lattice-*` 令牌，切明暗不用改这里一行。两个例外：
+ * `--mo-warn`（放缓 / 很安静）和 `--mo-danger`（停更 / 没读到）—— 平台没有
+ * "警告"和"危险"这两个令牌，而 accent 一个色表达不了四种程度。这两个值在
+ * 深色底板上都能读，浅色底板上偏暗但仍是同类色。
+ *
+ * 字号只用 11 / 12 / 13 / 15，圆角只用 6 / 10 / 12 / 14（和平台同一套）。
+ */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  color: var(--lattice-text, #e6e6e6);
+  font-family: var(--lattice-font, system-ui, sans-serif);
+}
+
+:root {
+  --mo-warn: #d9924a;
+  --mo-danger: #e2725b;
+  --mo-quiet: color-mix(in srgb, var(--lattice-text-muted, #9aa0a6) 55%, transparent);
+}
+
+.mo {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 顶上这条：22px 高，右侧 120px 是窗饰的地盘（WIDGET_SPEC §5.1） */
+.mo-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 120px 0 10px;
+}
+
+.mo-state {
+  font-size: 11px;
+  color: var(--lattice-text-muted, #9aa0a6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mo-state[data-tone="good"] {
+  color: var(--lattice-accent, #6ea8fe);
+}
+
+.mo-state[data-tone="warn"] {
+  color: var(--mo-warn);
+}
+
+.mo-state[data-tone="bad"] {
+  color: var(--mo-danger);
+}
+
+/* ---- 页签 ---- */
+
+.mo-tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 0 10px;
+}
+
+.mo-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--lattice-text-muted, #9aa0a6);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mo-tab:hover {
+  color: var(--lattice-text, #e6e6e6);
+}
+
+.mo-tab[data-on="true"] {
+  color: var(--lattice-text, #e6e6e6);
+  background: color-mix(in srgb, var(--lattice-surface, #1e1e1e) 70%, transparent);
+}
+
+/* ---- 两个页 ---- */
+
+.mo-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px 10px;
+  overflow: hidden;
+}
+
+.mo-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lattice-text-muted, #9aa0a6);
+}
+
+.mo-empty[data-tone="bad"] {
+  color: var(--mo-danger);
+}
+
+/* ---- 体检 ---- */
+
+.mo-form {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+
+.mo-input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid var(--lattice-border, #333);
+  background: color-mix(in srgb, var(--lattice-surface, #1e1e1e) 60%, transparent);
+  color: var(--lattice-text, #e6e6e6);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.mo-input::placeholder {
+  color: var(--lattice-text-muted, #9aa0a6);
+}
+
+.mo-input:focus {
+  outline: none;
+  border-color: var(--lattice-accent, #6ea8fe);
+}
+
+.mo-go {
+  flex: none;
+  appearance: none;
+  border: 1px solid var(--lattice-border, #333);
+  background: transparent;
+  color: var(--lattice-text, #e6e6e6);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mo-go:hover {
+  border-color: var(--lattice-accent, #6ea8fe);
+  color: var(--lattice-accent, #6ea8fe);
+}
+
+.mo-figure {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.mo-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mo-repo {
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--lattice-text, #e6e6e6);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.mo-repo:hover {
+  color: var(--lattice-accent, #6ea8fe);
+}
+
+/* 判定徽章：四种程度，点它重查 */
+.mo-verdict {
+  flex: none;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--lattice-border, #333);
+  color: var(--lattice-text-muted, #9aa0a6);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mo-verdict[data-tone="good"] {
+  color: var(--lattice-accent, #6ea8fe);
+  border-color: color-mix(in srgb, var(--lattice-accent, #6ea8fe) 55%, transparent);
+}
+
+.mo-verdict[data-tone="ok"] {
+  color: var(--lattice-text, #e6e6e6);
+}
+
+.mo-verdict[data-tone="warn"] {
+  color: var(--mo-warn);
+  border-color: color-mix(in srgb, var(--mo-warn) 55%, transparent);
+}
+
+.mo-verdict[data-tone="bad"] {
+  color: var(--mo-danger);
+  border-color: color-mix(in srgb, var(--mo-danger) 55%, transparent);
+}
+
+.mo-stats {
+  font-size: 11px;
+  color: var(--lattice-text-muted, #9aa0a6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mo-spark {
+  flex: none;
+  display: block;
+  width: 100%;
+  height: 44px;
+}
+
+.mo-bar {
+  fill: var(--mo-quiet);
+}
+
+/* 可比的那四周用强调色；最后一桶是本周进行中，画浅一档 */
+.mo-bar[data-zone="recent"] {
+  fill: color-mix(in srgb, var(--lattice-accent, #6ea8fe) 75%, transparent);
+}
+
+.mo-bar[data-zone="current"] {
+  fill: color-mix(in srgb, var(--lattice-accent, #6ea8fe) 35%, transparent);
+}
+
+.mo-cmp,
+.mo-cadence {
+  font-size: 12px;
+  color: var(--lattice-text, #e6e6e6);
+  font-variant-numeric: tabular-nums;
+}
+
+.mo-cmp[data-tone="warn"] {
+  color: var(--mo-warn);
+}
+
+.mo-cmp[data-tone="muted"] {
+  color: var(--lattice-text-muted, #9aa0a6);
+}
+
+.mo-cadence {
+  font-size: 11px;
+  color: var(--lattice-text-muted, #9aa0a6);
+}
+
+.mo-note {
+  border-left: 2px solid color-mix(in srgb, var(--lattice-accent, #6ea8fe) 60%, transparent);
+  padding: 1px 0 1px 8px;
+}
+
+.mo-note-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lattice-text, #e6e6e6);
+}
+
+.mo-note-hint {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--lattice-text-muted, #9aa0a6);
+}
+
+.mo-explain {
+  flex: none;
+  align-self: flex-start;
+  appearance: none;
+  border: 1px solid var(--lattice-border, #333);
+  background: transparent;
+  color: var(--lattice-text-muted, #9aa0a6);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mo-explain:hover {
+  color: var(--lattice-accent, #6ea8fe);
+  border-color: var(--lattice-accent, #6ea8fe);
+}
+
+/* ---- 榜单 ---- */
+
+.mo-seg {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--lattice-border, #333);
+  border-radius: 6px;
+  align-self: flex-start;
+}
+
+.mo-seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--lattice-text-muted, #9aa0a6);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.mo-seg button:hover {
+  color: var(--lattice-text, #e6e6e6);
+}
+
+.mo-seg button[data-on="true"] {
+  background: color-mix(in srgb, var(--lattice-accent, #6ea8fe) 18%, transparent);
+  color: var(--lattice-text, #e6e6e6);
+}
+
+.mo-notice {
+  flex: none;
+  font-size: 11px;
+  color: var(--mo-warn);
+}
+
+.mo-notice[data-tone="bad"] {
+  color: var(--mo-danger);
+}
+
+.mo-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.mo-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mo-row:hover {
+  background: color-mix(in srgb, var(--lattice-surface, #1e1e1e) 70%, transparent);
+}
+
+.mo-rank {
+  flex: none;
+  width: 16px;
+  padding-top: 1px;
+  font-size: 11px;
+  color: var(--lattice-text-muted, #9aa0a6);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mo-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.mo-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.mo-row-name {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--lattice-text, #e6e6e6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mo-gain {
+  flex: none;
+  font-size: 11px;
+  color: var(--lattice-accent, #6ea8fe);
+  font-variant-numeric: tabular-nums;
+}
+
+.mo-row-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--lattice-text-muted, #9aa0a6);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mo-row-meta {
+  font-size: 11px;
+  color: var(--lattice-text-muted, #9aa0a6);
+  font-variant-numeric: tabular-nums;
+}
+
+.mo-foot {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mo-link {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--lattice-text-muted, #9aa0a6);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+}
+
+.mo-link:hover {
+  color: var(--lattice-accent, #6ea8fe);
+}
+
+/*
+ * 最后一条：`display: flex` 的类会盖掉浏览器自带的 `[hidden] { display: none }`
+ * （作者样式赢过 UA 样式，跟选择器权重无关）。这一整个组件靠 `hidden` 切页签，
+ * 少了这条两个页会同时出现。
+ */
+[hidden] {
+  display: none !important;
+}

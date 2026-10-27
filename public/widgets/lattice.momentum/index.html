@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>长势</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      长势。
+
+      两个页签：体检（一个仓库最近还行不行）和榜单（trending 页）。
+
+      顶上 22px 是标题栏，右侧 120px 留给桌面窗口的窗饰（WIDGET_SPEC §5.1）——
+      所以那条只写"此刻的状态"（判定 / 时间窗 + 多久之前），控件全在下面。
+
+      **首帧是这段 HTML**，不是 JS：空态、页签、表单都已经在这儿画好了，
+      配置 / 语言 / 缓存 / 模型状态回来之后才改（不变量 18）。
+    -->
+    <main class="mo" id="root" data-tab="health">
+      <header class="mo-head">
+        <span class="mo-state" id="state" role="status" data-tone="muted"></span>
+      </header>
+
+      <nav class="mo-tabs" role="tablist">
+        <button class="mo-tab" id="tab-health" type="button" role="tab" aria-selected="true" data-on="true">
+          体检
+        </button>
+        <button class="mo-tab" id="tab-trending" type="button" role="tab" aria-selected="false" data-on="false">
+          榜单
+        </button>
+      </nav>
+
+      <section class="mo-pane" id="pane-health" role="tabpanel">
+        <form class="mo-form" id="form">
+          <input
+            class="mo-input"
+            id="query"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            autocapitalize="off"
+            placeholder="owner/repo"
+            aria-label="仓库"
+          />
+          <button class="mo-go" id="go" type="submit">查</button>
+        </form>
+
+        <div class="mo-figure" id="figure" hidden>
+          <div class="mo-title-row">
+            <button class="mo-repo" id="repo-name" type="button"></button>
+            <span class="mo-verdict" id="verdict" data-tone="muted"></span>
+          </div>
+
+          <div class="mo-stats" id="stats"></div>
+
+          <svg class="mo-spark" id="spark" viewBox="0 0 208 44" preserveAspectRatio="none" aria-hidden="true"></svg>
+
+          <div class="mo-cmp" id="cmp"></div>
+          <div class="mo-cadence" id="cadence"></div>
+
+          <div class="mo-note" id="note" hidden>
+            <p class="mo-note-text" id="note-text"></p>
+            <p class="mo-note-hint" id="note-hint"></p>
+          </div>
+
+          <button class="mo-explain" id="explain" type="button" hidden>解读</button>
+        </div>
+
+        <p class="mo-empty" id="empty" data-tone="muted">查一个仓库，看它最近还行不行。</p>
+      </section>
+
+      <section class="mo-pane" id="pane-trending" role="tabpanel" hidden>
+        <div class="mo-seg" id="seg" role="group" aria-label="时间窗">
+          <button type="button" data-window="daily" data-on="false" aria-pressed="false">今天</button>
+          <button type="button" data-window="weekly" data-on="true" aria-pressed="true">本周</button>
+          <button type="button" data-window="monthly" data-on="false" aria-pressed="false">本月</button>
+        </div>
+
+        <div class="mo-notice" id="notice" data-tone="warn" hidden></div>
+
+        <ol class="mo-list" id="list" hidden></ol>
+
+        <p class="mo-empty" id="trending-empty" data-tone="muted">正在取榜单…</p>
+
+        <footer class="mo-foot">
+          <button class="mo-link" id="open-gh" type="button" hidden>在 GitHub 上打开榜单</button>
+        </footer>
+      </section>
+    </main>
+    <script src="momentum-core.js"></script>
+    <script src="widget.js"></script>
+  </body>
+</html>

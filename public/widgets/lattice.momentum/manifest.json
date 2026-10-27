@@ -1,0 +1,160 @@
+{
+  "id": "lattice.momentum",
+  "name": { "zh": "长势", "en": "Momentum" },
+  "version": "0.1.0",
+  "description": {
+    "zh": "一个项目最近还行不行：52 周提交曲线、近 4 周对比、发版节奏和一句判定；另一页是 GitHub 榜单，带本周新增 star",
+    "en": "Whether a project is still moving: 52 weeks of commits, the last 4 weeks against the 4 before, release cadence and a verdict — plus the GitHub trending list with its weekly star gain"
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 420, "h": 380, "minW": 320, "minH": 280 },
+  "layer": "desktop",
+  "interactive": true,
+  "permissions": ["network", "llm:chat", "shell:open", "storage"],
+  "network": {
+    "hosts": ["api.github.com", "github.com"]
+  },
+  "config": [
+    {
+      "key": "window",
+      "type": "select",
+      "label": { "zh": "榜单默认时间窗", "en": "Default trending window" },
+      "default": "weekly",
+      "options": [
+        { "value": "weekly", "label": { "zh": "本周", "en": "This week" } },
+        { "value": "daily", "label": { "zh": "今天", "en": "Today" } },
+        { "value": "monthly", "label": { "zh": "本月", "en": "This month" } }
+      ],
+      "help": {
+        "zh": "卡片打开时先显示哪一个榜单。切页签上那三颗按钮只影响这一次，不改这个默认值。",
+        "en": "Which list the card opens on. The three buttons on the trending tab only change what you are looking at now, not this default."
+      }
+    },
+    {
+      "key": "refresh",
+      "type": "number",
+      "label": { "zh": "刷新间隔", "en": "Refresh every" },
+      "default": 3,
+      "min": 1,
+      "max": 12,
+      "step": 1,
+      "unit": "h",
+      "help": {
+        "zh": "小时级的心跳，只在数据过期时才真的发请求。体检结果本身留 24 小时，榜单留 1 小时。",
+        "en": "An hourly heartbeat that only fetches when something is actually out of date. Health results are kept for 24 hours, the trending list for 1 hour."
+      }
+    }
+  ],
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "查一个仓库", "en": "Checking a repo" },
+        "items": [
+          {
+            "zh": "顶上那个框写 owner/repo，或者直接把 GitHub 地址粘进来，回车就查。它认 /tree/dev 这种尾巴。",
+            "en": "Type owner/repo in the box, or paste the GitHub URL — a /tree/dev tail is fine. Enter runs the check."
+          },
+          {
+            "zh": "它问 GitHub 三件事：52 周提交曲线、发版记录、仓库本身。一次查完缓存一天，再查不花额度。",
+            "en": "It asks GitHub three things: 52 weeks of commits, the release list and the repo itself. Results are cached for a day."
+          },
+          {
+            "zh": "判定只有五种：加速 / 平稳 / 放缓 / 很安静 / 停更；已经归档的直接说已归档。",
+            "en": "Five verdicts: gaining, steady, slowing, very quiet, stalled — and archived for the ones GitHub has frozen."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "那几个数字怎么读", "en": "Reading the numbers" },
+        "items": [
+          {
+            "zh": "近 4 周只算已经过完的那四周。本周还在进行中，算进去会天天偏低，所以图上它画得浅。",
+            "en": "The last 4 weeks are the four completed ones. The current week is still running and is drawn lighter — counting it would make every project look like it is slowing."
+          },
+          {
+            "zh": "「很安静」是四周不到 5 次提交：3 次变 4 次是 +33%，那是噪声，不该叫加速。",
+            "en": "Very quiet means fewer than 5 commits in four weeks: 3 going to 4 is +33%, and that is noise, not growth."
+          },
+          {
+            "zh": "发版节奏按日期去重。monorepo 一天发五个包，不去重就会显示「每 0 天一个版本」。",
+            "en": "Release cadence counts distinct days. A monorepo shipping five packages a day would otherwise read as a release every 0 days."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "榜单那一页", "en": "The trending tab" },
+        "items": [
+          {
+            "zh": "今天 / 本周 / 本月各缓存一小时，点一下就切过去，不重新拉。",
+            "en": "Today, this week and this month each cache for an hour; switching is instant and does not refetch."
+          },
+          {
+            "zh": "那个「+2,415」是榜单页自己算的增量，官方 API 给不了这个数 —— 自己翻 stargazers 要上千次请求。",
+            "en": "The “+2,415” is the gain the trending page computes itself. The API cannot give it: paging stargazers would take thousands of requests."
+          },
+          {
+            "zh": "一条都解析不出来时说「页面结构变了」并给个链接 —— GitHub 改版的时候，去那边看比等这里强。",
+            "en": "If nothing parses it says the page structure changed and offers a link. When GitHub redesigns, looking there beats waiting here."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "模型只写一句话", "en": "The model writes one line" },
+        "items": [
+          {
+            "zh": "设置里配了模型才会出现「解读」按钮；第一次查某个仓库时它也会自己写一句。",
+            "en": "The Explain button only shows up once you have a model configured; the first check of a repo also writes one line by itself."
+          },
+          {
+            "zh": "定时刷新不会调模型。摆在桌面上的卡片每小时烧一次调用，不合适。",
+            "en": "The timer never calls the model. A card sitting on your desktop burning a model call every hour is a bad trade."
+          },
+          {
+            "zh": "它写的话不参与判定。加速还是停更只看提交数和发版日期 —— 判定那一条永远只认数字。",
+            "en": "Its sentence never changes the verdict. Gaining or stalled comes from commit counts and release dates only."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "刷新与缓存", "en": "Refresh and caching" },
+        "items": [
+          {
+            "zh": "体检结果留 24 小时、榜单留 1 小时。过期了先把旧的画出来，再在后台重查。",
+            "en": "Health results live 24 hours, the trending list 1 hour. When stale, the old numbers are drawn first and the refetch happens behind them."
+          },
+          {
+            "zh": "断网、限流、超时一律说「没读到」，不会说成「停更」—— 这两件事差了十万八千里。",
+            "en": "Offline, rate-limited or timed out all read as “could not read it”, never as “stalled” — those are very different things."
+          },
+          {
+            "zh": "最多记 20 个仓库。不带 token 时 GitHub 一小时给 60 次请求，查到限流了它会直说。",
+            "en": "It remembers up to 20 repos. Without a token GitHub allows 60 requests an hour, and the card says so when you hit that."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "date": "2026-10-27",
+      "changes": [
+        {
+          "zh": "两个页签：查一个仓库的 52 周提交曲线与近 4 周对比、发版节奏和判定；抓 GitHub 榜单，带本周新增 star。",
+          "en": "Two tabs: 52 weeks of commits with the last 4 weeks against the 4 before, release cadence and a verdict; and the GitHub trending list with its star gain."
+        },
+        {
+          "zh": "判定只认数字，模型只写一句话且不改判定；刷新不调模型。",
+          "en": "The verdict reads numbers only; the model writes one line and never overrides it; refreshing never calls the model."
+        },
+        {
+          "zh": "体检缓存一天、榜单缓存一小时，过期先显示旧的再后台重查；断网时说「没读到」而不是「停更」。",
+          "en": "Health is cached a day and trending an hour; stale data is shown first and refreshed behind. Offline says “could not read it”, not “stalled”."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

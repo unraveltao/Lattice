@@ -162,10 +162,10 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 
 | Metric | Value |
 | --- | --- |
-| Official widgets | 24 |
+| Official widgets | 25 |
 | Permissions | 13 |
 | Tauri commands | 99 |
-| Browser assertions | 3 530 over 69 pages |
+| Browser assertions | 3 642 over 70 pages |
 | Rust tests | 439 |
 | Documented pitfalls | 99 |
 
@@ -179,7 +179,7 @@ Every one of those is enforced by something. The browser assertions run a real d
 | CSS | 6 206 lines |
 | Rust | 24 353 lines |
 | SDK | 961 lines |
-| Widgets + example | 34 676 lines |
+| Widgets + example | 37 180 lines |
 | Scripts | 5 614 lines |
 
 </details>

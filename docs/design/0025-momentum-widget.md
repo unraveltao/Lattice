@@ -1,8 +1,8 @@
 ---
-status: draft
+status: accepted
 date: 2026-10-27
 supersedes:
-code:
+code: public/widgets/lattice.momentum/{manifest.json,index.html,style.css,widget.js,momentum-core.js,icon.svg}, tests/momentum.html, tests/momentum-trending.js, docs/ROADMAP.md
 ---
 
 # 0025 —— 看一个项目的"长势"（`lattice.momentum`）
@@ -101,6 +101,11 @@ GET github.com/trending?since=weekly|daily|monthly
 - `truncated: true`（响应超 1 MB 被截）→ 用已解析的部分，顶上挂一行"榜单不完整"。
 - 解析出 0 条 → **"页面结构变了"**，并给一个"去 GitHub 看"的链接。
 
+**落地时抓下来才看见的两处**（改了解析器，没改这段的判断）：
+
+- 描述那个 `<p>` 在真实页面上是 `class="col-9 color-fg-muted my-1 tmp-pr-4"` —— 上面写的 `pr-4` 对不上（GitHub 加了个 `tmp-` 前缀）。所以解析器只认 `col-9 color-fg-muted` 这两段，尾巴不管。
+- 切块用 `split('<article class="Box-row"')`，不用一条跨块的全局正则：月度页 707 KB 贴着 1 MB 上限，被截断时最后一块只该丢它自己。
+
 ### 模型只写一句话，不参与判断
 
 点「解读」或第一次查某个仓库时，把**最近 3 条 release 标题 + 最近 10 条 commit 标题**喂给 `llm.chat`，要一句人话（"最近在做 v3 重写，两周内打了 4 个 beta"）。
@@ -108,6 +113,7 @@ GET github.com/trending?since=weekly|daily|monthly
 - **刷新时不自动调用** —— 一张摆在桌面上的卡片每小时烧一次模型调用是不可接受的。
 - 没配模型时这一块整个不出现（不是显示一个空框）。
 - 它写的话**不许改上面的判定**。判定只认数字。
+- **提交标题那一条是第四条请求**（`/commits?per_page=10`），只在"解读"那一刻发 —— 体检本身仍然是三条。拿不到就只喂发版标题，不让解读失败。
 
 ### 落盘（键 `momentum`）
 
