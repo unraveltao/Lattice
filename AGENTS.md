@@ -685,6 +685,14 @@ public/widgets/<id>/
 
 已修（别再改回去）：属性面板改尺寸要**同时写 `placement` 和 `desktopRects`**。`buildSpecs` 优先用 `desktopRects` 里的尺寸（那是用户拖边缘改过的真实值），只写 `placement` 的话，已经投放到桌面的组件不会变。
 
+已修（别再改回去）：**层级是三档，不是"置顶开关"**。原来只有 `desktop` / `top`，日常最想要的那一档（普通窗口 —— 浮在资源管理器上面、但不压全屏视频）**根本选不出来**，于是用户把层级调来调去都觉得"没变化"，连报两轮"置顶没用"。现在 `WindowLayer` 是 `desktop` / `normal` / `top`，顺序就是 z 序从下到上，宿主页那颗箭头和检查器那排分段按钮都按 `runtime/layer.ts` 的 `WINDOW_LAYERS` 循环（**别在别处另写一份数组**，加档时漏一处不报错，只会把新值悄悄当默认值）。六条别踩回去：
+- **`desktop` 这个名字对可输入的组件是近似的**：它只能退成 `HWND_BOTTOM`（压在所有普通窗口下面），不可能真的挂进 WorkerW —— 挂进去就拿不到键盘焦点。所以检查器那句说明按 `interactive` 分两套写，`layerHintKey()` 是唯一判据。
+- **`normal` 要同时摘两样**：从 WorkerW 里 `reparent(null)` 出来，再 `SetWindowPos(HWND_NOTOPMOST)`；收尾那句 `set_always_on_top(layer == Top)` 必须还在（tao 自己记着 topmost 那一位，只改 Win32 会被它下一次重排按回去）。
+- **底层守卫只给 `desktop + interactive`**（`guard` 那个布尔），`normal` / `top` 一律 `set_sink(false)` —— 守卫还活着的时候 `HWND_NOTOPMOST` 会被改写成 `HWND_BOTTOM`。
+- **`adoptLayer` 遇到不认识的值返回 `null`，不降级**：老版本宿主页收到 `"normal"` 应该保持原样，把它当 `"desktop"` 等于静默改用户的选择。
+- **`widget_layer_probe` 由主窗口调、带 `instanceId`**：主窗口手里只有 store 主键，而探针必须问**组件那个窗口**（问主窗口自己只会得到主窗口的层级），所以先 `Runner::label_of` 反查 label。它只读、幂等，别在里面顺手 `apply_to`。
+- **检查器那行读数是等宽小字、不是提示**：它存在的唯一理由是让"我点了没效果"从四次猜测变成一个事实。要的和实际的对不上必须红字写出来（`probeLabelKey` + `expectedProbe`），五句话五种状态（`workerw` / `bottom` / `normal` / `topmost` / `unknown`）—— 降级和成功长得一样的话，这行等于没写。
+
 已修（别再改回去）：iframe 的沙箱必须带 `allow-forms`。少了这一位，浏览器会把表单提交整条拦掉 —— `submit` 事件不触发、控制台不报错，组件里"输入框 + 回车"这种最普通的写法静默失效（待办清单就这么空转了一整版：字打得进去，回车没反应，列表永远是"Nothing here yet"）。`tests/todo-add.html` 钉住了这件事：同一条提交路径，有 `allow-forms` 就写盘，没有就 0 次写盘。改沙箱属性时两处一起改：`src/widgetHost.ts`（桌面窗口）和 `src/platform/WidgetFrame.tsx`（画布）。
 
 已修（别再改回去）：右上角那块地方要让给窗饰。桌面窗口的功能图标浮在 `top: 6px; right: 6px`，大约 120×28（五颗按钮），鼠标一进卡片就淡入，而且**真的能点**。组件把输入框、按钮、可点列表项摆在那儿，用户点下去点到的是"收回"。待办清单的解法是顶部先放一条 22px 标题栏（`padding-right: 120px`），窗饰正好落在标题栏右端。新组件照抄这条，或者整块内容避开右上角。**给窗饰加按钮时，两个组件的 `padding-right` 和 `tests/note-layout.html` 的 `PILL_WIDTH` 要一起加**，否则正文又被压住。

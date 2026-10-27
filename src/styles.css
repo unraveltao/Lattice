@@ -1931,6 +1931,24 @@ button {
   color: var(--lattice-text-faint);
 }
 
+/*
+ * 层级那行"真话读数"（`LayerProbeLine`）。
+ *
+ * 它是**读数**不是提示，所以用等宽字、和上面那句说明拉开一点距离 ——
+ * 说明是平台说的，读数是系统说的，两者对不上时正是最该看清的时候。
+ */
+.lattice-probe {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  color: var(--lattice-text-muted);
+}
+
+/* 说的和做的不一样 —— 这一行必须一眼看见，否则它等于没写 */
+.lattice-probe.is-off {
+  color: var(--lattice-danger);
+}
+
 .lattice-inline-hint {
   white-space: nowrap;
 }

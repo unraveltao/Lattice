@@ -56,6 +56,7 @@ import {
   pinLook,
   type WindowLayer,
 } from "./runtime/chrome-state";
+import { asLayer } from "./runtime/layer";
 import { createScheduler, subscribeWindowVisible, windowVisibleNow } from "./runtime/schedule";
 import { fitAnchor, type FitOptions, type ScreenBox } from "./runtime/screen-fit";
 import type { ConfigValues } from "./runtime/config";
@@ -114,6 +115,13 @@ const ICON = {
   </svg>`,
   layerDesktop: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="M8 3.5V12"/><path d="M4.4 8.4 8 12l3.6-3.6"/>
+  </svg>`,
+  /*
+   * "普通窗口"：一个小窗框。不用箭头 —— 上下箭头已经占了"最上"和"最下"，
+   * 中间这一档画成窗框才读得出"就是一张普通的窗"。
+   */
+  layerNormal: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="3" y="4" width="10" height="8" rx="1.6"/><path d="M3 6.6h10"/>
   </svg>`,
   pin: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
     <circle cx="8" cy="5.6" r="2.9"/><path d="M8 8.6v4.1"/>
@@ -830,7 +838,7 @@ function buildChrome(config: HostConfig) {
   const pill = chrome.querySelector<HTMLDivElement>(".lw-pill");
 
   let pinned = config.pinned;
-  let layer: WindowLayer = config.layer === "top" ? "top" : "desktop";
+  let layer: WindowLayer = asLayer(config.layer);
 
   const paint = () => {
     document.body.classList.toggle("is-pinned", pinned);
@@ -842,7 +850,12 @@ function buildChrome(config: HostConfig) {
     pinBtn.setAttribute("aria-label", t(pin.aria));
 
     const at = layerLook(layer);
-    layerBtn.innerHTML = at.icon === "layer-top" ? ICON.layerTop : ICON.layerDesktop;
+    layerBtn.innerHTML =
+      at.icon === "layer-top"
+        ? ICON.layerTop
+        : at.icon === "layer-normal"
+          ? ICON.layerNormal
+          : ICON.layerDesktop;
     layerBtn.classList.toggle("is-on", at.on);
     layerBtn.title = t(at.title);
     layerBtn.setAttribute("aria-label", t(at.aria));

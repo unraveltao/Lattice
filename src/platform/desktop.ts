@@ -11,6 +11,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { normalizeAppearance, type Appearance } from "../runtime/appearance";
 import { resolveConfig, type ConfigValues } from "../runtime/config";
 import { lang } from "../runtime/i18n";
+import type { WindowLayer } from "../runtime/layer";
 import type { Permission } from "../runtime/manifest";
 import type { WidgetRecord } from "../runtime/registry";
 import type { DesktopRect, Placement } from "./store";
@@ -33,7 +34,7 @@ export interface WidgetWindowSpec {
   h: number;
   minW: number;
   minH: number;
-  layer: "desktop" | "top";
+  layer: WindowLayer;
   /** 组件要不要键盘焦点，见 manifest.interactive */
   interactive: boolean;
   /** 窗口轮廓来源：rect = 平台圆角，region = 组件上报（见 manifest.shape） */

@@ -1,13 +1,27 @@
 //! 桌面层控制（Windows）
 //!
-//! 小组件"贴桌面"和"置顶"是两套完全不同的窗口行为：
+//! 小组件有三个层级，是 Windows 自己的 z 序模型，组件只是选一站：
 //!
 //! - `desktop`：把窗口挂到 WorkerW 下（Wallpaper Engine 那套做法），
 //!   窗口就沉到桌面图标之上、普通窗口之下，切窗口不会被挡住。
 //!   拿不到 WorkerW 时降级为 `HWND_BOTTOM`，至少不会浮在最上层。
+//! - `normal`：一个**普通窗口** —— 不置顶、不沉底，别人能盖住它，
+//!   它也能盖住别人；位置和大小记得住，重启还在原地。
 //! - `top`：还原父子关系后设为 `HWND_TOPMOST`。
 //!
-//! 两种层级都会加 `WS_EX_TOOLWINDOW`（不进任务栏、不进 Alt+Tab）。
+//! 为什么必须有中间那一层：只有"沉到最底"和"压在所有东西上面"两档时，
+//! 日常最想要的状态（*浮在资源管理器上面，但不压全屏应用*）**根本选不出来**。
+//! 用户把层级调来调去都觉得"没变化"，多半就是卡在这 —— 他想要的第三档不存在。
+//!
+//! 三种层级都会加 `WS_EX_TOOLWINDOW`（不进任务栏、不进 Alt+Tab）。
+//!
+//! # 一个容易踩的语义陷阱
+//!
+//! `desktop` 这一档在 Win32 里**是两种不同的东西**，取决于 `interactive`：
+//! 纯展示组件真的挂进 WorkerW（壁纸那一层），可输入的组件只能退成
+//! `HWND_BOTTOM` 的普通窗口。所以"贴在桌面上"这句文案对便签来说是假的 ——
+//! 它其实只是"压在所有普通窗口下面"。界面上别把这两件事说成一件
+//! （`InspectorPanel` 按 `interactive` 分开写文案）。
 //!
 //! # 关于焦点
 //!
@@ -53,7 +67,37 @@ pub const CORNER_RADIUS: f64 = 12.0;
 #[serde(rename_all = "lowercase")]
 pub enum WindowLayer {
     Desktop,
+    /// 普通窗口：不置顶、不沉底。顺序就是 z 序从下到上，别重排 —— 前端
+    /// 的 `nextLayer` 和检查器那排分段按钮都按这个顺序循环。
+    Normal,
     Top,
+}
+
+impl Default for WindowLayer {
+    fn default() -> Self {
+        WindowLayer::Desktop
+    }
+}
+
+/// 这个窗口在 Win32 眼里**实际**是什么层级。
+///
+/// 和 `WindowLayer`（用户要的那一档）不是一回事：`desktop` 有两种落法
+/// （WorkerW 父窗口 / `HWND_BOTTOM`），`top` 有可能没置上（tao 的位和
+/// Win32 的位打架时静默失败）。检查器把这一份直接显示出来，用户报
+/// "点了没反应"时才有一个事实可查，而不是四次猜测。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerProbe {
+    /// `workerw` / `bottom` / `normal` / `topmost` / `unknown`
+    pub actual: String,
+    /// 有父窗口（说明真的挂在 WorkerW 下）
+    pub parented: bool,
+    /// `WS_EX_TOPMOST` 这一位
+    pub topmost: bool,
+    /// "永远待在底层"的守卫开着没有
+    pub sunk: bool,
+    /// 窗口句柄取没取到（取不到时上面几个字段全是 false）
+    pub found: bool,
 }
 
 /// 窗口轮廓从哪儿来。
@@ -186,6 +230,29 @@ pub fn install_guard(hwnd: isize) -> Result<(), String> {
     }
 }
 
+/// 读这个窗口**实际**在什么层级。纯读，不改任何东西。
+///
+/// 存在的理由只有一个：让"我点了没反应"从猜测变成事实。层级这条链路上
+/// 的失败全是无声的 —— 找不到 WorkerW 就悄悄降级成 `HWND_BOTTOM`，
+/// `set_always_on_top` 失败只 `eprintln` 一行，用户在界面上什么都看不到。
+pub fn probe(hwnd: isize) -> LayerProbe {
+    #[cfg(windows)]
+    {
+        imp::probe(hwnd)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = hwnd;
+        LayerProbe {
+            actual: "unknown".to_string(),
+            parented: false,
+            topmost: false,
+            sunk: false,
+            found: false,
+        }
+    }
+}
+
 /// 把层级与穿透设置应用到某个 Tauri 窗口
 pub fn apply_to(
     window: &tauri::WebviewWindow,
@@ -308,11 +375,12 @@ mod imp {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetParent, GetPropW,
         GetWindowRect,
-        GetWindowLongPtrW, HWND_BOTTOM, HWND_TOPMOST, RemovePropW, SWP_FRAMECHANGED,
-        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageTimeoutW, SetParent,
-        SetPropW, SetWindowLongPtrW, SetWindowPos, WINDOWPOS, WM_WINDOWPOSCHANGING, WS_BORDER,
-        WS_DLGFRAME, WS_EX_CLIENTEDGE, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_STATICEDGE,
-        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE,
+        GetWindowLongPtrW, HWND_BOTTOM, HWND_NOTOPMOST, HWND_TOPMOST, RemovePropW,
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+        SendMessageTimeoutW, SetParent, SetPropW, SetWindowLongPtrW, SetWindowPos, WINDOWPOS,
+        WM_WINDOWPOSCHANGING, WS_BORDER, WS_DLGFRAME, WS_EX_CLIENTEDGE, WS_EX_LAYERED,
+        WS_EX_NOACTIVATE, WS_EX_STATICEDGE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
+        WS_EX_WINDOWEDGE,
     };
 
     /// Progman 收到这条未公开消息后会派生出承载壁纸的 WorkerW
@@ -595,6 +663,26 @@ mod imp {
                     reparent(hwnd, std::ptr::null_mut());
                     sink(hwnd);
                 }
+                /*
+                 * 普通窗口：从 WorkerW 里摘出来、摘掉 topmost，剩下的交给系统。
+                 *
+                 * `HWND_NOTOPMOST` 会把窗口放在"所有非置顶窗口之上"—— 也就是
+                 * 用户刚点了这一档，它当场浮到普通窗口的最前面，这正是预期：
+                 * 他刚刚才把注意力放在这个组件上。之后它就是一个普通窗口，
+                 * 谁激活谁在上面。
+                 */
+                WindowLayer::Normal => {
+                    reparent(hwnd, std::ptr::null_mut());
+                    SetWindowPos(
+                        hwnd,
+                        HWND_NOTOPMOST,
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                    );
+                }
                 WindowLayer::Top => {
                     // 之前可能挂在 WorkerW 下，先脱离再置顶
                     reparent(hwnd, std::ptr::null_mut());
@@ -661,6 +749,49 @@ mod imp {
             Err("SetWindowSubclass returned 0 (happens when called off the window thread)".to_string())
         } else {
             Ok(())
+        }
+    }
+
+    /// 读实际层级。三样东西各查一次：父窗口、`WS_EX_TOPMOST`、守卫属性。
+    ///
+    /// 判据顺序不能换：挂在 WorkerW 下的窗口一定没有 topmost 位，
+    /// 但一个 `HWND_BOTTOM` 的窗口同时可能带着守卫属性 —— 先看父窗口，
+    /// 再看待守卫，最后才轮到"普通"，否则会把贴桌面的报成沉底。
+    pub fn probe(hwnd: isize) -> super::LayerProbe {
+        if hwnd == 0 {
+            return super::LayerProbe {
+                actual: "unknown".to_string(),
+                parented: false,
+                topmost: false,
+                sunk: false,
+                found: false,
+            };
+        }
+        unsafe {
+            let target = hwnd as HWND;
+            let parented = !GetParent(target).is_null();
+            let style = GetWindowLongPtrW(target, GWL_EXSTYLE) as isize;
+            let topmost = (style & WS_EX_TOPMOST as isize) != 0;
+            let name = wide(SINK_PROP);
+            let sunk = !GetPropW(target, name.as_ptr()).is_null();
+
+            let actual = if parented {
+                "workerw"
+            } else if topmost {
+                "topmost"
+            } else if sunk {
+                "bottom"
+            } else {
+                "normal"
+            };
+
+            super::LayerProbe {
+                actual: actual.to_string(),
+                parented,
+                topmost,
+                sunk,
+                found: true,
+            }
         }
     }
 

@@ -177,6 +177,7 @@ pub fn run() {
             widgets::widget_backup_info,
             widgets::widget_rollback,
             desktop::apply_window_layer,
+            runner::widget_layer_probe,
             state::state_read,
             state::state_write,
             state::state_clear,

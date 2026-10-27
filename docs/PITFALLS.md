@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **107 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **110 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -38,6 +38,9 @@
 | 守卫明明加了，窗口还是往上窜                                            | `SetWindowSubclass` 跨线程调用不报错，只返回 0 —— 从同步命令的线程装守卫会静默失败                                    | 用 `window.run_on_main_thread(...)` 回到窗口线程再装                                  |
 | 切"置顶"没反应，组件还趴在桌面层                                         | 守卫摘得比 `HWND_TOPMOST` 晚：那一下 SetWindowPos 被守卫改写掉了                                                | 守卫状态用窗口属性做开关，`apply_to` 里**先翻开关再落层级**                                  |
 | 暂停中的组件窗口恢复之后跑到最前面来了 | `window.show()` 就是 `ShowWindow`，它会把窗口提到最前 —— 而恢复之后层级还停在 `HWND_BOTTOM` / `WorkerW` 的旧印象里 | 恢复时先 `show()` 再重放一次层级（`desktop::apply_to`），顺序反了就等于没压下去 |
+| 层级怎么调都觉得"没变化"，用户说"调节和属性没有关联" | 只有 `desktop` / `top` 两档：要么沉到最底、要么压在所有东西上面，日常最想要的那一档（普通窗口，浮在资源管理器上面但不压全屏视频）**根本不存在** | 三档：`desktop` / `normal` / `top`，顺序就是 z 序。`normal` 要 `reparent(null)` 摘出 WorkerW 再 `SetWindowPos(HWND_NOTOPMOST)` |
+| 选了"普通窗口"，一激活又被压回最底下 | 底层守卫还开着 —— `bottom_proc` 会把 `HWND_NOTOPMOST` 的请求改写成 `SWP_NOZORDER`，窗口原地不动（看上去像"没生效"） | `guard` 只认 `Desktop + interactive`，`normal` / `top` 一律 `set_sink(false)`；而且必须先翻开关再落层级 |
+| 便签选了"贴桌面"，实际却压在所有窗口下面 —— 界面说的和窗口做的不是一件事 | `desktop` 在 Win32 里是两种东西：纯展示组件真挂进 WorkerW，可输入的组件只能退成 `HWND_BOTTOM`（挂进去就拿不到键盘焦点） | 说明文案按 `interactive` 分两套写（`layerHintKey`），检查器再加一行**真话读数**（`widget_layer_probe`），要的和实际的对不上就红字写出来 |
 | 属性面板里点了「置顶」，桌面上那颗箭头按钮还画着「贴桌面」，再点一下毫无反应 | 层级有**两份副本**：store（`placement.layer`）和宿主页建窗口时从 `HostConfig` 取的那份。`sync_widget_windows` 只把新层级写进 Win32，从来没告诉宿主页 —— 于是按钮画的是旧状态，点下去又是从旧副本算新副本，送回去的值等于没变 | `runner::set_layer` / `set_pinned` 返回「真的变了没有」，变了就 `emit_to(label, "lattice:widget-layer" / "lattice:widget-pinned")`；宿主页用 `adoptLayer` / `adoptPinned` 认下再重画。**别针同理** —— agent 的 `placement.pin` 也走这条同步。`tests/chrome-state.html` 钉着 |
 | 桌面窗饰上那颗箭头点了没反应：图标会翻，窗口不换层；只有去属性面板调 layer 才管用 | `widget_set_layer` 当时是「就地 `apply_to` + `patch_layer`」。`patch_layer` 把 `Applied.layer` 写成新值，等于告诉后面的同步"这一位已经落过了" —— 于是只要就地那一次没真的落到窗口上（窗口还挂在 WorkerW 下、守卫没摘、tao 的样式重排把顶层位抹回去），**同步就再也不会重试**，状态、面板、图标全都说置顶，窗口老老实实趴在桌面层 | 这条命令**只发意图**（`emit_to("main")`），由主窗口 `updatePlacement` → 120ms 防抖同步 → `diff` → `apply_to` 落 Win32，也就是"面板里那条路"。`patch_layer` 整个删掉：runner 不许自己写"已应用"，`Applied` 只由 `diff` 和 `widget_report_rect` 写。代价是点完多 120ms |
 | 用户说"这些组件都不好拖动"：按下去要愣一下才动，快速点一下拖干脆什么都不发生 | `track()`（指针捕获 + move 监听）挂在五六个 `await` **之后**：那段空窗期里指针动了没人接，按一下就松手的整趟拖动直接丢掉。而且唯一能抓的是胶囊最左边那颗 22×22 的点阵 | `track()` 同步挂上，IPC 读数在后台跑、回来再补一次最新位移；`pointerdown` 挂到整颗胶囊（120×28）上，另外四颗按钮放行 |

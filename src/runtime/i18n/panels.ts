@@ -35,9 +35,23 @@ export const PANELS_ZH: Record<string, string> = {
 
   // —— 属性面板：层级 / 穿透（Desktop / On top 两档的译名在 common） ——
   Layer: "层级",
+  Desktop: "桌面",
+  Normal: "普通",
   "Sits above desktop icons and below normal windows, so switching apps never covers it.":
     "压在桌面图标之上、普通窗口之下，切换应用时永远不会被盖住。",
+  "Always at the bottom of the window stack, but you can still click and type into it.":
+    "压在所有窗口的最下面，但照样能点、能打字 —— 它不可能真的挂进壁纸那一层。",
+  "A plain window — other windows can cover it, and it can cover them. It stays where you put it.":
+    "一个普通窗口 —— 别的窗口能盖住它，它也能盖住别人；位置和大小记得住。",
   "Floats above every window — good for monitors and readouts.": "浮在所有窗口之上 —— 适合监控和读数。",
+
+  // —— 属性面板：层级那行的"真话读数"（问 Win32 实际落在哪一层） ——
+  "Window right now": "窗口实际",
+  "Bottom of the stack": "压在最底层",
+  "Plain window": "普通窗口",
+  Unknown: "读不出来",
+  "No window open": "这一份还没开窗",
+  "Asked for {want}, Windows actually reports {got}.": "要的是「{want}」，系统实际报的是「{got}」。",
   "Click-through": "鼠标穿透",
   "Mouse events pass straight through — useful for purely decorative widgets.":
     "鼠标事件直接穿过去 —— 适合纯装饰性的组件。",

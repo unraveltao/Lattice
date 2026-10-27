@@ -38,8 +38,10 @@ import {
 import { isTauri, type WidgetRecord } from "../runtime/registry";
 import { hasHelp } from "../runtime/help";
 import { useT } from "../runtime/i18n";
+import { WINDOW_LAYERS, layerHintKey, layerNameKey } from "../runtime/layer";
 import { useText } from "../runtime/widget-text";
 import { HelpContent } from "./HelpContent";
+import { LayerProbeLine } from "./LayerProbeLine";
 import { LibSection } from "./LibSection";
 import { PanelGlyph, WidgetIconMark } from "./icons";
 import { useLattice } from "./store";
@@ -505,23 +507,44 @@ export function InspectorPanel({ records, open, onToggle }: InspectorPanelProps)
         <LibSection title={t("Layer & size")} count={null} defaultOpen>
           <section className="lattice-field">
             <span className="lattice-label">{t("Layer")}</span>
+            {/*
+              三档，按 z 序从下到上排：桌面 → 普通 → 置顶。
+
+              两档是不够的：只有"沉到最底"和"压在所有东西上面"时，日常最想要
+              的那一档（普通窗口，浮在资源管理器上面，但不压全屏应用）**选不
+              出来** —— 用户把层级调来调去都觉得"没变化"，说的就是这件事。
+              顺序和宿主页那颗箭头的循环顺序必须是同一个（`runtime/layer.ts`
+              的 `WINDOW_LAYERS`），别在这里另写一份数组。
+            */}
             <div className="lattice-segmented">
-              {(["desktop", "top"] as const).map((layer) => (
+              {WINDOW_LAYERS.map((layer) => (
                 <button
                   key={layer}
                   type="button"
                   className={`lattice-segment${placement.layer === layer ? " is-active" : ""}`}
                   onClick={() => update(placement.instanceId, { layer })}
                 >
-                  {layer === "desktop" ? t("Desktop") : t("On top")}
+                  {t(layerNameKey(layer))}
                 </button>
               ))}
             </div>
-            <p className="lattice-hint">
-              {placement.layer === "desktop"
-                ? t("Sits above desktop icons and below normal windows, so switching apps never covers it.")
-                : t("Floats above every window — good for monitors and readouts.")}
-            </p>
+            {/*
+              文案按 `interactive` 分档：同一个"桌面层"对纯展示组件是真的挂进
+              WorkerW（壁纸那一层），对可输入的组件只能退成 `HWND_BOTTOM`。
+              写成同一句，"界面说的和窗口做的不是一件事"—— 那正是用户报的
+              原话，别再把它写回去。
+            */}
+            <p className="lattice-hint">{t(layerHintKey(placement.layer, manifest.interactive))}</p>
+            {/*
+              下面这行不是提示，是**读数**：直接问 Win32 实际落在哪一层。
+              要的和实际的对不上就红字写出来 —— 层级失败的每一种情形都是
+              无声的，没有这行，用户只能说出"我点了没效果"。
+            */}
+            <LayerProbeLine
+              instanceId={placement.instanceId}
+              layer={placement.layer}
+              interactive={manifest.interactive}
+            />
           </section>
 
           <section className="lattice-field">

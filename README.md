@@ -164,10 +164,10 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 | --- | --- |
 | Official widgets | 25 |
 | Permissions | 15 |
-| Tauri commands | 112 |
-| Browser assertions | 3 828 over 76 pages |
+| Tauri commands | 113 |
+| Browser assertions | 3 865 over 76 pages |
 | Rust tests | 487 |
-| Documented pitfalls | 107 |
+| Documented pitfalls | 110 |
 
 Every one of those is enforced by something. The browser assertions run a real dev server and a real Chrome in CI; the Rust tests split pure-logic cases from the ones that need a full `cargo test`; the pitfalls are the ones that actually bit, each with the reasoning that prevents a relapse.
 
@@ -175,9 +175,9 @@ Every one of those is enforced by something. The browser assertions run a real d
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 25 554 lines |
-| CSS | 6 365 lines |
-| Rust | 28 563 lines |
+| TypeScript | 26 113 lines |
+| CSS | 6 444 lines |
+| Rust | 28 814 lines |
 | SDK | 961 lines |
 | Widgets + example | 37 603 lines |
 | Scripts | 5 614 lines |

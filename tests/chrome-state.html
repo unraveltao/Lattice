@@ -22,9 +22,9 @@
     <pre id="out">running…</pre>
     <script type="module">
       /*
-       * 窗饰上那两颗"位置"按钮。
+       * 窗饰上那两颗"位置"按钮，加上层级那个联合类型本身。
        *
-       * 这一页钉的是两件曾经同时错掉的事：
+       * 这一页钉的是三件曾经各自错掉的事：
        *
        * 1. **图标和提示语必须出自同一个值。** 用户报的 bug 里，画布上写着
        *    `On top`、属性面板选着 `On top`，桌面上那颗箭头却指向"贴桌面"。
@@ -32,6 +32,11 @@
        * 2. **不是我这个实例的消息一律不认。** `emit_to(label)` 会送到每个
        *    窗口的 `Any` 监听器上，不比对 instanceId 的话，改一个组件的层级
        *    会让桌面上所有组件的窗饰一起重画。
+       * 3. **三档，不是两档。** 只有"沉到最底"和"压在所有东西上面"时，日常
+       *    最想要的那一档（普通窗口）选不出来 —— 用户把层级调来调去都觉得
+       *    "没变化"。第 8、9 段钉的是"界面说的和窗口做的是不是同一件事"：
+       *    同一个桌面层对可输入的组件是 `HWND_BOTTOM`，对纯展示组件才是
+       *    真的挂进 WorkerW，期望值必须分开算。
        */
       import {
         adoptLayer,
@@ -41,6 +46,15 @@
         nextPinned,
         pinLook,
       } from "../src/runtime/chrome-state.ts";
+      import {
+        WINDOW_LAYERS,
+        asLayer,
+        asProbeState,
+        expectedProbe,
+        isLayer,
+        layerHintKey,
+        probeLabelKey,
+      } from "../src/runtime/layer.ts";
 
       const lines = [];
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
@@ -50,26 +64,47 @@
       // ---- 1. 层级按钮：图标说"现在在哪" ----
 
       eq(layerLook("top").icon, "layer-top", "置顶层 → 向上箭头");
+      eq(layerLook("normal").icon, "layer-normal", "普通窗口 → 小窗框");
       eq(layerLook("desktop").icon, "layer-desktop", "贴桌面 → 向下箭头");
       eq(layerLook("top").on, true, "置顶层时点亮");
+      eq(layerLook("normal").on, false, "普通窗口时不点亮（强调色只留给'例外状态'）");
       eq(layerLook("desktop").on, false, "贴桌面时不点亮");
       eq(
         layerLook("top").on === (layerLook("top").icon === "layer-top"),
         true,
         "点亮的那颗必须正好是'我现在就在这一层'",
       );
+      eq(
+        new Set([layerLook("desktop").icon, layerLook("normal").icon, layerLook("top").icon]).size,
+        3,
+        "三档必须是三个不同图标 —— 两档共用一个图标等于没做第三档",
+      );
 
-      // ---- 2. 提示语说"点一下会去哪儿"（和图标方向相反，这是有意的）----
+      // ---- 2. 提示语：先说现在在哪，再说点一下会去哪儿 ----
 
-      eq(layerLook("top").title, "On top — click to pin to desktop", "置顶时的提示语说的是'点一下贴桌面'");
+      eq(
+        layerLook("top").title,
+        "On top — click to go back to the desktop layer",
+        "置顶时的提示语说的是'点一下回桌面层'",
+      );
+      eq(
+        layerLook("normal").title,
+        "Normal window — click to keep on top",
+        "普通窗口时的提示语说的是'点一下置顶'",
+      );
       eq(
         layerLook("desktop").title,
-        "On desktop — click to keep on top",
-        "贴桌面时的提示语说的是'点一下置顶'",
+        "Desktop layer — click for a normal window",
+        "贴桌面时的提示语说的是'点一下换普通窗口'",
       );
-      eq(layerLook("top").title === layerLook("desktop").title, false, "两层不能是同一句提示语");
-      eq(layerLook("top").aria, "Send to desktop layer", "无障碍名字说动作：送到桌面层");
-      eq(layerLook("desktop").aria, "Keep on top", "无障碍名字说动作：保持置顶");
+      eq(
+        new Set([layerLook("top").title, layerLook("normal").title, layerLook("desktop").title]).size,
+        3,
+        "三档不能共用一句提示语",
+      );
+      eq(layerLook("top").aria, "On top layer", "无障碍名字只说状态：置顶层");
+      eq(layerLook("normal").aria, "Normal window layer", "无障碍名字只说状态：普通窗口层");
+      eq(layerLook("desktop").aria, "Desktop layer", "无障碍名字只说状态：桌面层");
       eq(
         layerLook("top").aria === layerLook("top").title,
         false,
@@ -90,11 +125,17 @@
         "别针和层级必须是两个图标 —— 用户把图钉读成'置顶'过一次",
       );
 
-      // ---- 4. 点一下之后 ----
+      // ---- 4. 点一下之后：按 z 序走一格，转一圈回到原点 ----
 
-      eq(nextLayer("desktop"), "top", "贴桌面 → 置顶");
-      eq(nextLayer("top"), "desktop", "置顶 → 贴桌面");
-      eq(nextLayer(nextLayer("top")), "top", "来回点两次回到原处");
+      eq(nextLayer("desktop"), "normal", "桌面层 → 普通窗口");
+      eq(nextLayer("normal"), "top", "普通窗口 → 置顶");
+      eq(nextLayer("top"), "desktop", "置顶 → 回桌面层（必须循环，否则连点两下回不到原处）");
+      eq(nextLayer(nextLayer(nextLayer("top"))), "top", "点三下回到原处");
+      eq(
+        nextLayer(nextLayer("top")) === "top",
+        false,
+        "点两下不能原地不动 —— 那是两档模型才会有的手感",
+      );
       eq(nextPinned(false), true, "没锁 → 锁");
       eq(nextPinned(true), false, "锁 → 没锁");
       eq(nextPinned(nextPinned(true)), true, "来回点两次回到原处");
@@ -103,6 +144,7 @@
 
       const me = "lattice.clock#a1";
       eq(adoptLayer(me, { instanceId: me, layer: "top" }), "top", "是我这一份 → 收下");
+      eq(adoptLayer(me, { instanceId: me, layer: "normal" }), "normal", "收下'普通窗口'同样要认");
       eq(adoptLayer(me, { instanceId: me, layer: "desktop" }), "desktop", "收下'贴桌面'同样要认");
       eq(adoptLayer(me, { instanceId: "lattice.clock#b2", layer: "top" }), null, "别人的层级 → 不认");
       eq(
@@ -110,7 +152,11 @@
         true,
         "别人的消息返回 null（调用方据此跳过重画）",
       );
-      eq(adoptLayer(me, { instanceId: me, layer: "weird" }), "desktop", "读不懂的层级退回'贴桌面'，不把按钮画成空的");
+      eq(
+        adoptLayer(me, { instanceId: me, layer: "weird" }),
+        null,
+        "读不懂的层级一律不认 —— 老版本收到 'normal' 应该保持原样，不是悄悄降级成桌面层",
+      );
 
       eq(adoptPinned(me, { instanceId: me, pinned: true }), true, "是我这一份 → 收下");
       eq(adoptPinned(me, { instanceId: me, pinned: false }), false, "收下'没锁'同样要认");
@@ -120,7 +166,7 @@
 
       /*
        * 这条是那个 bug 的正脸：平台说"现在是置顶层"，宿主页收下之后画出来的
-       * 必须是向上箭头 + "点一下贴桌面"。以前宿主页收不到这条消息，画的还是
+       * 必须是向上箭头 + "点一下回桌面层"。以前宿主页收不到这条消息，画的还是
        * 建窗口那一刻的"贴桌面"，于是点一下等于原地打转。
        */
       const synced = adoptLayer(me, { instanceId: me, layer: "top" });
@@ -128,7 +174,74 @@
       eq(
         nextLayer(synced),
         "desktop",
-        "这时候点一下送回去的是'贴桌面' —— 不再是那个等于没变的 'top'",
+        "这时候点一下送回去的是'桌面层' —— 不再是那个等于没变的 'top'",
+      );
+      const syncedNormal = adoptLayer(me, { instanceId: me, layer: "normal" });
+      eq(layerLook(syncedNormal).icon, "layer-normal", "收下'普通窗口'之后按钮画小窗框");
+      eq(nextLayer(syncedNormal), "top", "从普通窗口再点一下是置顶");
+
+      // ---- 7. 层级这个联合类型只有一个家（`runtime/layer.ts`） ----
+
+      eq(WINDOW_LAYERS.join(","), "desktop,normal,top", "三档的顺序就是从 z 序下到上，别重排");
+      eq(WINDOW_LAYERS.length, 3, "只有三档");
+
+      eq(asLayer("normal"), "normal", "认识的值原样返回");
+      eq(asLayer("top"), "top", "认识的值原样返回");
+      eq(asLayer("weird"), "desktop", "不认识的值退回默认档");
+      eq(asLayer(undefined), "desktop", "缺失也退回默认档");
+      eq(asLayer("weird", "normal"), "normal", "可以指定兜底值");
+      eq(isLayer("normal"), true, "isLayer 认第三档");
+      eq(isLayer("weird"), false, "isLayer 不认胡话");
+
+      // ---- 8. 检查器那行读数：要的和系统报的对得上吗 ----
+
+      /*
+       * `desktop` 在 Win32 里是两种东西：纯展示组件真的挂进 WorkerW，
+       * 可输入的组件只能退成 HWND_BOTTOM。所以"应该报什么"必须带
+       * interactive —— 拿同一份期望去比，便签那一档永远是红字。
+       */
+      eq(expectedProbe("desktop", false), "workerw", "展示组件的桌面层 → 真挂进 WorkerW");
+      eq(expectedProbe("desktop", true), "bottom", "可输入组件的桌面层 → 只能压在最底下");
+      eq(expectedProbe("normal", true), "normal", "普通窗口 → 普通窗口（和 interactive 无关）");
+      eq(expectedProbe("top", false), "topmost", "置顶 → topmost（和 interactive 无关）");
+      eq(
+        expectedProbe("desktop", false) !== expectedProbe("desktop", true),
+        true,
+        "同一个桌面层对两种组件必须是两种期望 —— 写成一样就等于那行读数永远在说谎",
+      );
+
+      eq(asProbeState("workerw"), "workerw", "认识的实际层级原样返回");
+      eq(asProbeState("topmost"), "topmost", "认识的实际层级原样返回");
+      eq(asProbeState("bogus"), "unknown", "读不出来的报 unknown，不猜");
+      eq(asProbeState(null), "unknown", "缺失也报 unknown");
+
+      eq(probeLabelKey("workerw"), "On the desktop", "WorkerW → 贴在桌面上");
+      eq(probeLabelKey("bottom"), "Bottom of the stack", "沉底 → 压在最底层");
+      eq(probeLabelKey("normal"), "Plain window", "普通窗口");
+      eq(probeLabelKey("topmost"), "On top", "置顶");
+      eq(probeLabelKey("unknown"), "Unknown", "读不出来就说读不出来");
+      eq(
+        new Set(["workerw", "bottom", "normal", "topmost", "unknown"].map(probeLabelKey)).size,
+        5,
+        "五种实际状态必须是五句话 —— 降级和成功长得一样的话，那行读数就没用了",
+      );
+
+      // ---- 9. 说明文案必须跟着 interactive 分档 ----
+
+      eq(
+        layerHintKey("desktop", true) !== layerHintKey("desktop", false),
+        true,
+        "桌面层：便签和时钟的说明必须是两句话（一个压在最底下、一个真的贴桌面）",
+      );
+      eq(
+        layerHintKey("normal", true),
+        layerHintKey("normal", false),
+        "普通窗口这一档和 interactive 无关，两句话一样才对",
+      );
+      eq(
+        new Set(["desktop", "normal", "top"].map((l) => layerHintKey(l, true))).size,
+        3,
+        "三档三句说明",
       );
 
       document.getElementById("out").innerHTML = lines

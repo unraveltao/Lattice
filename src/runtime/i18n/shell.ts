@@ -102,8 +102,14 @@ export const SHELL_ZH: Record<string, string> = {
   "Dark": "深色",
   "Light": "浅色",
   "Position locked — click to unlock": "位置已锁定 —— 点击解锁",
-  "On top — click to pin to desktop": "置顶中 —— 点击贴到桌面",
-  "On desktop — click to keep on top": "已贴桌面 —— 点击置顶",
+  // 三档层级的提示语：先说现在在哪，再说点一下去哪儿
+  "On top — click to go back to the desktop layer": "置顶中 —— 点击回到桌面层",
+  "Normal window — click to keep on top": "普通窗口 —— 点击置顶",
+  "Desktop layer — click for a normal window": "已贴桌面 —— 点击换成普通窗口",
+  "On top layer": "置顶层",
+  "Normal window layer": "普通窗口层",
+  "Desktop layer": "桌面层",
+  // assistant 小窗那两颗药丸用的，和组件的三档层级不是一套词
   "Send to desktop layer": "送到桌面层",
   "Keep on top": "保持置顶",
   "Close widget": "关闭组件",

@@ -12,9 +12,16 @@ import { normalizeChangelog, normalizeHelp, type ChangelogEntry, type WidgetHelp
 import { t } from "./i18n";
 import { normalizeText, type LocalizedText } from "./widget-text";
 import { normalizeAgentTools, type AgentToolSpec } from "./widget-tools";
+import { asLayer, type WindowLayer } from "./layer";
 
-/** 组件在桌面上的层级 */
-export type WidgetLayer = "desktop" | "top";
+/**
+ * 组件在桌面上的层级。
+ *
+ * 类型本体在 `runtime/layer.ts`（那里是唯一一个家）；这里保留这个名字，
+ * 因为"清单里的 layer"和"窗口的 layer"在语义上是同一件事，改名字只会
+ * 让调用方多一次无意义的迁移。
+ */
+export type WidgetLayer = WindowLayer;
 
 /**
  * 窗口轮廓从哪儿来。
@@ -210,7 +217,9 @@ export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest
   size.w = Math.max(size.w, size.minW);
   size.h = Math.max(size.h, size.minH);
 
-  const layer: WidgetLayer = input.layer === "top" ? "top" : "desktop";
+  // 认不出来就当 `desktop`：第三方清单写了个 `"layer": "bottom"` 之类的
+  // 胡话时，宁可按最保守的那一档放，也不要让窗口凭空置顶
+  const layer: WidgetLayer = asLayer(input.layer);
   // 只有显式写 false 才关掉：第三方组件忘了声明时，宁可抢一次焦点，
   // 也不要让人对着输入框敲半天没反应
   const interactive = input.interactive !== false;

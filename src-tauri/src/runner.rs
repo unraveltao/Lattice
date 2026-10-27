@@ -29,7 +29,7 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
-use crate::desktop::{self, RegionPart, WindowLayer, WindowShape};
+use crate::desktop::{self, LayerProbe, RegionPart, WindowLayer, WindowShape};
 use crate::egress;
 use crate::usage;
 use crate::visibility;
@@ -275,6 +275,18 @@ impl Runner {
 
     pub(crate) fn get(&self, label: &str) -> Option<HostConfig> {
         self.configs.lock().ok()?.get(label).cloned()
+    }
+
+    /// 反查：这个实例现在挂在哪个窗口上。
+    ///
+    /// 主窗口手里只有 `instanceId`（store 的主键），而窗口按 `label` 找。
+    /// 层级的真话读数（`desktop::widget_layer_probe`）就是这条路 —— 它必须
+    /// 问**组件那个窗口**，不能问主窗口自己。
+    pub(crate) fn label_of(&self, instance_id: &str) -> Option<String> {
+        let map = self.configs.lock().ok()?;
+        map.iter()
+            .find(|(_, config)| config.instance_id == instance_id)
+            .map(|(label, _)| label.clone())
     }
 
     fn forget(&self, label: &str) {
@@ -1120,6 +1132,45 @@ pub fn widget_set_layer(
         },
     )
     .map_err(|error| error.to_string())
+}
+
+/// 问一句"这个实例的窗口现在**实际**在哪一层"。
+///
+/// 检查器那行读数用它。只读、幂等、随便调多少次 —— 它存在的意义是让
+/// "点了没反应"有一个可查的事实，而不是让用户和我们各猜一遍。
+///
+/// 为什么由主窗口调、还要带 `instanceId`：主窗口手里只有 store 的主键，
+/// 而探针必须问**组件那个窗口**（问主窗口自己只会得到主窗口的层级）。
+/// 所以先反查 label，再拿句柄。
+#[tauri::command]
+pub fn widget_layer_probe(
+    app: AppHandle,
+    runner: State<'_, Runner>,
+    instance_id: String,
+) -> Result<LayerProbe, String> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let label = runner
+        .label_of(&instance_id)
+        .ok_or_else(|| "this widget has no window right now".to_string())?;
+    let window = app
+        .get_webview_window(&label)
+        .ok_or_else(|| format!("window {label} is gone"))?;
+
+    let handle = window.window_handle().map_err(|error| error.to_string())?;
+
+    #[cfg(windows)]
+    {
+        if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+            return Ok(desktop::probe(win32.hwnd.get() as isize));
+        }
+        Err("could not obtain the Win32 window handle".to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = handle;
+        Err("window layering is only implemented on Windows".to_string())
+    }
 }
 
 /// 组件上报自己的轮廓（桥方法 `window.setRegion`）。
