@@ -210,7 +210,90 @@ store.removeCatalogueSource("src-a-example-r-json");
 eq(useLattice.getState().sources.length, 1, "最后一个删不掉 —— 空商店用户没法自己修好");
 
 // ---------------------------------------------------------------------------
-// 3. 时间写成人话
+// 3. 状态迁移：电池并进系统（0030，`STATE_VERSION` 3）
+// ---------------------------------------------------------------------------
+
+const v2 = {
+  placements: [
+    { instanceId: "b1", widgetId: "lattice.battery", x: 40, y: 60, w: 208, h: 132, layer: "top", clickThrough: false, pinned: false },
+    { instanceId: "s1", widgetId: "lattice.sysmon", x: 300, y: 60, w: 268, h: 240, layer: "top", clickThrough: false, pinned: false },
+    { instanceId: "n1", widgetId: "lattice.note", x: 10, y: 10, w: 240, h: 200, layer: "normal", clickThrough: false, pinned: false },
+  ],
+  configs: { b1: { warnBelow: 20 }, s1: { trace: true } },
+  desktopRects: {
+    b1: { x: 900, y: 40, w: 208, h: 132 },
+    s1: { x: 1100, y: 40, w: 268, h: 240 },
+  },
+  trash: [
+    { placement: { instanceId: "b9", widgetId: "lattice.battery", x: 0, y: 0, w: 240, h: 146, layer: "top", clickThrough: false, pinned: false }, at: 1 },
+    { placement: { instanceId: "n9", widgetId: "lattice.note", x: 0, y: 0, w: 240, h: 200, layer: "normal", clickThrough: false, pinned: false }, at: 2 },
+  ],
+  installedIds: ["lattice.battery", "lattice.sysmon"],
+  selectedInstanceId: "b1",
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const v3 = migrateState(v2 as any, 2) as any;
+const migratedBattery = v3.placements.find((item: any) => item.instanceId !== "b1" && item.widgetId === "lattice.sysmon");
+
+eq(v3.placements.length, 3, "电池卡是被改写，不是被删掉（数量不变）");
+eq(
+  v3.placements.some((item: any) => item.widgetId === "lattice.battery"),
+  false,
+  "迁完之后盘上不再有 lattice.battery 的摆放",
+);
+eq(
+  migratedBattery?.instanceId,
+  v3.selectedInstanceId,
+  "改写出来的那份拿到了新 instanceId，选中也跟着走",
+);
+eq(
+  [migratedBattery?.w, migratedBattery?.h],
+  [220, 176],
+  "尺寸抬到装得下：208×132 → 220×176（宽抬到 minW，高留 16px 余量）",
+);
+eq(
+  v3.configs[migratedBattery?.instanceId],
+  { trace: false, cores: false, gpu: false, disk: false, network: false },
+  "新实例带的是「只留电池」那几个开关",
+);
+eq("b1" in v3.configs, false, "老实例的配置删掉了 —— 留着它下次改开关会读到一份没人认领的值");
+eq(
+  v3.desktopRects[migratedBattery?.instanceId],
+  { x: 900, y: 40, w: 220, h: 176 },
+  "桌面上那次摆放跟着改指向，尺寸一起抬 —— 桌面窗口按它开，只抬 placement 的话真机上照样切半行",
+);
+eq("b1" in v3.desktopRects, false, "老矩形删掉了（不然下次投放会捡到一个孤儿）");
+
+const migratedSysmon = v3.placements.find((item: any) => item.instanceId === "s1");
+eq(migratedSysmon?.h, 328, "老系统卡 240 高装不下 0.3 的 278，抬到 328");
+eq(v3.desktopRects.s1, { x: 1100, y: 40, w: 268, h: 328 }, "它的桌面矩形同样抬（同一条理由）");
+eq(
+  v3.placements.find((item: any) => item.instanceId === "n1"),
+  v2.placements[2],
+  "不认识的组件一个字都不动",
+);
+eq(v3.trash.length, 1, "回收站里指向电池的那条丢掉（恢复出来会是一张破卡）");
+eq(v3.trash[0].placement.instanceId, "n9", "别的回收站条目留着");
+eq(v3.installedIds, ["lattice.sysmon"], "已装列表里去掉电池");
+
+const tall = migrateState(
+  {
+    placements: [
+      { instanceId: "s2", widgetId: "lattice.sysmon", x: 0, y: 0, w: 268, h: 300, layer: "top", clickThrough: false, pinned: false },
+    ],
+    desktopRects: { s2: { x: 0, y: 0, w: 268, h: 420 } },
+  } as any,
+  2,
+) as any;
+eq(tall.placements[0].h, 300, "本来就够高的卡片不动（只抬不放）");
+eq(tall.desktopRects.s2.h, 420, "桌面上被拖得更高的也不动");
+
+const again = migrateState(v3, 3) as any;
+eq(again.placements, v3.placements, "v3 再读一遍什么都不变（迁移只跑一次）");
+
+// ---------------------------------------------------------------------------
+// 4. 时间写成人话
 // ---------------------------------------------------------------------------
 
 const now = Date.UTC(2026, 9, 24, 12, 0, 0);
@@ -221,7 +304,7 @@ eq(ago(3 * 3600), "3 hours ago", "3 小时");
 eq(ago(3 * 86400), "3 days ago", "3 天");
 
 // ---------------------------------------------------------------------------
-// 4. 界面：旧的/兜底的目录要说出来，但条目照常渲染
+// 5. 界面：旧的/兜底的目录要说出来，但条目照常渲染
 // ---------------------------------------------------------------------------
 
 const stage = document.getElementById("stage")!;
