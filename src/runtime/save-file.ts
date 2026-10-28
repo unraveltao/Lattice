@@ -42,9 +42,23 @@ export interface SaveFile {
   base64?: string;
 }
 
+/**
+ * 单文件文档的形状（design/0031）。
+ *
+ * **它不决定要不要打 zip** —— 那是内容的事（多文件或带 base64 一律 zip）。它只
+ * 决定两件跟"单个文本文件"有关的事：补哪个扩展名、保存框里挂哪个过滤器。
+ *
+ * 为什么要有它、而不是让组件把 `.html` 写进 `name` 里：用户在保存框里会把名字
+ * 改掉（`周报.md`）。改完就再也看不出"这份东西本来是网页"，于是 HTML 会被写进
+ * 一个 `.md` 文件 —— 而那正是"别信用户在对话框里敲的名字"要挡的事。
+ */
+export type SaveDocument = "md" | "html";
+
 export interface SaveRequest {
   /** 用户会看到、也能改的那个名字（不含扩展名也一样能过，扩展名由 `withSaveExtension` 补） */
   name: string;
+  /** 单文件时那份文档是什么。缺省 `md` */
+  document: SaveDocument;
   files: SaveFile[];
 }
 
@@ -108,9 +122,14 @@ export function saveNeedsZip(files: readonly SaveFile[]): boolean {
  */
 export function planSave(params: unknown): SavePlan {
   if (!params || typeof params !== "object") return { ok: false, error: "file.save takes an object" };
-  const raw = params as { name?: unknown; files?: unknown };
+  const raw = params as { name?: unknown; files?: unknown; document?: unknown };
   const name = cleanSaveName(raw.name);
   if (!name) return { ok: false, error: `"name" must be a plain file name of at most ${MAX_SAVE_NAME_CHARS} characters` };
+  // 不认的值直接拒：猜一个的下场是用户拿到一个后缀不对的文件，而他不会去看日志
+  const document: SaveDocument = raw.document === undefined ? "md" : (raw.document as SaveDocument);
+  if (document !== "md" && document !== "html") {
+    return { ok: false, error: '"document" is either "md" or "html"' };
+  }
   if (!Array.isArray(raw.files) || raw.files.length === 0) {
     return { ok: false, error: "file.save needs at least one file" };
   }
@@ -141,21 +160,22 @@ export function planSave(params: unknown): SavePlan {
     files.push(hasText ? { name: entryName, text: entry.text as string } : { name: entryName, base64: entry.base64 as string });
   }
 
-  return { ok: true, request: { name, files }, zip: saveNeedsZip(files) };
+  return { ok: true, request: { name, document, files }, zip: saveNeedsZip(files) };
 }
 
 /** 内容和扩展名对不上时，把名字里的那个换掉 */
-const SWAPPABLE = [".md", ".markdown", ".zip", ".txt"];
+const SWAPPABLE = [".md", ".markdown", ".zip", ".txt", ".html", ".htm"];
 
 /**
- * 按内容补扩展名（`zip` 决定补哪个）。
+ * 按内容补扩展名（`zip` 决定 `.zip`，否则按 `document` 补 `.md` / `.html`）。
  *
  * 用户可能在对话框里把名字改成一个没有扩展名的词，也可能改成一个别的扩展名。
- * 规则只有三条：已经是想要的那个就留着；是这几个"文本/压缩包"的另一个就换成想要
- * 的那个（`note.zip` 但内容是正文 → `note.md`）；其余（`图表.v2`）在后面接一个。
+ * 规则只有三条：已经是想要的那个就留着；是这几个"文本 / 压缩包"的另一个就换成想要
+ * 的那个（`note.zip` 但内容是正文 → `note.md`，`周报.md` 但内容是网页 → `周报.html`）；
+ * 其余（`图表.v2`）在后面接一个。
  */
-export function withSaveExtension(name: string, zip: boolean): string {
-  const want = zip ? ".zip" : ".md";
+export function withSaveExtension(name: string, zip: boolean, document: SaveDocument = "md"): string {
+  const want = zip ? ".zip" : document === "html" ? ".html" : ".md";
   const lower = name.toLowerCase();
   if (lower.endsWith(want)) return name;
   const dot = name.lastIndexOf(".");

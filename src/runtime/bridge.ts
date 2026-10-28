@@ -432,7 +432,9 @@ defineMethod("shell.open", "shell:open", async (params) => {
  * 2. **取消不是错误**。Rust 回 `{ok:false}` 时这条桥回 `{ok:false, cancelled:true}`
  *    而不是抛错：抛错会让组件画一行红字，而用户只是不想存了。
  * 3. **单文件还是 zip 由内容决定**（一个 text = 单文件；多文件或带 base64 = zip）。
- *    扩展名也按内容补，不信用户在对话框里敲的那个。
+ *    扩展名也按内容补，不信用户在对话框里敲的那个。单文件时补 `.md` 还是 `.html`
+ *    由 `document` 说（`"md"` / `"html"`，缺省 `md`）—— 那个参数在用户改完名字
+ *    之后仍然有效，而名字里的后缀会失效（design/0031）。
  */
 defineMethod("file.save", "file:save", async (params) => {
   const plan = planSave(params);
@@ -441,7 +443,9 @@ defineMethod("file.save", "file:save", async (params) => {
     throw new BridgeError("internal", "saving a file needs the desktop app");
   }
   const reply = await invoke<{ ok: boolean; path?: string; cancelled?: boolean }>("file_save", {
-    name: withSaveExtension(plan.request.name, plan.zip),
+    name: withSaveExtension(plan.request.name, plan.zip, plan.request.document),
+    // `document` 只给对话框挑过滤器用；扩展名上面已经按它补好了
+    document: plan.request.document,
     files: plan.request.files,
   });
   return reply.ok ? savedResult(reply.path ?? "") : cancelledResult();
@@ -523,12 +527,16 @@ defineMethod("system.metrics", "system:monitor", async () => {
 });
 
 /*
- * 电源状态（`lattice.battery`）：`{ ac, percent, charging, noBattery, critical,
+ * 电源状态（`lattice.sysmon` 的电池那一行；0.3.0 之前是独立组件
+ * `lattice.battery`）：`{ ac, percent, charging, noBattery, critical,
  * saver, minutesLeft }`，字段是**已经解释好的事实** —— 位掩码与"255 = 未知"
  * 全在 `power_policy.rs` 里判，组件不认那两个哨兵。
  *
  * 和 `system.metrics` 同一个权限：知道 CPU 占用和知道还剩多少电是同一类同意
  * （"让我看看这台机器的状态"）。每个指标开一条权限，权限面板会变成一张读不懂的清单。
+ *
+ * **组件并了，命令没并**：系统卡挂两条心跳（1000ms 指标 / 30000ms 电源），
+ * 电量半分钟才变一次，没必要跟着每秒那份一起搬。
  *
  * 浏览器预览里没有 Rust，回 `null` 而不是抛错：卡片据此画"读不出来"，
  * 这比一张红着脸的错误卡更接近它真正知道的事 —— 而且预览里本来就没有电池。

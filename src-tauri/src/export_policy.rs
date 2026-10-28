@@ -98,23 +98,74 @@ pub(crate) fn wants_zip(files: &[OutFile]) -> bool {
     files.len() > 1 || files.iter().any(|file| file.base64.is_some())
 }
 
-/// 内容决定扩展名：`zip` 补 `.zip`，否则补 `.md`。
+/// 单文件文档的形状（0031）。
+///
+/// **它不决定要不要打 zip** —— 那是内容的事（多文件或带 base64 一律 zip）。它只
+/// 决定两件只跟"单个文本文件"有关的事：补哪个扩展名、对话框里挂哪个过滤器。
+/// 一个参数管两件事是危险的，所以这里刻意不让它管第三件。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DocFormat {
+    Markdown,
+    Html,
+}
+
+impl DocFormat {
+    /// 桥上的字符串。不认的值由调用方回 `bad_params` —— 别"尽量猜一个"：猜错的
+    /// 表现是用户拿到一个后缀不对的文件，而他不会去看日志。
+    pub(crate) fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "md" => Some(Self::Markdown),
+            "html" => Some(Self::Html),
+            _ => None,
+        }
+    }
+
+    fn extension(self) -> &'static str {
+        match self {
+            Self::Markdown => ".md",
+            Self::Html => ".html",
+        }
+    }
+
+    /// 保存对话框里那个过滤器上写的名字
+    pub(crate) fn filter(self) -> &'static str {
+        match self {
+            Self::Markdown => "Markdown",
+            Self::Html => "HTML",
+        }
+    }
+
+    /// 对话框认的扩展名。`html` 连 `htm` 一起认 —— 用户可能存成那个，而他只是
+    /// 想存一份网页
+    pub(crate) fn patterns(self) -> &'static [&'static str] {
+        match self {
+            Self::Markdown => &["md"],
+            Self::Html => &["html", "htm"],
+        }
+    }
+}
+
+/// 内容决定扩展名：要 zip 就 `.zip`，否则按 `document` 补 `.md` / `.html`。
 ///
 /// 用户可能在对话框里把名字改掉：没有扩展名就补一个；写成一个别的"文本/压缩包"
 /// 扩展名（`note.zip` 而内容是正文）就换成对的；其余（`图表.v2`）在后面接一个。
-pub(crate) fn with_extension(name: &str, zip: bool) -> String {
-    let want = if zip { ".zip" } else { ".md" };
+pub(crate) fn with_extension(name: &str, zip: bool, document: DocFormat) -> String {
+    let want = if zip { ".zip" } else { document.extension() };
     let lower = name.to_lowercase();
     if lower.ends_with(want) {
         return name.to_string();
     }
     if let Some(dot) = name.rfind('.') {
-        if dot > 0 && [".md", ".markdown", ".zip", ".txt"].contains(&&lower[dot..]) {
+        if dot > 0 && SWAPPABLE.contains(&&lower[dot..]) {
             return format!("{}{}", &name[..dot], want);
         }
     }
     format!("{name}{want}")
 }
+
+/// 内容和扩展名对不上时要换掉的那几个。`.html` / `.htm` 也算 —— 用户把一份网页
+/// 导成 `.md` 的时候，留着他的后缀等于交出去一个打不开的文件。
+const SWAPPABLE: [&str; 6] = [".md", ".markdown", ".zip", ".txt", ".html", ".htm"];
 
 fn base64_value(byte: u8) -> Option<u8> {
     match byte {
@@ -348,12 +399,40 @@ mod tests {
 
     #[test]
     fn with_extension_follows_the_content() {
-        assert_eq!(with_extension("标题", false), "标题.md");
-        assert_eq!(with_extension("标题", true), "标题.zip");
-        assert_eq!(with_extension("标题.md", false), "标题.md");
-        assert_eq!(with_extension("标题.zip", false), "标题.md");
-        assert_eq!(with_extension("标题.MD", true), "标题.zip");
-        assert_eq!(with_extension("图表.v2", true), "图表.v2.zip");
+        use DocFormat::Markdown;
+        assert_eq!(with_extension("标题", false, Markdown), "标题.md");
+        assert_eq!(with_extension("标题", true, Markdown), "标题.zip");
+        assert_eq!(with_extension("标题.md", false, Markdown), "标题.md");
+        assert_eq!(with_extension("标题.zip", false, Markdown), "标题.md");
+        assert_eq!(with_extension("标题.MD", true, Markdown), "标题.zip");
+        assert_eq!(with_extension("图表.v2", true, Markdown), "图表.v2.zip");
+    }
+
+    #[test]
+    fn with_extension_follows_the_requested_document() {
+        use DocFormat::{Html, Markdown};
+        // 一份网页：没有扩展名就补 .html，写成一个别的文档扩展名就换成 .html
+        assert_eq!(with_extension("标题", false, Html), "标题.html");
+        assert_eq!(with_extension("标题.md", false, Html), "标题.html");
+        assert_eq!(with_extension("标题.HTM", false, Html), "标题.html");
+        // 反过来也一样：一份 Markdown 不许顶着 .html 出去
+        assert_eq!(with_extension("标题.html", false, Markdown), "标题.md");
+        // 认不出的后缀接在后面，不覆盖（`图表.v2` 是用户的东西）
+        assert_eq!(with_extension("图表.v2", false, Html), "图表.v2.html");
+        // 要 zip 的时候 `document` 不参与：那是内容说了算的
+        assert_eq!(with_extension("标题", true, Html), "标题.zip");
+    }
+
+    #[test]
+    fn doc_format_only_knows_two_values() {
+        assert_eq!(DocFormat::parse("md"), Some(DocFormat::Markdown));
+        assert_eq!(DocFormat::parse("html"), Some(DocFormat::Html));
+        // `zip` 不是一个 document —— 打不打 zip 由内容决定，认它会让参数有两套意思
+        assert_eq!(DocFormat::parse("zip"), None);
+        assert_eq!(DocFormat::parse("HTML"), None);
+        assert_eq!(DocFormat::parse(""), None);
+        assert_eq!(DocFormat::Markdown.filter(), "Markdown");
+        assert_eq!(DocFormat::Html.filter(), "HTML");
     }
 
     #[test]

@@ -16,13 +16,28 @@
  * 0.3 起有图片（design/0028）：
  *  - **进来只有两条路**：`textarea` 的粘贴、卡片的拖入。图片当场压到长边 480 /
  *    WebP 0.8，**内联成 base64 写进正文**（`![]({data:…}){width=…}`）—— 正文因此
- *    自己就是可导出的 Markdown，不需要第二个存储键。上限：单张 120KB / 共 1MB /
- *    8 张，超了拒绝并说清楚（悄悄丢一张比拒绝糟得多）。
+ *    自己就是可导出的 Markdown，不需要第二个存储键。
  *  - **缩小只在预览态做**：图片右下角那颗按钮循环 25% / 50% / 100%，改的是源文本
  *    里的 `{width=N}`，不是 DOM 上的样式 —— 否则下次渲染就回去了。
  *  - **导出**走桥的 `file.save`（权限 `file:save`）：把 data URL 抽成 `images/N`,
  *    `{width=N}` 改写成 `<img width>`，一次交给平台弹保存框。用户取消时一句话都
  *    不说 —— 把"我不想存了"画成红字是这个仓库反复踩过的坑。
+ *
+ * 0.3.1 只改"装不下"那件事（三处，都在这一份里）：
+ *  1. **闸门从张数换成总字节**：8 张 → 20 张护栏 + 1MB 真闸门，判据在
+ *     `note-images.js` 的 `admit()`。0.3.0 的 8 张比 1MB 早得多地拦住人。
+ *  2. **一批里能进几张就进几张**：0.3.0 是一票否决（粘 3 张、已有 6 张 → 三张全不进），
+ *     现在逐张判、最后说一句"收下 2 张，1 张没进：合计到 1MB 了"。
+ *  3. **导出成功后给一颗「清空」**：导出不会动正文，于是"导出完不敢删、只增不减"
+ *     是这张便签撞墙的真正来路。清空走的是同一条 `wiped` 路，所以上一版仍然留 24
+ *     小时可恢复 —— 这个按钮不该比手滑更危险。
+ *
+ * 0.4 起导出有三种形状（design/0031）：
+ *  - **底栏那颗「导出」开一个菜单**，不再直接导：`md`（正文一个字都不改，图片是
+ *    data URI，自包含）/ `zip`（note.md + images/，GitHub 认）/ `html`（渲染成一份
+ *    网页，图片内联，双击就能看）。
+ *  - **桥多认一个 `format`**：它只决定"单文件时补哪个扩展名、挑哪个对话框过滤器"；
+ *    多文件或带 base64 仍然一律 zip（判据还是内容，不是这个参数）。
  */
 (function () {
   "use strict";
@@ -88,11 +103,13 @@
     textEl.placeholder = say("写点什么…", "Write something…");
     updateCount();
     // 状态行的文字由状态机给，重画当前那一条，别把"保存中…"写成别的
-    setStatus(statusKey, statusKind);
-    // 预览按钮、恢复按钮、导出按钮、空预览的提示语都跟语言有关
+    renderStatus();
+    // 预览按钮、恢复按钮、导出按钮、清空按钮、空预览的提示语都跟语言有关
     renderMode();
     updateRestore();
     updateExportLabel();
+    updateMenu();
+    updateClear();
   }
 
   window.addEventListener("message", function (event) {
@@ -137,6 +154,9 @@
   var modeEl = document.getElementById("mode");
   var restoreEl = document.getElementById("restore");
   var exportEl = document.getElementById("export");
+  var clearEl = document.getElementById("clear");
+  var menuEl = document.getElementById("menu");
+  var menuItems = menuEl ? menuEl.querySelectorAll("[data-format]") : [];
 
   var timer = null;
 
@@ -171,6 +191,38 @@
   var statusKey = "loading";
   var statusKind = "";
 
+  /*
+   * 一条"压过保存状态"的话（图片被拒、导出完成）。
+   *
+   * 状态行有两个说话的人：保存状态机和一次性事件。0.3.0 里后者总被前者盖掉 ——
+   * 拒收一张图之后 400ms，`save()` 就把状态行改成「已保存」，那句话用户根本没看见。
+   * 所以一次性事件写进 `notice`：保存状态机照常记账（`statusKey`），但不许画上去；
+   * **用户下一次真敲键盘**才收掉 —— 那时"刚才那张图没进"确实已经过去了。
+   */
+  var notice = null;
+
+  /** 保存状态机的那几句话。notice 在的时候它们让位 */
+  var SAVE_KEYS = { loading: 1, saving: 1, saved: 1, unsaved: 1 };
+
+  /** 被拒的原因怎么说。`detail` 里的键和 `admit()` 的四个答案一一对应 */
+  var REASON_TEXT = {
+    full: function () {
+      return say("合计到 1MB", "hit 1 MB");
+    },
+    countFull: function () {
+      return say("已满 " + imgs.MAX_IMAGES + " 张", "already " + imgs.MAX_IMAGES + " images");
+    },
+    tooBig: function () {
+      return say("压完超 120KB", "over 120 KB after squeezing");
+    },
+    broken: function () {
+      return say("读不了", "could not be read");
+    },
+    mixed: function () {
+      return say("超了上限", "over a limit");
+    },
+  };
+
   var STATUS_TEXT = {
     loading: function () {
       return say("正在载入…", "Loading…");
@@ -199,11 +251,30 @@
     imageTooBig: function () {
       return say("压完还是超过 120KB", "Still over 120 KB after squeezing");
     },
+    /*
+     * 装不下时的两句话都带**下一步**，不只报数字。
+     *
+     * "先导出再清空"不是客套：1MB 是写盘成本（每次停顿重写三份）换来的上限，而这张
+     * 便签只增不减的真正原因是"导出不动正文、用户又不敢删"。与其把上限抬到 4MB
+     * （每次停顿落 12MB），不如把那条路指出来。
+     */
     imageLimit: function () {
-      return say("最多 8 张图", "At most 8 images");
+      return say("最多 " + imgs.MAX_IMAGES + " 张图 · 先导出再清空", "At most " + imgs.MAX_IMAGES + " images · export, then clear");
     },
     noteFull: function () {
-      return say("图片总量到 1MB 了", "Images have reached 1 MB");
+      return say("图片到 1MB 了 · 先导出再清空", "Images reached 1 MB · export, then clear");
+    },
+    /** 一批里进了几张、没进几张 —— 一票否决改成逐张判之后必须有这句话 */
+    imagePartial: function (detail) {
+      var reason = REASON_TEXT[(detail && detail.reason) || "mixed"]();
+      return say(
+        "收下 " + detail.added + " 张，" + detail.rejected + " 张没进（" + reason + "）",
+        "Took " + detail.added + ", skipped " + detail.rejected + " (" + reason + ")",
+      );
+    },
+    /** 一张都没进、而且几种原因都有：说不出是哪一道墙，就别假装知道 */
+    imageRefused: function () {
+      return say("几张图都没进", "None of those images fit");
     },
     imageBroken: function () {
       return say("这张图读不了", "That image could not be read");
@@ -225,16 +296,46 @@
     },
   };
 
+  /**
+   * 按"现在该说哪一句"重画状态行。
+   *
+   * notice 只在两种时候画：`force`（刚发生的那件事就是它），或者当前这句来自保存
+   * 状态机（`SAVE_KEYS`）—— 保存状态机是背景音，它不该把"刚才那张图没进"顶掉。
+   */
+  function renderStatus(force) {
+    var showNotice = notice && (force || SAVE_KEYS[statusKey]);
+    var shown = showNotice ? notice : { key: statusKey, kind: statusKind, detail: null, hint: "" };
+    var text = STATUS_TEXT[shown.key](shown.detail);
+    statusEl.textContent = text;
+    statusEl.className = shown.kind ? "is-" + shown.kind : "";
+    // 状态条只有 140px 宽（右边 120px 留给窗饰），长文案会被省略号截掉；
+    // 截掉了才挂 title，没截就别挂 —— 不然"Saved"上也会凭空弹出个提示。
+    // notice 自己带的 hint（下一步怎么办）是例外：它就是要被 hover 看到的
+    if (shown.hint) statusEl.title = shown.hint;
+    else if (statusEl.scrollWidth > statusEl.clientWidth) statusEl.title = text;
+    else statusEl.removeAttribute("title");
+  }
+
   function setStatus(key, kind) {
     statusKey = key;
     statusKind = kind || "";
-    var text = STATUS_TEXT[key]();
-    statusEl.textContent = text;
-    statusEl.className = statusKind ? "is-" + statusKind : "";
-    // 状态条只有 140px 宽（右边 120px 留给窗饰），长文案会被省略号截掉；
-    // 截掉了才挂 title，没截就别挂 —— 不然"Saved"上也会凭空弹出个提示
-    if (statusEl.scrollWidth > statusEl.clientWidth) statusEl.title = text;
-    else statusEl.removeAttribute("title");
+    if (!SAVE_KEYS[key]) {
+      // 保存状态机之外的话说明用户已经往下走了（导出、载入失败…）：旧 notice 作废
+      notice = null;
+    }
+    renderStatus(false);
+  }
+
+  /** 说一句压过保存状态的话。`detail` 是这句话的参数，`hint` 是鼠标停上去才看的下一步 */
+  function setNotice(key, detail, kind, hint) {
+    notice = { key: key, detail: detail || null, kind: kind || "", hint: hint || "" };
+    renderStatus(true);
+  }
+
+  function clearNotice() {
+    if (!notice) return;
+    notice = null;
+    renderStatus(true);
   }
 
   function updateCount() {
@@ -247,11 +348,98 @@
   function updateExportLabel() {
     if (!exportEl) return;
     exportEl.textContent = say("导出", "Export");
-    exportEl.title = say(
-      "把正文和图片导出成 Markdown 或 zip",
-      "Export the note and its images as Markdown or a zip",
+    exportEl.title = say("选一种格式导出", "Export in one of three shapes");
+  }
+
+  /*
+   * 三种导出形状（0.4.0，design/0031）
+   *
+   * 卡片底栏放不下三颗按钮，而"导出"本身也不是一个动作、是一组动作 —— 所以它
+   * 开一个菜单。三条路各自的取舍写在 `note-images.js` 的三个 plan 里：
+   *
+   *   md    正文一个字都不改（自包含，图片是 data URI）
+   *   zip   note.md + images/（GitHub 认的那种）
+   *   html  渲染成一份网页（图片内联，双击就能看）
+   */
+  function formatLabel(format) {
+    if (format === "md") return say("单文件 .md", "One .md");
+    if (format === "zip") return say("zip + 图片", "Zip + images");
+    return say("单文件 .html", "One .html");
+  }
+
+  function formatHint(format) {
+    if (format === "md") {
+      return say(
+        "一份自包含的 Markdown：图片以 base64 压在正文里，Typora / Obsidian 认",
+        "One self-contained Markdown: images stay inline as base64 (Typora / Obsidian read it)",
+      );
+    }
+    if (format === "zip") {
+      return say(
+        "note.md 加 images/ 文件夹：GitHub 也认这个",
+        "note.md plus an images/ folder — GitHub reads this one too",
+      );
+    }
+    return say(
+      "一份网页：图片内联，双击就能看，发给别人也不缺图",
+      "One web page: images inline, double-click to read, nothing goes missing when you send it",
     );
   }
+
+  function updateMenu() {
+    for (var i = 0; i < menuItems.length; i += 1) {
+      var format = menuItems[i].getAttribute("data-format");
+      menuItems[i].textContent = formatLabel(format);
+      menuItems[i].title = formatHint(format);
+    }
+  }
+
+  function setMenu(open) {
+    if (!menuEl) return;
+    menuEl.hidden = !open;
+    if (exportEl) exportEl.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function menuOpen() {
+    return !!menuEl && !menuEl.hidden;
+  }
+
+  /*
+   * 「清空」只在"刚导出成功、正文还没被改过"时出现。
+   *
+   * 它解决一件真事：导出不动正文，于是用户导出之后不敢删，便签只增不减，最后撞上
+   * 1MB。给一颗按钮，比在拒收时说一句"先导出再清空"更实在 —— 那句话现在指的就是它。
+   *
+   * 为什么它不该比手滑更危险：清空走的是保存状态机里那条 `wiped` 路（正文删光 →
+   * 上一版进 `backup`），所以 24 小时内「恢复上一版」拿得回来。
+   *
+   * 为什么"改过字就收起来"：改过之后屏幕上的东西已经不是刚导出的那一份了，这时候
+   * 再按"清空"清的是一份没被导出的内容 —— 按钮必须跟它承诺的东西对齐。
+   */
+  var exportedAt = 0;
+
+  function updateClear() {
+    if (!clearEl) return;
+    clearEl.hidden = !(exportedAt > 0 && textEl.value.trim() !== "");
+    clearEl.textContent = say("清空", "Clear");
+    clearEl.title = say(
+      "导出成功了 —— 清空这张便签？上一版留 24 小时，可以恢复",
+      "Exported — clear this note? The previous version stays recoverable for 24 hours.",
+    );
+  }
+
+  function clearNote() {
+    exportedAt = 0;
+    textEl.value = "";
+    clearNotice();
+    updateCount();
+    updateClear();
+    if (mode === "read") renderPreview();
+    // 走 markEdited → 400ms 后 save()，那条路自己会发现"正文被清空"并留一份 backup
+    markEdited();
+  }
+
+  if (clearEl) clearEl.addEventListener("click", clearNote);
 
   // ---------- 预览 ----------
 
@@ -303,6 +491,7 @@
     revision += 1;
     updateCount();
     updateRestore();
+    clearNotice();
     clearTimeout(timer);
     // 备份用过就删掉：再留 24 小时只会让「恢复」在下次清空时指向更老的内容
     call("storage.remove", { key: "backup" }).catch(function () {});
@@ -393,44 +582,111 @@
   }
 
   /**
-   * 一张一张地压、一张一张地插。
+   * 一张一张地压、一张一张地插，**能进几张就进几张**。
    *
-   * 三条上限都在这里判：单张压完 ≤ 120KB、整张便签 ≤ 1MB、最多 8 张。任何一条
-   * 越界都**停下并说明** —— 悄悄丢掉一张图，用户只会以为"贴失败了"。
+   * 0.3.0 是一票否决：粘 3 张、便签里已有 6 张 → 三张全不进，用户还得自己算还剩几张。
+   * 现在每张单独问 `imgs.admit()`，最后说一句"收下 2 张，1 张没进（合计到 1MB）"。
+   *
+   * 判据只有一处（`admit`），这里只负责数：进了几张、每张为什么没进。
    */
   function addImages(files) {
     var picked = imageFilesOf(files);
     if (!picked.length) return;
-    if (imgs.imageCount(textEl.value) + picked.length > imgs.MAX_IMAGES) {
-      setStatus("imageLimit", "error");
-      return;
-    }
     setStatus("imageWorking", "");
+    var added = 0;
+    var rejected = { full: 0, countFull: 0, tooBig: 0, broken: 0 };
+
     var chain = Promise.resolve();
     picked.forEach(function (file) {
       chain = chain.then(function () {
         return compressImage(file)
           .then(function (image) {
-            if (image.bytes > imgs.MAX_IMAGE_BYTES) {
-              setStatus("imageTooBig", "error");
-              return;
-            }
-            if (imgs.totalImageBytes(textEl.value) + image.bytes > imgs.MAX_TOTAL_BYTES) {
-              setStatus("noteFull", "error");
+            var verdict = imgs.admit(textEl.value, image.bytes);
+            if (verdict !== "ok") {
+              rejected[verdict] += 1;
               return;
             }
             insertImage(image);
+            added += 1;
           })
           .catch(function () {
-            setStatus("imageBroken", "error");
+            rejected.broken += 1;
           });
       });
     });
+
     chain.then(function () {
-      // 插进去的图会触发一次保存（`markEdited`），状态行交给保存状态机；
-      // 一张都没插进去时才把「处理图片…」收掉
-      if (statusKey === "imageWorking") setStatus("saved", "saved");
+      reportAdmission(added, rejected);
     });
+  }
+
+  /**
+   * 一批处理完之后说一句话。
+   *
+   * 三种结局：全进（什么都不说，保存状态机会说"已保存"）、全没进（说清撞的是哪一道
+   * 墙）、进了一半（两件事都得说）。后两种都写进 `notice` —— 直接写状态行的话，
+   * 400ms 后那次自动保存会把这句话盖成「已保存」。
+   */
+  function reportAdmission(added, rejected) {
+    var total = rejected.full + rejected.countFull + rejected.tooBig + rejected.broken;
+    if (!total) {
+      // 一张都没被拒：把「处理图片…」收掉，剩下的交给保存状态机
+      if (statusKey === "imageWorking") setStatus("saved", "saved");
+      return;
+    }
+
+    var reason = dominantReason(rejected);
+    var oversized = reason === "tooBig" || reason === "broken";
+
+    if (!added) {
+      var key =
+        reason === "full"
+          ? "noteFull"
+          : reason === "countFull"
+            ? "imageLimit"
+            : reason === "broken"
+              ? "imageBroken"
+              : reason === "tooBig"
+                ? "imageTooBig"
+                : "imageRefused";
+      setNotice(key, null, "error", nextStepHint(oversized));
+      return;
+    }
+
+    setNotice("imagePartial", { added: added, rejected: total, reason: reason }, "error", nextStepHint(oversized));
+  }
+
+  /** 拒收之后该干什么。撞容量和撞单张是两件不同的事，指错路比不指更糟 */
+  function nextStepHint(oversized) {
+    if (oversized) {
+      return say(
+        "这张图本身太大或者读不了，换一张、或者先截小一点再贴。",
+        "That image is too big or unreadable — try another one, or crop it first.",
+      );
+    }
+    return say(
+      "先「导出」再「清空」，或者换一张便签。压完的图只算这一份的 1MB。",
+      "Export, then Clear — or use another note. Squeezed images only count against this note's 1 MB.",
+    );
+  }
+
+  /** 拒收的原因里最多的是哪一个；两种以上打平就算 mixed（别挑一个假的当代表） */
+  function dominantReason(rejected) {
+    var keys = Object.keys(rejected).filter(function (key) {
+      return rejected[key] > 0;
+    });
+    if (keys.length === 1) return keys[0];
+    var best = keys[0];
+    var tied = false;
+    for (var i = 1; i < keys.length; i += 1) {
+      if (rejected[keys[i]] > rejected[best]) {
+        best = keys[i];
+        tied = false;
+      } else if (rejected[keys[i]] === rejected[best]) {
+        tied = true;
+      }
+    }
+    return tied ? "mixed" : best;
   }
 
   /**
@@ -510,27 +766,53 @@
 
   var exporting = false;
 
+  /** 按格式挑那一份计划。三条路都在 `note-images.js` 里，这里只做选择 */
+  function planFor(format) {
+    var now = new Date();
+    var prefix = say("便签", "Note");
+    if (format === "html") {
+      return imgs.htmlPlan(textEl.value, now, prefix, function (source) {
+        // `true` = 按独立文档渲染：真链接、不带预览用的 `data-note-index`
+        return md ? md.render(source, true) : "";
+      }, lang);
+    }
+    if (format === "zip") return imgs.exportPlan(textEl.value, now, prefix);
+    return imgs.inlinePlan(textEl.value, now, prefix);
+  }
+
   /**
-   * 把便签交给平台的保存框：正文 + 每张图各一个文件（多文件 → 平台打 zip）。
+   * 把便签交给平台的保存框。
    *
-   * 三件事都在这儿：切分（`imgs.exportPlan`）、缺权限时说清是哪一项、**取消时
-   * 一句话都不说**（把状态行还原成点导出之前的样子）。
+   * `format` 决定的是**交出去的那一份文档长什么样**（自包含 .md / zip / 单文件
+   * .html），由底栏那个菜单选；平台只看它来补扩展名和挑对话框的过滤器。
+   *
+   * 三件事都在这儿：切分（三个 `*Plan`）、缺权限时说清是哪一项、**取消时一句话
+   * 都不说**（把状态行还原成点导出之前的样子）。
+   *
+   * 成功之后除了说「已导出」，还要让底栏那颗「清空」出现 —— 导出不动正文，
+   * 而"导出完不敢删"正是这张便签最后撞上 1MB 的来路。
    */
-  function exportNote() {
+  function exportNote(format) {
     if (exporting) return;
-    var plan = imgs.exportPlan(textEl.value, new Date(), say("便签", "Note"));
-    if (!plan.files[0].text.trim()) {
+    // 空便签不导：判据是正文，不是"计划里那份文件"—— 一份 html 的壳子永远不空
+    if (!textEl.value.trim()) {
       setStatus("exportEmpty", "");
       return;
     }
+    var plan = planFor(format);
     exporting = true;
     var before = { key: statusKey, kind: statusKind };
     setStatus("exportWorking", "");
-    call("file.save", { name: plan.baseName, files: plan.files })
+    call("file.save", { name: plan.baseName, format: plan.format, files: plan.files })
       .then(function (result) {
         exporting = false;
         if (result && result.ok) {
-          setStatus("exportDone", "saved");
+          exportedAt = Date.now();
+          setNotice("exportDone", null, "saved", say(
+            "已导出到 " + (result.path || "") + " —— 要清空这张便签的话，底栏那颗「清空」上一版留 24 小时",
+            "Saved to " + (result.path || "") + " — the Clear button in the footer keeps the previous version for 24 hours",
+          ));
+          updateClear();
           return;
         }
         // 用户点了取消：不是错误，也不留一句话
@@ -542,7 +824,35 @@
       });
   }
 
-  if (exportEl) exportEl.addEventListener("click", exportNote);
+  /*
+   * 底栏那颗「导出」开菜单，不直接导出 —— 它现在是三个动作。
+   *
+   * 关菜单的三条路：选了其中一项、点了别处、按了 Esc。少一条就会留下一个
+   * 挡住正文的浮层（卡片只有 200px 高，菜单占掉三分之一）。
+   */
+  if (exportEl) {
+    exportEl.addEventListener("click", function (event) {
+      event.stopPropagation();
+      setMenu(!menuOpen());
+    });
+  }
+
+  for (var menuIndex = 0; menuIndex < menuItems.length; menuIndex += 1) {
+    menuItems[menuIndex].addEventListener("click", function (event) {
+      event.stopPropagation();
+      var format = this.getAttribute("data-format");
+      setMenu(false);
+      exportNote(format);
+    });
+  }
+
+  document.addEventListener("click", function () {
+    setMenu(false);
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") setMenu(false);
+  });
 
   // ---------- 保存 ----------
 
@@ -556,6 +866,9 @@
     revision += 1;
     updateCount();
     updateRestore();
+    // 改过字之后，「清空」这颗按钮收起来：屏幕上的东西已经不是刚导出的那一份了
+    exportedAt = 0;
+    updateClear();
     // 正在保存时别把"保存中…"改回"未保存"，那会让人以为存完了又退回
     if (!saving) setStatus("unsaved", "");
     clearTimeout(timer);
@@ -606,7 +919,11 @@
       });
   }
 
-  textEl.addEventListener("input", markEdited);
+  // 真敲键盘才收掉那条 notice（"刚才那张图没进"到这个字为止就算过去了）
+  textEl.addEventListener("input", function () {
+    clearNotice();
+    markEdited();
+  });
 
   // 失焦立刻落盘，避免用户切走时最后 400ms 的输入丢掉
   textEl.addEventListener("blur", function () {
@@ -639,6 +956,7 @@
         lastSaved = value;
         updateCount();
         updateRestore();
+        updateClear();
         if (mode === "read") renderPreview();
         setStatus("saved", "saved");
       })
@@ -720,6 +1038,8 @@
     .then(function () {
       renderMode();
       updateExportLabel();
+      updateMenu();
+      updateClear();
       parent.postMessage({ __lattice: 1, type: "ready" }, "*");
     });
 })();

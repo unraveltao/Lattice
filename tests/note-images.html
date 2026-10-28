@@ -34,7 +34,8 @@
        *   3. 宽度换算与三档循环（100 → 25 → 50 → 100）
        *   4. 名字：第一行 `# 标题` 优先，否则 `便签 时间`
        *   5. 导出把 data URL 抽成 `images/N.ext`、宽度改写成 `<img width>`
-       *   6. 上下限就是 design/0028 里那三个数
+       *   6. 上下限：单张 120KB / 合计 1MB / 20 张护栏，**总字节才是真闸门**
+       *   7. 三种导出形状：自包含 .md（一个字都不改）、zip（抽成 images/）、单文件 .html
        */
       const imgs = window.__latticeNoteImages;
       const lines = [];
@@ -49,18 +50,54 @@
       const pic = (alt = "", base64 = "AAAA", width = 0, mime = "webp") =>
         `![${alt}](data:image/${mime};base64,${base64})` + (width ? `{width=${width}}` : "");
 
+      /** 一段**正好** `bytes` 字节的内联图（补齐 base64 的 padding，`dataUrlBytes` 会数对） */
+      const picBytes = (bytes) => {
+        const body = "A".repeat(Math.floor(bytes / 3) * 4);
+        const tail = bytes % 3 === 1 ? "AA==" : bytes % 3 === 2 ? "AAA=" : "";
+        return pic("", body + tail);
+      };
+
       // ---------- 上限 ----------
 
       eq(
         [imgs.LONG_EDGE, imgs.QUALITY, imgs.PRE_DOWNSCALE, imgs.MAX_IMAGES],
-        [480, 0.8, 2000, 8],
-        "长边 480 / 质量 0.8 / 预降采样 2000 / 最多 8 张",
+        [480, 0.8, 2000, 20],
+        "长边 480 / 质量 0.8 / 预降采样 2000 / 护栏 20 张",
       );
       eq(
         [imgs.MAX_IMAGE_BYTES, imgs.MAX_TOTAL_BYTES],
         [120 * 1024, 1024 * 1024],
         "单张 120KB、合计 1MB",
       );
+
+      // ---------- 闸门：总字节说了算（0.3.1） ----------
+
+      eq(imgs.imagesIn(picBytes(100))[0].bytes, 100, "picBytes(100) 正好 100 字节（断言用的尺子本身是准的）");
+      eq(imgs.admit("", 40 * 1024), "ok", "空便签放一张 40KB：进");
+      eq(imgs.admit("", imgs.MAX_IMAGE_BYTES + 1), "tooBig", "单张超 120KB：连第一关都过不去");
+      {
+        // 8 张满规格 = 960KB < 1MB。0.3.0 在这里就拒第 9 张了（"最多 8 张"），
+        // 现在拒它的是字节 —— 顺序上"先单张、再总字节、最后张数"
+        const eight = picBytes(120 * 1024).repeat(8);
+        eq(imgs.imageCount(eight), 8, "八张满规格的图");
+        eq(imgs.totalImageBytes(eight), 960 * 1024, "八张 120KB = 960KB，还没到 1MB");
+        eq(imgs.admit(eight, 120 * 1024), "full", "第 9 张满规格的图撞的是 1MB，不是张数");
+      }
+      {
+        // 这一条是这次改动的全部意义：典型截图 40KB 时，8 张只有 320KB
+        const typical = picBytes(40 * 1024).repeat(8);
+        eq(imgs.admit(typical, 40 * 1024), "ok", "八张 40KB 之后第 9 张照样进 —— 0.3.0 在这个位置就拒了");
+      }
+      {
+        const atLimit = picBytes(120 * 1024).repeat(8) + picBytes(64 * 1024);
+        eq(imgs.totalImageBytes(atLimit), 1024 * 1024, "八张 120KB + 一张 64KB 刚好 1MB");
+        eq(imgs.admit(atLimit, 1), "full", "刚好 1MB 时再进 1 个字节都算满");
+      }
+      {
+        const twenty = picBytes(40 * 1024).repeat(20);
+        eq(imgs.imageCount(twenty), 20, "二十张 40KB 的图（合计 800KB，字节还没满）");
+        eq(imgs.admit(twenty, 40 * 1024), "countFull", "字节没满才轮到护栏说话：20 张");
+      }
 
       // ---------- 字节估算 ----------
 
@@ -236,6 +273,69 @@
         eq(plan.zip, false, "没图就写一个 .md，不打 zip");
         eq(plan.files.length, 1, "只有一个文件");
         eq(plan.files[0].text, text, "正文原样交出去");
+      }
+
+      // ---------- 单文件自包含的 Markdown（0031） ----------
+
+      {
+        const text = `# 今天的图\n\n${pic("截图", "AAAA", 240)}`;
+        const plan = imgs.inlinePlan(text, new Date(2026, 9, 27, 10, 44));
+        eq(plan.baseName, "今天的图", "名字还是取标题");
+        eq(plan.format, "md", "这是 markdown");
+        eq(plan.files.length, 1, "就一个文件 —— 不带 images/");
+        eq(plan.files[0].name, "note.md", "文件名固定 note.md");
+        eq(plan.files[0].text, text, "**一个字都不改**：正文自己就是那份文档");
+        log(plan.files[0].text.includes("data:image/webp"), "图片仍然是 data URI（自包含）");
+        log(!plan.files[0].text.includes("images/"), "没有指向外部文件的引用");
+      }
+      eq(
+        imgs.inlinePlan("没有标题", new Date(2026, 9, 27, 10, 44)).baseName,
+        "便签 2026-10-27 10-44",
+        "没有标题就按时间起名",
+      );
+
+      // ---------- 单文件网页（0031） ----------
+
+      {
+        const doc = imgs.htmlDocument({ title: "周会", body: "<p>记了三件事</p>", lang: "zh" });
+        log(doc.startsWith("<!doctype html>"), "从 doctype 开始");
+        log(doc.includes('<html lang="zh-CN">'), "中文界面写 zh-CN");
+        log(doc.includes("<title>周会</title>"), "标题进了 title");
+        log(doc.includes('<main class="note">'), "正文在 main 里");
+        log(doc.includes("<p>记了三件事</p>"), "正文原样放进去");
+        log(doc.includes('charset="utf-8"'), "声明了 UTF-8 —— 中文不该靠猜");
+        log(!/https?:\/\//.test(doc), "一个外部引用都没有（不联网也能看）");
+        log(doc.includes("prefers-color-scheme"), "跟着系统深浅色走");
+      }
+      eq(
+        imgs.htmlDocument({ title: "a<b>&" + '"c"', body: "", lang: "en" }).includes("a&lt;b&gt;&amp;&quot;c&quot;"),
+        true,
+        "标题里的尖括号与引号被转义，不会截断 <title>",
+      );
+      eq(
+        imgs.htmlDocument({ body: "", lang: "en" }).includes('<html lang="en">'),
+        true,
+        "英文界面写 en",
+      );
+      {
+        const text = "# 周会\n\n" + pic("截图", "AAAA", 240);
+        const plan = imgs.htmlPlan(
+          text,
+          new Date(2026, 9, 27, 10, 44),
+          "便签",
+          (source) => `<p>渲染了 ${imgs.imageCount(source)} 张图</p>`,
+          "zh",
+        );
+        eq(plan.baseName, "周会", "名字取标题");
+        eq(plan.format, "html", "这是 html");
+        eq(plan.files[0].name, "note.html", "文件名固定 note.html");
+        log(plan.files[0].text.includes("渲染了 1 张图"), "正文来自渲染器（渲染器不在这个文件里）");
+        log(plan.files[0].text.includes("<title>周会</title>"), "标题也进了网页");
+      }
+      {
+        // 渲染器传不进来时不许炸：导出一个空壳网页，比抛一个 TypeError 强
+        const plan = imgs.htmlPlan("正文", new Date(2026, 9, 27), "便签", null, "zh");
+        eq(plan.files[0].text.includes('<main class="note">'), true, "没有渲染器就交一份空正文");
       }
 
       document.getElementById("out").innerHTML = lines

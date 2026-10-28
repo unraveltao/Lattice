@@ -1,10 +1,10 @@
 {
   "id": "lattice.note",
   "name": { "zh": "便签", "en": "Note" },
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": {
-    "zh": "随手写点什么，认一点点 Markdown 和图片；自动存进组件存储，也能导出成 zip",
-    "en": "Jot something down with a little Markdown and images; saved automatically to widget storage, exportable as a zip"
+    "zh": "随手写点什么，认一点点 Markdown 和图片；自动存进组件存储，也能导出成 Markdown、zip 或网页",
+    "en": "Jot something down with a little Markdown and images; saved automatically to widget storage, exportable as Markdown, a zip, or a web page"
   },
   "author": "Lattice",
   "entry": "index.html",
@@ -91,6 +91,10 @@
           {
             "zh": "缺存储权限会直接点出来 —— 这张便签在卡片重载之前照常能用。",
             "en": "A missing storage permission is named outright — the note keeps working until the card reloads."
+          },
+          {
+            "zh": "状态行被截断时，把鼠标停上去能看全。",
+            "en": "Hover the status line when it is truncated to read the full message."
           }
         ]
       },
@@ -102,16 +106,16 @@
             "en": "It counts characters, not words, so you can see how much room is left; pasted images are left out of the count."
           },
           {
-            "zh": "状态行被截断时，把鼠标停上去能看全。",
-            "en": "Hover the status line when it is truncated to read the full message."
+            "zh": "「导出」开的是一张菜单，三种形状：单文件 .md（图片压在正文里，Typora / Obsidian 认）、zip（note.md + images/，GitHub 认）、单文件 .html（双击就能看）。",
+            "en": "Export opens a menu with three shapes: one .md (images inline, Typora / Obsidian read it), a zip (note.md plus images/, GitHub reads it), or one .html (double-click and read)."
           },
           {
-            "zh": "底栏那颗「导出」存成一份 zip：note.md 加 images/ 里的图。宽度改写成了 <img width>，GitHub 认这个。",
-            "en": "The Export button saves a zip: note.md plus the pictures under images/. Widths become <img width>, which GitHub understands."
+            "zh": "图先压成 WebP；合计过 1 MB 就拒收，并说清是撞了哪一条。一批里能进几张就进几张 —— 不会因为你多贴了一张就一张都不收。",
+            "en": "Images are squeezed to WebP first; past 1 MB in total they are refused, and the card names the limit it hit. A batch keeps whatever fits instead of dropping all of it."
           },
           {
-            "zh": "图先压成 WebP；压完每张超过 120 KB、超过 8 张、或者合计过 1 MB，就拒收并说清是哪一条。",
-            "en": "Images are squeezed to WebP first; over 120 KB each, more than 8 of them, or past 1 MB in total is refused, and the card names the limit it hit."
+            "zh": "导出成功之后底栏会出现「清空」。它清的是这张便签，上一版留 24 小时，点「恢复上一版」拿得回来。",
+            "en": "After a successful export a Clear button appears in the footer. It clears this note; the previous version is kept for 24 hours and Restore brings it back."
           },
           {
             "zh": "导出第一次会问一次「保存文件」权限；存到哪儿每次都由你在对话框里挑，便签只递名字。",
@@ -131,14 +135,50 @@
             "en": "Whether a card shows the preview or the editor is that card's own choice."
           },
           {
-            "zh": "想要第二张便签，就换个 id 再装一份。",
-            "en": "If you want a second note, install a copy under a different id."
+            "zh": "想要第二张便签，就换个 id 再装一份 —— 一张便签的图装到 1 MB 之后，这也是一条路。",
+            "en": "If you want a second note, install a copy under a different id — that is also the way out once a note's images reach 1 MB."
           }
         ]
       }
     ]
   },
   "changelog": [
+    {
+      "version": "0.4.0",
+      "date": "2026-10-28",
+      "changes": [
+        {
+          "zh": "导出变成一张菜单：单文件 .md（自包含）、zip（note.md + images/）、单文件 .html（双击就能看的网页）。",
+          "en": "Export is a menu now: one .md (self-contained), a zip (note.md plus images/), or one .html you can double-click."
+        },
+        {
+          "zh": "单文件 .md 交出去的是正文本身，一个字都不改 —— 图片仍然是内联的 base64，拷走一份文件就是完整文档。",
+          "en": "The single .md is the text itself, unchanged: images stay inline as base64, so one copied file is the whole document."
+        },
+        {
+          "zh": "单文件 .html 是一份完整网页：图片内联、链接能点、跟着系统深浅色走，一个外部引用都没有。",
+          "en": "The single .html is a whole web page: images inline, links clickable, follows the system light/dark setting, no external references at all."
+        }
+      ]
+    },
+    {
+      "version": "0.3.1",
+      "date": "2026-10-28",
+      "changes": [
+        {
+          "zh": "装不下的判据从「8 张」改成「合计 1 MB」：8 张截图只有 300KB 就被拦住，而真正的成本是字节，不是张数。",
+          "en": "The \"too full\" rule is now 1 MB in total instead of 8 images: eight screenshots are only ~300 KB, and bytes — not count — are what a save actually costs."
+        },
+        {
+          "zh": "一次贴好几张时，能进几张就进几张。以前多贴一张就整批不收，现在会说「收下 2 张，1 张没进（合计到 1MB）」。",
+          "en": "Pasting several images keeps whatever fits. One image over the line used to reject the whole batch; now it says \"Took 2, skipped 1 (hit 1 MB)\"."
+        },
+        {
+          "zh": "导出成功后底栏出现「清空」：导完不敢删、便签只增不减，才是撞上限的真正来路。上一版留 24 小时可恢复。",
+          "en": "A Clear button appears after a successful export: never daring to delete after exporting is how a note really fills up. The previous version stays recoverable for 24 hours."
+        }
+      ]
+    },
     {
       "version": "0.3.0",
       "date": "2026-10-27",

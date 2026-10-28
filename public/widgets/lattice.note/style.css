@@ -29,6 +29,8 @@ body {
   height: 100%;
   padding: 10px 12px 8px;
   gap: 6px;
+  /* 导出菜单相对这张卡片定位（`bottom` 按底栏高度算） */
+  position: relative;
 }
 
 /* ---------- 状态条（同时给窗饰让位） ---------- */
@@ -102,7 +104,8 @@ body {
 }
 
 .note-toggle,
-.note-restore {
+.note-restore,
+.note-clear {
   flex: none;
   padding: 0;
   border: 0;
@@ -122,17 +125,24 @@ body {
   color: var(--accent);
 }
 
-.note-restore {
+/*
+ * 「恢复上一版」和「清空」共用一个位置，也共用一套长相：都是底栏上的次要动作，
+ * 而且永远不会同时出现（前者要正文为空、后者要正文非空）。
+ */
+.note-restore,
+.note-clear {
   color: var(--accent);
 }
 
-.note-restore:hover {
+.note-restore:hover,
+.note-clear:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .note-toggle:focus-visible,
-.note-restore:focus-visible {
+.note-restore:focus-visible,
+.note-clear:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
   outline-offset: 2px;
   border-radius: 4px;
@@ -297,4 +307,54 @@ body {
 
 #status.is-error {
   color: #e2725b;
+}
+
+/* ---------- 导出菜单 ---------- */
+
+/*
+ * 三行、贴着底栏往上长。
+ *
+ * 为什么要浮层而不是三颗按钮：卡片最小 180px 宽，底栏已经放了「预览 / 恢复 /
+ * 清空 / 导出 / 字数」，再加两项必然挤成一团；而菜单只在点下去的那一刻存在。
+ *
+ * 底色用 `--surface`（平台的主题令牌）—— 卡片自己是透明的，菜单不行：它会盖在
+ * 正文上面，半透明的话底下的字会透出来，读不清。拿不到令牌时退回一个深色底。
+ */
+.note-menu {
+  position: absolute;
+  left: 10px;
+  bottom: 26px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface, #1b1d20);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.note-menu[hidden] {
+  display: none;
+}
+
+.note-menu button {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.note-menu button:hover,
+.note-menu button:focus-visible {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  outline: none;
 }

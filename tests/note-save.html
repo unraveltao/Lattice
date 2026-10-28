@@ -29,6 +29,11 @@
     <script type="module">
       const lines = [];
       const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text}（得到 ${JSON.stringify(actual)}）`,
+        );
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
       // 组件默认按中文画；这里推一条 language 让它切到英文，等于顺带验了这条推送
@@ -42,7 +47,7 @@
        * 用来复现"先发的后到"这种乱序。
        */
       function mountNote({ getDelay = 0, initial = "" } = {}) {
-        const state = { stored: initial, setCalls: 0 };
+        const state = { stored: initial, setCalls: 0, keys: {}, saved: null };
         const frame = document.createElement("iframe");
         // 测试里要直接操作 iframe 里的 textarea，所以额外开 allow-same-origin。
         // 组件本身不依赖它，生产环境仍然是 allow-scripts。
@@ -72,16 +77,32 @@
               return;
             }
             if (data.method === "storage.get") {
-              setTimeout(() => reply({ ok: true, result: state.stored }), getDelay);
+              // 键级存储：`text` 和 `backup` 是两份东西，混成一份的话
+              // 「清空之后留备份」这条会自己骗自己
+              const key = data.params.key;
+              const value = key in state.keys ? state.keys[key] : key === "text" ? state.stored : null;
+              setTimeout(() => reply({ ok: true, result: value }), getDelay);
               return;
             }
             if (data.method === "storage.set") {
               state.setCalls += 1;
               const delay = 50 + Math.random() * 250;
               setTimeout(() => {
-                state.stored = data.params.value;
+                state.keys[data.params.key] = data.params.value;
+                if (data.params.key === "text") state.stored = data.params.value;
                 reply({ ok: true, result: { ok: true } });
               }, delay);
+              return;
+            }
+            if (data.method === "storage.remove") {
+              delete state.keys[data.params.key];
+              reply({ ok: true, result: { ok: true } });
+              return;
+            }
+            if (data.method === "file.save") {
+              // 保存对话框在这里永远是"用户挑了路径、点了保存"
+              state.saved = data.params;
+              reply({ ok: true, result: { ok: true, path: "C:/tmp/" + data.params.name } });
               return;
             }
             reply({ ok: false, error: "unknown" });
@@ -150,6 +171,118 @@
 
         log(text.value === "我刚敲的", `载入回包后输入框仍是「${text.value}」`);
         log(note.state.stored === "我刚敲的", `盘上落的是「${note.state.stored}」`);
+        note.frame.remove();
+      }
+
+      // ---- 场景 3：导出之后那颗「清空」，清完还能恢复 ----
+      //
+      // 这条钉的是 0.3.1 加的那条数据通路：导出不动正文，所以「清空」是唯一的
+      // 出口，而它必须同时做到三件事 —— 收起自己、把上一版写进 backup、让「恢复」
+      // 出现。少任何一件，用户按下去就是一次不可逆的删除。
+      {
+        const note = mountNote({ initial: "# 周会\n\n记了三件事" });
+        await note.ready;
+        await sleep(150);
+
+        const doc = note.frame.contentDocument;
+        const clear = doc.getElementById("clear");
+        const restore = doc.getElementById("restore");
+
+        log(clear.hidden, "没导出之前「清空」是藏着的");
+
+        // 0.4 起「导出」开的是一张菜单，不是直接导 —— 先点它，再点其中一项
+        const menu = doc.getElementById("menu");
+        log(menu.hidden, "没点之前菜单是收着的");
+        doc.getElementById("export").click();
+        await sleep(30);
+        log(!menu.hidden, "点「导出」把菜单放出来");
+        eq(doc.getElementById("export").getAttribute("aria-expanded"), "true", "aria-expanded 跟着变");
+        log(note.state.saved === null, "只是开菜单，还没真的存盘");
+
+        menu.querySelector('[data-format="md"]').click();
+        await sleep(200);
+
+        log(note.state.saved !== null, "导出真的走了一次 file.save");
+        log(
+          note.state.saved && note.state.saved.name === "周会",
+          `导出的名字取正文标题（「${note.state.saved && note.state.saved.name}」）`,
+        );
+        log(menu.hidden, "选完菜单自己收起来");
+        log(!clear.hidden, "导出成功之后「清空」出现");
+        log(doc.getElementById("status").textContent === "已导出", "状态行说「已导出」");
+
+        clear.click();
+        await sleep(1400);
+
+        log(doc.getElementById("text").value === "", "点「清空」之后正文空了");
+        log(note.state.stored === "", `盘上落的也是空串（「${note.state.stored}」）`);
+        const backup = note.state.keys.backup;
+        log(
+          !!backup && backup.text === "# 周会\n\n记了三件事",
+          "清空之前那一版进了 backup",
+        );
+        log(clear.hidden, "「清空」自己收起来了");
+        log(!restore.hidden, "「恢复上一版」跟着出现 —— 这一下不是不可逆的");
+
+        restore.click();
+        await sleep(1400);
+        log(doc.getElementById("text").value === "# 周会\n\n记了三件事", "点「恢复」把内容拿回来了");
+        note.frame.remove();
+      }
+
+      // ---- 场景 4：三种导出形状（design/0031） ----
+      //
+      // 钉的是"菜单里那三项各自递了什么给桥"：`format` 只影响单文件时的扩展名，
+      // 而 zip 仍然由内容决定 —— 没有图的那条 zip 会退化成一份 .md，这是对的，
+      // 因为打一个只装一个文件的 zip 对用户没有好处。
+      {
+        const note = mountNote({ initial: "# 周会\n\n记了三件事" });
+        await note.ready;
+        await sleep(150);
+
+        const doc = note.frame.contentDocument;
+        const menu = doc.getElementById("menu");
+        const text = doc.getElementById("text");
+
+        const pick = async (format) => {
+          doc.getElementById("export").click();
+          await sleep(20);
+          menu.querySelector('[data-format="' + format + '"]').click();
+          await sleep(140);
+          return note.state.saved;
+        };
+
+        const md = await pick("md");
+        eq([md.format, md.files.length, md.files[0].name], ["md", 1, "note.md"], "单文件 .md：一份文件");
+        eq(md.files[0].text.includes("记了三件事"), true, "md 里就是正文本身（一个字都不改）");
+
+        const plainZip = await pick("zip");
+        eq([plainZip.format, plainZip.files.length], ["md", 1], "没有图时那条 zip 退化成一份 .md");
+
+        const html = await pick("html");
+        eq([html.format, html.files.length, html.files[0].name], ["html", 1, "note.html"], "单文件 .html");
+        eq(html.files[0].text.includes("<title>周会</title>"), true, "网页里有标题");
+        eq(html.files[0].text.includes("<p>记了三件事</p>"), true, "网页里有渲染过的正文");
+
+        // 有图之后，zip 那条才真的是 zip；html 那条把图内联在里面
+        text.value = "# 周会\n\n![](data:image/webp;base64,AAAA){width=240}";
+        text.dispatchEvent(new Event("input", { bubbles: true }));
+        await sleep(80);
+
+        const zipped = await pick("zip");
+        eq(
+          zipped.files.map((file) => file.name),
+          ["note.md", "images/1.webp"],
+          "有图时 zip 里是 note.md + images/1.webp",
+        );
+        eq(zipped.files[1].base64, "AAAA", "图片那条是裸 base64（不带 data: 头）");
+
+        const inlined = await pick("html");
+        eq(
+          inlined.files[0].text.includes("data:image/webp;base64,AAAA"),
+          true,
+          "网页里的图仍然是内联的 data URI",
+        );
         note.frame.remove();
       }
 

@@ -16,9 +16,17 @@
       <footer class="note-foot">
         <button class="note-toggle" type="button" id="mode" aria-pressed="false">预览</button>
         <button class="note-restore" type="button" id="restore" hidden>恢复上一版</button>
-        <button class="note-toggle" type="button" id="export">导出</button>
+        <!-- 「恢复」只在正文为空时出现，「清空」只在导出成功且正文非空时出现：两颗永不同时在 -->
+        <button class="note-clear" type="button" id="clear" hidden>清空</button>
+        <button class="note-toggle" type="button" id="export" aria-haspopup="true" aria-expanded="false">导出</button>
         <span id="count">0 字</span>
       </footer>
+      <!-- 导出的三种形状。卡片底栏放不下三颗按钮，而「导出」本身是一组动作 -->
+      <div class="note-menu" id="menu" hidden>
+        <button type="button" data-format="md">单文件 .md</button>
+        <button type="button" data-format="zip">zip + 图片</button>
+        <button type="button" data-format="html">单文件 .html</button>
+      </div>
     </main>
     <script src="note-md.js"></script>
     <script src="note-images.js"></script>

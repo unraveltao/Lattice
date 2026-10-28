@@ -16,8 +16,17 @@
  *
  * 不压缩的话，"一个便签里放三张截图"就是几 MB 的 JSON，每 400ms 自动保存一次要写
  * 三份盘（正文 + backup + `.bak`）。所以插入前一定压：长边 480、质量 0.8、WebP；
- * 压完还超 120KB 就拒绝，整张便签超过 1MB 或第 9 张也拒绝。**拒绝时要说话** ——
- * 悄悄丢掉一张图比拒绝更糟。
+ * 压完还超 120KB 就拒绝。**拒绝时要说话** —— 悄悄丢掉一张图比拒绝更糟。
+ *
+ * # 闸门只有一道：总字节（0.3.1 改的）
+ *
+ * 0.3.0 有三道闸门，其中"最多 8 张"是个拍出来的数：8 × 120KB = 960KB < 1MB，
+ * 于是"合计到 1MB 了"那句永远不会出现，而用户在第 9 张就被拦住 —— 那时便签里
+ * 可能只有 300KB。**成本是字节的函数，不是张数的函数**（写盘放大 3× 只看字节），
+ * 所以真闸门只有 `MAX_TOTAL_BYTES`；`MAX_IMAGES` 退成一道护栏（防一次拖进 200 个
+ * 文件的荒唐值），20 张是照"1MB ÷ 典型 40KB ≈ 25 张"留的余量。
+ *
+ * 判据集中在 `admit()` 一处，`widget.js` 只照它给的四个答案做事。
  *
  * # 这个文件里没有 DOM
  *
@@ -35,9 +44,14 @@
   var PRE_DOWNSCALE = 2000;
   /** 单张压完之后的上限 */
   var MAX_IMAGE_BYTES = 120 * 1024;
-  /** 一张便签最多几张图 */
-  var MAX_IMAGES = 8;
-  /** 一张便签里图片字节的总上限 */
+  /**
+   * 一张便签最多几张图。**这是护栏，不是成本闸门** —— 真闸门是 `MAX_TOTAL_BYTES`。
+   *
+   * 20 不是拍的：1MB ÷ 一张典型 40KB ≈ 25 张，留一点余量。0.3.0 的 8 张比它早得多地
+   * 把用户拦住（8 张典型只有 320KB，离 1MB 还差三分之二）。
+   */
+  var MAX_IMAGES = 20;
+  /** 一张便签里图片字节的总上限 —— 这一条才是真的那道墙 */
   var MAX_TOTAL_BYTES = 1024 * 1024;
 
   /**
@@ -97,6 +111,24 @@
     var sum = 0;
     for (var i = 0; i < images.length; i += 1) sum += images[i].bytes;
     return sum;
+  }
+
+  /**
+   * 一张压好的图能不能进这张便签：`ok` / `tooBig` / `full` / `countFull`。
+   *
+   * 三道判断的顺序是有意的：**先单张、再总字节、最后张数**。总字节排在张数前面，
+   * 是因为它才是真成本 —— 两个都满了的时候，说"到 1MB 了"比说"到 20 张了"更能
+   * 指导用户下一步（去导出、去清空）。
+   *
+   * 返回的是**原因**而不是布尔：调用方要按原因说不同的话，而"悄悄丢掉一张"是
+   * 这个组件最不该犯的错。
+   */
+  function admit(text, bytes) {
+    var size = Number(bytes) || 0;
+    if (size > MAX_IMAGE_BYTES) return "tooBig";
+    if (totalImageBytes(text) + size > MAX_TOTAL_BYTES) return "full";
+    if (imageCount(text) >= MAX_IMAGES) return "countFull";
+    return "ok";
   }
 
   /** 把图片整段剥掉之后的正文（字数统计用） */
@@ -287,7 +319,96 @@
       });
     }
 
-    return { baseName: base, zip: images.length > 0, files: files };
+    return { baseName: base, zip: images.length > 0, format: images.length > 0 ? "zip" : "md", files: files };
+  }
+
+  /**
+   * 单文件自包含的 Markdown：**正文一个字都不改**。
+   *
+   * 这是 0028 那个决定的兑现 —— 图片字节压在正文里，所以正文自己就是一份完整的
+   * 文档，导出时唯一的活是"给它起个名字"。相比之下 `exportPlan` 要抽出
+   * `images/`、改写 `{width}`，因为它交出去的是一份**要带着文件夹走**的文档。
+   *
+   * 为什么 `{width=N}` 原样留着：它是 pandoc / Obsidian 认的写法，而 GitHub 反正
+   * 不渲染 `data:` URI，改写成 `<img width>` 一分钱好处都没有。少一次改写就少一处
+   * 和"正文即文档"这条前提打架的地方。
+   */
+  function inlinePlan(text, now, prefix) {
+    var source = String(text == null ? "" : text);
+    return {
+      baseName: defaultNoteName(source, now, prefix),
+      format: "md",
+      files: [{ name: "note.md", text: source }],
+    };
+  }
+
+  /**
+   * 把渲染好的正文包成一份**单文件网页**：图片已经是内联的 `data:`，所以整份文档
+   * 一个外部引用都没有，双击就能看、发给别人也不会缺图。
+   *
+   * 样式跟着预览的排版走（同一套字号与行距），但**底色是文档的底色**，不是卡片
+   * 的透明底：一份白底黑字的文档才是"文档"，跟着系统深浅色走。
+   */
+  function htmlDocument(options) {
+    var settings = options || {};
+    var title = escapeAttribute(settings.title || "便签");
+    var lang = settings.lang === "en" ? "en" : "zh-CN";
+    var body = String(settings.body || "");
+
+    var style = [
+      ":root{color-scheme:light dark;--fg:#1f2328;--muted:#59636e;--bg:#fff;--code:#f0f1f3;--accent:#1a7f5a;--rule:#d8dee4}",
+      "@media (prefers-color-scheme:dark){:root{--fg:#ecebe6;--muted:#97978f;--bg:#16181a;--code:#23272b;--accent:#5dcaa5;--rule:#2c3136}}",
+      "html{-webkit-text-size-adjust:100%}",
+      "body{margin:0;padding:40px 20px 64px;background:var(--bg);color:var(--fg);",
+      'font:15px/1.75 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif}',
+      "main{max-width:44rem;margin:0 auto;overflow-wrap:anywhere}",
+      "h1,h2,h3{margin:1.4em 0 .5em;line-height:1.35;font-weight:600}",
+      "h1{margin-top:0;font-size:1.6em}h2{font-size:1.25em}h3{font-size:1.05em}",
+      "p{margin:0 0 .8em}ul,ol{margin:0 0 .8em;padding-left:1.4em}li{margin:.15em 0}",
+      "blockquote{margin:0 0 .8em;padding-left:.8em;border-left:3px solid var(--rule);color:var(--muted)}",
+      "hr{margin:1.6em 0;border:0;border-top:1px solid var(--rule)}",
+      "code{padding:.1em .35em;border-radius:5px;background:var(--code);font-size:.88em;",
+      'font-family:ui-monospace,"Cascadia Code",Consolas,monospace}',
+      "pre{margin:0 0 .8em;padding:.7em .9em;border-radius:8px;background:var(--code);overflow-x:auto}",
+      "pre code{padding:0;background:none}",
+      "a{color:var(--accent)}",
+      "img.md-img{display:block;max-width:100%;height:auto;margin:.4em 0 .9em;border-radius:8px}",
+      ".md-alt{color:var(--muted)}",
+      ".md-link{color:var(--accent);text-decoration:underline;text-underline-offset:2px}",
+    ].join("");
+
+    return [
+      "<!doctype html>",
+      '<html lang="' + lang + '">',
+      "<head>",
+      '<meta charset="utf-8" />',
+      '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+      "<title>" + title + "</title>",
+      "<style>" + style + "</style>",
+      "</head>",
+      "<body>",
+      '<main class="note">',
+      body,
+      "</main>",
+      "</body>",
+      "</html>",
+      "",
+    ].join("\n");
+  }
+
+  /**
+   * 单文件网页的导出计划：正文交给 `render`（渲染器在 `note-md.js`，这里只收一个
+   * 函数，纯逻辑页不用把渲染器也拖进来），图片原样内联。
+   */
+  function htmlPlan(text, now, prefix, render, lang) {
+    var source = String(text == null ? "" : text);
+    var base = defaultNoteName(source, now, prefix);
+    var body = typeof render === "function" ? render(source) : "";
+    return {
+      baseName: base,
+      format: "html",
+      files: [{ name: "note.html", text: htmlDocument({ title: base, lang: lang, body: body }) }],
+    };
   }
 
   window.__latticeNoteImages = {
@@ -302,6 +423,7 @@
     imagesIn: imagesIn,
     imageCount: imageCount,
     totalImageBytes: totalImageBytes,
+    admit: admit,
     stripImages: stripImages,
     countChars: countChars,
     fitSize: fitSize,
@@ -312,5 +434,8 @@
     base64Of: base64Of,
     defaultNoteName: defaultNoteName,
     exportPlan: exportPlan,
+    inlinePlan: inlinePlan,
+    htmlPlan: htmlPlan,
+    htmlDocument: htmlDocument,
   };
 })();

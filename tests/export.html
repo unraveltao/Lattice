@@ -192,6 +192,43 @@
         "按内容补扩展名：已经是那个就留着，是 .md/.zip/.txt 的另一个就换掉，其余接在后面",
       );
 
+      // ---------- 单文件文档的形状（0031） ----------
+
+      eq(
+        [
+          withSaveExtension("周会记录", false, "html"),
+          withSaveExtension("周会记录.md", false, "html"),
+          withSaveExtension("周会记录.HTM", false, "html"),
+          withSaveExtension("周会记录.html", false, "md"),
+          withSaveExtension("图表.v2", false, "html"),
+          withSaveExtension("周会记录", true, "html"),
+        ],
+        ["周会记录.html", "周会记录.html", "周会记录.html", "周会记录.md", "图表.v2.html", "周会记录.zip"],
+        "`document` 说了算：补 .html、把别的文档后缀换成 .html；要 zip 时它不参与",
+      );
+      {
+        const plan = planSave({ name: "周会记录", files: [{ name: "note.html", text: "<!doctype html>" }] });
+        eq(plan.ok && plan.request.document, "md", "没给 document 就是 md（老调用方不用改）");
+      }
+      {
+        const plan = planSave({
+          name: "周会记录",
+          document: "html",
+          files: [{ name: "note.html", text: "<!doctype html>" }],
+        });
+        eq(plan.ok && plan.request.document, "html", "给了就原样带下去");
+        eq(plan.ok && plan.zip, false, "一份 html 还是单文件");
+      }
+      eq(
+        [
+          planSave({ name: "a", document: "zip", files: [{ name: "n.md", text: "x" }] }).ok,
+          planSave({ name: "a", document: "HTML", files: [{ name: "n.md", text: "x" }] }).ok,
+          planSave({ name: "a", document: 7, files: [{ name: "n.md", text: "x" }] }).ok,
+        ],
+        [false, false, false],
+        "`zip` 不是一种 document，大小写不认，非字符串不认 —— 猜一个的代价是后缀不对的文件",
+      );
+
       // ---------- 两种回话 ----------
 
       eq(savedResult("C:\\Users\\me\\周会记录.md"), { ok: true, path: "C:\\Users\\me\\周会记录.md" }, "写成功回路径");

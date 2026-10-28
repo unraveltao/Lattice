@@ -69,8 +69,12 @@
    * 顺序有讲究：先把行内代码挖成占位符，再转义，再处理图片（必须早于链接，
    * 否则 `![x](y)` 里的 `[x](y)` 会被链接规则先吃掉），最后把代码填回去 ——
    * 代码里的 `**` 和 `[]` 不该被当成语法。
+   *
+   * `doc` = 这份 HTML 要写进一份**独立文档**（导出成 .html），不是画在卡片里。
+   * 两处差别：链接变成真的 `<a href>`（卡片里不能跳，一份网页里不能跳才怪），
+   * 内联图不带 `data-note-index`（那是预览里那颗宽度按钮的序号，写进文件是噪音）。
    */
-  function inline(text) {
+  function inline(text, doc) {
     var codes = [];
     var out = String(text).replace(/`([^`]+)`/g, function (_match, code) {
       codes.push("<code>" + escapeHtml(code) + "</code>");
@@ -95,7 +99,7 @@
       }
       var attrs = ' class="md-img" src="' + url + '" alt="' + alt + '"';
       if (width) attrs += ' width="' + width + '"';
-      if (/^data:/i.test(url)) {
+      if (!doc && /^data:/i.test(url)) {
         attrs += ' data-note-index="' + imageIndex + '"';
         imageIndex += 1;
       }
@@ -104,7 +108,11 @@
 
     out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (_match, label, href) {
       var url = safeHref(href);
-      return url ? '<span class="md-link" title="' + url + '">' + label + "</span>" : label;
+      if (!url) return label;
+      // 地址在 `escapeHtml` 之后才取出来，所以这里拼进属性里不会有裸引号
+      return doc
+        ? '<a href="' + url + '">' + label + "</a>"
+        : '<span class="md-link" title="' + url + '">' + label + "</span>";
     });
 
     out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
@@ -152,17 +160,17 @@
     return root;
   }
 
-  function renderList(list) {
+  function renderList(list, doc) {
     var tag = list.ordered ? "ol" : "ul";
     var body = list.items
       .map(function (item) {
-        return "<li>" + inline(item.text) + (item.list ? renderList(item.list) : "") + "</li>";
+        return "<li>" + inline(item.text, doc) + (item.list ? renderList(item.list, doc) : "") + "</li>";
       })
       .join("");
     return "<" + tag + ">" + body + "</" + tag + ">";
   }
 
-  function renderBlocks(lines) {
+  function renderBlocks(lines, doc) {
     var out = [];
     var i = 0;
 
@@ -191,7 +199,7 @@
       var heading = line.match(HEADING);
       if (heading) {
         var level = Math.min(3, heading[1].length);
-        out.push("<h" + level + ">" + inline(heading[2]) + "</h" + level + ">");
+        out.push("<h" + level + ">" + inline(heading[2], doc) + "</h" + level + ">");
         i += 1;
         continue;
       }
@@ -208,7 +216,7 @@
           quoted.push(lines[i].replace(QUOTE, "$1"));
           i += 1;
         }
-        out.push("<blockquote>" + renderBlocks(quoted) + "</blockquote>");
+        out.push("<blockquote>" + renderBlocks(quoted, doc) + "</blockquote>");
         continue;
       }
 
@@ -236,7 +244,7 @@
           }
           break;
         }
-        out.push(renderList(listTree(items)));
+        out.push(renderList(listTree(items), doc));
         continue;
       }
 
@@ -250,19 +258,23 @@
         paragraph.push(lines[i]);
         i += 1;
       }
-      out.push("<p>" + inline(paragraph.join(" ")) + "</p>");
+      out.push("<p>" + inline(paragraph.join(" "), doc) + "</p>");
     }
 
     return out.join("");
   }
 
-  /** 把一段文字渲染成 HTML。调用方自己决定塞进哪个容器 */
-  function render(source) {
+  /**
+   * 把一段文字渲染成 HTML。调用方自己决定塞进哪个容器。
+   *
+   * `doc` = true 时按"独立文档"渲染（真链接、不带预览用的序号），给导出 .html 用。
+   */
+  function render(source, doc) {
     var lines = String(source == null ? "" : source)
       .replace(/\r\n?/g, "\n")
       .replace(/\t/g, "  ")
       .split("\n");
-    return renderBlocks(lines);
+    return renderBlocks(lines, doc);
   }
 
   window.__latticeNoteMarkdown = {

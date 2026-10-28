@@ -29,7 +29,7 @@ use flate2::Compression;
 use tauri_plugin_dialog::DialogExt;
 
 use crate::export_policy::{
-    clean_name, decode_base64, dos_datetime, entry_name_ok, wants_zip, with_extension, OutFile, ZipPart,
+    clean_name, decode_base64, dos_datetime, entry_name_ok, wants_zip, with_extension, DocFormat, OutFile, ZipPart,
     MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES,
 };
 
@@ -165,25 +165,36 @@ fn stamp() -> (u16, u16) {
 
 /// 弹保存框写一个文件（或一个 zip）。
 ///
-/// 参数：`name` 是文件名（不含路径），`files` 是一个或多个文件。返回
-/// `{ok:true, path}` 或 `{ok:false, cancelled:true}`；参数 / 落盘失败回 `Err`。
+/// 参数：`name` 是文件名（不含路径），`files` 是一个或多个文件，`document` 是单文件
+/// 时那份文档的形状（`"md"` / `"html"`，缺省 `"md"`）。返回 `{ok:true, path}` 或
+/// `{ok:false, cancelled:true}`；参数 / 落盘失败回 `Err`。
+///
+/// `document` 只影响两件跟"单个文本文件"有关的事：补哪个扩展名、挂哪个过滤器。
+/// **要不要打 zip 不看它** —— 那是内容说了算（多文件或带 base64 一律 zip）。
 #[tauri::command]
 pub(crate) async fn file_save(
     window: tauri::WebviewWindow,
     name: String,
     files: Vec<SaveFileEntry>,
+    document: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let clean = clean_name(&name).ok_or_else(|| format!("\"{name}\" is not a usable file name"))?;
+    let document = match document.as_deref() {
+        None => DocFormat::Markdown,
+        Some(raw) => {
+            DocFormat::parse(raw).ok_or_else(|| format!("\"{raw}\" is not a document format this build writes"))?
+        }
+    };
     let prepared = prepare(&files)?;
     let zip = wants_zip(&prepared.files);
-    let suggested = with_extension(&clean, zip);
+    let suggested = with_extension(&clean, zip, document);
 
     let (tx, rx) = std::sync::mpsc::channel();
     let mut builder = window.dialog().file().set_file_name(&suggested);
     builder = if zip {
         builder.add_filter("Zip", &["zip"])
     } else {
-        builder.add_filter("Markdown", &["md"])
+        builder.add_filter(document.filter(), document.patterns())
     };
     // 挂在发起调用的那个窗口上：画布上的组件 → 主窗口，桌面窗口 → 它自己。
     // 不挂 owner 的话，对话框可能开在别的应用后面 —— 用户会以为"点导出没反应"
