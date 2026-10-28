@@ -301,8 +301,9 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **百分比不夹紧**：>100 当成读不到（`null`），不画成满格 —— 坏读数装成满电比不显示更糟。
     - **不做平台侧缓存**：节流交给组件的 `schedule.every`（30 秒一拍，卡片藏起来就停），平台每秒问一次只是空转。
     - **单独一条命令，没折进 `system_metrics`**：两条命令读两套 Win32 API，失败模式也不同 —— 台式机没有电池是「正常但没有电池」，不是错误。
-  - [x] **思维导图（`lattice.mindmap`，21 个官方组件）** —— 存树、位置算出来的大纲编辑器；右向生长，`Tab` / `Shift+Tab` / `Alt+↑↓` 改结构，导出走剪贴板（Markdown / Mermaid / OPML）。权限只有 `storage` / `agent:tools` / `clipboard:write`，**桥方法一条没加、Tauri 命令一条没加**。取舍、大纲格式、工具契约与失败模式在 [`design/0022-mindmap-widget.md`](./design/0022-mindmap-widget.md)，`tests/mindmap.html` 145 条。
+  - [x] **思维导图（`lattice.mindmap`，21 个官方组件）** —— 存树、位置算出来的大纲编辑器；右向生长，`Tab` / `Shift+Tab` / `Alt+↑↓` 改结构，导出走剪贴板（Markdown / Mermaid / OPML）。权限只有 `storage` / `agent:tools` / `clipboard:write`，**桥方法一条没加、Tauri 命令一条没加**。取舍、大纲格式、工具契约与失败模式在 [`design/0022-mindmap-widget.md`](./design/0022-mindmap-widget.md)，`tests/mindmap.html` 172 条，`tests/mindmap-drag.html` 20 条（真按下真拖）。
     - **和 `lattice.diagram` 的分工**：那边位置由人摆，这边位置由结构决定。想要"把框拖到任意地方"的人要的是 diagram —— 两个都在目录里，选错的那个会被当成 bug。
+    - **节点可以拖，但树里仍然没有坐标**（[`design/0033-mindmap-drag.md`](./design/0033-mindmap-drag.md)）：被拖过的节点在 `offsets` 里记一对 `dx/dy`，`layout()` 把它叠在自动算出来的位置上。所以自动布局还是底 —— 加一个兄弟节点，被拖过的那个跟着自己那行走，这是"偏移"的定义。拖动只改位置**不改从属关系**，整支跟着走，纵向吸到 28px 的行（按住 `Alt` 不吸），一次拖动 = 一步撤销，`Esc` 中途取消。`version` 不升：升了 `normalizeDoc` 会把所有人现有的图当成"读不出已保存的图"。`agent` 的 `draw` 整张替换时清空摆位（它会重新编号），`append` 保留。
     - **导出只能是剪贴板**：沙箱没有 `allow-downloads`，`shell.open` 只收 http/https。所以 `help` 里得正面写"复制 → 粘到你想要的地方"，而不是让用户去找"另存为"。
     - **大纲文本一个格式三个用途**（agent 输入 / 剪贴板导出 / 手工粘贴），缩进用栈解析，不猜步长。参数只能传标量（§3.6），和 0008 撞的是同一堵墙。
     - **位置不进磁盘，只存 `view`**：节点是 `{ id, text, collapsed, tone, children[] }`，坐标每次从树算。于是"换个父节点"就是换个数组位置，不用挪任何框，agent 也不用编造坐标。
@@ -331,6 +332,16 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **为什么图片字节不另存一个键**：存储是一整个 JSON 文件，改一个键也要整份读上来写回去还留一份 `.bak` —— 字节放哪个键写盘量一模一样，换来的只是"正文好看"，代价是正文不再自包含。代价要写明：编辑态会看到一行 50KB 的 base64，缓解只有两条（字数先剥图片再数、插入后光标落到图片下一行）—— 这条改不了，除非换成 contenteditable，那是重写编辑器。
     - **`file:save` 不是 `file:write`**：`file.write` 是 assistant 的手（带审批、能覆盖任意路径），组件这条路**每次弹系统保存对话框、位置由用户选**，组件递给平台的只有一个文件名。名字不许共用，理由与四条形状写进 AGENTS.md 不变量 22。
     - **先全部解码再弹对话框、再写包**：任何一张坏就整趟失败 —— 不许留半个 zip，也不许悄悄丢掉坏的那张。**取消不是错误**（`{ok:false, cancelled:true}`，界面一个字都不说），这条坑这个仓库踩过不止一次。
+  - [x] **便签的"装不下"从张数换成字节（`lattice.note` 0.3.1，2026-10-28）** —— 0.3.0 的三道闸门里，"最多 8 张"是个拍出来的数：8 × 120KB = 960KB < 1MB，所以「合计到 1MB 了」那句**永远不会出现**，而用户在第 9 张就被拦住 —— 那时便签里可能只有 320KB（8 张典型截图）。现在真闸门只有 `MAX_TOTAL_BYTES`，张数退成 20 张的护栏，判据集中在 `note-images.js` 的 `admit()`（`ok` / `tooBig` / `full` / `countFull`，顺序就是先单张、再总字节、最后张数）。顺带两件：**一批里能进几张就进几张**（0.3.0 是一票否决：粘 3 张、已有 6 张 → 三张全不进），拒收那句话带下一步；**导出成功后底栏出现「清空」**。断言：`tests/note-images.html` 49 → 60 条。
+    - **成本是字节的函数，不是张数的函数**：写盘放大 3×（正文 + `backup` + `.bak`）只看字节，所以"最多几张"从来不是成本，1MB 才是。改完之后 20 张 40KB 的图（800KB）能全进，而 8 张满规格（960KB）之后第 9 张撞的是 1MB —— 判断顺序上先报字节，是因为它更能指导下一步（去导出、去清空）。
+    - **一次性的话不许被保存状态机盖掉**：状态行有两个说话的人。0.3.0 里拒收那句话 400ms 后就被 `save()` 改成「已保存」，用户根本没看见。现在一次性事件写进 `notice`，保存状态机照常记账但不许画上去，**真敲键盘才收掉**。
+    - **「清空」为什么不该比手滑更危险**：它和「恢复上一版」共用底栏那个位置，而且永不同时出现（前者要正文非空、后者要正文为空）；清空后上一版进了 `backup`，24 小时内可恢复。改过字它就收起来 —— 那时屏幕上的东西已经不是刚导出的那一份了。导出不动正文，而"导完不敢删、只增不减"才是这张便签撞上 1MB 的真正来路。
+    - **没有开新的设计文档**：按 [`design/README.md`](./design/README.md) 的三条判据（动持久化格式或跨进程契约 / 有两种以上方案 / 做错了要重做），这一条只中一条 —— 正文格式、桥方法、存储结构一个都没变，改回来只是几个常量。所以推理写在代码注释里，结论写在这里，`design/0028` 保持原样（它记的是当时的想法，8 张这个数在那时是对的）。
+  - [x] **便签导出有三种形状（`lattice.note` 0.4.0，2026-10-28）** —— 底栏那颗「导出」改成一个菜单：`md`（正文一个字都不改，图片是 data URI，自包含）/ `zip`（`note.md` + `images/`，GitHub 认）/ `html`（渲染成一份网页，图片内联，双击就能看）。桥多认一个可选参数 `document: "md" | "html"`（缺省 `md`），它只决定"单个文本文件补哪个扩展名、挂哪个对话框过滤器"，**要不要打 zip 仍然由内容决定**。断言：`tests/note-images.html` 60 → 77 条、`tests/note-save.html` 21 → 35 条、`tests/export.html` 27 → 32 条、`export_policy.rs` 14 → 16 条 `rustc --test`。推理、候选与失败模式在 [`design/0031`](./design/0031-note-export-formats.md)。
+    - **为什么 `.md` 那条一个字都不改**：0028 把图片压进正文，换来的就是"正文自己就是那份文档"；导出时再改写一遍等于把那个前提拆掉一点，而改写买不到东西 —— GitHub 反正剥 `data:` URI，而认 `{width}` 的渲染器（Typora / Obsidian）本来就是这条路的读者。
+    - **为什么 `document` 要当一个参数、而不是让组件把 `.html` 写进 `name`**：用户在保存框里会把名字改掉（`周报.md`），改完就再也看不出"这份东西本来是网页"，于是 HTML 被写进 `.md` 文件 —— 那正是"别信用户在对话框里敲的名字"要挡的事。同理，`"zip"` 不是一个 document：打不打 zip 由内容决定，认它会让同一个参数有两套意思。
+    - **`note-md.js` 现在有两种输出**：`doc=true` 时链接出真 `<a href>`、内联图不带预览用的 `data-note-index`。只有两处，一眼数得完；将来加语法要两条路都验，第三条差别一出现就该拆函数。
+    - **三种形状谁也替代不了谁**：单文件 `.md` 在 GitHub 上看不见图（它剥 data URI），zip 在聊天窗口和手机上预览不了，`.html` 进不了 Markdown 笔记库。所以菜单不合并、zip 也不删。
 
 **明确不做**：账号、云端评分、下载计数、组件市场首页。这些全都要服务端，而 v0.5 的整个前提是"没有服务端"。评分和举报继续落本地文件（`reports/*.json`），作者自己收 —— 假装有云端比没有更糟。
 
@@ -517,14 +528,38 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 - 明确不做：9 个方向的缩放手柄、"画面缩放"（会让字体一起变大，和"把面板拉宽"是两件事）、把 assistant 做成 placement（那会把"聊到一半"挂在一次布局同步上）。
 - [x] **终端组件（`lattice.term`）** —— 一条常驻 `powershell.exe` 的皮肤（每实例一条，实测每条命令 480ms → 常驻之后约 40ms，`cd` 与变量都留着）：命令和哨兵整段 UTF-8 后 base64 送进去（GUI 进程 spawn 出来的 stdin 按 OEM 代码页解码，直接写中文命令会乱），哨兵单独一行切出退出码与 `cd` 之后的位置；正文走 `lattice:term` 事件（桥只回编号），环形缓冲靠 `term.state { since }` 补发；新权限 `terminal:exec`（默认拒，没有"内置组件例外"）；两条收尸路（实例销毁 / 应用退出）。见 [design/0018](./design/0018-terminal-widget.md)。断言：`tests/term.html` 70 条 + `term_policy.rs` 16 条 `rustc --test`，`cargo check --all-targets` 干净。**协议那一半真机走过了**（`.scratch/term-probe` 把 `term_policy` 接上真的 `powershell -Command -`：`cd C:\Windows` 之后 `dir` 列的是 `C:\Windows`、`ping -n 5` 分 12 段跨 4.1 秒到、`echo 你好` 不乱码、`cmd /c exit 3` 报 3 而 `Get-Item C:\nope` 报 1、杀掉之后进程没了）。**界面那一半也走了**（2026-10-26 在真 app 里用探针组件，`Rust emit → 宿主页 → iframe` 整条链路）：逐行流的时间戳（四次 350ms 的 tick 到齐在 322 / 696 / 1053 / 1416 / 1775ms）、中文、stderr + `code=1`、`cd C:\Windows` 保留、哨兵不外泄、`term.state { since }` 重放、`term.stop` 换 shell、退出后不留进程 —— 顺手抓到并修了两条真坑（PowerShell 把"一行 + 换行"分两次写导致哨兵卡死；`term.write` 回话比输出慢 5ms，所以组件要从事件里认领编号，两条都在 `PITFALLS.md`）；**还没走的四处**（Stop 按钮本身、删卡片、`dir` 长输出与窄卡折行、`ping` 的真实节奏）记在 `AGENTS.md` §8。明确不做：交互式程序（`vim` / `ssh`）、ANSI 颜色、分页、管道输入、单条命令的 `Ctrl+C`（停 = 杀 shell）
 
+- [x] **两栏与会话栏（`design/0034`）** —— 用户原话"能不能改得像豆包那个形式，就是左边的"，以及"每次打开都是一堆提问"。病根不在文案：`AssistantPanel` 一打开就把 `configured === false` 当成"该显示设置"，于是每次都被推到模型档 / 六只手 / MCP / 技能四张表前面。改法是把**落点**换成对话（没有可用模型时只在对话区顶上一行 + 一颗「去设置」），同时把那条下拉框换成 208px 的会话栏（按 今天/昨天/更早 分组、悬停「⋯」重命名/删除，设置态复用同一条栏做四格分区）。窗口出厂 `400 × 580` → `880 × 640`、最小宽 `320` → `560`，盘上存的旧出厂值被 `migrate_size` 抬一次。重命名走一条新命令 `assistant_session_rename` —— 不用 `assistant_session_save` 是因为那条会把 `updatedAt` 写成现在，改个名字会话就跳到最上面。断言：`tests/assistant.html` 188 → 198（今天零点、夏令时、未来时间戳、空桶不出现、组内保序），`assistant_window_policy.rs` 10 条。**真机还差**：880 宽在真窗口里好不好看、560 时右栏文字有没有横向溢出、改完名重启顺序没变。
+
+- [x] **输入卡重做、会话栏可收起、窗口再小一号（`design/0035`）** —— 用户原话"麦克风可以放在 Send 旁边，然后那个 Send 就可以变为一个三角箭头的符号"、"有一个加号"、"左侧的新任务可以收起来"、"让整体的对话框变得小一点"，以及更早那句"为什么这个窗口做出来会有一个灰色的边框"。输入卡改成 `＋` / 模式药丸 / 元信息 / 麦克风 / 圆形三角发送，`＋` 里放**现有**能力（附件 `@path`、审批档、技能与服务带路）；会话栏加 ☰ 与 `Ctrl+B`，收起时 `＋` 和 `⚙` 落到顶栏；窗口 `880 × 640` → `800 × 600`（这条是对 0034 参数的调整，不是推翻它的理由）。灰边是**两道**叠在一起：CSS 的 `inset box-shadow` 加 DWM 自己那 1px，后者只能 `DwmSetWindowAttribute(DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE)` 关，且必须在 `clip_rounded` 之后。`assistant-window.json` 升 v3 多一个 `sidebar`（缺字段当展开，走新命令 `assistant_window_sidebar`）；尺寸判据两边统一成"`width < MIN_W` 就整份取出厂"——前端夹到 560、Rust 抬到 800 的话，窗口会按 800 开出来而前端记着 560，下一次拖动直接缩回去。顺带修掉一条真坑：抽屉和画布**同一个 webview**，两份 `onDragDropEvent` 都在听，往画布拖组件包会同时装组件和加 `@path`，抽屉里改成按落点命中面板矩形才收。断言：`tests/assistant-window.html` 33 → 39。**真机还差**：灰边真的没了（要重启桌面应用，Rust 变了）、`Ctrl+B` 重启后还记得、拖到 560 时右栏文字不横向溢出。
+- [x] **小窗的第三层边、`Ctrl+滚轮` 缩放（`design/0036`）** —— 用户原话"为什么这个窗口做出来会有一个灰色的边框，能不能去掉，就让它跟对话框一样纯色就行"、"我需要 Ctrl 加滚轮可以实现字体放大和字体的缩小功能"。边其实是**三层**：DWM 画的 1px、`WS_THICKFRAME` 的非客户区、`SetWindowRgn` 裁圆角那一圈。前两层上一版动过但没成，原因写在失败表里（`apply_mode` 的 `SWP_FRAMECHANGED` 会把 DWM 那层重画回来）；这一版把非客户区用 `WM_NCCALCSIZE` 归零（只拦 `wParam == TRUE` 那一趟，`FALSE` 那趟返回 0 会让客户区变 0×0），子类必须 `run_on_main_thread` 投递（跨线程只静默返回 0），重算帧那次 `SetWindowPos` 还要把`cx/cy` 一起钉住（不钉就按"保住客户区"往外长一个边框厚度，实测 800×600 → 816×609）。第三层是清掉区域再截一次证出来的。缩放走 CSS `zoom` 挂在 `.lattice-assistant` 上（不是 `documentElement`：抽屉和画布同一个 webview），五档 `0.85 / 1 / 1.15 / 1.3 / 1.5`、`Ctrl+0` 回 1，落盘在 `assistant-window.json` v4 的 `fontScale`，两个宿主共用一个值。顺带一条上限：`clamp_size` 把尺寸夹进工作区 —— 重算帧之后那条 `Resized` 里的 `inner_size()` 可能是 0，换算成 `u32` 落盘就是 `800 × 65535`。断言：`tests/assistant-window.html` 39 → 48，`assistant_window_policy.rs` 10 → 16。**真机还差**：四边那 1px 浅色线真的没了、切模式不回来、`Ctrl+0` 与"一格一档"。
+
+## 0.3.0 —— 系统组件并进电池、加 GPU（代码已落地，待真机验收）
+起因是两句用户原话："我的 System 组件。和这个 Battery 组件。可以合并一下" 和 "system 可以添加个 gpu 的显示"。推理在 [`design/0030-merged-system-widget.md`](./design/0030-merged-system-widget.md)。
+
+- [x] **电池并进 `lattice.sysmon` 0.3.0，`lattice.battery` 下架** —— 两张卡本来就是"这台机器现在怎么样"的同一件事，当初按数据源拆包，于是用户把两张摞在一起，标题、窗饰、底边距各付两遍。合的是**用户看见的东西**，不是**每次要搬多少字节**：`power.status` 仍然是独立一条命令，系统卡挂两条 `schedule.every`（1000ms 指标 / 30000ms 电源）。
+- [x] **GPU 走 PDH，不引依赖** —— `\GPU Engine(*)\Utilization Percentage` + `\GPU Adapter Memory(*)\Dedicated Usage`，适配器名与显存总量走 DXGI（`windows` crate 已在依赖里，只加 feature）。口径：**同引擎求和、跨引擎取最大、按 LUID 分组、混合显卡挑最忙那块**，和任务管理器一致。中文系统上必须 `PdhAddEnglishCounterW` 先试（英文名反查本地化名），直接 `PdhAddCounterW` 会 `PDH_CSTATUS_NO_OBJECT`。读不到就是 `gpu: null`，组件整行收起 —— **不画 0%**。
+- [x] **六个开关进属性面板** —— 走势 / 逐核 / GPU / 电池 / 磁盘与进程数 / 网络速度，一一对应六块内容。开关只改显隐，**不改卡片尺寸**（尺寸归用户）。没有新配置类型：`config` 现有那 5 种字段就够，上限 12 项只用了 6 项。
+- [x] **`STATE_VERSION` 3 迁移** —— 老的电池卡改写成"只显示电池"的系统卡（尺寸 240×146 → 240×176），高度不足 280 的老系统卡抬到 328，回收站里指向电池的条目丢掉。迁移是单向的：用户看到的是"电量卡换了个样子"，不是"我的卡没了"。**`desktopRects` 里那份尺寸也要一起抬**：桌面窗口按那次摆放的尺寸开（`buildSpecs` 里 `placed.h` 优先于 `placement.h`），只抬 `placement.h` 的话画布里正好、桌面上照样切掉半行 —— 这条是补写断言时才发现的。
+- 断言：`tests/sysmon.html` **104 条**（六块显隐 + GPU 格式化 + "读不到就不画" + 电池状态与告警 + 两条心跳各认各的）、`tests/catalogue-cache.html` **47 条**（其中 17 条钉 v2 → v3 迁移：改写而不是删掉、只留电池的配置、两份尺寸一起抬、回收站与已装列表清干净、v3 再读一遍不变）、`gpu_policy.rs` **9 条** `rustc --test`、`tests/battery.*` 连同组件包一起删。
+- **还没走的**：真机上一次 GPU 数字（这台机器的 PDH 探针能读到两块适配器，但 `gpu.rs` 还没在跑起来的 app 里量过），以及老 `state.json` 真的被迁移一次 —— 拿一份 0.2 的备份，期望电量卡在原位置变成"只剩电池那一行"、系统卡底栏完整（桌面上是 328 而不是 240）。
+
+## 0037 —— 完全访问接管组件工具（代码已落地，待真机验收）
+
+用户的原话是"我希望我的 Agent 的操控的权限可以更大，起码掌控我所有的组件，提高权限后就像一个全能的 Agent"。推理在 [`design/0037-agent-omnipotence.md`](./design/0037-agent-omnipotence.md)。
+
+- [x] **`everything` 期间 `agent:tools` 视同已授** —— 根因不在 `approvalFor`：`allTools` 收到的 `widgets` 是**已经筛过的表**，改第二道闸没有用。判据加在 `widgetToolSources` 的 `assumeGranted` 入参上，和 `effectiveHands` 同构（这一轮不看开关，**不写盘**）。模式**不做成新参数**，走 op：Rust 从 `hands_state` 读 mode 塞进 `{op:"widget-tools", everything}` —— 小窗没有 store，模式只能有一个真源。
+- [x] **`config.set` 成第 9 个动作** —— 它原本在 `DENIED` 里，理由是"需要一次界面确认，v1 没做确认流"；确认条早有了，前提没了就不该继续拒。写前按清单 schema 校验（未知键 / 越界 / 类型错 / 空 patch 一律拒，**不做部分接受**），回归一化之后的完整配置。`auto` 档也照问（改的是用户亲手填的值，改完界面上看不出是谁动的）；组件借手那条路拿不到它。
+- 断言：`tests/widget-tools.html` 62 → 66、`tests/assistant.html` 199 → 209、`tests/agent.html` 70 → 81、`agent_policy.rs` 28 条 `rustc --test`（白名单从 8 变 9 就是它盯的）。
+- **代价**：`§8.1` 多了一条待验 —— 和"v0.14 只收口、不加功能"直接冲突。要么收口那一轮顺手验掉，要么承认待验从十三条变成十四条。
+
 ## 接下来做什么
 
 先说结论：**下一版（v0.14）不加功能，它叫"收口"。** 现在有六个版本同时挂着"进行中"（v0.6 / v0.7 / v0.8 / v0.10 / v0.11 / v0.13），纸面上看着像并行推进，实际后果是**没有一个能宣布完成** —— 而"完成"是唯一能换来外部信任的东西。
 
 ### 一、为什么先收口，不是先加功能
 
-- 那六个的代码大多已经落地，缺的是同一类东西：**一次真机验收**。明细在 [`AGENTS.md` §8.1](../AGENTS.md)，十条，每条都写着"怎么算完"。
-- 再加新功能的代价不是"多写代码"，是"再多一条永远没人验的路径"。待验从十条变成十五条之后，这个仓库的"已完成"就彻底变成一句客气话。
+- 那六个的代码大多已经落地，缺的是同一类东西：**一次真机验收**。明细在 [`AGENTS.md` §8.1](../AGENTS.md)，十三条，每条都写着"怎么算完"。
+- 再加新功能的代价不是"多写代码"，是"再多一条永远没人验的路径"。待验从十三条变成十八条之后，这个仓库的"已完成"就彻底变成一句客气话。
 - 收口本身有交付物，而且可数：每条验收要么变成一条断言（能自动化的），要么变成 §8.1 里被划掉的一行（不能自动化的）。**没有第三种结局。**
 
 ### 二、v0.14 的验收顺序（一条一条来，不并行）
@@ -533,7 +568,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 
 1. **assistant 小窗**（v0.13）—— 唯一一个"用户已经在用、但窗口行为一次没验"的东西，而且它挡着 v0.10 / v0.11 的"能用了"。
 2. **终端那四处**（v0.13）—— 验的是**顺序与收尸**，最容易被"输出出现了"骗过去。
-3. **电池 / 技能包 / 免问区** —— 三条都只差一次真机，一次坐下能走完。
+3. **技能包 / 免问区** —— 两条都只差一次真机，一次坐下能走完。（电池那条随 0.3.0 一起消失了：组件下架，没有可验的东西。）
 4. **`shell.open` + 组件工具那条 IPC** —— 都是"最后一公里"：浏览器起没起、图有没有真画出来。
 5. **手那三处 / 混合 DPI / 「跟随系统」** —— **要另一台机器**（4K 屏、中文系统、能跑 `cargo test`）。排在有机器的时候，别为它空等。
 6. **平台更新的第二个 endpoint** —— 这一版唯一要写代码的一条，放最后：它不影响"能不能宣布完成"。
@@ -564,11 +599,17 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
    要接的话，IoU 那一条得改成读 rig 的部件清单，只保留"单张图自身"的那三项。
    **怎么算完**：对今天的官方组件跑绿，并进 CI 的 frontend job。
 - [x] **听写（说中文变文字）** —— 四个入口同一套引擎：面板输入区的麦克风、**顶栏一颗**
-  （`DictationButton.tsx`，光标在这个窗口的某个框里时按它，字就落进那个框）、**桌面上一颗常驻浮钮**
+  （`DictationButton.tsx`，光标在这个窗口的某个框里时按它，字就落进那个框）、**桌面上一颗浮钮**
   （28px GDI 分层窗，`WS_EX_NOACTIVATE`，点了不抢焦点，所以前台窗口从头到尾还是那个要插字的窗口）、
-  全局热键 `Ctrl+Alt+Space`（`tauri-plugin-global-shortcut`）。识别走 WinRT 本地语法（听写场景约束、
-  停顿 1 秒收尾），结果走 `lattice:dictation` 事件；`target: "system"` 那条判"开听时的 HWND ==
-  出字前的 HWND"，不一致就把字交回面板而不是乱打。见 [design/0027](./design/0027-voice-dictation.md)。
+  全局热键 `Ctrl+Alt+Space`（`tauri-plugin-global-shortcut`）。识别有**两套后端**，按机器上实际
+  装了哪一套来挑：WinRT 本地语法（听写场景约束、停顿 1 秒收尾）和经典 SAPI 5（持续听写、
+  `SPEI_RECOGNITION` 事件），结果都走 `lattice:dictation` 事件；`target: "system"` 那条判
+  "开听时的 HWND == 出字前的 HWND"，不一致就把字交回面板而不是乱打。见
+  [design/0027](./design/0027-voice-dictation.md)。
+  - **为什么是两套**：WinRT 读 `Speech_OneCore`、经典 SAPI 读 `Speech\Engines\SR`，**两份
+    互不相干的语言库**，同一台机器可以只有其中一套（本机就只 classic 那套有中文）。
+    `dictation::detect()` 先问 WinRT，没有中文再问 `dictation_sapi::installed()`，
+    两套都问不到才判 `no_engine`。理由和三个 API 坑写在 `dictation_sapi.rs` 的文件头。
   - **语言判据是两段，不是"系统是不是中文"**：`SpeechRecognizer::Create(language)` 是有的（设计里
     写错成"没有 setter"），所以英文系统上只要装了中文听写包也照用（`dictation_policy::pick_language`）。
   - **顶栏那颗是第四个入口**（0027 §4）：走 `target: "system"` —— 前台窗口就是自己，所以字落进
@@ -579,17 +620,42 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
     工作区，拖动与点击用 4px 位移分开。
   - **`ms-settings:` 走专用命令**：`open_external` 只放 http/https（不变量 14），跳系统语音设置是平台
     自己的动作，字面量写死在 `dictation_open_settings` 里。
-  - 断言：`tests/dictation.html` **24 条**（命令形状 + `reduceDictation` 的判据 + 桥表里搜不到
-    `dictation` + 没有 Rust 时不假装能听）、`dictation_policy.rs` **28 条** `rustc --test`、
+  - **0032：浮钮改成"跟着一次听写走"**。它原来是一个常驻开关（`button.show`），用户点完麦克风
+    根本不知道钮在哪；现在任何一次开始听都会把它叫出来（`Message::Show`），出字/取消/出错就收回去，
+    左键 = 停止并插入、**右键 = 丢弃**（28px 放不下第二颗叉，而键盘手势到不了这个窗口）。
+    入口收成三个（面板 / 顶栏 / 热键），`button.show` 删掉、托盘里的「隐藏浮钮」也删掉；
+    设置页多了一区 `Dictation`（语音语言状态 + 重新检测 + 打开系统语音设置），
+    `dictation_status` 多一个 `reason`（`no_engine` / `no_chinese`）—— 不可用时麦克风不再是
+    `disabled`，点它是打开系统设置。见 [design/0032](./design/0032-dictation-session.md)。
+  - 断言：`tests/dictation.html` **28 条**（命令形状 + `reduceDictation` 的判据 + `reason` 三句话 +
+    `dictation_recheck` + 桥表里搜不到 `dictation` + 没有 Rust 时不假装能听）、
+    `dictation_policy.rs` **33 条** `rustc --test`（含 4 条 LCID：`lcid_tag` 认 zh-CN/TW/HK/SG、
+    非中文不认、分号列表里找中文、`lcid_language` 只给文案用）、
     `agent_policy.rs` 2 条（`dictation_*` 不在 `ACTIONS`、拒绝清单里有理由）、`npm run typecheck` 与
     `check:tokens` 干净、`cargo check --all-targets` 干净。
   - **还没做/还没走**：波形那一路（`dictation_level` 恒 0，界面不画波形，见 0027 §7②）；
     真机八步（中文出句与标点、切英文语音语言、听写中切窗口、静音麦克风、热键被占、
     **点浮钮时记事本仍是激活色**、拔外接屏后浮钮还在、`Ctrl+Z` 撤几次）。
-  - **这台开发机上量到的事实**：一条语音识别语言都没有（`SupportedTopicLanguages()` 回 0、
-    `SystemSpeechLanguage()` 直接失败），所以 `available` 恒 `false`、按钮是灰的、提示指向
-    「给中文装上语音识别」。要走那八步，先给这台机器装语音识别组件 —— Windows 自带的
-    `Win+H` 走云端，它能用不代表本地这一套能用。
+  - **这台开发机上量到的事实**（2026-10-28 重测，推翻上面那句旧的"一条都没有"）：
+    WinRT 其实**有**中文（`SupportedTopicLanguages()` 回 `en-US` / `zh-Hans-CN`），
+    `Create` 和 `CompileConstraintsAsync` 都成功 —— 但 `RecognizeAsync` 一调就回
+    `0x80045509`（`The speech privacy policy was not accepted`）：
+    `HKCU\SOFTWARE\Microsoft\Speech_OneCore\Settings\Privacy` 整个键都不存在，
+    这台机器从没同意过语音隐私政策。所以"有语言"≠"能开麦"。
+    同时 `Speech\Engines\SR\zh-CN` 有 54.4 MB 声学/语言模型、`Speech\Recognizers\Tokens`
+    里 `MS-2052-80-DESK`（LCID `804`）在 → 经典 SAPI 这条路**完全能用**，且不受那个同意位管。
+    探针实测 `SetRecognizer` / `SetInput(SpMMAudioIn)` / `CreateRecoContext` / `CreateGrammar` /
+    `LoadDictation(SPLO_STATIC)` / `SetDictationState(SPRS_ACTIVE)` 全部 S_OK。
+    所以本机走"WinRT 起不来 → 退 SAPI"，真机日志能看见那一行 `falling back to classic SAPI "zh-CN"`。
+    要 WinRT 也能用，去「设置 → 隐私和安全性 → 语音」把语音服务打开。
+  - **没人说话也能验"能不能出字"**（2026-10-28 补）。麦克风这一环不能靠"问一句"结案，两条探针
+    都留在 `D:\Temp\sapi-probe`（临时目录，不入库）：①`miclevel` 用 `waveIn` 录 3 秒量峰值和 RMS ——
+    **全是 0** 才是设备在送静音（被静音 / 被隐私设置挡住 / 选错端点），只有底噪说明设备活着、
+    只是没人说话（本机实测峰值 30590 / RMS 566，默认端点是 `Microphone (USB Audio)`）；
+    ②`roundtrip` 把中文 TTS 念成 WAV 再喂回识别器，`loopback` 更进一步走**真实设备**：声音放进
+    `CABLE Input`、识别器从 `CABLE Output` 收，全程不出声。两条都出了中文，所以"设备输入 →
+    识别事件 → 文本"整段是通的，剩下的差异只有真人嗓音。合成音认错得不少（「下午三点」→「3:00PM」），
+    那是 54 MB 桌面模型对合成音的口音不匹配，不是链路问题。
 
 明确不排：账号、云同步、组件市场首页、macOS / Linux。前三个要服务端，而"没有服务端"是 v0.5 的整个前提；第四个等于重写窗口层。
 

@@ -774,7 +774,7 @@ const response = await call("network.fetch", {
 
 | 方法 | 参数 | 返回 |
 | --- | --- | --- |
-| `file.save` | `{ name, files: [{ name, text?, base64? }] }` | `{ ok: true, path }`，或者用户取消 `{ ok: false, cancelled: true }` |
+| `file.save` | `{ name, document?: "md" \| "html", files: [{ name, text?, base64? }] }` | `{ ok: true, path }`，或者用户取消 `{ ok: false, cancelled: true }` |
 
 三条要说清楚的：
 
@@ -782,7 +782,9 @@ const response = await call("network.fetch", {
 - **写一个文件还是打一个 zip，由内容决定，不由用户决定。** 一个文件且给的是 `text` → 就写那个文件；多于一个文件、或者任意一条给了 `base64` → 打成一个 zip，`files[].name` 是 zip 内的相对路径（`note.md` / `images/1.webp`）。**先全部解码、全部合格，再写包**：任何一条坏了就整趟失败，绝不留下半个 zip。
 - **用户取消不是错误。** 回的是 `{ ok: false, cancelled: true }` —— 没有 `code`、没有 `message`，界面一个字都不要说。把它当 `internal` 弹红字，等于"点了取消看起来像出错了"。
 
-扩展名由**内容**补：没有扩展名补 `.md` / `.zip`，是 `.md` / `.markdown` / `.zip` / `.txt` 里的另一个就换掉（用户写 `note.zip` 但内容是正文 → `note.md`），其余（`图表.v2`）接在后面。别信用户在对话框里输的名字，也别自己拼路径。
+扩展名由**内容**补：要打 zip 就 `.zip`；单个文本文件按 `document` 补 `.md`（缺省）或 `.html`。已经是想要的那个就留着，是 `.md` / `.markdown` / `.zip` / `.txt` / `.html` / `.htm` 里的另一个就换掉（用户写 `note.zip` 但内容是正文 → `note.md`），其余（`图表.v2`）接在后面。保存对话框的过滤器也跟着这个扩展名走（`.md` → Markdown，`.html` → HTML，zip → Zip）。别信用户在对话框里输的名字，也别自己拼路径。
+
+`document` 只回答一件事：**这份单个文本文件是什么文档**（`design/0031`）。它不决定要不要打 zip —— 那是内容的事。之所以要一个参数、而不是让组件把 `.html` 直接写进 `name`：用户在保存框里会把名字改掉（`周报.md`），改完就再也看不出"这份东西本来是网页"。不认的值（`"zip"`、`"HTML"`、非字符串）一律 `bad_params`，不猜。
 
 浏览器预览里没有系统对话框：这条调用直接回 `internal`（"saving a file needs the desktop app"），组件照常显示"这个功能要装到桌面才能用"。
 
@@ -821,7 +823,7 @@ parent.postMessage(
 | `secret.delete` | `secret` | `{ name }` | `{ ok: true }` |
 | `clipboard.write` | `clipboard:write` | `{ text }` | `{ ok: true }` |
 | `system.metrics` | `system:monitor` | — | `{ cpu, memory, disk, network, system, sampledAt }`，见 4.2 |
-| `power.status` | `system:monitor` | — | `{ ac, percent, charging, noBattery, critical, saver, minutesLeft }`，没有电池的机器照样回（`noBattery: true`），见 §4.3 |
+| `power.status` | `system:monitor` | — | `{ ac, percent, charging, noBattery, critical, saver, minutesLeft }`，没有电池的机器照样回（`noBattery: true`），见 §4.3。**和 `system.metrics` 仍是两条**：合的是卡片，不是每次要搬的字节 |
 | `schedule.every` | — | `{ every }` | `{ id, every }`；`every` 会被夹到 250ms–24h，订阅满 8 条返回 `bad_params` |
 | `schedule.clear` | — | `{ id }` | `{ ok: true }` |
 | `config.get` | — | — | 这个实例的配置，已按清单 schema 合并出厂值，见 §2.3 |
@@ -921,7 +923,7 @@ await call("schedule.clear", { id: grant.id });
 - **字段是已经解释好的事实**，不用认 `255` / `u32::MAX` 那两个哨兵 —— Rust 那半已经翻过了，判据在 `power_policy.rs`（6 条 `rustc --test`）。
 - `ac` 三值：`true` 接着电、`false` 用电瓶、`null` 读不出来。`percent` 读不出来就是 `null`：**别把它夹到 100**，那会把"读坏了"画成"满电"。
 - `minutesLeft` 只在**用电瓶**、且系统估得出来时才有值。插着电谈"还能用多久"没有意义，所以那时是 `null` 而不是一个大数字；超过一周的读数按坏读数处理。
-- `noBattery` 是台式机：卡片该说"没有电池"，而不是画一个 0%。`saver` 是 Windows 的节电模式，`critical` 是"马上就要关机"。
+- `noBattery` 是台式机：**整行收起来**，而不是画一个 0% 或永远挂着一句"没有电池"（`lattice.sysmon` 0.3.0 起就是这样，电池原来那个独立组件已下架）。`saver` 是 Windows 的节电模式，`critical` 是"马上就要关机"。
 - **平台不缓存这条**：一次调用就是一次 `GetSystemPowerStatus`。电量变得慢，节流放在组件那一侧（`schedule.every`，窗口不可见时整条停摆）。
 - 浏览器预览里没有系统调用，这条方法回 `null`（不是抛错），卡片据此画"没有读数"。
 

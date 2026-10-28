@@ -107,7 +107,7 @@
 | `calendar`（1783 行） | ✅ `lattice.calendar` | 月视图 + 事件编辑；**ICS 订阅还没做，但粘贴导入做了**（0.1.3，见 §1.2 的 `ics.ts` 一行：不联网、不碰文件对话框） | `storage`（订阅要 `network`） | ★★ |
 | `todayoverview`（627 行） | `lattice.today` | 一屏聚合"今天"：待办未完成数 + 最近截止 + 今日课程 | 无，但要**跨组件读数据**（见下方"一个硬问题"） | ★★ |
 | `analytics` | 并进 `lattice.focus` | 专注时长趋势、热图、打断分解 | 无，但同样卡在跨组件数据 | ★★ |
-| `hardware`（558 行） | `lattice.hardware` | GPU / 电池 / 温度 / 磁盘分区（Lattice 的 sysmon 只有 CPU/内存/系统盘/网络） | 扩 `metrics.rs`（现在手搓 Win32，没有 sysinfo） | ★★★ |
+| `hardware`（558 行） | `lattice.hardware` | GPU / 电池 / 温度 / 磁盘分区（0.3.0 之后 sysmon 已经有 GPU 和电池，还差温度与分区） | 扩 `metrics.rs`（现在手搓 Win32，没有 sysinfo） | ★★ |
 | `timetable`（1248 行 + `excel.rs` 267 行） | ✅ `lattice.timetable` | 周视图 + 点击空白加课 + 重叠并排 + 奇偶周 + **粘贴导入**（制表符 / 逗号 / 分号，坏行逐条丢）；**xlsx 文件解析还没做**（要文件选择 + `calamine`） | 只有 xlsx 文件导入才需要（文件对话框 + xlsx 解析） | ★★（本体 + 粘贴导入）/ ★★★（xlsx） |
 | `sketch`（887 行） | 改了方向：落地的是 `lattice.diagram` | vela 那版是**手写画布、存成图片**，没照搬 —— 存图要么把 base64 塞进 `storage`（有上限）、要么加一个 `file.save`，两条都不划算。真正做出来的是"架构图"：可平移缩放的图面，矩形 / 圆 / 菱形 / 文本 / 曲线箭头，拖框线跟着走，`agent:tools` 让 assistant 能往里加框（它是 v0.11 数据平面的第一个样本） | 落地时**没有**新增平台能力（`storage` + `agent:tools` 就够），所以这条从 ★★★ 变成 ★★ | ★★ |
 | `colorpicker`（490 行） | `lattice.pick` | 全屏取色 + 调色板 | 一个全屏覆盖窗口 + `color.rs`（80 行） | ★★★ |

@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **112 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **127 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -24,6 +24,7 @@
 | 「投放到桌面」按钮点了永久变灰，界面上什么都没发生 | 上一条并发的副作用：同时建窗口把 WebView2 的创建排到几十秒，IPC 的自定义协议先超时（`Failed to fetch`），退到 postMessage 之后长命令的响应再也回不来 —— `desktopBusy` 停在 true | 根因靠串行化解决；同时给 `syncDesktop` / `closeDesktop` 套 `withTimeout`，超时报错并解锁按钮，别让人除了重启没别的办法 |
 | 关掉主窗口之后既退不出也回不来 | 没有 `CloseRequested` 处理，也没有托盘：主窗口被销毁，组件窗口还在（进程不退），但没有任何入口能把主窗口要回来，只能去任务管理器 | 桌面上还有组件时 `prevent_close()` + `hide()`；真退出走设置菜单的 `Quit Lattice`（`quit_app`）；再点一次图标由单实例唤回主窗口 |
 | assistant 小窗一开，整个应用（连托盘）都僵住，Ctrl+K 也没反应，只能去任务管理器 | 三个 `assistant_window_*` 命令写成了同步 `fn`：同步命令跑在主线程，而建窗口的 `build()` 要把活投递回主线程再等结果 —— 命令占着主线程等自己 | 三个全改成 `pub async fn`，和 `sync_widget_windows` / `widget_close` 同一条规矩（AGENTS §5）。这类死锁 v0.2 就撞过一次，那条记的是"建窗口的命令必须 async"；这次是**新加的命令**又忘了一遍 —— 加任何碰窗口的命令之前，先回去看那三条 |
+| 打开一次听写浮钮，整个 app **无声消失**：没有崩溃框，日志停在最后一条 `widget_close`，尾巴是 `thread 'lattice-dictation-button' panicked at src\dictation_button.rs:696:37: RefCell already borrowed` + `panic in a function that cannot unwind`，进程退出码 `0xc0000409`（`STATUS_STACK_BUFFER_OVERRUN`，看着像栈溢出，其实和栈无关） | `apply()` 在 `CTX.with(borrow_mut)` 里面调 `SetWindowPos`（`Message::Show` / `Move` 两条路），而 `SetWindowPos` 会把 `WM_WINDOWPOSCHANGING` **同步**派回同一个 `window_proc`，那里第一句就是 `slot.borrow_mut()` → 借第二次 → panic。panic 穿过 `extern "system"` 边界不可 unwind，于是 abort。**只在 `dictation.json` 的 `show` 由 false 变 true 那一下触发**：启动时 show 已是 true 的话，第一次 Show 就死，看起来像"启动即崩" | `window_proc` 改成 `let Ok(mut borrowed) = slot.try_borrow_mut() else { return DefWindowProcW(...) }`：借不到就说明是重入，交给默认处理（`WM_WINDOWPOSCHANGING` 的默认行为就是什么都不改）。**规矩**：`extern "system"` 窗口过程里任何 `RefCell` 都只能用 `try_borrow*` —— 那里的 panic 不是"报个错"，是杀进程；而且写窗口过程的代码很容易在 `SetWindowPos` / `ShowWindow` 上重入自己 |
 
 ## 层级、焦点与 z 序
 
@@ -61,6 +62,7 @@
 | 底板一改，没改过的组件也"变了一点" | 脚本无条件把 `--lattice-surface` / `--lattice-text` / `--lattice-border` 覆盖成"近似主题"的值，出厂外观下这些近似值跟主题本身有细微差别 | 出厂外观（`auto / 1 / 0`）一个令牌都不覆盖，`isPlainAppearance()` 判断后直接 `removeProperty`，默认样子跟没有这个功能时一模一样 |
 | 壁纸层四条边发黑 | 模糊的边缘要往外扩，`filter: blur()` 在 canvas 边界上会把外面的透明像素平均进来 | canvas 比卡片四周各大 `2 × MAX_BLUR`（80px），模糊的尾巴落在卡片外面，被窗口圆角裁掉 |
 | 拖窗口时磨砂底"追不上"，停下来还是最初那一张 | 截图是异步的（一张约 24ms + IPC），拖动时每 120ms 就来一次，`wallpaperLoading` 一挡，后面全被丢掉 | 挡的时候记一个 `wallpaperDirty`，`finally` 里发现脏了就补截一张 —— 只补最后一次位置，不排队 |
+| 小窗外面那圈 1px 灰边，`DWMWA_BORDER_COLOR` 改了还是不生效 | 那圈边是**两层**叠的：DWM 画的那 1px（只有 Win11 22000+ 有这个属性，Win10 回 `E_INVALIDARG`）+ `WS_THICKFRAME` 的非客户区（系统的 `WM_NCPAINT` 画）。只关前者，在 Win10 上等于什么都没做，在 Win11 上也会被 `apply_mode` 的 `SetWindowPos(SWP_FRAMECHANGED)` 重刷回来 | 子类化窗口，`WM_NCCALCSIZE` 且 `wParam == TRUE` 时返回 0 —— **只拦这一趟**，`FALSE` 那趟返回 0 会让客户区变成 0×0、窗口里一个字都不显示。`SetWindowSubclass` 跨线程只返回 0 不报错，必须 `run_on_main_thread` 投递；`apply_mode` 末尾再补一次 DWM（两半都要）。代价：系统那条边缘拖动没了，只剩页面里三个自绘手柄。**关掉这两层之后还有第三层**：`SetWindowRgn` 的区域边界压在窗口最外一像素上，那一像素不属于可见内容，透明窗口就露出桌面（深色面板外面浮一条浅色的边）。定位靠"运行时 `SetWindowRgn(hwnd, NULL)` 清掉区域再截一次"——清了就没环，套回去就有。改法：区域各边放大 1px（`clip_rounded` 的 `(-1, -1, w + 2, h + 2)`） |
 
 ## 位置与边界
 
@@ -74,6 +76,7 @@
 | 组件在桌面上的位置停在任务栏底下，按钮点不到                                | 夹边界用的是 `monitor.size`（含任务栏），不是 `monitor.workArea`                                            | `screenBoxes` 取 `workArea`，取不到才退回 `size`                                  |
 | 属性面板改了尺寸，桌面上的组件纹丝不动                                       | `buildSpecs` 优先用 `desktopRects` 里的尺寸（那是用户拖边缘改过的真实值），只写 `placement.w/h` 会被它盖掉                      | 提交尺寸时两处一起写；`desktopRects` 有记录才写它                                         |
 | 右键想弹菜单，卡片却跟着挪了几像素 / 尺寸被改了一点，而且**松手才看得出来**      | `pointerdown` 不看键：右键也会把拖拽状态立起来，用户顺手挪一下再松手，那一下位移就真写进 `placement` 了。菜单和拖拽抢同一次按下 | 两个 `on*Start`（`WidgetFrame` 的拖 / 缩）第一行 `if (event.button !== 0) return` —— 先按的赢，右键让给菜单 |
+| 小窗越开越大（每次多 16px），或者某次启动后整个跑到屏幕外、只能手改 JSON 才救得回来 | ①`SetWindowPos(SWP_FRAMECHANGED)` 之后系统补发的那条 `Resized` 里 `inner_size()` 可能是 0，换算成 `u32` 落盘就成了 `800 × 65535`；②`migrate_size` 只管下限，`clamp_position` 只会挪位置，谁都不管"比屏幕还大" | ①重算帧那次 `SetWindowPos` **把 `cx/cy` 一起钉住**（不钉，系统按"保住客户区"往外长一个边框厚度，实测 800×600 → 816×609）②落盘前过一遍 `clamp_size`，上限取工作区 |
 
 ## 桥、权限与广播
 
@@ -117,6 +120,7 @@
 | 在设置里点「清掉这把 key」，重启之后模型又能用了 —— 清了个寂寞 | 密封库优先、明文兜底（`read_config`），所以光把 `assistant.json` 里的 `apiKey` 写成空串没用：密封库里那一条还在，下次读配置照样把它填回来 | 删除必须是**明确动作**：`llm_set_key("")` 和 `llm_profile_remove` 各自调 `secrets::delete`。`write_config` 只"有值就封"、**从不删** —— 让它按"空 key 就删"办事，会在"换账户解不开、key 读成空串"的那一次把密文抹掉，而换回原账户本来还能用 |
 | 换了一台电脑（或重装了系统），所有模型都显示"没配置"；用户重新填了一把，回头再用原来那台机器 —— 旧 key 也没了 | DPAPI 绑账户，`secrets.bin` 在别的账户下解不开。要是"解不开就当空表、下次保存顺手覆盖"，那份还能救回来的密文就被一份新密文盖掉了 | `load_checked` 把"文件不在"（空表）和"解不开"（`Err`）分开，后者**拒绝任何写入**；`secret.get` 回错误而不是 `{value: null}`；文件永远不删。界面上那句是"读不出来，请重新填一次"，不是"你还没填过" |
 | 手改过 `assistant.json` 的人把 key 写成 `api_key`（snake_case），迁移之后再打开 —— 那一档整个消失了 | 迁移写回时若只把 `apiKey` 置空、留着 `api_key`，serde 那边两者是**同一个字段**（`alias`），同时出现就是 "duplicate field"，`parse_config` 落默认值，用户的档全没 | 迁移清字段时 `apiKey` 置空串、`api_key` **整个删掉**（`clear_plaintext_keys`）；读的时候两个名字都认（`plan_migration` 也是） |
+| 升级之后画布里那张卡看着正好，**桌面上**那张却把底栏切掉半行 | 卡片有两个尺寸来源：`placements[].h`（画布）和 `desktopRects[].h`（桌面上最后一次拖出来的），`buildSpecs` 里**后者优先**。迁移只抬了前者 —— 画布只读前者，于是断言全绿、浏览器里怎么看都对，只有真机上的桌面窗口还是老高度 | 迁移里两份一起抬（只往上不往下）。判据：**任何"卡片要变高"的改动都得先问一句"桌面上那份尺寸存在哪儿"**；`tests/catalogue-cache.html` 那 17 条同时钉着两份（[0030](./design/0030-merged-system-widget.md)） |
 
 ## 组件排版与渲染
 
@@ -139,6 +143,23 @@
 | 小窗拉到最小（320×420）时，「Enable Full access」那颗按钮按不到 —— 要按的按钮被顶出了窗框，输入框也一起不见了 | 那道确认（风险段 + 四行硬线 + 勾选框 + 两颗按钮）在英文下有 381px，而面板是个 flex 列：它写着 `flex: none`，于是"不够高"这件事全由下面的对话区和输入框承担，**对话框自己不缩**。实测 320×420 里它底边比面板底边多出 50px，正好是按钮那一行 | 让它能缩、缩不下就自己滚：`flex: 0 1 auto` + `min-height: 0` + `overflow-y: auto`（`styles.css` 的 `.lattice-assistant-mode-confirm`）。判据是"**一屏放不下时，先让内容滚，别把按钮和输入框推出可视区**" —— 凡是往窄面板里塞一段会换行的长文案，都要在最小尺寸下量一遍 `getBoundingClientRect().bottom` |
 | 小窗里两行标题、两个 ×：上面那行写 "ASSISTANT"，下面那行写 "Assistant · 模型"，两个关闭隔着 34px 各管一次 | `AssistantPanel` 被**两个宿主复用**（主窗口的抽屉 / 独立小窗），而它自己头上画了一整行（标题 + 齿轮 + ×）。抽屉外面什么都没有，这一行是它唯一的标题和关闭；小窗外面已经有一条 `.lattice-assistant-bar`（标题 + 底板/锁/模式/关闭四个按钮），于是同一件事被画了两遍 | 面板按 `variant` 收：`drawer` 照旧画整行，`window` 在对话态**整行不渲染**、齿轮落进会话条，只有设置态留一行做"返回"。判据是"**宿主已经给的东西，面板里不许再给一遍**" —— 以后往这一行加按钮，先问一句"小窗外面是不是已经有了" |
 | 标题栏里那颗锁是**彩色**的，旁边三颗（◐ ▢ ×）是灰的线描，一眼就看出不是一套 | 用的是 emoji `🔒` / `🔓`。emoji 走的是 `Segoe UI Emoji` 那张彩色字体，CSS 的 `color` 管不着它，粗细和基线也跟旁边的字形对不上 | 图标一律用 **SVG + `currentColor`**（`AssistantWindow.tsx::LockIcon`），颜色、粗细、基线就都跟着那一排走。**一排按钮里不许混进 emoji** —— 它在任何主题下都是彩色的，是这一排里唯一"不听话"的那个 |
+| `Ctrl+滚轮` 滚一格跳两档 | WebView2 自带的 Ctrl+滚轮 缩放（`AreBrowserAcceleratorKeysEnabled` 默认开）没被吃掉，我们的处理器和它叠在一起 | `wheel` 监听必须 `{ passive: false }` —— 默认的 `passive: true` 下 `preventDefault()` 是空操作；打开面板时再 `getCurrentWebview().setZoom(1)` 清一次历史值 |
+| 整块面板放大到 1.5 之后，输入卡被挤出窗口 / 抽屉右边多一条缝 | `zoom` 挂错了层：挂在 `position: fixed` 的容器上、或者挂在 `flex: 1` 的子项上再手动乘倍率（会把尺寸算两遍） | 只挂在 `.lattice-assistant` 根上一条。Chromium 的 `zoom` 是「浏览器 Ctrl+加号」语义：**面板占的屏幕面积不变、布局空间按 1/倍率缩小**，所以 `flex: 1` 也不会溢出（`.scratch/zoom-probe.html` 量过） |
+| 面板放大之后，往它上面拖文件，`@path` 加错地方或加不进去 | 用 `getBoundingClientRect()` 比落点：`zoom ≠ 1` 时它返回的矩形和事件坐标不在同一个空间 | 改成 `document.elementFromPoint(x, y)` + `panelRef.contains(hit)` —— 命中测试和画面永远是同一块 |
+
+## 语音：识别、语言与麦克风
+
+这一组全是「界面说有语音、说下去没有字」。**先把"引擎"和"语言库"分开**：Windows 上有两套互不相干的语音识别，装了一套不等于装了另一套。
+
+| 症状 | 真实原因 | 解法 |
+| --- | --- | --- |
+| 浮钮亮着、对着麦克风说了一整句，一个字都没出来；设置页还显示语音识别**可用**（`zh-Hans-CN`），`Win+H` 也打得很好 | 两层原因叠在一起。①**WinRT 的语言列表来自"已安装的语音功能"，不等于"真的能开麦"** —— 它报 `zh-Hans-CN`、`CompileConstraintsAsync` 也回 Success，可 `RecognizeAsync` 一调就回 `0x80045509`（`The speech privacy policy was not accepted`）：`HKCU\SOFTWARE\Microsoft\Speech_OneCore\Settings\Privacy` **整个键都不存在**，这台机器从没同意过语音隐私政策。②`Win+H` 能用是因为它走云端，不受这个同意位管 | 别把"有语言"当"能用"：WinRT 还没出声就失败时换经典 SAPI 再试一次（`dictation::recognizer_loop` 的 `Attempt::NotStarted` 分支），SAPI 不看这个同意位。量法：探针里直接调 `RecognizeAsync`，看是不是 `0x80045509`；注册表看 `HKCU\...\Speech_OneCore\Settings\Privacy` 在不在。要让 WinRT 也能用，去「设置 → 隐私和安全性 → 语音」把语音服务打开 |
+| 想"给用户装个语音包就行"，却不知道到底该装哪一个 | WinRT 和经典 SAPI **读的不是同一份语言库**：WinRT 读 `%windir%\Speech_OneCore\Engines\SR\<tag>`，经典 SAPI 读 `%windir%\Speech\Engines\SR\<tag>`。同一台机器可以只有其中一套 —— 本机 `Speech\Engines\SR\zh-CN` 有 54 MB 声学/语言模型，`Speech_OneCore\Engines\SR` **一个语言目录都没有** | 两套都问：`dictation::detect()` 先问 WinRT，问不到中文再问 `dictation_sapi::installed()`。量法：`ls %windir%\Speech\Engines\SR` 和 `ls %windir%\Speech_OneCore\Engines\SR`，看哪边有 `<tag>` 目录 |
+| 经典 SAPI 起得来（`SetRecognizer` / `CreateRecoContext` / `CreateGrammar` 全 ok），一到 `LoadDictation` 就回 `E_INVALIDARG (0x80070057)`，看着像 `pszTopicName` 传错了 | 这个接口**只认 `SPLO_STATIC`**。传 `SPLO_DYNAMIC` 得到的是 `E_INVALIDARG` —— 一个"参数不合法"的错误码，而真正的问题是"这个枚举值在这个接口上不支持" | 用 `SPLO_STATIC`（`dictation_sapi::listen`）。判据：`LoadDictation(null, SPLO_STATIC)` 回 S_OK、紧接着 `SetDictationState(SPRS_ACTIVE)` 也 S_OK |
+| 令牌枚举得到 2 个（`MS-2052-80-DESK` / `MS-1033-80-DESK`），可"这台机器有没有中文"判成了没有 | 令牌的 `Language` 属性是 **LCID 的十六进制字符串**（`804` = 0x804 = 2052 = zh-CN），不是十进制；而且可以是一串分号分隔的备选值（本机英文令牌是 `409;9`）。按十进制读 `804` 是 0x324，主语言 0x24 —— 不是中文 | `u32::from_str_radix(part, 16)`，再判 `lcid & 0x3ff == 0x04`（`dictation_policy::lcid_tag`，四条断言钉着 zh-CN/TW/HK/SG）。另外属性在 `Attributes` **子键**下，直接 `token.GetStringValue("Language")` 会一路失败 |
+| 进程内识别器所有 HRESULT 都成功，`WaitForSingleObject` 也一直等，但 `SPEI_*` 事件**一个都不来** —— 症状和"麦克风坏了"一模一样 | 进程内识别器**不会自己去听默认麦克风**。必须 `SetInput` 一个 `CLSID_SpMMAudioIn`，否则它建得起来、就是不听 | `CoCreateInstance(CLSID_SpMMAudioIn)` 之后 `recognizer.SetInput(&audio, true)`，这一步失败才算"没有麦克风"（`no_microphone`）；后面那些 HRESULT 失败都只说明语言包不对 |
+| 听写会话在按下后**十几秒就自己结束**，界面显示「没听到」；可麦克风明明是好的（`AudioStatus.State = SPAS_RUN`、`dwAudioLevel` 会动） | 拿 `SPEI_SOUND_START` 当"有没有人说话"的判据。这个事件在经典 SAPI 上**根本不发**（实测整场会话 `sound events = 0`，而 `recognition` 事件照来）。于是"等第一声"的兜底计时永远不会被重置，到点就收尾 —— 用户按下热键、还没开口，会话已经没了 | 别用 `SPEI_SOUND_START` 判空闲。只留一条**硬上限**（`dictation_sapi::MAX_SESSION` = 120 s）+ 用户按停，不要把 `dwAudioLevel` 当判据（安静房间也不是恒 0，本机采到 1：阈值低了永不收尾、高了把说话的人掐掉）。每场会话收尾打一行 `dictation session: …s, sound=…, recognition=…, peak_level=…` —— 这一行就能分清"没采到音"（`peak_level` 恒 0）和"采到了但没识别"（`peak_level` 高而 `recognition = 0`） |
+| 想不靠人开口就验"能不能出字"：把 WAV 喂给识别器，`SetInput` / `LoadDictation` / `SetDictationState` 全回 S_OK，可事件一条都不来、也没有 `SPEI_END_SR_STREAM`，看着像"识别器根本不干活" | **麦克风输入会自己开始，文件输入不会**：`SetInput` 一个文件流之后识别器仍是 inactive，非得显式 `SetRecoState(SPRST_ACTIVE)` 才去读 | `grammar.SetDictationState(SPRS_ACTIVE)` **之后**再补一句 `recognizer.SetRecoState(SPRST_ACTIVE)`（顺序不能反）。补上之后同一个 WAV 立刻出「你好今天天气不错」—— 这也是没人说话时验证识别链路的办法：中文 TTS 合成 → WAV → 喂回识别器；再进一步把声音放进虚拟声卡 `CABLE Input`、识别器从 `CABLE Output` 收，连设备那一段也一起验了，而且全程不出声 |
 
 ## 构建、工具链与验证
 
@@ -170,6 +191,7 @@
 | 想单验 DPAPI 的调用形状，写个 `rustc` 小探针，`CryptProtectData` 一律回 0、`GetLastError` 是 **127**（`ERROR_PROC_NOT_FOUND`），可 `crypt32.dll` 明明加载成功、`CryptProtectData` 的地址也拿到了 | `crypt32!CryptProtectData` 是个**转发导出**，实现在 `dpapi.dll` 里 —— 而 agent 这个进程树里 `LoadLibraryW("dpapi.dll")` 直接回 NULL（DLL 在 `System32` 里、40 KB，看得见、加载不了）。不是参数写错，也不是 `windows-sys` 少开了 `Win32_Security_Cryptography`（少了那个根本编不过） | 分两步量：`LoadLibraryW` + `GetProcAddress` 各打一行，`crypt32` 能加载、`dpapi` 不能，就到此为止，别再改自己的 BLOB。**代码路径是按"失败保留明文"写的，所以这个故障是安全的**：key 照旧能用，设置页那一行带着这句 127。DPAPI 的真机验收只能在正常用户会话里做（ROADMAP 里那条还挂着） |
 | 只想 `cargo check` 看一眼自己的 Rust 改动，却报 `failed to run custom build command for lattice`，末尾一句 `The process cannot access the file because it is being used by another process. (os error 32)`，指着 `out/libresource.a` | 这个仓库的常态：另一个 agent 的 `tauri dev`（`cargo run`）正活着，它和你的 `cargo check` 共用 `src-tauri/target/debug/build/lattice-*/out`，`tauri-build` 写 PE 资源那一步撞在一起 | 换一个 target 目录：`CARGO_TARGET_DIR=src-tauri/target/check cargo check`。**必须在 `target/` 里面** —— 放到 `.scratch/` 这类目录会被安全策略拦在"build script 写探针 exe"那一步（`Failed to create …/out/probe: OS Error 5`，看着像代码问题，其实是目录问题）。代价是依赖重编一遍（约 3.5 分钟），之后增量几秒 |
 | `ci` 的 `frontend` job 红在 `test:tokens`（"仓库现状是干净的"），而本机 `typecheck`、`check:docs`、全量断言全绿 | pre-push 只跑 `typecheck` + `check:docs`，而 CI 的 `frontend` 有十几步；一条 `font-size: 10.5px` 就能这么上 main（2026-10-27 真发生：`.lattice-probe` 想比说明小半档） | 把 `check:tokens` 加进 pre-push（几十毫秒）；碰过 `src/**/*.css` 就顺手跑一次 `npm run test:tokens`，它连规则本身一起钉 |
+| `npm run tauri:dev` 起手就红：`error when starting dev server: Error: Port 1420 is already in use`，栈全在 `vite/dist/node/chunks/node.js`，末尾 `The "beforeDevCommand" terminated with a non-zero status code.` | 上一次的 vite **没跟着终端一起死**：`npm run dev` / `tauri:dev` 被关窗口或 Ctrl+C 打断时，npm 那层 shell 先没了，`vite.js` 变成孤儿继续监听 1420（一次实测：13:10 起的那个还在，19:23 那次启动撞上）。`vite.config.ts` 里的 `strictPort: true` 是**故意的** —— `tauri.conf.json` 的 `devUrl` 硬编码 1420，Vite 悄悄换到 1421 会让窗口直接白屏 | 先认人再杀：`Get-NetTCPConnection -LocalPort 1420 -State Listen` 拿 PID，`taskkill /PID <pid> /T /F`。**连那次失败启动留下的 `cargo run` 一起收**：vite 一红 tauri 就退，但 Rust 编译还活着（`Get-CimInstance Win32_Process -Filter "Name='cargo.exe'"` 里父进程已是 GONE），编完会弹一个指向死 dev server 的窗口，还占着 `target/debug/build` 的锁（就是 `os error 32` 那条） |
 
 ## 目录、签名与网络
 

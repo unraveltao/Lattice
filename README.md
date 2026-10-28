@@ -43,7 +43,7 @@ The name is 棂 (*líng*), the wooden lattice inside a window pane. Every pane i
 | --- | --- | --- |
 | The time, and how much is left | Clock · Calendar · Timetable · Countdown | Current time; a month view with your own events; this week's classes with a live now line; days left to a date |
 | Nothing slipping through | Todo · Note · Bookmarks · Habit | A list on the desktop; a scratch note that saves itself; links you keep coming back to; streaks you can keep |
-| To know what the machine is doing | System · Battery · Terminal | CPU and memory with a one-minute trace, per-core load, disk, network, uptime; charge and time left; a shell you can run commands in |
+| To know what the machine is doing | System · Terminal | CPU, memory, GPU and battery at a glance with a one-minute trace, per-core load, VRAM, disk, network, uptime; a shell you can run commands in |
 | To work for a stretch | Focus · Stopwatch | A pomodoro that is still right after you close the lid; a stopwatch |
 | To not lose the words you looked up | Word Drill | One card per line pasted in, four grades, next review scheduled in days |
 | A quick sum | Calculator · Convert | Arithmetic you can copy out; two-way conversion for length, mass, temperature, data, time and speed |
@@ -164,12 +164,12 @@ The newest milestone is v0.13: the assistant gets its own window on the desktop.
 
 | Metric | Value |
 | --- | --- |
-| Official widgets | 25 |
+| Official widgets | 24 |
 | Permissions | 15 |
-| Tauri commands | 113 |
-| Browser assertions | 3 867 over 76 pages |
-| Rust tests | 487 |
-| Documented pitfalls | 112 |
+| Tauri commands | 117 |
+| Browser assertions | 3 995 over 76 pages |
+| Rust tests | 504 |
+| Documented pitfalls | 127 |
 
 These are measured: the browser assertions start a real dev server and a real Chrome in CI, and the Rust tests split pure-logic cases from the ones that need a full `cargo test`. The pitfalls are the ones that actually bit, each written up with the reasoning that keeps it from coming back.
 
@@ -177,11 +177,11 @@ These are measured: the browser assertions start a real dev server and a real Ch
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 26 145 lines |
-| CSS | 6 441 lines |
-| Rust | 28 814 lines |
+| TypeScript | 27 237 lines |
+| CSS | 6 936 lines |
+| Rust | 30 635 lines |
 | SDK | 961 lines |
-| Widgets + example | 37 919 lines |
+| Widgets + example | 38 545 lines |
 | Scripts | 5 614 lines |
 
 </details>
