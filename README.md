@@ -138,7 +138,7 @@ The reasoning behind each, including what was tried and dropped, is in [docs/ARC
 
 ## Where it stands
 
-The newest milestone is v0.13: the assistant gets its own window on the desktop. The code has landed and is waiting on real-machine verification, the same gap the four milestones before it are stuck on. What the installer reports is `0.1.3`; the `v0.x` numbers are milestone labels, not release versions.
+The newest milestone is v0.13: the assistant gets its own window on the desktop. The code has landed and is waiting on real-machine verification, the same gap the four milestones before it are stuck on. What the installer reports is `0.2.0` — the first release that ships the global search and the read-only canvas overview; the `v0.x` numbers are milestone labels, not release versions.
 
 <details>
 <summary>What each milestone added</summary>

@@ -25,7 +25,7 @@ Windows 10 / 11，64 位。没有 macOS 和 Linux 版本，也没有这个计划
 进度写在 [`CODE_SIGNING.md`](./CODE_SIGNING.md)）。
 
 点 **更多信息 → 仍要运行** 就装上了。介意的话可以核验：发布页的说明里有安装包的 SHA-256，
-下载完在 PowerShell 里跑 `Get-FileHash .\Lattice_0.1.3_x64-setup.exe -Algorithm SHA256`，
+下载完在 PowerShell 里跑 `Get-FileHash .\Lattice_0.2.0_x64-setup.exe -Algorithm SHA256`，
 两串对得上再装。
 
 这不是"没做"，是"还没买"。真有问题的是**装完第一次运行**被拦之后你没点继续 —— 那才是真装不上。
