@@ -24,6 +24,7 @@ import { nextFreeSlot, useLattice, type Placement, type ThemeMode } from "./stor
 import type { WidgetRecord } from "../runtime/registry";
 import type { WidgetHelp } from "../runtime/help";
 import { pickText } from "../runtime/widget-text";
+import { configPatchError, resolveConfig, type ConfigValue } from "../runtime/config";
 import { callWidgetTool, listWidgetTools } from "./widget-tools";
 import type { WidgetToolReply } from "../runtime/widget-tools";
 
@@ -39,6 +40,7 @@ export const AGENT_ACTIONS = [
   "placement.front",
   "theme.set",
   "widgets.pause",
+  "config.set",
 ] as const;
 
 export type AgentAction = (typeof AGENT_ACTIONS)[number];
@@ -58,6 +60,14 @@ export interface AgentRequest {
   op: string;
   action?: string;
   args?: unknown;
+  /**
+   * 这一轮是不是完全访问（0037）。只对 `widget-tools` / `widget-call` 有用 ——
+   * 完全访问期间 `agent:tools` 视同已授，所以那张表要比内部模式宽。
+   *
+   * **由 Rust 塞进来，不由调用方声明**：小窗没有 store，模式只有一个真源
+   * （`assistant.json`），让前端再判一次就有两个真源。缺省 = 内部。
+   */
+  everything?: boolean;
 }
 
 /** `agent_status` 的返回。`port` 只有正在听才有值 —— 端口由系统分配，每次开都可能不同。 */
@@ -275,6 +285,40 @@ export function runAgentAction(
         return { ok: true, result: { paused } };
       }
 
+      case "config.set": {
+        // 按 `instanceId` 不按 `widgetId`：同一个组件摆两份、配置不同是正常用法
+        // （`instanceIdFor`），按 widgetId 改会改到错的那一份 —— 和 `callWidgetTool`
+        // 同一条判据。
+        const instanceId = readString(args, "instanceId");
+        const placement = findPlacement(instanceId);
+        if (!placement) return fail("not_found", `no placement ${instanceId}`);
+        const record = records.find((item) => item.manifest.id === placement.widgetId);
+        if (!record) {
+          return fail("not_found", `${placement.widgetId} is placed but its manifest could not be read`);
+        }
+        const patch = args.patch;
+        if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+          return fail("bad_args", "config.set needs a patch object");
+        }
+        const fields = record.manifest.config ?? [];
+        // 写之前判：`resolveConfig` 对非法值是安静退回出厂值的，那是"读"该有的
+        // 脾气，放到写这条路上就变成"写成功了但值没变"（0037 §5）
+        const problem = configPatchError(fields, patch as Record<string, unknown>);
+        if (problem) return fail("bad_args", problem);
+        for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
+          store.setConfig(instanceId, key, value as ConfigValue);
+        }
+        // 回**归一化之后的完整配置**，不是 patch：模型要能看见改完这一份现在长
+        // 什么样，否则它只能再查一次，而它没有"查配置"的工具
+        return {
+          ok: true,
+          result: {
+            instanceId,
+            config: resolveConfig(fields, useLattice.getState().configs[instanceId]),
+          },
+        };
+      }
+
       default:
         // 白名单外的一律到这里。Rust 那边已经挡过一次，这里是第二道
         return fail("unknown_action", `unknown action ${JSON.stringify(action)}`);
@@ -290,7 +334,11 @@ export function runAgentRequest(request: AgentRequest, records: WidgetRecord[]):
   if (request.op === "state") return { ok: true, result: agentSnapshot(records) };
   // 小窗那一轮要用的组件工具清单（0003 的 B 一类）：和 `state` 一样是**读**，
   // 差别只在它是给提示词和工具表用的。判据在 `listWidgetTools` 里，这里不另判
-  if (request.op === "widget-tools") return { ok: true, result: { tools: listWidgetTools(records) } };
+  if (request.op === "widget-tools")
+    return {
+      ok: true,
+      result: { tools: listWidgetTools(records, request.everything === true) },
+    };
   if (request.op === "act") {
     return runAgentAction(request.action ?? "", request.args, records);
   }
@@ -329,7 +377,7 @@ export async function runWidgetCall(request: AgentRequest, records: WidgetRecord
     return { ok: false, code: "bad_args", error: "widget-call needs instanceId, widgetId and tool" };
   }
 
-  const source = listWidgetTools(records).find(
+  const source = listWidgetTools(records, request.everything === true).find(
     (item) => item.instanceId === instanceId && item.widgetId === widgetId,
   );
   if (!source) {
