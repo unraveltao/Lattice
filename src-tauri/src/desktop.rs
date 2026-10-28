@@ -386,8 +386,16 @@ mod imp {
     /// Progman 收到这条未公开消息后会派生出承载壁纸的 WorkerW
     const SPAWN_WORKER_W: u32 = 0x052C;
 
-    /// 把窗口裁成圆角矩形。区域坐标是物理像素，宽高要 +1：
-    /// GDI 的区域是右开区间，少 1px 会吃掉最后一行/列。
+    /// 把窗口裁成圆角矩形。区域坐标是物理像素，**四条边都比窗口大 1px**。
+    ///
+    /// 为什么不正好是 `(0, 0, w + 1, h + 1)`：区域边界压在窗口最外面那一像素上时，
+    /// 合成出来的那一圈**不属于窗口的可见内容** —— 不透明的窗口看不出来（窗口自己
+    /// 的底色盖住了），`transparent(true)` 的窗口就露馅：深色面板外面浮一条 1px 的边，
+    /// 内容是桌面（0036 的现场，小窗四边各 1px）。把边界推到窗口外面，最外那一像素
+    /// 就成了"完整的内部"。多给的部分被窗口自身裁掉，不会画到别的地方。
+    ///
+    /// 实测：拿一个**不透明**的普通窗口试，`(0, 0, w + 1, h + 1)` 直边是满的 ——
+    /// 这条只在透明窗口上看得到（小窗、桌面卡片都是透明的）。
     pub fn clip_rounded(hwnd: isize, width: u32, height: u32, radius: f64) -> Result<(), String> {
         if hwnd == 0 {
             return Err("window handle is null".to_string());
@@ -398,10 +406,10 @@ mod imp {
         let diameter = (radius * 2.0).round().max(2.0) as i32;
         let region = unsafe {
             CreateRoundRectRgn(
-                0,
-                0,
-                width as i32 + 1,
-                height as i32 + 1,
+                -1,
+                -1,
+                width as i32 + 2,
+                height as i32 + 2,
                 diameter,
                 diameter,
             )

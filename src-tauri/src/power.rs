@@ -9,6 +9,14 @@
 //!
 //! 缓存也不在这里：读一次 `GetSystemPowerStatus` 就是一次廉价的系统调用，
 //! 真正的节流在组件那一侧（`schedule.every`，窗口不可见时整条停摆）。
+//!
+//! # 0.3.0：组件并了，命令没并
+//!
+//! `lattice.battery` 那个组件下架，电池成了 `lattice.sysmon` 上的一行。但**这两条
+//! 命令仍然是两条**：系统卡片挂两条 `schedule.every`（1000ms 拉指标、30000ms 拉
+//! 电源），各拿各的那一份。理由和上面那段一字不差 —— 合的是"用户看见的东西"，
+//! 不是"每次要搬多少字节"。真并进 `system_metrics` 的话，那张卡每秒都会多收一份
+//! 半分钟才变一次的电量。
 
 use serde::Serialize;
 use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
