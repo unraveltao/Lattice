@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "entries": [
+    { "path": "docs/ARCHITECTURE.md", "layers": ["past"] },
+    { "path": "docs/ROADMAP.md", "layers": ["past", "future"] },
+    { "path": "docs/PITFALLS.md", "layers": ["past"] },
+    { "path": "docs/reference/history.md", "layers": ["past"] },
+
+    { "path": "GLOSSARY.md", "layers": ["now"] },
+    { "path": "AGENTS.md", "layers": ["now"] },
+    { "path": "docs/README.md", "layers": ["now"] },
+    { "path": "docs/FAQ.md", "layers": ["now"] },
+    { "path": "docs/WIDGET_SPEC.md", "layers": ["now"] },
+    { "path": "docs/AGENT_ACCESS.md", "layers": ["now"] },
+    { "path": "docs/CODE_SIGNING.md", "layers": ["now"] },
+    { "path": "docs/PET_REFERENCE.md", "layers": ["now"] },
+    { "path": "docs/VELA-REUSE.md", "layers": ["now"] },
+    { "path": "docs/reference/build.md", "layers": ["now"] },
+    { "path": "docs/design/README.md", "layers": ["now"] },
+    { "path": "design/logo/README.md", "layers": ["now"] },
+    { "path": "examples/counter/README.md", "layers": ["now"] },
+    { "path": "packages/sdk/README.md", "layers": ["now"] },
+
+    { "path": "docs/design/LAT-*.md", "layers": ["by-design-status"] }
+  ]
+}

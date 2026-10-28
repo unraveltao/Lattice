@@ -177,12 +177,12 @@ These are measured: the browser assertions start a real dev server and a real Ch
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 27 237 lines |
+| TypeScript | 27 238 lines |
 | CSS | 6 936 lines |
 | Rust | 30 635 lines |
 | SDK | 961 lines |
 | Widgets + example | 38 545 lines |
-| Scripts | 5 614 lines |
+| Scripts | 5 776 lines |
 
 </details>
 

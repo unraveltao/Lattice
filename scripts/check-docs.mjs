@@ -358,6 +358,144 @@ function checkDesign() {
   return { count: files.length, problems };
 }
 
+/* ------------------------------------------------------------ 文档归属 */
+
+// 每份 md 有且只有一个坐标。`docs/README.md` 第一节那张表是**人读**的归属，
+// 这里是**机器读**的那一份。两者重叠的那一维（时态）由下面第 4 步强制相等 ——
+// 所以它们漂不了，而这正是这个仓库最怕的那种腐烂（两处各写一遍）。
+//
+// 表里**不写 owner**：README 那一列的原文是句子（"想改一个看着奇怪的设计之前"），
+// 抄进 JSON 就是同一句话的第二份，而且没有任何检查能拿它判对错。也不写第二根
+// 分类轴（现行 / 归档）—— README 第 9 行立的是"一份文档只有一个坐标"。
+const CATALOG_LAYERS = ["past", "now", "future", "by-design-status"];
+
+// 不进归属表的四份。写在这里而不是 catalog.json 里：**"为什么不算文档"是规则，
+// 不是数据**，而规则该和检查待在一起，改它的人一定在看这个文件。
+const CATALOG_EXEMPT = new Map([
+  ["README.md", "项目入口，跟着版本走，不是文档体系的一部分（docs/README.md 第 27 行）"],
+  ["README.zh-CN.md", "同上 —— 和英文那份是同一份东西"],
+  ["CONTRIBUTING.md", "只写从 clone 到 push 的顺序和什么会被拒，不构成事实的家（第 43 行）"],
+  ["CREDITS.md", "致谢跟着版本走，没有时态"],
+]);
+
+/** 只支持一个 `*`，够用了 —— 引一个 glob 依赖来干这件事不值得 */
+function globMatch(pattern, file) {
+  const star = pattern.indexOf("*");
+  if (star < 0) return pattern === file;
+  const prefix = pattern.slice(0, star);
+  const suffix = pattern.slice(star + 1);
+  if (!file.startsWith(prefix) || !file.endsWith(suffix)) return false;
+  return !file.slice(prefix.length, file.length - suffix.length).includes("/");
+}
+
+function checkCatalog(files) {
+  const problems = [];
+  const catalogPath = path.join(ROOT, "docs", "catalog.json");
+  if (!fs.existsSync(catalogPath)) return { count: 0, problems: ["docs/catalog.json 不存在"] };
+
+  let catalog;
+  try {
+    catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
+  } catch (error) {
+    return { count: 0, problems: [`docs/catalog.json 不是合法 JSON：${error.message}`] };
+  }
+  if (catalog.schema !== 1) problems.push(`catalog 的 schema 是 ${catalog.schema}，只认 1`);
+  const entries = Array.isArray(catalog.entries) ? catalog.entries : [];
+
+  // 1. 条目自身：路径唯一、layers 在词表里、by-design-status 只许挂在通配上
+  const byPath = new Map();
+  for (const entry of entries) {
+    const rel = entry?.path;
+    if (typeof rel !== "string" || rel === "") {
+      problems.push(`catalog 里有一条没有 path：${JSON.stringify(entry)}`);
+      continue;
+    }
+    if (byPath.has(rel)) problems.push(`catalog 里 ${rel} 出现了两次`);
+    byPath.set(rel, entry);
+    const layers = entry.layers;
+    if (!Array.isArray(layers) || layers.length === 0) {
+      problems.push(`${rel} 没有 layers`);
+      continue;
+    }
+    for (const layer of layers) {
+      if (!CATALOG_LAYERS.includes(layer)) {
+        problems.push(`${rel} 的 layers 里有 ${layer}，只认 ${CATALOG_LAYERS.join(" / ")}`);
+      }
+    }
+    if (layers.includes("by-design-status") && !rel.includes("*")) {
+      problems.push(`${rel} 是具体路径，不能用 by-design-status（那是给通配的）`);
+    }
+  }
+
+  const wildcards = [...byPath.keys()].filter((rel) => rel.includes("*"));
+
+  // 2. 具体路径必须真的存在（通配由第 3 步的认领反过来保证非空）
+  for (const rel of byPath.keys()) {
+    if (rel.includes("*")) continue;
+    if (!fs.existsSync(path.join(ROOT, rel))) problems.push(`catalog 里的 ${rel} 不存在`);
+  }
+
+  // 3. 每份 md 恰好被一条认领。**具体路径优先，通配只负责剩下的** ——
+  //    所以 `docs/design/README.md`（索引）能和 `LAT-*.md`（正文）并存。
+  const claimed = new Map();
+  const claim = (rel, by) => {
+    if (claimed.has(rel)) problems.push(`${rel} 被 ${claimed.get(rel)} 和 ${by} 同时认领`);
+    else claimed.set(rel, by);
+  };
+  for (const file of files) {
+    const rel = relative(file);
+    if (CATALOG_EXEMPT.has(rel)) continue;
+    if (byPath.has(rel)) {
+      claim(rel, rel);
+      continue;
+    }
+    const hit = wildcards.find((pattern) => globMatch(pattern, rel));
+    if (hit) claim(rel, hit);
+    else problems.push(`${rel} 没有归属 —— 在 docs/catalog.json 里给它一条，或者写进 CATALOG_EXEMPT`);
+  }
+
+  // 4. 和 docs/README.md 第一节那张表对账。只认「一、」到「二、」之间的 `|` 行，
+  //    不猜别处的散文 —— 那张表是这张地图的主体，保持表格形态是它的职责。
+  const mapPath = path.join(ROOT, "docs", "README.md");
+  if (fs.existsSync(mapPath)) {
+    const text = fs.readFileSync(mapPath, "utf8");
+    const start = text.indexOf("## 一、");
+    const end = text.indexOf("## 二、");
+    const section = start >= 0 && end > start ? text.slice(start, end) : "";
+    if (section === "") {
+      problems.push("docs/README.md 里找不到「一、」到「二、」那一节 —— 归属表的形状变了");
+    }
+    const LAYER_WORDS = { 过去: "past", 现在: "now", 未来: "future" };
+    for (const line of section.split("\n")) {
+      if (!line.trimStart().startsWith("|")) continue;
+      const cells = line.split("|").map((cell) => cell.trim());
+      const word = Object.keys(LAYER_WORDS).find((candidate) => cells[1]?.includes(candidate));
+      if (!word) continue; // 表头与分隔行
+      const layer = LAYER_WORDS[word];
+      for (const match of line.matchAll(/\]\((\.{1,2}\/[^)\s]+)\)/g)) {
+        const resolved = relative(path.resolve(path.join(ROOT, "docs"), match[1].split("#")[0]));
+        if (!resolved.endsWith(".md")) {
+          // 目录链接（`./design/`）：要求 catalog 里有一条通配把它整个收下
+          if (!wildcards.some((pattern) => pattern.startsWith(`${resolved}/`))) {
+            problems.push(`README 第一节把 ${resolved}/ 归在「${word}」，但 catalog 里没有认领它的通配条目`);
+          }
+          continue;
+        }
+        const entry = byPath.get(resolved);
+        if (!entry) {
+          problems.push(`README 第一节提到了 ${resolved}，catalog 里没有这一条`);
+        } else if (!entry.layers.includes(layer)) {
+          problems.push(
+            `${resolved} 在 README 第一节是「${word}」，catalog 写的是 ${entry.layers.join(" / ")}`,
+          );
+        }
+      }
+    }
+  }
+
+  return { count: claimed.size, problems };
+}
+
 /* ------------------------------------------------------------------ 输出 */
 
 const files = walk(ROOT);
@@ -365,6 +503,7 @@ const { total, broken } = checkLinks(files);
 const rows = checkNumbers();
 const lineRows = checkLines();
 const design = checkDesign();
+const catalog = checkCatalog(files);
 
 console.log(`文档体检：${files.length} 份 .md，${total} 条相对链接\n`);
 
@@ -380,6 +519,13 @@ if (design.problems.length === 0) {
 } else {
   console.log(`  设计文档  ✗ ${design.problems.length} 处`);
   for (const item of design.problems) console.log(`            ${item}`);
+}
+
+if (catalog.problems.length === 0) {
+  console.log(`  文档归属  ✓ ${catalog.count} 份，各有一个坐标（37 份 design 按 status 分）`);
+} else {
+  console.log(`  文档归属  ✗ ${catalog.problems.length} 处`);
+  for (const item of catalog.problems) console.log(`            ${item}`);
 }
 
 const pad = (text, width) => String(text).padEnd(width);
@@ -407,8 +553,10 @@ if (VERBOSE) {
   console.log(`  能自动数的六项行数：${LINE_METRICS.map((m) => `${m.en} ${m.derive()}`).join(" / ")}`);
 }
 
-if (broken.length || failed.length || design.problems.length) {
-  console.log(`\n${broken.length + failed.length + design.problems.length} 处要修。`);
+if (broken.length || failed.length || design.problems.length || catalog.problems.length) {
+  console.log(
+    `\n${broken.length + failed.length + design.problems.length + catalog.problems.length} 处要修。`,
+  );
   process.exit(1);
 }
 console.log("\n全部通过。");

@@ -177,12 +177,12 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖进窗口
 
 | 部分 | 行数 |
 | --- | --- |
-| TypeScript | 27 237 行 |
+| TypeScript | 27 238 行 |
 | CSS | 6 936 行 |
 | Rust | 30 635 行 |
 | SDK | 961 行 |
 | 官方组件 + 示例 | 38 545 行 |
-| 脚本 | 5 614 行 |
+| 脚本 | 5 776 行 |
 
 </details>
 
