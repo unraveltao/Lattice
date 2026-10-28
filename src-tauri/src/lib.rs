@@ -28,10 +28,15 @@ pub mod diagnostics;
 pub mod dictation;
 pub mod dictation_button;
 pub mod dictation_policy;
+// 听写的第二个后端（经典 SAPI 5）。和 WinRT 读的不是同一份语言库，
+// 所以两套都要在 —— 理由写在文件头
+pub mod dictation_sapi;
 pub mod egress;
 pub mod export;
 pub mod export_policy;
 pub mod fs_policy;
+pub mod gpu;
+pub mod gpu_policy;
 pub mod guide_policy;
 pub mod guides;
 pub mod guides_overlay;
@@ -239,6 +244,7 @@ pub fn run() {
             assistant_session::assistant_sessions,
             assistant_session::assistant_session_load,
             assistant_session::assistant_session_save,
+            assistant_session::assistant_session_rename,
             assistant_session::assistant_session_delete,
             hands::assistant_tool,
             mcp::mcp_servers,
@@ -261,6 +267,8 @@ pub fn run() {
             assistant_window::assistant_window_mode,
             assistant_window::assistant_window_appearance,
             assistant_window::assistant_window_locked,
+            assistant_window::assistant_window_sidebar,
+            assistant_window::assistant_window_font_scale,
             assistant_window::assistant_window_save_rect,
             usage::usage_read,
             usage::usage_clear,
@@ -273,6 +281,7 @@ pub fn run() {
             secrets::secret_delete,
             secrets::secrets_status,
             dictation::dictation_status,
+            dictation::dictation_recheck,
             dictation::dictation_start,
             dictation::dictation_stop,
             dictation::dictation_cancel,

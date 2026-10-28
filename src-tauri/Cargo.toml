@@ -71,6 +71,9 @@ windows = { version = "0.62", features = [
   "Media_Control",
   # 听写：WinRT 的本地语音识别（SpeechRecognizer / 听写场景约束）
   "Media_SpeechRecognition",
+  # 听写的第二个后端：经典 SAPI 5（ISpRecognizer / ISpRecoContext / ISpRecoGrammar）。
+  # 和上面那条**不是同一个语言库** —— 详见 dictation_sapi.rs 的文件头
+  "Win32_Media_Speech",
   # 上面那个的 `SystemSpeechLanguage()` 回 `Language`，语言标签在这里
   "Globalization",
   # WinRT 激活要求调用线程初始化过 COM
@@ -79,6 +82,11 @@ windows = { version = "0.62", features = [
   "Win32_Media_Audio",
   # 上面那个的 Activate 签名里有 PROPVARIANT（我们传 None，但类型要能解析）
   "Win32_System_Com_StructuredStorage",
+  # GPU 适配器名与显存总量：DXGI 的 EnumAdapters1 / DedicatedVideoMemory。
+  # 性能计数器只给"用了多少"，不给"一共多少"
+  "Win32_Foundation",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
 ] }
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
@@ -100,6 +108,9 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_System_Power",
   # GetPerformanceInfo：提交量、进程/线程/句柄计数
   "Win32_System_ProcessStatus",
+  # PDH：GPU 占用与显存。`PdhAddEnglishCounterW` 能在中文系统上按英文名
+  # 反查本地化的计数器对象名 —— 直接 `PdhAddCounterW` 在中文机器上会失败
+  "Win32_System_Performance",
   "Win32_System_Registry",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",

@@ -55,6 +55,10 @@ pub struct Metrics {
     pub network: Network,
     /// 整机概况：开机时长、进程 / 线程 / 句柄计数
     pub system: SystemInfo,
+    /// GPU 占用与显存。**`None` = 这台机器上没有可读的 GPU 计数器**
+    /// （没有独显、显卡驱动没装、或者计数器被关掉）—— 不是 0%，两者要分清：
+    /// 0% 是"显卡闲着"，`None` 是"读不到"，组件对这两件事的反应不一样
+    pub gpu: Option<crate::gpu::Gpu>,
     /// 采样时刻（Unix 毫秒）。组件可以据此判断这份数据有多旧
     pub sampled_at: u64,
 }
@@ -204,6 +208,9 @@ pub fn snapshot() -> Metrics {
             tx_total: net_now.tx,
         },
         system: system_info(perf.as_ref()),
+        // GPU 有自己的句柄（一条常驻的 PDH 查询），但节拍跟着这份缓存走：
+        // 一秒最多 collect 一次，和"组件最细的心跳"对齐
+        gpu: crate::gpu::snapshot(),
         sampled_at: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
