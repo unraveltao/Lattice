@@ -36,17 +36,20 @@
  *
  * # 菜单自己关门
  *
- * Esc、点别处、窗口失焦、滚动、改尺寸，任意一件都关。开之前不量尺寸（量不到），
+ * Esc、点别处、窗口失焦、滚动、改尺寸，任意一件都关 —— 那一套在
+ * `useOverlayDismiss` 里，和搜索浮层共用（两条"点别处就消失"的规矩必须逐字
+ * 一致，写岔一次就是"按钮还没收到 click 就先关了"）。开之前不量尺寸（量不到），
  * 开之后 `useLayoutEffect` 里量一次再夹回窗口内 —— 右下角那一份的菜单不许被
  * 窗口边缘切掉一半。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useT } from "../runtime/i18n";
 import { Glyph, ICON, WidgetIconMark } from "./icons";
 import { useLattice } from "./store";
+import { useOverlayDismiss } from "./useOverlayDismiss";
 
 export interface WidgetMenuTarget {
   instanceId: string;
@@ -89,29 +92,12 @@ export function WidgetMenu({ target, onClose }: { target: WidgetMenuTarget; onCl
     element.focus({ preventScroll: true });
   }, [target.x, target.y]);
 
-  useEffect(() => {
-    const away = (event: Event) => {
-      // 点在菜单自己身上不算"点别处"，否则按钮还没收到 click 就先关了
-      if (event.target instanceof Node && ref.current?.contains(event.target)) return;
-      onClose();
-    };
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("pointerdown", away, true);
-    window.addEventListener("keydown", key);
-    window.addEventListener("blur", onClose);
-    window.addEventListener("resize", onClose);
-    // 画布是能滚的：菜单钉在视口坐标上，一滚就和卡片分家了，关掉比跟着跑诚实
-    window.addEventListener("scroll", onClose, true);
-    return () => {
-      window.removeEventListener("pointerdown", away, true);
-      window.removeEventListener("keydown", key);
-      window.removeEventListener("blur", onClose);
-      window.removeEventListener("resize", onClose);
-      window.removeEventListener("scroll", onClose, true);
-    };
-  }, [onClose]);
+  /*
+   * 关门那一套在 `useOverlayDismiss` 里，和搜索浮层共用一份 —— 两条"点别处
+   * 就消失"的规矩必须逐字一致。`scroll` 保持默认的"要关"：菜单钉在视口坐标
+   * 上，画布一滚它就和卡片分家了，关掉比跟着跑诚实。
+   */
+  useOverlayDismiss(ref, onClose);
 
   return createPortal(
     <div
