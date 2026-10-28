@@ -22,7 +22,7 @@
  * 就等于误触 —— 而"读它"和"卸载它"长成一排时手指分不出来。
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { WidgetLoadError, WidgetRecord } from "../runtime/registry";
 import { rankWidgets, tokenize } from "../runtime/library-search";
 import { firstRunVisible } from "../runtime/onboarding";
@@ -93,6 +93,18 @@ interface LibraryPanelProps {
   /** 面板是否展开；收起后退成一条竖条，只留开合按钮 */
   open: boolean;
   onToggle: () => void;
+  /**
+   * 全局搜索点名要看的那一个组件。
+   *
+   * 搜索浮层自己画不了这一屏（卡片、展开区、安装按钮都在这里），所以它只
+   * 做"送去"：把搜索词设成那个 id，剩下的交给这一段本来的过滤逻辑。
+   * 用 id 而不是名字当词 —— 名字不唯一，`Clock` 可能有三份。
+   *
+   * `nonce` 是给"同一个组件连搜两次"用的：第二次 `widgetId` 一模一样，
+   * 没有它 effect 不重跑，用户点了却没反应。和 `App.tsx` 里 `settingsAt`
+   * 同一个办法。
+   */
+  reveal?: { widgetId: string; nonce: number } | null;
 }
 
 export function LibraryPanel({
@@ -122,11 +134,20 @@ export function LibraryPanel({
   onAddSource,
   open,
   onToggle,
+  reveal = null,
 }: LibraryPanelProps) {
   const t = useT();
   /** 组件名 / 描述是**作者写的**（可能两门），按当前语言取一份 */
   const text = useText();
   const [query, setQuery] = useState("");
+  /*
+   * 全局搜索送过来的人。只改搜索词，不改别的：过滤、排序、"搜的时候三段都摊开"
+   * 全走这一屏本来就有的那条路，不另开一条。`reveal` 变了就重设 —— 见 prop 上
+   * 关于 `nonce` 的说明。
+   */
+  useEffect(() => {
+    if (reveal) setQuery(reveal.widgetId);
+  }, [reveal]);
   /** 正在看"怎么用"的那个组件。null = 没开 */
   const [helpTarget, setHelpTarget] = useState<WidgetRecord | null>(null);
   /*

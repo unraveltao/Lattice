@@ -35,10 +35,12 @@ import {
   type MergeConflict,
   type SourceSnapshot,
 } from "../runtime/catalogue";
-import { PERMISSION_LABELS, permissionLabel, type Permission } from "../runtime/manifest";
+import { permissionLabel, type Permission } from "../runtime/manifest";
+import { matchesWidget } from "../runtime/library-search";
+import { searchableFromEntry } from "../runtime/global-search";
 import { useLang, useT } from "../runtime/i18n";
 import { catalogueDeadEnd } from "../runtime/onboarding";
-import { textVariants, useText } from "../runtime/widget-text";
+import { useText } from "../runtime/widget-text";
 import type { CatalogueSnapshot } from "./catalogue";
 import type { PermissionReview } from "./store";
 import { Glyph, ICON } from "./icons";
@@ -94,23 +96,23 @@ interface CatalogueSectionProps {
   onAddSource: () => void;
 }
 
+/**
+ * 这条商店条目要不要显示。
+ *
+ * **判据只有一处**：`runtime/library-search.ts` 的 `matchScore`。这里以前自己
+ * 写了一套"把五个字段拼成一个大字符串、`includes` 一下"，和组件库那两段
+ * 慢慢走岔了两处：
+ *
+ *   1. 拼字符串等于**不做词边界**，所以搜 `clock` 会命中 `TurboClock` 这种
+ *      在中间出现的结果 —— 库那两段不会。
+ *   2. 权限把所有版本拍平，于是"旧版本要联网、新版本不要"的包，搜 `network`
+ *      照样命中 —— 而那条权限用户根本装不上。
+ *
+ * 现在两处问同一个打分器（`searchableFromEntry` 只取最新版本的权限，那才是
+ * 点"安装"真会装下去的那份）。
+ */
 function matches(entry: CatalogueEntry, tokens: string[]): boolean {
-  if (tokens.length === 0) return true;
-  const haystack = [
-    // 名字与描述是作者写的，两门都摆进来（和 `library-search.ts` 同一条规矩）
-    ...textVariants(entry.name),
-    entry.id,
-    ...textVariants(entry.description),
-    entry.author,
-    // 权限名中英各放一份：英文名保持原样（与 `library-search.ts` 一致），
-    // 另一份按当前界面语言取 —— 中文界面下搜"网络"要能命中要联网的包。
-    ...entry.versions.flatMap((item) =>
-      item.permissions.flatMap((p) => [PERMISSION_LABELS[p] ?? p, permissionLabel(p)]),
-    ),
-  ]
-    .join(" ")
-    .toLowerCase();
-  return tokens.every((token) => haystack.includes(token));
+  return matchesWidget(searchableFromEntry(entry), tokens);
 }
 
 /**

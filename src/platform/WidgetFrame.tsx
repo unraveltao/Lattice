@@ -77,9 +77,24 @@ interface WidgetFrameProps {
    * 平台抢过来等于把它的退出口弄没。所以这里只挂在外层卡片上。
    */
   onMenu?: (target: WidgetMenuTarget) => void;
+  /**
+   * 全局搜索刚把用户送到这张卡上，闪一圈让他确认"就是这一个"。
+   *
+   * 由画布那边计时（1.2s）后自己收回，这里只负责"长什么样"。**不用
+   * `classList.add` 硬改 DOM**：`select()` 会立刻改 `is-selected`，React 重写
+   * `className` 时会把外面加的那个类一起抹掉 —— 结果是"点了没闪"。
+   */
+  flash?: boolean;
 }
 
-export function WidgetFrame({ record, placement, onGuides, poster = false, onMenu }: WidgetFrameProps) {
+export function WidgetFrame({
+  record,
+  placement,
+  onGuides,
+  poster = false,
+  onMenu,
+  flash = false,
+}: WidgetFrameProps) {
   const t = useT();
   /** 组件名是作者写的（可能两门），按当前语言取一份 */
   const text = useText();
@@ -621,9 +636,16 @@ export function WidgetFrame({ record, placement, onGuides, poster = false, onMen
 
   return (
     <div
+      /*
+       * 全局搜索选中之后要"滚到这一张"。定位靠属性而不是 ref 表：
+       * 卡片是 `placements.map` 出来的，ref 得再维护一个 `instanceId → node`
+       * 的映射并跟着增删同步 —— 一个属性就能解决的事，不值得多一份状态。
+       * 值里带 `.` 和 `@`（`lattice.note@a1b2`），选择器那边用引号包住即可。
+       */
+      data-instance-id={placement.instanceId}
       className={`lattice-widget${selected ? " is-selected" : ""}${
         placement.layer === "top" ? " is-top" : ""
-      }${isRegion ? " is-region" : ""}`}
+      }${isRegion ? " is-region" : ""}${flash ? " is-flash" : ""}`}
       style={{
         left: placement.x,
         top: placement.y,

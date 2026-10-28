@@ -51,6 +51,7 @@ The name is 棂 (*líng*), the wooden lattice inside a window pane. Every pane i
 | To get what is in your head into a tree | Mind map | An indented outline becomes a rightward tree that lays itself out. Collapse, pan, zoom, and copy the whole thing out as Markdown, Mermaid or OPML |
 | Music, weather, and a fish | Music · Weather · Big Fishy | What is playing with a level that follows the sound; one city, refreshed on a timer and still readable offline; a pet that walks along the bottom of your screen |
 | To let a model do the clicking | `Ctrl+K` assistant | You bring the model; the key never leaves Rust; it can drive the desktop and call the tools your widgets declare. A script can do the same over a loopback endpoint, `npm run agent` |
+| To find one widget among twenty | `Ctrl+Shift+F` search | One list over everything installed and everything in the catalogue: names, ids, descriptions, authors, permissions. Picking a result goes to that card on your canvas, or to its row in the library |
 | None of the above | Write one | Four files, no build step, [see below](#write-a-widget) |
 
 ## Install
@@ -167,9 +168,9 @@ The newest milestone is v0.13: the assistant gets its own window on the desktop.
 | Official widgets | 24 |
 | Permissions | 15 |
 | Tauri commands | 117 |
-| Browser assertions | 3 995 over 76 pages |
+| Browser assertions | 4 051 over 78 pages |
 | Rust tests | 504 |
-| Documented pitfalls | 127 |
+| Documented pitfalls | 128 |
 
 These are measured: the browser assertions start a real dev server and a real Chrome in CI, and the Rust tests split pure-logic cases from the ones that need a full `cargo test`. The pitfalls are the ones that actually bit, each written up with the reasoning that keeps it from coming back.
 
@@ -177,8 +178,8 @@ These are measured: the browser assertions start a real dev server and a real Ch
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 27 238 lines |
-| CSS | 6 936 lines |
+| TypeScript | 27 914 lines |
+| CSS | 7 111 lines |
 | Rust | 30 635 lines |
 | SDK | 961 lines |
 | Widgets + example | 38 545 lines |

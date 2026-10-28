@@ -10,7 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Canvas } from "./platform/Canvas";
+import { Canvas, type CanvasFocus } from "./platform/Canvas";
 import { startAgentBridge, type AgentReply, type AgentRequest } from "./platform/agent";
 import { runWidgetTurn } from "./platform/assistant";
 import { normalizeAskMessages, parseAskMessages, MAX_PERSONA } from "./runtime/assistant";
@@ -20,6 +20,7 @@ import { DebugPanel } from "./platform/DebugPanel";
 import { InspectorPanel } from "./platform/InspectorPanel";
 import { LibraryPanel, type InstallNotice } from "./platform/LibraryPanel";
 import { ReportDialog, type ReportTarget } from "./platform/ReportDialog";
+import { SearchOverlay } from "./platform/SearchOverlay";
 import type { StoreBinding } from "./platform/CatalogueSection";
 import {
   backupInfo,
@@ -42,6 +43,7 @@ import {
   type SourceSnapshot,
 } from "./runtime/catalogue";
 import { buildSpecs, closeDesktop, minimizeMain, syncDesktop } from "./platform/desktop";
+import { buildSearchTargets, hopFor, type SearchTarget } from "./runtime/global-search";
 import { Glyph, ICON, ThemeGlyph } from "./platform/icons";
 import { SettingsMenu, type SettingsSection } from "./platform/SettingsMenu";
 import { instanceIdFor, nextFreeSlot, useLattice, type ThemeMode } from "./platform/store";
@@ -317,6 +319,25 @@ export default function App() {
   const [reportError, setReportError] = useState<string | null>(null);
 
   /*
+   * 全局搜索（第一层）浮层开着没有。
+   *
+   * 不落盘：它是"按一下、看一眼、走人"的东西，下次启动不该自动弹出来。
+   * 和调试面板、assistant 抽屉同一个判据。
+   */
+  const [searchOpen, setSearchOpen] = useState(false);
+  /**
+   * 从搜索跳过去之后，画布要滚到的那一份；以及组件库要翻到的那一个。
+   *
+   * 两个都是"送一次"的信号，带 `nonce` 让同一个目标连点两次也能再触发
+   * （见 `CanvasFocus` 与 `LibraryPanel` 的 `reveal`）。放在这里而不是各自的
+   * 组件里：跳转的**判据**（画布上有就定位、没有就翻库）只该在一处。
+   */
+  const [canvasFocus, setCanvasFocus] = useState<CanvasFocus | null>(null);
+  const [libraryReveal, setLibraryReveal] = useState<{ widgetId: string; nonce: number } | null>(
+    null,
+  );
+
+  /*
    * 桌面窗口发来的调试记录。
    *
    * 画布上那些实例的记录本来就在本进程里（`WidgetFrame` 直接写总线），这里
@@ -377,6 +398,26 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [toggleAssistant]);
 
+  /*
+   * Ctrl+Shift+F 开全局搜索。
+   *
+   * 用 F 而不是 Ctrl+F：Ctrl+F 在 webview 里是"找这一页里的字"，而这里找的是
+   * 组件和商店条目 —— 两件事，抢同一个键会让"我就想找页面上这个词"落空。
+   * 也刻意**不带 Shift 的 Ctrl+F 留给浏览器**（预览里还能用原生查找）。
+   *
+   * 和 Ctrl+Shift+D 同一个修饰键组合，用户不用记两套。
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || !event.shiftKey || event.altKey) return;
+      if (event.key.toLowerCase() !== "f") return;
+      event.preventDefault();
+      setSearchOpen((value) => !value);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   useEffect(() => {
     if (notice?.kind !== "ok") return;
     const timer = setTimeout(() => setNotice(null), 6000);
@@ -433,6 +474,52 @@ export default function App() {
       .filter((entry) => !installedSet.has(entry.id))
       .map((entry) => ({ id: entry.id, name: pickText(entry.name) }));
   }, [catalogue, installedSet]);
+
+  /*
+   * 全局搜索的那张表：已装的、能装的、商店里的，合成一列。
+   *
+   * 合成规则（同一个 id 只出一条、已装优先、顺带报商店新版本）在
+   * `runtime/global-search.ts` 里，有断言页钉着。这里只负责把三份输入递进去 ——
+   * `installedSet` 和组件库用的是同一个判据，否则"搜索说已装、面板说没装"。
+   */
+  const searchTargets = useMemo(
+    () =>
+      buildSearchTargets({
+        records: widgets,
+        installedIds: installedSet,
+        placements,
+        entries: catalogue?.catalogue?.entries ?? [],
+      }),
+    [widgets, installedSet, placements, catalogue],
+  );
+
+  /**
+   * 选中一条搜索结果之后去哪儿。
+   *
+   * 判据（哪种结果去画布、多份摆放时选哪一份）在 `runtime/global-search.ts::hopFor`
+   * 里，断言页钉着 —— 那是搜索语义的一部分，不该埋在这个组件里。这里只负责把
+   * 结果翻译成两个"送一次"的信号：
+   *
+   *   - `canvas`：滚到那张卡（`CanvasFocus`），选中 + 闪一圈。
+   *   - `library`：翻组件库，搜索词设成那个 id（`reveal`）。装了的、能装的、
+   *     商店里的都走这一条 —— 对用户是同一件事："去那一屏找它"。
+   *
+   * 两个信号都带 `nonce`：同一个目标连搜两次，`instanceId` / `widgetId` 一模一样，
+   * 没有它下游的 effect 不会重跑。
+   */
+  const pickSearchTarget = useCallback(
+    (target: SearchTarget) => {
+      setSearchOpen(false);
+      const hop = hopFor(target, placements);
+      if (hop.kind === "canvas") {
+        setCanvasFocus((prev) => ({ instanceId: hop.instanceId, nonce: (prev?.nonce ?? 0) + 1 }));
+        return;
+      }
+      setPanelOpen("library", true);
+      setLibraryReveal((prev) => ({ widgetId: hop.widgetId, nonce: (prev?.nonce ?? 0) + 1 }));
+    },
+    [placements, setPanelOpen],
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -1124,11 +1211,15 @@ export default function App() {
    * 右侧一共七件东西 —— 而那两颗数字在组件库头部和设置菜单里各有一份，
    * 刷新一次安装只按一次，调试是开发者动作。它们都挪进设置菜单了。
    *
+   * 后来加回来的只有全局搜索那一颗：它**不是**数字，也不是"重复某个动作"，
+   * 而是"东西一多就找不到"的出口 —— 装到二十个组件之后，翻两栏找一件东西
+   * 比按一下贵得多。而且它有第二条入口（`Ctrl+Shift+F`）。
+   *
    * 两条别踩回去：
    *   - 数字只在**一个**地方显示。想加"又有多少组件"之前先看 `lattice-panel-count`
    *     和设置菜单里那两行 —— 同一件事说三遍，用户就不信其中任何一遍。
-   *   - 挪走的动作必须留第二条入口。调试有 `Ctrl+Shift+D`，刷新只剩设置菜单
-   *     里那一行，所以那一行不许再被折叠起来。
+   *   - 挪走的动作必须留第二条入口。调试有 `Ctrl+Shift+D`、搜索有 `Ctrl+Shift+F`，
+   *     刷新只剩设置菜单里那一行，所以那一行不许再被折叠起来。
    */
   return (
     <div className="lattice-shell">
@@ -1181,6 +1272,24 @@ export default function App() {
             时用户得逐个读过去才知道哪个会改变桌面。
           */}
           <span className="lattice-topbar-split" aria-hidden />
+
+          {/*
+            全局搜索（第一层）。放在这条竖线右边，因为它是"看"而不是
+            "把画布送出去"—— 和助手 / 主题 / 设置同一类。
+
+            它搜的是**清单里的元数据**（名字、id、说明、作者、权限），
+            不搜用户数据；范围那句话直接复用库里那一句，两处共用一份。
+          */}
+          <button
+            type="button"
+            className={`lattice-icon-btn is-large${searchOpen ? " is-active" : ""}`}
+            onClick={() => setSearchOpen((value) => !value)}
+            aria-expanded={searchOpen}
+            title={t("Search widgets and the catalogue (Ctrl+Shift+F)")}
+            aria-label={t("Search widgets and the catalogue")}
+          >
+            <Glyph d={ICON.search} />
+          </button>
 
           <button
             type="button"
@@ -1266,8 +1375,14 @@ export default function App() {
           onEmptyTrash={emptyTrash}
           open={libraryOpen}
           onToggle={() => setPanelOpen("library", !libraryOpen)}
+          reveal={libraryReveal}
         />
-        <Canvas records={records} installedIds={installedSet} onDropWidget={onDropWidget} />
+        <Canvas
+          records={records}
+          installedIds={installedSet}
+          onDropWidget={onDropWidget}
+          focus={canvasFocus}
+        />
         <InspectorPanel
           records={records}
           open={inspectorOpen}
@@ -1280,6 +1395,18 @@ export default function App() {
         也就不会触发桌面窗口那套"尺寸变了重铺壁纸"的连锁反应。
       */}
       <DebugPanel open={debugOpen} onClose={() => setDebugOpen(false)} />
+
+      {/*
+        全局搜索浮层。自己 portal 到 body（和右键菜单同一个办法），所以放在
+        树里哪个位置都一样；挂在这里只是"和别的浮层挨着"。
+      */}
+      {searchOpen && (
+        <SearchOverlay
+          targets={searchTargets}
+          onPick={pickSearchTarget}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
 
       {/*
         抽屉只在**浏览器预览**里出现：桌面应用里 assistant 住在一个独立小窗

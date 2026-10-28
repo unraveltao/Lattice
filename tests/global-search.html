@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>global search test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 全局搜索第一层：目录条目怎么投影、两个来源怎么合并、谁排前面。
+       *
+       * 这页钉的是**打分器之外**的那些判断 —— 打分规则本身在
+       * `tests/library-search.html` 里钉着，这里只验证喂进去的东西对不对：
+       *
+       *   1. 目录条目借 manifest 的皮，权限取**最新版本**（旧版本的权限不算）
+       *   2. 同一个 id 只出一条，且是"已装"那条
+       *   3. 已装那条顺带报商店里的新版本；没有更新时是 null
+       *   4. 能装没装（不在目录里）与商店条目是两个 kind，跳转去向不同
+       *   5. 空查询返回全部且不重排
+       *   6. 同分时已装压过商店 —— 靠稳定排序，不靠改权重
+       *
+       * 纯函数，不碰 DOM，整页毫秒级。
+       */
+      import {
+        buildSearchTargets,
+        hopFor,
+        rankTargets,
+        searchableFromEntry,
+      } from "/src/runtime/global-search.ts";
+      import { tokenize } from "/src/runtime/library-search.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text}（得到 ${JSON.stringify(actual)}）`,
+        );
+
+      const record = (id, name, version, permissions = [], description = null) => ({
+        manifest: {
+          id,
+          name: { zh: name, en: name },
+          description: description
+            ? { zh: description, en: description }
+            : { zh: `${name} 的说明`, en: `${name} description` },
+          author: "Lattice",
+          version,
+          permissions,
+        },
+        source: "bundled",
+        dir: `/widgets/${id}`,
+        entryUrl: `/${id}/index.html`,
+        iconUrl: null,
+      });
+
+      const pkg = (version, permissions = []) => ({
+        version,
+        url: `https://example.invalid/${version}.lattice`,
+        sha256: "0".repeat(64),
+        size: 1024,
+        signature: "0".repeat(128),
+        permissions,
+        notes: { zh: "", en: "" },
+      });
+
+      const entry = (id, name, versions) => ({
+        id,
+        name: { zh: name, en: name },
+        description: { zh: `${name} 的说明`, en: `${name} description` },
+        author: "Lattice",
+        icon: null,
+        homepage: null,
+        publisher: null,
+        versions,
+      });
+
+      /* ── 1. 目录条目投影：权限取最新版本 ─────────────────────────── */
+      const versioned = entry("lattice.versioned", "Versioned", [
+        pkg("2.0.0", []), // 最新版不要网络
+        pkg("1.0.0", ["network"]), // 旧版要
+      ]);
+      eq(searchableFromEntry(versioned).manifest.permissions, [], "权限取最新版本那份");
+      eq(
+        rankTargets(
+          [{ kind: "store", id: versioned.id, ...searchableFromEntry(versioned), record: null, entry: versioned, placed: 0, update: null }],
+          tokenize("network"),
+        ).length,
+        0,
+        "搜旧版本才有的权限不命中它（装下去的那份没有）",
+      );
+
+      /* ── 2. 没有版本的条目不该抛 ─────────────────────────────────── */
+      const empty = entry("lattice.empty", "Empty", []);
+      eq(searchableFromEntry(empty).manifest.permissions, [], "versions 为空时权限当空数组，不抛");
+
+      /* ── 3. 同一个 id 只出一条，且是已装那条 ─────────────────────── */
+      const clockRecord = record("lattice.clock", "Clock", "1.0.0", ["clock"]);
+      const clockEntry = entry("lattice.clock", "Clock", [pkg("1.0.0", ["clock"])]);
+      const both = buildSearchTargets({
+        records: [clockRecord],
+        installedIds: new Set(["lattice.clock"]),
+        placements: [{ widgetId: "lattice.clock" }],
+        entries: [clockEntry],
+      });
+      eq(both.length, 1, "同一个 id 在已装和目录里各有一份时只出一条");
+      eq(both[0].kind, "installed", "留下的是已装那条");
+      eq(both[0].placed, 1, "已装那条带着'画布上摆了几份'");
+      eq(both[0].update, null, "商店没有更高版本时 update 是 null");
+
+      /* ── 4. 商店有更高版本时报出来 ───────────────────────────────── */
+      const newer = buildSearchTargets({
+        records: [clockRecord],
+        installedIds: new Set(["lattice.clock"]),
+        placements: [],
+        entries: [entry("lattice.clock", "Clock", [pkg("2.0.0", ["clock"]), pkg("1.0.0", ["clock"])])],
+      });
+      eq(newer[0].update, "2.0.0", "商店有更高版本时 update 是那个号");
+
+      /* ── 5. 能装没装 vs 商店条目：两个 kind ──────────────────────── */
+      const kinds = buildSearchTargets({
+        records: [record("lattice.bundled-only", "Bundled", "1.0.0")],
+        installedIds: new Set(),
+        placements: [],
+        entries: [entry("lattice.store-only", "Store", [pkg("1.0.0")])],
+      });
+      eq(
+        kinds.map((item) => item.kind),
+        ["available", "store"],
+        "不在目录里的能装项是 available，目录里的是 store",
+      );
+      eq(kinds[0].placed, 0, "没装的那条 placed 恒为 0");
+
+      /* ── 6. 空查询返回全部且不重排 ───────────────────────────────── */
+      const all = buildSearchTargets({
+        records: [clockRecord, record("lattice.note", "Note", "1.0.0")],
+        installedIds: new Set(["lattice.note", "lattice.clock"]),
+        placements: [],
+        entries: [entry("lattice.store-only", "Store", [pkg("1.0.0")])],
+      });
+      eq(all.length, 3, "三个来源合成三条");
+      eq(
+        rankTargets(all, tokenize("")).map((item) => item.id),
+        all.map((item) => item.id),
+        "空查询原样返回，不重排",
+      );
+
+      /* ── 7. 同分时已装压过商店（稳定排序，不靠权重） ─────────────── */
+      const twin = buildSearchTargets({
+        records: [record("lattice.a-clock", "Clock", "1.0.0")],
+        installedIds: new Set(["lattice.a-clock"]),
+        placements: [],
+        entries: [entry("lattice.z-clock", "Clock", [pkg("1.0.0")])],
+      });
+      const ranked = rankTargets(twin, tokenize("clock"));
+      eq(ranked.length, 2, "两个 id 同名的都留下");
+      eq(ranked[0].kind, "installed", "同名同分时已装排在商店前面");
+
+      /* ── 8. 排序真的生效（不是原序） ─────────────────────────────── */
+      const order = buildSearchTargets({
+        records: [
+          record("lattice.zzz", "Zzz", "1.0.0", [], "World clock"), // 名字不含 clock
+          record("lattice.clock", "Clock", "1.0.0", []),
+        ],
+        installedIds: new Set(["lattice.zzz", "lattice.clock"]),
+        placements: [],
+        entries: [],
+      });
+      eq(
+        rankTargets(order, tokenize("clock")).map((item) => item.id),
+        ["lattice.clock", "lattice.zzz"],
+        "名字整串相等的排在'描述里提到'的前面",
+      );
+
+      /* ── 9. 多词仍是 AND ─────────────────────────────────────────── */
+      const andTargets = buildSearchTargets({
+        records: [clockRecord, record("lattice.note", "Note", "1.0.0")],
+        installedIds: new Set(["lattice.note", "lattice.clock"]),
+        placements: [],
+        entries: [],
+      });
+      eq(rankTargets(andTargets, tokenize("clock note")).length, 0, "两个词分属两条记录时不命中任何一条");
+
+      /* ── 10. 已装但画布上没摆：仍是 installed，placed 为 0 ──────── */
+      const unplaced = buildSearchTargets({
+        records: [clockRecord],
+        installedIds: new Set(["lattice.clock"]),
+        placements: [],
+        entries: [],
+      });
+      eq(unplaced[0].kind, "installed", "装了但没摆，kind 仍是 installed");
+      eq(unplaced[0].placed, 0, "装了但没摆，placed 是 0（界面据此跳库面板而不是画布）");
+
+      /* ── 11. 跳转判据：哪种结果去画布，多份时选哪一份 ───────────── */
+
+      /*
+       * 判据是 `hopFor`，不在 `App.tsx` 里 —— 上面第 10 条量的是 `placed`
+       * 这个字段，这一条量的是"字段怎么被用掉"。两者分开，是因为"装了但没摆"
+       * 在界面上是一个真实的岔路：去画布会滚到空气上。
+       */
+      const placed = [
+        { instanceId: "c#1", widgetId: "lattice.clock" },
+        { instanceId: "n#1", widgetId: "lattice.note" },
+        { instanceId: "c#2", widgetId: "lattice.clock" },
+      ];
+      const clockTarget = buildSearchTargets({
+        records: [clockRecord],
+        installedIds: new Set(["lattice.clock"]),
+        placements: placed,
+        entries: [],
+      })[0];
+
+      eq(
+        hopFor(clockTarget, placed),
+        { kind: "canvas", instanceId: "c#2" },
+        "摆在画布上 → 去画布，且取数组最后一份（z 序最高那份，不是被压在下面的）",
+      );
+      eq(
+        hopFor(clockTarget, []),
+        { kind: "library", widgetId: "lattice.clock" },
+        "装了但画布上没有 → 去组件库（滚到空气上不如翻到那一行）",
+      );
+
+      /* 商店条目：`placements` 里就算有同 id 也不该去画布 —— 它压根没装 */
+      const storeOnly = buildSearchTargets({
+        records: [],
+        installedIds: new Set(),
+        placements: [{ instanceId: "x#1", widgetId: "com.acme.clock" }],
+        entries: [entry("com.acme.clock", "Clock", [pkg("1.0.0", [])])],
+      })[0];
+      eq(storeOnly.kind, "store", "只存在于商店 → kind 是 store");
+      eq(
+        hopFor(storeOnly, [{ instanceId: "x#1", widgetId: "com.acme.clock" }]),
+        { kind: "library", widgetId: "com.acme.clock" },
+        "商店条目一律去组件库（同 id 的残留摆放不算数）",
+      );
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

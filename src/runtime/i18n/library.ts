@@ -24,6 +24,9 @@ export const LIBRARY_ZH: Record<string, string> = {
   "Install the official pack ({count})": "安装官方包（{count}）",
   "Nothing matches “{query}”": "没有匹配“{query}”的组件",
   "Search covers names, ids, descriptions, authors and permissions.": "搜索范围包括名称、id、说明、作者和权限。",
+  // —— 全局搜索浮层的结果角标：只分"有没有"，不暴露商店 / 随包发 这条内部区别 ——
+  "Not installed": "未安装",
+  "{count} on the canvas": "画布上 {count} 份",
   "Widgets that failed to load": "加载失败的组件",
   "Drag a widget folder or a": "把一个组件文件夹或",
   "package from Explorer into this window to install it.": "包从资源管理器拖进这个窗口即可安装。",

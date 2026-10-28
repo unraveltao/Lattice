@@ -7,7 +7,7 @@
 > 怎么用：`Ctrl+F` 搜你看到的**现象**，不要搜原因。这个仓库的坑，症状和原因经常长得完全不像 ——
 > 更新器报「检查你的网络」那一条，真正的原因是 release 被勾成了预发布。
 
-现在 **127 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
+现在 **128 条**。每条都是真撞过的；猜出来的坑会把人往错的方向带，所以不写。
 
 ---
 
@@ -192,6 +192,8 @@
 | 只想 `cargo check` 看一眼自己的 Rust 改动，却报 `failed to run custom build command for lattice`，末尾一句 `The process cannot access the file because it is being used by another process. (os error 32)`，指着 `out/libresource.a` | 这个仓库的常态：另一个 agent 的 `tauri dev`（`cargo run`）正活着，它和你的 `cargo check` 共用 `src-tauri/target/debug/build/lattice-*/out`，`tauri-build` 写 PE 资源那一步撞在一起 | 换一个 target 目录：`CARGO_TARGET_DIR=src-tauri/target/check cargo check`。**必须在 `target/` 里面** —— 放到 `.scratch/` 这类目录会被安全策略拦在"build script 写探针 exe"那一步（`Failed to create …/out/probe: OS Error 5`，看着像代码问题，其实是目录问题）。代价是依赖重编一遍（约 3.5 分钟），之后增量几秒 |
 | `ci` 的 `frontend` job 红在 `test:tokens`（"仓库现状是干净的"），而本机 `typecheck`、`check:docs`、全量断言全绿 | pre-push 只跑 `typecheck` + `check:docs`，而 CI 的 `frontend` 有十几步；一条 `font-size: 10.5px` 就能这么上 main（2026-10-27 真发生：`.lattice-probe` 想比说明小半档） | 把 `check:tokens` 加进 pre-push（几十毫秒）；碰过 `src/**/*.css` 就顺手跑一次 `npm run test:tokens`，它连规则本身一起钉 |
 | `npm run tauri:dev` 起手就红：`error when starting dev server: Error: Port 1420 is already in use`，栈全在 `vite/dist/node/chunks/node.js`，末尾 `The "beforeDevCommand" terminated with a non-zero status code.` | 上一次的 vite **没跟着终端一起死**：`npm run dev` / `tauri:dev` 被关窗口或 Ctrl+C 打断时，npm 那层 shell 先没了，`vite.js` 变成孤儿继续监听 1420（一次实测：13:10 起的那个还在，19:23 那次启动撞上）。`vite.config.ts` 里的 `strictPort: true` 是**故意的** —— `tauri.conf.json` 的 `devUrl` 硬编码 1420，Vite 悄悄换到 1421 会让窗口直接白屏 | 先认人再杀：`Get-NetTCPConnection -LocalPort 1420 -State Listen` 拿 PID，`taskkill /PID <pid> /T /F`。**连那次失败启动留下的 `cargo run` 一起收**：vite 一红 tauri 就退，但 Rust 编译还活着（`Get-CimInstance Win32_Process -Filter "Name='cargo.exe'"` 里父进程已是 GONE），编完会弹一个指向死 dev server 的窗口，还占着 `target/debug/build` 的锁（就是 `os error 32` 那条） |
+
+| `npm run check:docs` 一直绿，可 `docs/design/` 明明有 37 份文档，它打印的是「设计文档 ✓ 0 份」 | 枚举文件名用的正则和"从文件名取编号"用的是**两条各自硬编码的事实**。给 37 份文档统一加 `LAT-` 前缀时只改了后一条，前一条就一个文件都匹配不上 —— 而"零份"让"编号不重复"和"status 都在词表里"这两条检查**空真**通过，于是整页只留一句 ✓ | 两条事实合成一个 `DESIGN_PREFIX` 常量、派生出两个正则，并且**枚举为空本身算一条失败**（`一份 LAT-NNNN-*.md 都没找到 —— 文件名形状和正则对不上？`）。凡是"遍历一组文件逐个检查"的校验，先问一句：**这组是空的，检查会不会自己变绿** |
 
 ## 目录、签名与网络
 

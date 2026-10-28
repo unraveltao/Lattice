@@ -923,6 +923,146 @@ button {
   color: var(--lattice-text);
 }
 
+/* ---------- 全局搜索浮层（Ctrl+Shift+F） ---------- */
+
+/*
+ * 背景铺满窗口并吃掉指针：背后的画布不该跟着滚，也不该被点到。
+ * 比对话框那层淡 —— 它是一次"临时查找"，不是要读的内容。
+ */
+.lattice-search-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 96px 24px 24px;
+  background: rgb(0 0 0 / 0.32);
+}
+
+/*
+ * 宽度按"够放下一个组件名 + 一句角标"定，不按百分比：1440 宽的屏上 80%
+ * 就是一条横贯的带子，眼睛得从左扫到右才能读完一行。
+ */
+.lattice-search-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+  padding: 12px;
+  border: 1px solid var(--lattice-border-strong);
+  border-radius: 12px;
+  background: var(--lattice-surface);
+  box-shadow: var(--lattice-shadow-2);
+}
+
+.lattice-search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--lattice-border);
+  border-radius: 10px;
+  background: var(--lattice-surface-2);
+  color: var(--lattice-text-muted);
+}
+
+.lattice-search-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--lattice-text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.lattice-search-field input::placeholder {
+  color: var(--lattice-text-faint);
+}
+
+/* 320 是"十行上下"的高度：再多也不会有人往下翻，而列表该自己滚 */
+.lattice-search-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.lattice-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--lattice-text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 高亮跟着键盘走，所以悬停不改选中 —— 两者同时生效会让 ↑↓ 看起来失灵 */
+.lattice-search-row.is-active {
+  background: var(--lattice-selection);
+}
+
+.lattice-search-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 6px;
+  background: var(--lattice-surface-3);
+  color: var(--lattice-text-muted);
+  font-size: 11px;
+}
+
+.lattice-search-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lattice-search-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.lattice-search-badge {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--lattice-surface-3);
+  color: var(--lattice-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* "有新版本"是这一行唯一值得变色的信息：它意味着点进去还有事可做 */
+.lattice-search-badge.is-update {
+  background: var(--lattice-accent-soft);
+  color: var(--lattice-accent);
+}
+
+.lattice-search-empty {
+  padding: 12px 8px;
+  color: var(--lattice-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .lattice-lib-section {
   display: flex;
   flex-direction: column;
@@ -1394,6 +1534,41 @@ button {
     0 0 0 1px var(--lattice-selection),
     var(--lattice-highlight),
     var(--lattice-shadow-2);
+}
+
+/*
+ * 全局搜索刚把用户送到这一张卡上。
+ *
+ * 用 `outline` 而不是 `box-shadow`：`is-selected` 那一圈是 box-shadow，而同一份
+ * 时间点上卡片**一定也是选中的**（跳转顺带选中它）。两者抢同一个属性的话，
+ * 动画的 1.2 秒里选中环会消失，结束再"啪"一下回来。outline 不占布局，可以和
+ * box-shadow 同时存在，而且它跟着 `border-radius` 走。
+ *
+ * 一圈往外扩 + 淡出：读起来是"在这儿"，而不是"这个坏了在闪红"。
+ */
+.lattice-widget.is-flash {
+  outline: 2px solid var(--lattice-accent);
+  animation: lattice-widget-flash 1.2s ease-out;
+}
+
+@keyframes lattice-widget-flash {
+  from {
+    outline-offset: 0;
+    outline-color: var(--lattice-accent);
+  }
+
+  to {
+    outline-offset: 12px;
+    outline-color: transparent;
+  }
+}
+
+/* 不动的系统设置下别留一条静止的绿边：动画不跑，outline 就成了永久高亮 */
+@media (prefers-reduced-motion: reduce) {
+  .lattice-widget.is-flash {
+    outline-color: transparent;
+    animation: none;
+  }
 }
 
 .lattice-widget.is-top {

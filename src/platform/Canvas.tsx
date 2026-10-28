@@ -5,7 +5,7 @@
  * 拖拽、缩放、层级、穿透都在这里落到 Placement 上。
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLattice } from "./store";
 import { WidgetFrame } from "./WidgetFrame";
 import { WidgetMenu, type WidgetMenuTarget } from "./WidgetMenu";
@@ -15,14 +15,30 @@ import { useT } from "../runtime/i18n";
 import { useText } from "../runtime/widget-text";
 import type { WidgetRecord } from "../runtime/registry";
 
+/**
+ * 全局搜索点名要看的那一份。
+ *
+ * `nonce` 不是给 React 用的 key，是给"同一个组件连搜两次"用的：第二次的
+ * `instanceId` 和第一次一模一样，没有它 effect 不会重跑，用户点了却没反应。
+ */
+export interface CanvasFocus {
+  instanceId: string;
+  nonce: number;
+}
+
 interface CanvasProps {
   records: Map<string, WidgetRecord>;
   /** 当前已启用的组件 id；不在里面的包即使被摆放了也不该渲染 */
   installedIds: Set<string>;
   onDropWidget: (event: React.DragEvent) => void;
+  /** 从全局搜索跳过来：滚到这张卡、选中、闪一下。null = 没有待办 */
+  focus?: CanvasFocus | null;
 }
 
-export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
+/** 高亮闪多久。1.2s 够眼睛从浮层挪到卡片上，又不至于一直亮着像坏了 */
+const FLASH_MS = 1200;
+
+export function Canvas({ records, installedIds, onDropWidget, focus = null }: CanvasProps) {
   const t = useT();
   /** 组件名是作者写的（可能两门），右键菜单上那一行按当前语言取 */
   const text = useText();
@@ -57,6 +73,32 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
   );
   const closeMenu = useCallback(() => setMenu(null), []);
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  /*
+   * 全局搜索点中的那一份。**只活在这一层**：和参考线、右键菜单同一个理由 ——
+   * 它不属于"用户摆好的布局"，不该跟着 store 落盘。
+   *
+   * 三件事一起做：滚进视野、选中、闪一圈。不调 `bringToFront` —— 那会把
+   * placement 挪到数组末尾，而数组顺序就是 z 序、且整份落盘；一次只读的查找
+   * 不该改写用户的布局。
+   */
+  const [flashId, setFlashId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focus) return;
+    select(focus.instanceId);
+    /*
+     * 用属性选择器而不是 ref 表：卡片是 `placements.map` 出来的，ref 得再维护
+     * 一份 `instanceId → node` 的映射并跟着增删同步。值里的 `.` / `@` 被引号
+     * 包住就是字面量，不需要 `CSS.escape`。
+     */
+    const node = canvasRef.current?.querySelector<HTMLElement>(
+      `[data-instance-id="${focus.instanceId}"]`,
+    );
+    node?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    setFlashId(focus.instanceId);
+    const timer = setTimeout(() => setFlashId(null), FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [focus, select]);
 
   /*
    * 参考线是**局部**的：以被拖的那张卡片为中心、两端各伸出「半个卡片 + 48px」
@@ -139,7 +181,8 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
           return (
             <div
               key={placement.instanceId}
-              className="lattice-widget is-broken"
+              data-instance-id={placement.instanceId}
+              className={`lattice-widget is-broken${flashId === placement.instanceId ? " is-flash" : ""}`}
               style={{
                 left: placement.x,
                 top: placement.y,
@@ -178,6 +221,7 @@ export function Canvas({ records, installedIds, onDropWidget }: CanvasProps) {
             placement={placement}
             onGuides={onGuides}
             onMenu={openMenu}
+            flash={flashId === placement.instanceId}
             /*
              * 桌面模式下桌面上的那个真窗口已经在跑，画布这份只画静态卡 ——
              * 不然同一个组件跑两遍（桌宠空转 0.3 核 × 每份）。三个例外（设计态、

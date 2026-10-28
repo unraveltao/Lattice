@@ -52,4 +52,6 @@ export const COMMON_ZH: Record<string, string> = {
   // —— 层级：桌面（沉到壁纸上）与置顶 ——
   Desktop: "桌面",
   "On top": "置顶",
+  // —— 全局搜索：顶栏那颗按钮和浮层的输入框共用同一句，别各译一遍 ——
+  "Search widgets and the catalogue": "搜索组件与商店",
 };
