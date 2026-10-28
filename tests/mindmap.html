@@ -324,6 +324,70 @@
         var worldAfter = C.screenToWorld(afterZoom, 100, 100);
         log(Math.abs(worldAfter.x - worldBefore.x) < 0.01 && Math.abs(worldAfter.y - worldBefore.y) < 0.01, "缩放时那一点不动");
 
+        // ---- 8. 摆位（0033） ----
+        var shiftTree = C.parseOutline("Root\n  A\n    A1\n  B").root;
+        var plain = C.layout(shiftTree, { measure: measure });
+        eq(
+          JSON.stringify(C.layout(shiftTree, { measure: measure, offsets: {} })),
+          JSON.stringify(plain),
+          "空摆位表和没有摆位逐字段一样（老文档读进来不会变形）",
+        );
+        eq(
+          JSON.stringify(C.layout(shiftTree, { measure: measure, offsets: { n2: [10, -28] } })),
+          JSON.stringify(C.layout(shiftTree, { measure: measure, offsets: { n2: [10, -28] } })),
+          "带摆位排两次也一样（确定性的另一半）",
+        );
+
+        var moved = C.layout(shiftTree, { measure: measure, offsets: { n2: [10, -28] } });
+        eq(moved.nodes[1].x, plain.nodes[1].x + 10, "横坐标加上偏移");
+        eq(moved.nodes[1].y, plain.nodes[1].y - 28, "纵坐标加上偏移");
+        eq(moved.nodes[1].center, plain.nodes[1].center - 28, "center 跟着偏（文字基线和连线端点读的是它）");
+        eq(moved.nodes[0].center, plain.nodes[0].center, "孩子被拖走，父节点不跟着动");
+        eq(moved.nodes[2].x, plain.nodes[2].x, "没被拖的子孙一动不动（整支跟着走是拖动时写进 offsets 的）");
+        log(moved.links[0].d !== plain.links[0].d, "连线跟着框走：端点重算（n1→n2）");
+        log(moved.links[1].d === plain.links[1].d, "没被拖的那条线一个字符都没变（n1→n4）");
+        eq(moved.bounds.minY, -24, "拖到原点上面，包围盒记下负的上沿");
+        eq(plain.bounds.minY, 0, "没摆位时上沿是 0（0022 那套断言不受影响）");
+
+        eq(C.subtreeIds(shiftTree, "n2"), ["n2", "n3"], "整支 = 自己 + 全部子孙");
+        eq(C.subtreeIds(shiftTree, "n1").length, 4, "根就是整棵树");
+        eq(C.subtreeIds(shiftTree, "n9"), [], "不存在的 id 给空数组");
+
+        eq(C.shiftOffsets({ n2: [10, 28] }, ["n2"], 5, 0, 0), { n2: [15, 28] }, "在按下时的偏移上加这一次的位移");
+        eq(C.shiftOffsets({ n2: [10, 28] }, ["n2"], -10, -28, 0), {}, "拖回原处就把这条删掉，不留 [0,0]");
+        eq(C.shiftOffsets({}, ["n2"], 0, 30, 28), { n2: [0, 28] }, "吸附：纵坐标吸到 28 的整数倍");
+        eq(C.shiftOffsets({ n2: [0, 28] }, ["n2"], 0, 20, 28), { n2: [0, 56] }, "吸的是结果不是位移（28+20 → 56）");
+        eq(C.shiftOffsets({}, ["n2", "n3"], 0, 28, 28), { n2: [0, 28], n3: [0, 28] }, "整支拿同一个位移");
+
+        var readOffsets = C.normalizeDoc({
+          version: 1,
+          root: { id: "n1", text: "R", children: [{ id: "n2", text: "A", children: [] }] },
+          offsets: { n2: [12, -28], n9: [5, 5], n1: [0, 0] },
+        });
+        eq(readOffsets.trusted, true, "带 offsets 的文档照样 trusted");
+        eq(readOffsets.doc.offsets, { n2: [12, -28] }, "只留树里真的有的 id，[0,0] 当作没摆");
+        eq(C.normalizeDoc({ version: 1, root: { id: "n1", text: "R", children: [] } }).doc.offsets, {}, "没有 offsets 字段 = 老文档 = 没摆过");
+        eq(
+          C.normalizeDoc({ version: 1, root: { id: "n1", text: "R", children: [] }, offsets: { n1: [NaN, 3] } }).doc.offsets,
+          {},
+          "NaN 丢掉（不是夹成 ±4000）",
+        );
+        eq(
+          C.normalizeDoc({ version: 1, root: { id: "n1", text: "R", children: [] }, offsets: { n1: [99999, -99999] } }).doc.offsets,
+          { n1: [4000, -4000] },
+          "超过 ±4000 夹住",
+        );
+
+        var sourceOffsets = { n2: [10, 28] };
+        var copiedDoc = C.cloneDoc({ root: shiftTree, view: null, offsets: sourceOffsets });
+        copiedDoc.offsets.n2[0] = 99;
+        eq(sourceOffsets.n2[0], 10, "cloneDoc 深拷贝摆位（撤销栈靠这个）");
+
+        var pushed = C.layout(shiftTree, { measure: measure, offsets: { n2: [-200, 0] } });
+        log(pushed.bounds.minX < 0, "拖到左边会出负坐标");
+        var fittedShift = C.fitView(pushed.bounds, 420, 300);
+        log(fittedShift.x + pushed.bounds.minX * fittedShift.zoom >= 0, "适应窗口不会把负坐标那个节点切在屏幕外");
+
         flush();
       }
     </script>

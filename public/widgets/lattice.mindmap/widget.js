@@ -13,6 +13,13 @@
  * **有未落盘改动时先不重读**：两个宿主（画布一个、桌面窗口一个）各持一份内存
  * 副本，`store-changed` 一到就重读的话，正在这边打字的人会被另一边拽回去。
  *
+ * # 拖动是"摆位"，不是坐标（0033）
+ *
+ * 框上按下、走超过 4px 才算拖；位移写给这个节点**和它的所有子孙**（整支跟着走），
+ * 存进 `doc.offsets`，`layout()` 把它叠在自动位置上面。**结构不变** —— 拖到另一个
+ * 框上不会改挂靠关系，那是另一件事（0022 留给 v1.1）。纵向吸到 28px 的行，按住
+ * `Alt` 不吸；`Esc` 中途取消；一次拖动 = 一步撤销。
+ *
  * # 键盘是两态
  *
  * 编辑态（textarea 里）：`Enter` 提交并加兄弟、`Tab` 提交并加子节点、`Esc` 退出。
@@ -30,6 +37,17 @@
   var FLASH_MS = 1800;
   var NS = "http://www.w3.org/2000/svg";
   var READ_OUTLINE_LIMIT = 3500;
+
+  /**
+   * 走多少像素才算"拖"。
+   *
+   * 缩到 40% 时一个节点在屏幕上只有 26px 宽，再大的阈值会让拖动像"点了没反应"；
+   * 再小就会把鼠标抖动和触控板轻点当成拖拽。
+   */
+  var DRAG_SLOP = 4;
+
+  /** 拖动结束后这么久之内不响应双击 —— 不然拖完顺手点两下会弹出改名框 */
+  var DRAG_CLICK_GUARD = 300;
 
   // ---------------------------------------------------------------------------
   // 桥
@@ -279,7 +297,7 @@
   }
 
   function syncScene() {
-    layoutResult = C.layout(doc.root, { measure: measure });
+    layoutResult = C.layout(doc.root, { measure: measure, offsets: doc.offsets });
 
     var view = doc.view;
     viewport.setAttribute(
@@ -534,9 +552,32 @@
 
   var gesture = null;
 
+  /**
+   * 拖动中的状态。`base` 是**按下那一刻**的偏移表：每一帧都从它算，
+   * 所以拖回原处能精确回去（累加会漂），`Esc` 也能原样退回。
+   */
+  var drag = null;
+  var dragEndedAt = 0;
+
   function localPoint(event) {
     var rect = stage.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  /**
+   * 把指针锁在舞台上，手指移出卡片也还能收到 `pointermove`。
+   *
+   * 要吞异常：`pointerId` 不是**活动**指针时它抛 `NotFoundError`（合成事件就是
+   * 这样），而这一句在拖动开始时执行 —— 抛出去会让 handler 中断，`drag` 停在
+   * 半路，之后的 `pointerup` 全部落空，节点就卡在手上了。锁不上只是"移出卡片
+   * 之后不跟手"，比卡死好得多。
+   */
+  function capturePointer(pointerId) {
+    try {
+      stage.setPointerCapture(pointerId);
+    } catch (error) {
+      /* 锁不上就算了，见上 */
+    }
   }
 
   function onPointerDown(event) {
@@ -555,16 +596,31 @@
     var hit = C.hitTest(layoutResult, doc.view, point.x, point.y);
     if (hit.kind === "node") {
       select(hit.id);
+      // 只是**候选**：走够 DRAG_SLOP 才算拖。按下就进拖动的话，单击选中会变成
+      // "拖了一像素"，双击改名也会被吃掉
+      drag = {
+        id: hit.id,
+        ids: C.subtreeIds(doc.root, hit.id),
+        sx: point.x,
+        sy: point.y,
+        base: C.cloneOffsets(doc.offsets),
+        before: null,
+        moved: false,
+      };
       return;
     }
     selectedId = null;
     syncScene();
     gesture = { sx: point.x, sy: point.y, view: { x: doc.view.x, y: doc.view.y } };
     stage.classList.add("is-panning");
-    stage.setPointerCapture(event.pointerId);
+    capturePointer(event.pointerId);
   }
 
   function onPointerMove(event) {
+    if (drag) {
+      moveDrag(event);
+      return;
+    }
     if (!gesture) return;
     var point = localPoint(event);
     doc.view = {
@@ -575,11 +631,80 @@
     syncScene();
   }
 
+  /**
+   * 拖动中：把"按下到现在走了多远"换算成世界坐标，叠到按下时的偏移上。
+   *
+   * 位移除以 zoom —— 屏幕上走 10px，缩到 40% 时是世界里 25px，不然放大缩小时
+   * 拖动的跟手程度会变。吸附也在这里做（吸的是**结果的偏移**，见 `shiftOffsets`）。
+   */
+  function moveDrag(event) {
+    var point = localPoint(event);
+    var dx = point.x - drag.sx;
+    var dy = point.y - drag.sy;
+    if (!drag.moved) {
+      if (Math.abs(dx) < DRAG_SLOP && Math.abs(dy) < DRAG_SLOP) return;
+      drag.moved = true;
+      // 撤销快照在**动之前**拍：这一刻 doc.offsets 还是按下时的样子
+      drag.before = C.cloneDoc(doc);
+      stage.classList.add("is-dragging");
+      capturePointer(event.pointerId);
+    }
+    var zoom = doc.view.zoom || 1;
+    doc.offsets = C.shiftOffsets(drag.base, drag.ids, dx / zoom, dy / zoom, event.altKey ? 0 : C.ROW);
+    syncScene();
+  }
+
   function onPointerUp() {
+    if (drag) {
+      var finished = drag;
+      drag = null;
+      stage.classList.remove("is-dragging");
+      // 没走够阈值 = 这就是一次单击（选中已经在 pointerdown 做过了）
+      if (!finished.moved) return;
+      dragEndedAt = Date.now();
+      pushUndo(finished.before);
+      save();
+      rescueAfterDrag(finished.id);
+      return;
+    }
     if (!gesture) return;
     gesture = null;
     stage.classList.remove("is-panning");
     save();
+  }
+
+  /** 拖动中被打断（`pointercancel` / `Esc`）：位置退回按下前的样子，不进撤销栈 */
+  function cancelDrag() {
+    if (!drag) return;
+    var had = drag.moved;
+    doc.offsets = drag.base;
+    drag = null;
+    stage.classList.remove("is-dragging");
+    if (had) syncScene();
+  }
+
+  /**
+   * 拖完整个框都在视口外面了，就把视图挪回来。
+   *
+   * 只判"整个出去"：压到边上、露出一半，那是用户故意的，不该被拽回来。
+   */
+  function rescueAfterDrag(id) {
+    var node = null;
+    for (var i = 0; i < layoutResult.nodes.length; i += 1) {
+      if (layoutResult.nodes[i].id === id) node = layoutResult.nodes[i];
+    }
+    if (!node) return;
+    var zoom = doc.view.zoom;
+    var left = node.x * zoom + doc.view.x;
+    var top = node.y * zoom + doc.view.y;
+    var off =
+      left + node.w * zoom < 0 ||
+      top + node.h * zoom < 0 ||
+      left > stage.clientWidth ||
+      top > stage.clientHeight;
+    if (!off) return;
+    ensureVisible(id);
+    syncScene();
   }
 
   function onWheel(event) {
@@ -600,6 +725,8 @@
   }
 
   function onDoubleClick(event) {
+    // 刚拖完就双击：那两下里至少一下是拖动松手，不该弹出改名框
+    if (Date.now() - dragEndedAt < DRAG_CLICK_GUARD) return;
     var point = localPoint(event);
     var hit = C.hitTest(layoutResult, doc.view, point.x, point.y);
     if (hit.kind === "node") startEdit(hit.id);
@@ -639,6 +766,31 @@
     editor.select();
   }
 
+  /**
+   * 换一棵树，视图和**摆位**原样带过去。
+   *
+   * 摆位按 id 存，只要 id 没变它还是那个节点的位置 —— 所以改名、加兄弟、`append`
+   * 都不会把用户摆好的图打回自动布局。会重新编号的那两处（`draw` 和 `createRoot`）
+   * 必须显式传 `offsets: {}`，不能走这里。
+   *
+   * 顺手把树上已经没有的 id 扔掉：删掉一支子树之后，它的摆位不该继续留在盘上
+   * （读盘时也会滤一遍，但"写下去之前就不脏"比"读出来再擦"省一次疑惑）。
+   */
+  function withRoot(root) {
+    var keep = {};
+    if (root) {
+      C.subtreeIds(root, root.id).forEach(function (id) {
+        keep[id] = true;
+      });
+    }
+    return {
+      version: doc.version,
+      root: root,
+      view: doc.view,
+      offsets: C.normalizeOffsets(doc.offsets, keep),
+    };
+  }
+
   function commitEdit() {
     if (!editingId) return;
     var id = editingId;
@@ -649,7 +801,7 @@
     var applied = C.setText(doc.root, id, editor.value);
     if (!applied.changed) return;
     pushUndo(doc);
-    doc = { version: doc.version, root: applied.root, view: doc.view };
+    doc = withRoot(applied.root);
     syncScene();
     save();
   }
@@ -666,7 +818,7 @@
   function applyRoot(root) {
     var before = doc;
     pushUndo(before);
-    doc = { version: doc.version, root: root, view: doc.view };
+    doc = withRoot(root);
     syncScene();
     save();
   }
@@ -675,7 +827,8 @@
     if (doc.root) return;
     pushUndo(doc);
     var root = { id: "n1", text: "", collapsed: false, children: [] };
-    doc = { version: doc.version, root: root, view: doc.view };
+    // 新图的 n1 不是旧图的 n1：摆位必须清空，否则它会顶着上一个人的偏移出现
+    doc = { version: doc.version, root: root, view: doc.view, offsets: {} };
     selectedId = root.id;
     syncScene();
     save();
@@ -783,7 +936,7 @@
 
   function fitToWindow() {
     if (!doc.root) return;
-    layoutResult = C.layout(doc.root, { measure: measure });
+    layoutResult = C.layout(doc.root, { measure: measure, offsets: doc.offsets });
     doc.view = C.fitView(layoutResult.bounds, stage.clientWidth, stage.clientHeight);
     syncScene();
     save();
@@ -829,7 +982,8 @@
       if (tool === "draw") {
         var before = doc;
         pushUndo(before);
-        doc = { version: doc.version, root: parsed.root, view: doc.view };
+        // draw 是整张替换，还会把 id 重新编成 n1..nN —— 旧摆位留着会贴到别的节点上
+        doc = { version: doc.version, root: parsed.root, view: doc.view, offsets: {} };
         selectedId = parsed.root.id;
         syncScene();
         doc.view = C.fitView(layoutResult.bounds, stage.clientWidth, stage.clientHeight);
@@ -860,7 +1014,7 @@
         return;
       }
       pushUndo(doc);
-      doc = { version: doc.version, root: attached.root, view: doc.view };
+      doc = withRoot(attached.root);
       selectedId = target.id;
       syncScene();
       saveNow();
@@ -889,7 +1043,18 @@
   stage.addEventListener("pointerdown", onPointerDown);
   stage.addEventListener("pointermove", onPointerMove);
   stage.addEventListener("pointerup", onPointerUp);
-  stage.addEventListener("pointercancel", onPointerUp);
+  stage.addEventListener("pointercancel", function () {
+    // 拖动被打断要**退回**（否则位置停在一个用户没确认的地方）；平移被打断
+    // 只是停在原地，视图本来就是随手挪的
+    if (drag) {
+      cancelDrag();
+      return;
+    }
+    if (gesture) {
+      gesture = null;
+      stage.classList.remove("is-panning");
+    }
+  });
   stage.addEventListener("wheel", onWheel, { passive: false });
   stage.addEventListener("dblclick", onDoubleClick);
 
@@ -930,6 +1095,12 @@
 
   window.addEventListener("keydown", function (event) {
     if (editingId) return;
+    // 拖动中途按 Esc：位置弹回按下前的样子，不进撤销栈
+    if (event.key === "Escape" && drag) {
+      event.preventDefault();
+      cancelDrag();
+      return;
+    }
     var meta = event.ctrlKey || event.metaKey;
     if (meta && event.key.toLowerCase() === "z") {
       event.preventDefault();

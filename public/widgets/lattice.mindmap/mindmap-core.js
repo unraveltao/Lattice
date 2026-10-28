@@ -11,6 +11,16 @@
  * 摆在哪里由 `layout()` 决定。所以改一次从属关系不需要挪任何东西，agent 也
  * 不用编造坐标 —— 同一份大纲跑两次，出来的图一模一样。
  *
+ * # 摆位是叠在自动布局上的一层（0033）
+ *
+ * 0.2 起用户可以拖动节点，但树里**仍然没有坐标**：被拖过的节点在 `offsets` 里
+ * 记一对 `dx/dy`，`layout()` 把算出来的位置加上它。所以自动布局还是底 —— 加
+ * 一个兄弟节点之后整行往下推，被拖过的那个跟着自己的底一起走，这是"偏移"的
+ * 定义。反过来存绝对坐标，`Alt+↑↓` 换位置之后所有坐标就全错了。
+ *
+ * 偏移按 id 存，所以 `draw`（整张替换、重新编号 `n1..nN`）必须清空 offsets，
+ * 否则 A 的摆位会贴到 B 身上。`append` 不动已有 id，偏移全部保留。
+ *
  * # 为什么导出走数据而不是画布
  *
  * 卡片窄，长文本显示时要省略；导出要是走"显示用的那份文本"，用户复制走的
@@ -29,6 +39,14 @@
   var MAX_NODES = 200;
   var MAX_DEPTH = 12;
   var MAX_TEXT = 80;
+
+  /**
+   * 单个节点的摆位最远能到哪。
+   *
+   * 量出来的：200 个节点 × 28px 行高 = 5600 高，再远就不是"挪开一点"而是"扔了"。
+   * 夹住而不是拒绝 —— 摆位是拖动产生的，用户没有"提交"这个动作可以报错给他看。
+   */
+  var MAX_SHIFT = 4000;
 
   /** 节点宽度 = clamp(测量宽度 + 16, 64, 220) */
   var PAD_X = 16;
@@ -83,8 +101,50 @@
   // 文档：空、克隆、读盘归一化
   // ---------------------------------------------------------------------------
 
+  /**
+   * 摆位表：`{ id: [dx, dy] }`，只记被拖过的节点。
+   *
+   * 深拷贝是必须的 —— 撤销栈靠"每份快照互不影响"，共用同一个数组会让
+   * `Ctrl+Z` 退回去的位置跟着下一次拖动一起变。
+   */
+  function cloneOffsets(offsets) {
+    var out = {};
+    if (!offsets || typeof offsets !== "object") return out;
+    Object.keys(offsets).forEach(function (id) {
+      var pair = offsets[id];
+      if (pair && pair.length === 2) out[id] = [pair[0], pair[1]];
+    });
+    return out;
+  }
+
+  /**
+   * 读盘时归一化摆位。
+   *
+   * 只留**这棵树里真的有的 id**：`draw` 换过一整棵树之后，旧偏移的 id 会指向
+   * 别的节点（或者根本不存在），留着就是一张随机错位的图。
+   *
+   * 只认两个有限数、`±MAX_SHIFT` 夹住、取整；`[0,0]` 当作没摆过（不写回盘）。
+   */
+  function normalizeOffsets(raw, ids) {
+    var out = {};
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+    Object.keys(raw).forEach(function (id) {
+      if (!ids || !ids[id]) return;
+      var pair = raw[id];
+      if (!Array.isArray(pair) || pair.length !== 2) return;
+      var dx = Number(pair[0]);
+      var dy = Number(pair[1]);
+      if (!isFinite(dx) || !isFinite(dy)) return;
+      dx = Math.round(clamp(dx, -MAX_SHIFT, MAX_SHIFT));
+      dy = Math.round(clamp(dy, -MAX_SHIFT, MAX_SHIFT));
+      if (!dx && !dy) return;
+      out[id] = [dx, dy];
+    });
+    return out;
+  }
+
   function emptyDoc() {
-    return { version: VERSION, root: null, view: { x: 0, y: 0, zoom: 1 } };
+    return { version: VERSION, root: null, view: { x: 0, y: 0, zoom: 1 }, offsets: {} };
   }
 
   function cloneDoc(doc) {
@@ -92,6 +152,7 @@
       version: VERSION,
       root: doc && doc.root ? cloneNode(doc.root) : null,
       view: normalizeView(doc && doc.view),
+      offsets: cloneOffsets(doc && doc.offsets),
     };
   }
 
@@ -155,7 +216,15 @@
     }
 
     var root = value.root && typeof value.root === "object" ? walk(value.root, 0) : null;
-    return { trusted: true, doc: { version: VERSION, root: root, view: normalizeView(value.view) } };
+    return {
+      trusted: true,
+      doc: {
+        version: VERSION,
+        root: root,
+        view: normalizeView(value.view),
+        offsets: normalizeOffsets(value.offsets, seen),
+      },
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -282,8 +351,8 @@
     return deepest + 1;
   }
 
-  /** 下一个可用 id：扫一遍取最大的 `n<数字>`，不单独存计数器 */
-  function nextIdFor(root) {
+  /** 树上最大的 `n<数字>` 编号（不是节点数 —— 删过节点的树这两者不一样） */
+  function maxIdNumber(root) {
     var max = 0;
     (function walk(node) {
       if (!node) return;
@@ -294,7 +363,12 @@
       }
       for (var i = 0; i < node.children.length; i += 1) walk(node.children[i]);
     })(root);
-    return "n" + (max + 1);
+    return max;
+  }
+
+  /** 下一个可用 id：扫一遍取最大的 `n<数字>`，不单独存计数器 */
+  function nextIdFor(root) {
+    return "n" + (maxIdNumber(root) + 1);
   }
 
   /** 前序遍历：键盘 `↑↓` 走的就是这个顺序 */
@@ -306,6 +380,41 @@
       if (current.collapsed) return;
       for (var i = 0; i < current.children.length; i += 1) walk(current.children[i], level + 1);
     })(node, 0);
+    return out;
+  }
+
+  /** 一个节点 + 它所有子孙的 id。拖动时整支一起挪（0033），所以要有这个 */
+  function subtreeIds(root, id) {
+    var node = findNode(root, id);
+    if (!node) return [];
+    var out = [];
+    (function walk(current) {
+      out.push(current.id);
+      for (var i = 0; i < current.children.length; i += 1) walk(current.children[i]);
+    })(node);
+    return out;
+  }
+
+  /**
+   * 把一组节点的偏移设成「按下时的偏移 + 这一次拖了多少」。
+   *
+   * `base` 永远是**按下那一刻**的偏移表，不是上一帧的 —— 每帧都从同一个底算，
+   * 拖回来才能精确回到原处（累加会漂）。
+   *
+   * `snap` 给行高（28）时，把**结果的纵坐标**吸到整数行。吸结果而不是吸位移：
+   * 底本来就在行上，吸结果才会让"拖三次"和"拖一次"落在同一格。
+   */
+  function shiftOffsets(base, ids, dx, dy, snap) {
+    var out = cloneOffsets(base);
+    for (var i = 0; i < ids.length; i += 1) {
+      var id = ids[i];
+      var at = out[id] || [0, 0];
+      var x = Math.round(at[0] + dx);
+      var y = Math.round(at[1] + dy);
+      if (snap) y = Math.round(y / snap) * snap;
+      if (x || y) out[id] = [x, y];
+      else delete out[id];
+    }
     return out;
   }
 
@@ -399,12 +508,14 @@
     var next = cloneNode(root);
     var parent = parentId ? findNode(next, parentId) : next;
     if (!parent) return { root: root, added: 0 };
-    var taken = countNodes(next);
+    var base = maxIdNumber(next);
     var copy = cloneNode(subtree);
-    // 进来的子树自带 n1..nK，和已有的撞了：整棵重新编号
+    // 进来的子树自带 n1..nK，和已有的撞了：整棵接着**最大编号**往下排。
+    // 按节点数排是错的：删过节点的树里 `n1,n2,n5` 只有三个节点，接出来是 n4，
+    // 而 n4 之后又轮到 n5 —— 两个节点共用一个 id，摆位（按 id 存）会互相打架。
     (function renumber(node, seq) {
       seq.value += 1;
-      node.id = "n" + (taken + seq.value);
+      node.id = "n" + (base + seq.value);
       for (var i = 0; i < node.children.length; i += 1) renumber(node.children[i], seq);
     })(copy, { value: 0 });
     parent.children.push(copy);
@@ -434,6 +545,10 @@
    * 节点，`x = 16 + Σ(上一层最宽 + 40)` —— 所以同一层的节点左边缘对齐。
    *
    * 折叠的节点不往下走，子树只占一行，`hidden` 告诉渲染层画 `+N`。
+   *
+   * `offsets` 是**摆位**（0033）：每个节点在算出来的位置上再加 `[dx, dy]`。
+   * 注意 `place()` 往回返的仍是**没偏移**的中点 —— 孩子被拖走了，父节点不能
+   * 跟着挪，否则"只有被拖的这一支动"就不成立了。
    */
   function layout(root, options) {
     var opts = options || {};
@@ -444,8 +559,9 @@
     var colGap = opts.colGap == null ? COL_GAP : opts.colGap;
     var margin = opts.pad == null ? MARGIN : opts.pad;
     var nodeH = opts.nodeH || NODE_H;
+    var offsets = opts.offsets && typeof opts.offsets === "object" ? opts.offsets : null;
 
-    if (!root) return { nodes: [], links: [], bounds: { w: 0, h: 0 }, rows: 0 };
+    if (!root) return { nodes: [], links: [], bounds: { w: 0, h: 0, minX: 0, minY: 0 }, rows: 0 };
 
     var widths = Object.create(null);
     var maxCol = [];
@@ -487,6 +603,14 @@
         center = (first + last) / 2;
       }
       spots[node.id] = { x: colX[depth], y: center - nodeH / 2, w: widths[node.id], h: nodeH, center: center };
+      var shift = offsets && offsets[node.id];
+      if (shift) {
+        spots[node.id].x += shift[0];
+        spots[node.id].y += shift[1];
+        // center 是文字的基线、左边那个小方点、连线端点的纵坐标 —— 它必须跟着偏，
+        // 否则框挪了、字和线还在原地
+        spots[node.id].center += shift[1];
+      }
       return center;
     })(root, 0);
 
@@ -537,10 +661,15 @@
       }
     }
 
-    var bounds = { w: 0, h: 0 };
+    // `w` / `h` 是**右沿 / 下沿**（0022 的断言按这个钉的）；拖到原点的左上角会出
+    // 负数，所以另外记左沿 / 上沿 —— `fitView` 按"右沿 - 左沿"这个跨度算，不然
+    // 负坐标那个节点会被切在屏幕外
+    var bounds = { w: 0, h: 0, minX: 0, minY: 0 };
     for (var n = 0; n < nodes.length; n += 1) {
       bounds.w = Math.max(bounds.w, nodes[n].x + nodes[n].w);
       bounds.h = Math.max(bounds.h, nodes[n].y + nodes[n].h);
+      if (nodes[n].x < bounds.minX) bounds.minX = nodes[n].x;
+      if (nodes[n].y < bounds.minY) bounds.minY = nodes[n].y;
     }
 
     return { nodes: nodes, links: links, bounds: bounds, rows: leaves };
@@ -571,14 +700,24 @@
     return round(clamp(zoom, ZOOM_MIN, ZOOM_MAX));
   }
 
-  /** 把整张图装进一块画布大小里；不放大（1 = 原尺寸就够） */
+  /**
+   * 把整张图装进一块画布大小里；不放大（1 = 原尺寸就够）。
+   *
+   * 跨度按 `右沿 - 左沿` 算，不是直接拿 `w`：拖到原点左上角的节点会出负坐标，
+   * 只看右沿的话那个节点会被切在屏幕外。
+   */
   function fitView(bounds, width, height) {
-    if (!bounds || !bounds.w || !bounds.h || !width || !height) return { x: 0, y: 0, zoom: 1 };
-    var zoom = clampZoom(Math.min(width / (bounds.w + MARGIN * 2), height / (bounds.h + MARGIN * 2)));
+    if (!bounds || !width || !height) return { x: 0, y: 0, zoom: 1 };
+    var minX = isFinite(bounds.minX) ? bounds.minX : 0;
+    var minY = isFinite(bounds.minY) ? bounds.minY : 0;
+    var spanW = bounds.w - minX;
+    var spanH = bounds.h - minY;
+    if (!spanW || !spanH) return { x: 0, y: 0, zoom: 1 };
+    var zoom = clampZoom(Math.min(width / (spanW + MARGIN * 2), height / (spanH + MARGIN * 2)));
     if (zoom > 1) zoom = 1;
     return {
-      x: round((width - bounds.w * zoom) / 2 - MARGIN * zoom),
-      y: round((height - bounds.h * zoom) / 2 - MARGIN * zoom),
+      x: round((width - spanW * zoom) / 2 - MARGIN * zoom - minX * zoom),
+      y: round((height - spanH * zoom) / 2 - MARGIN * zoom - minY * zoom),
       zoom: zoom,
     };
   }
@@ -675,6 +814,7 @@
     MAX_NODES: MAX_NODES,
     MAX_DEPTH: MAX_DEPTH,
     MAX_TEXT: MAX_TEXT,
+    MAX_SHIFT: MAX_SHIFT,
     MIN_W: MIN_W,
     MAX_W: MAX_W,
     ROW: ROW,
@@ -689,8 +829,10 @@
     emptyDoc: emptyDoc,
     cloneDoc: cloneDoc,
     cloneNode: cloneNode,
+    cloneOffsets: cloneOffsets,
     normalizeDoc: normalizeDoc,
     normalizeView: normalizeView,
+    normalizeOffsets: normalizeOffsets,
     parseOutline: parseOutline,
     findNode: findNode,
     locate: locate,
@@ -698,7 +840,10 @@
     countNodes: countNodes,
     depthOf: depthOf,
     nextIdFor: nextIdFor,
+    maxIdNumber: maxIdNumber,
     flatten: flatten,
+    subtreeIds: subtreeIds,
+    shiftOffsets: shiftOffsets,
     addChild: addChild,
     addSibling: addSibling,
     promote: promote,

@@ -71,6 +71,11 @@ body {
   cursor: grabbing;
 }
 
+/* 拖节点和拖画布是两件事，但手上都该是"抓着东西"—— 光标一样，动作不同 */
+.mm-stage.is-dragging .mm-svg {
+  cursor: grabbing;
+}
+
 /* ---- 节点 ---- */
 
 .mm-nodes .mm-node .shape {

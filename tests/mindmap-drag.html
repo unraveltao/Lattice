@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>mindmap drag test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        width: 420px;
+        height: 300px;
+        border: 1px solid #333;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script>
+      /*
+       * 拖动（0033）—— 只有真浏览器验得了的那部分。
+       *
+       * 纯逻辑在 `tests/mindmap.html` 里钉（偏移怎么叠、怎么归一化、怎么吸附）；
+       * 这一页钉的是"手真的动了会发生什么"：按下 → 走 4px → 整支跟着走 → 松手
+       * 落盘 → `Ctrl+Z` 退回 → `Esc` 中途取消 → 重开还在。
+       *
+       * 假桥只做四件事（lang / theme / config / storage），够组件跑起来。
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(JSON.stringify(actual) === JSON.stringify(expected), `${text}（得到 ${JSON.stringify(actual)}）`);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      function seed() {
+        return {
+          version: 1,
+          root: {
+            id: "n1",
+            text: "Root",
+            collapsed: false,
+            children: [
+              {
+                id: "n2",
+                text: "A",
+                collapsed: false,
+                children: [{ id: "n3", text: "A1", collapsed: false, children: [] }],
+              },
+              { id: "n4", text: "B", collapsed: false, children: [] },
+            ],
+          },
+        };
+      }
+
+      async function mount(stored) {
+        const state = { stored: stored ? JSON.parse(JSON.stringify(stored)) : null, sets: [] };
+        const frame = document.createElement("iframe");
+        // 测试里要直接往 iframe 里派事件、读属性，所以多开 allow-same-origin。
+        // 组件本身不依赖它，生产环境仍然是 allow-scripts。
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+        frame.src = "/widgets/lattice.mindmap/index.html";
+        document.body.appendChild(frame);
+
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(Object.assign({ __lattice: 1, type: "response", id: data.id }, payload), "*");
+
+            if (data.method === "lang.get") return reply({ ok: true, result: { lang: "zh" } });
+            if (data.method === "theme.get") return reply({ ok: true, result: {} });
+            if (data.method === "config.get") return reply({ ok: true, result: {} });
+            if (data.method === "storage.get") return reply({ ok: true, result: state.stored });
+            if (data.method === "storage.set") {
+              state.sets.push(JSON.parse(JSON.stringify(data.params.value)));
+              state.stored = JSON.parse(JSON.stringify(data.params.value));
+              return reply({ ok: true, result: { ok: true } });
+            }
+            reply({ ok: false, error: "unknown", code: "bad_params" });
+          });
+        });
+
+        await ready;
+        const win = frame.contentWindow;
+        const doc = win.document;
+        for (let i = 0; i < 120 && doc.querySelectorAll(".mm-node").length < 4; i += 1) await sleep(20);
+        return { frame, win, doc, state };
+      }
+
+      /** 某个节点在屏幕上的中心点（iframe 自己的坐标系） */
+      function centerOf(doc, id) {
+        const shape = doc.querySelector(`.mm-node[data-id="${id}"] .shape`);
+        const rect = shape.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, shape };
+      }
+
+      function pointer(win, type, x, y, extra) {
+        return new win.PointerEvent(
+          type,
+          Object.assign({ bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0, buttons: 1 }, extra),
+        );
+      }
+
+      /** 按下 → 走一段 → 松手。`beforeUp` 用来插 `Esc` 那种中途操作 */
+      async function dragBy(note, id, dx, dy, beforeUp) {
+        const stage = note.doc.getElementById("stage");
+        const at = centerOf(note.doc, id);
+        stage.dispatchEvent(pointer(note.win, "pointerdown", at.x, at.y));
+        // 两段：第一段只走 2px（阈值内，不该动），第二段才越过 4px
+        stage.dispatchEvent(pointer(note.win, "pointermove", at.x + 2, at.y + 1));
+        stage.dispatchEvent(pointer(note.win, "pointermove", at.x + dx, at.y + dy));
+        if (beforeUp) await beforeUp();
+        stage.dispatchEvent(pointer(note.win, "pointerup", at.x + dx, at.y + dy));
+        await sleep(700);
+        return at;
+      }
+
+      (async () => {
+        // ---------- 1. 拖一下 ----------
+        const note = await mount(seed());
+        eq(note.doc.querySelectorAll(".mm-node").length, 4, "四个节点都画出来了");
+
+        const before = {};
+        ["n1", "n2", "n3", "n4"].forEach((id) => {
+          before[id] = Number(note.doc.querySelector(`.mm-node[data-id="${id}"] .shape`).getAttribute("x"));
+        });
+        const baseLinks = Array.from(note.doc.querySelectorAll(".mm-link")).map((p) => p.getAttribute("d"));
+
+        await dragBy(note, "n2", 40, 30);
+
+        const saved = note.state.sets[note.state.sets.length - 1];
+        log(!!saved && !!saved.offsets, "松手之后真的落盘了，而且带 offsets");
+        const offsets = (saved && saved.offsets) || {};
+        log(!!offsets.n2, "被拖的那个记了摆位");
+        log(!!offsets.n3, "它的子节点也记了（整支跟着走）");
+        eq(offsets.n2, offsets.n3, "整支拿的是同一个位移");
+        log(!offsets.n1 && !offsets.n4, "父节点和另一个兄弟没被写进去");
+        eq(offsets.n2[1] % 28, 0, "纵坐标吸附到 28 的整数倍");
+        log(offsets.n2[0] !== 0, "横坐标没吸（横向自由）");
+
+        const after = Number(note.doc.querySelector('.mm-node[data-id="n2"] .shape').getAttribute("x"));
+        eq(after - before.n2, offsets.n2[0], "框真的挪了这么多（不是只改了数据）");
+        eq(
+          Number(note.doc.querySelector('.mm-node[data-id="n1"] .shape').getAttribute("x")),
+          before.n1,
+          "父节点一动不动",
+        );
+        eq(
+          Number(note.doc.querySelector('.mm-node[data-id="n4"] .shape').getAttribute("x")),
+          before.n4,
+          "另一个兄弟一动不动",
+        );
+
+        // 连线端点跟着框走：n2 的那条边重算过，n1→n4 那条没变
+        const linkD = () => Array.from(note.doc.querySelectorAll(".mm-link")).map((p) => p.getAttribute("d"));
+        const draggedLinks = linkD();
+        log(draggedLinks.length === 3, "三条连线还在");
+
+        // ---------- 2. Ctrl+Z 退回 ----------
+        note.win.dispatchEvent(new note.win.KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }));
+        await sleep(700);
+        eq(
+          Number(note.doc.querySelector('.mm-node[data-id="n2"] .shape').getAttribute("x")),
+          before.n2,
+          "Ctrl+Z 把位置退回去了",
+        );
+        eq(linkD(), baseLinks, "退回去之后连线也逐字符回到原样");
+
+        // ---------- 3. Esc 中途取消 ----------
+        const stage = note.doc.getElementById("stage");
+        const setsBeforeEsc = note.state.sets.length;
+        const at = centerOf(note.doc, "n2");
+        stage.dispatchEvent(pointer(note.win, "pointerdown", at.x, at.y));
+        stage.dispatchEvent(pointer(note.win, "pointermove", at.x + 50, at.y + 60));
+        const mid = Number(note.doc.querySelector('.mm-node[data-id="n2"] .shape').getAttribute("x"));
+        log(mid !== before.n2, "拖到一半的时候框是跟着手走的");
+        note.win.dispatchEvent(new note.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        eq(
+          Number(note.doc.querySelector('.mm-node[data-id="n2"] .shape').getAttribute("x")),
+          before.n2,
+          "Esc 让位置弹回按下前",
+        );
+        stage.dispatchEvent(pointer(note.win, "pointerup", at.x + 50, at.y + 60));
+        await sleep(700);
+        eq(note.state.sets.length, setsBeforeEsc, "取消的那次一个字节都没落盘");
+
+        // ---------- 4. 单击不是拖 ----------
+        const beforeClick = centerOf(note.doc, "n4");
+        const setsBeforeClick = note.state.sets.length;
+        stage.dispatchEvent(pointer(note.win, "pointerdown", beforeClick.x, beforeClick.y));
+        stage.dispatchEvent(pointer(note.win, "pointermove", beforeClick.x + 2, beforeClick.y + 2));
+        stage.dispatchEvent(pointer(note.win, "pointerup", beforeClick.x + 2, beforeClick.y + 2));
+        await sleep(700);
+        const clicked = note.doc.querySelector('.mm-node[data-id="n4"]');
+        log(!!clicked && clicked.classList.contains("is-selected"), "只走 2px 是单击：节点被选中");
+        eq(note.state.sets.length, setsBeforeClick, "只走 2px 不算拖，没有落盘");
+
+        // ---------- 5. 重开还在 ----------
+        const persisted = JSON.parse(JSON.stringify(note.state.sets[note.state.sets.length - 1]));
+        persisted.offsets = { n2: [40, 28] };
+        persisted.view = { x: 0, y: 0, zoom: 1 };
+        const again = await mount(persisted);
+        const reopened = Number(again.doc.querySelector('.mm-node[data-id="n2"] .shape').getAttribute("x"));
+
+        const plain = await mount(seed());
+        const autoX = Number(plain.doc.querySelector('.mm-node[data-id="n2"] .shape').getAttribute("x"));
+        eq(reopened - autoX, 40, "重开之后摆位还在（x 比自动布局多 40）");
+        again.frame.remove();
+        plain.frame.remove();
+
+        note.frame.remove();
+        document.getElementById("out").innerHTML = lines
+          .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+          .join("\n");
+      })().catch((error) => {
+        log(false, "跑挂了：" + (error && error.message));
+        document.getElementById("out").innerHTML = lines
+          .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+          .join("\n");
+      });
+    </script>
+  </body>
+</html>

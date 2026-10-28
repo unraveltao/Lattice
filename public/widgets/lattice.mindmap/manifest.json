@@ -1,10 +1,10 @@
 {
   "id": "lattice.mindmap",
   "name": { "zh": "思维导图", "en": "Mind map" },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": {
-    "zh": "树形结构的一张图：位置自动排，能折叠、能缩放，能一键复制成 Markdown / Mermaid / OPML",
-    "en": "A tree laid out for you: collapse, pan, zoom, and copy the whole thing as Markdown, Mermaid or OPML"
+    "zh": "树形结构的一张图：位置自动排、也能拖开，能折叠、能缩放，能一键复制成 Markdown / Mermaid / OPML",
+    "en": "A tree laid out for you — and you can drag any node aside: collapse, pan, zoom, copy it as Markdown, Mermaid or OPML"
   },
   "author": "Lattice",
   "entry": "index.html",
@@ -60,8 +60,8 @@
             "en": "Enter also adds a sibling, so you can keep typing down the list; Tab goes one level deeper and Shift+Tab comes back up."
           },
           {
-            "zh": "节点没有坐标——位置是排出来的。改从属关系不用挪任何东西，整张图自己重排。",
-            "en": "Nodes have no coordinates — the layout places them. Change what hangs off what and the whole map reflows by itself."
+            "zh": "位置是排出来的：改从属关系不用挪任何东西，整张图自己重排。嫌哪里挤，拖开就行，那个位置会记住。",
+            "en": "The layout places the nodes, so changing what hangs off what reflows everything by itself. Want more room? Drag a node aside and that spot is kept."
           }
         ]
       },
@@ -79,6 +79,23 @@
           {
             "zh": "F2 或回车改名字，Esc 退出编辑。中文输入法选词时按回车不会多出一个节点。",
             "en": "F2 or Enter renames, Esc leaves editing. Typing with an IME: Enter picks the word instead of adding a node."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "拖动摆位", "en": "Dragging a node aside" },
+        "items": [
+          {
+            "zh": "每个框都能拖：按住、走超过一点点才算拖，它下面的整支跟着一起走。连线会跟着框跑——拖只改位置，不改谁挂在谁下面。",
+            "en": "Any node can be dragged: hold and move past a few pixels, and its branch comes along. The links follow the boxes — a drag moves a node, never re-parents it."
+          },
+          {
+            "zh": "纵向会吸到行上，按住 Alt 就不吸（想微调的时候用）。拖到一半按 Esc 弹回原处，松手之后 Ctrl+Z 退回上一次拖动。",
+            "en": "Up and down snaps to the rows; hold Alt to place it freely. Press Esc mid-drag to put it back, or Ctrl+Z after letting go to undo that drag."
+          },
+          {
+            "zh": "自动排还是底：加一个兄弟节点，被拖过的那个会跟着自己那行一起往下走。assistant 整张重画时，所有摆位都会清掉。",
+            "en": "Auto layout is still the base: add a sibling and a dragged node moves down with its row. When the assistant redraws the map, the spots are cleared."
           }
         ]
       },
@@ -136,6 +153,24 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.2.0",
+      "date": "2026-10-28",
+      "changes": [
+        {
+          "zh": "每个节点都能拖开：整支子节点跟着走，连线跟着框，纵向吸到行上（按住 Alt 不吸）。",
+          "en": "Every node can be dragged aside: its branch comes along, the links follow, and it snaps to the rows unless you hold Alt."
+        },
+        {
+          "zh": "拖动只改位置，不改从属关系；一次拖动算一步撤销，Esc 中途取消。",
+          "en": "Dragging only moves a node, never re-parents it; one drag is one undo step, and Esc cancels mid-drag."
+        },
+        {
+          "zh": "摆位会存下来（关掉重开还在），但自动布局仍是底——加兄弟节点时它会跟着自己那行走。",
+          "en": "The spot is saved across restarts, but auto layout stays the base: add a sibling and it moves down with its own row."
+        }
+      ]
+    },
     {
       "version": "0.1.0",
       "date": "2026-10-25",
