@@ -1,17 +1,79 @@
 {
   "id": "lattice.sysmon",
   "name": { "zh": "系统", "en": "System" },
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": {
-    "zh": "CPU 和内存各一个百分比，配一条一分钟的走势；还有逐核负载、提交量、磁盘剩余、网络和开机时长",
-    "en": "CPU and memory with a one-minute trace, per-core load, commit charge, disk space, network and uptime"
+    "zh": "CPU、内存、GPU、电池各一个百分比，配一条一分钟的走势；还有逐核负载、提交量、显存、磁盘剩余、网络和开机时长。显示哪几块由属性面板决定",
+    "en": "CPU, memory, GPU and battery at a glance with a one-minute trace, plus per-core load, commit charge, VRAM, disk space, network and uptime. The inspector decides which of them show up"
   },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
-  "size": { "w": 268, "h": 240, "minW": 220, "minH": 210 },
+  "size": { "w": 268, "h": 328, "minW": 220, "minH": 280 },
   "layer": "top",
   "permissions": ["system:monitor"],
+  "config": [
+    {
+      "key": "trace",
+      "label": { "zh": "显示一分钟走势", "en": "Show the one-minute trace" },
+      "help": {
+        "zh": "CPU 和内存最近一分钟的曲线。关掉能省下大约 50px 高度",
+        "en": "The last minute of CPU and memory. Turning it off gives back about 50px"
+      },
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "cores",
+      "label": { "zh": "显示逐核占用", "en": "Show per-core bars" },
+      "help": {
+        "zh": "一个逻辑核一根竖条。只有测到逐核数据的那一拍才画",
+        "en": "One bar per logical core, drawn only on ticks that measured them"
+      },
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "gpu",
+      "label": { "zh": "显示 GPU", "en": "Show GPU" },
+      "help": {
+        "zh": "占用率与显存。读不到显卡计数器的机器上这一行本来就不会出现",
+        "en": "Utilisation and VRAM. On machines without readable GPU counters the row never appears anyway"
+      },
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "battery",
+      "label": { "zh": "显示电池", "en": "Show battery" },
+      "help": {
+        "zh": "电量和充电状态。台式机没有电池，那一行不会出现",
+        "en": "Charge and charging state. Desktops have no battery, so the row stays hidden there"
+      },
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "disk",
+      "label": { "zh": "显示磁盘与进程数", "en": "Show disk space and process count" },
+      "help": {
+        "zh": "底栏第一行：系统盘剩余空间、进程数",
+        "en": "First footer row: free space on the system volume, and the process count"
+      },
+      "type": "toggle",
+      "default": true
+    },
+    {
+      "key": "network",
+      "label": { "zh": "显示网络速度", "en": "Show network speed" },
+      "help": {
+        "zh": "底栏第二行：每秒收发的字节数",
+        "en": "Second footer row: bytes per second in and out"
+      },
+      "type": "toggle",
+      "default": true
+    }
+  ],
   "help": {
     "sections": [
       {
@@ -95,6 +157,48 @@
         ]
       },
       {
+        "title": { "zh": "GPU 和电池", "en": "GPU and battery" },
+        "items": [
+          {
+            "zh": "GPU 那个百分比是最忙的那条引擎，和任务管理器口径一致。把 3D、Copy、VideoDecode 几条加起来会超过 100%，那是错的。",
+            "en": "The GPU figure is the busiest engine, the same number Task Manager shows. Adding 3D, Copy and VideoDecode together goes past 100%, which would be wrong."
+          },
+          {
+            "zh": "混合显卡（核显 + 独显）取最忙的那一块，副标题写着是哪一块、多少显存。",
+            "en": "On a hybrid laptop it picks the busier adapter, and the subline says which one and how much VRAM it has."
+          },
+          {
+            "zh": "读不到显卡计数器时整行不出现 —— 那不是 0%，0% 是显卡闲着。",
+            "en": "When the GPU counters cannot be read the row is simply absent — that is not 0%, which would mean the card is idle."
+          },
+          {
+            "zh": "电池半分钟才问一次（电量变得很慢），电量和充电状态分两处看：数字是电量，下面一行是「充电中 / 用电池」和剩余时间。",
+            "en": "Battery is polled every 30 seconds because charge moves slowly. The number is the charge; the line under it says charging or on battery, and how long is left."
+          },
+          {
+            "zh": "台式机没有电池，那一行不出现。低于 20% 又没在充电时数字变黄。",
+            "en": "Desktops have no battery, so the row is absent. The number turns amber below 20% while not charging."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "显示哪几行由你决定", "en": "You choose which rows show" },
+        "items": [
+          {
+            "zh": "属性面板里六个开关，一一对应六块内容：走势、逐核、GPU、电池、磁盘与进程数、网络速度。",
+            "en": "Six switches in the inspector, one per block: trace, cores, GPU, battery, disk and process count, network speed."
+          },
+          {
+            "zh": "开关只管显不显示，不改卡片尺寸 —— 卡片多大由你拖，组件不替你改。关掉几块之后觉得空，把它拖小就行。",
+            "en": "A switch only hides a block; it never resizes the card. You own the size. If hiding a few blocks leaves it roomy, drag it smaller."
+          },
+          {
+            "zh": "同一个组件配两次就是两种卡：一张只看电池，一张只看 CPU，各开各的开关。",
+            "en": "The same widget placed twice becomes two different cards — one showing only battery, one showing only CPU — each with its own switches."
+          }
+        ]
+      },
+      {
         "title": { "zh": "看不见的时候就停", "en": "It stops when you cannot see it" },
         "items": [
           {
@@ -123,6 +227,28 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.3.0",
+      "date": "2026-10-28",
+      "changes": [
+        {
+          "zh": "电池那个独立组件并进来了：电量和充电状态成了这一张卡上的一行，`lattice.battery` 从商店下架。",
+          "en": "The separate battery widget is folded in: charge and charging state are one row here now, and lattice.battery is gone from the store."
+        },
+        {
+          "zh": "加了 GPU：占用率和显存。读不到显卡计数器的机器上整行不出现，而不是画一个 0%。",
+          "en": "GPU utilisation and VRAM. On machines without readable GPU counters the row is absent rather than showing 0%."
+        },
+        {
+          "zh": "属性面板里多了六个开关，决定六块内容各自显不显示。开关不改卡片尺寸。",
+          "en": "Six switches in the inspector decide which of the six blocks show. A switch never resizes the card."
+        },
+        {
+          "zh": "卡片默认长到 268×328 才装得下多出来的两行；老的卡片会被抬一次高度，不会挤成一团。",
+          "en": "The card grew to 268×328 to fit the two new rows; existing cards get their height raised once instead of being squeezed."
+        }
+      ]
+    },
     {
       "version": "0.2.1",
       "date": "2026-10-25",

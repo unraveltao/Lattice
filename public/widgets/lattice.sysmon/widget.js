@@ -26,6 +26,20 @@
  *
  *   5. **第一拍只建基线。** 速率类指标（CPU、网络）靠两次采样做差，后端第一次
  *      一定返回 0 —— 那一拍不进历史，否则折线最左边永远挂着一个假的坑。
+ *
+ * 0.3.0 把「电池」那个独立组件并了进来，并加了 GPU。三处非做不可的判断：
+ *
+ *   6. **电池是另一条心跳。** 指标一秒一拍，电量半分钟才变一次；把电源读数塞进
+ *      每秒那条，等于每秒多收一份用不上的数据（`power.rs` 的注释里就写过这个
+ *      理由）。所以这里挂两条 `schedule.every`，各认各的 `tick.id`。
+ *
+ *   7. **GPU 读不到就不画。** 平台给 `gpu: null` 表示"这台机器上没有可读的
+ *      GPU 计数器"，和 `0%`（显卡闲着）是两件事。整行收起来，而不是画一个 0%。
+ *      电池同理：台式机没有电池，那一行不该永远挂着一个 "—"。
+ *
+ *   8. **显不显示由属性面板决定。** 六个开关一一对应六块内容（走势 / 逐核 /
+ *      GPU / 电池 / 网络 / 磁盘与进程）。开关只改 `hidden`，不重建 DOM ——
+ *      折线靠 `ResizeObserver` 自己重新量，切一下不会掉帧。
  */
 (function () {
   "use strict";
@@ -199,6 +213,106 @@
     return first + "," + base + " " + points + " " + last + "," + base;
   }
 
+  // ---------- 电池（0.3.0 从 lattice.battery 搬过来的纯逻辑） ----------
+
+  /**
+   * 一份"什么都不知道"的电源读数 —— 首帧、读失败、浏览器预览都用它。
+   * 全是 `null` / `false`，不是 0：0% 是"电池空了"，和"读不到"差着一次误报。
+   */
+  var EMPTY_POWER = {
+    ac: null,
+    percent: null,
+    charging: false,
+    noBattery: false,
+    critical: false,
+    saver: false,
+    minutesLeft: null,
+  };
+
+  /** 电量低于这个数、又没在充电，就把数字标红。原来在清单的 `warnBelow` 里 */
+  var WARN_PERCENT = 20;
+
+  function numOrNull(value, min, max) {
+    if (typeof value !== "number" || !isFinite(value)) return null;
+    var rounded = Math.round(value);
+    if (rounded < min || rounded > max) return null;
+    return rounded;
+  }
+
+  /**
+   * 宿主给的读数 → 组件认的读数。字段一律从严：
+   * 不是 `true` 就当 `false`（少报一个"充电中"比多报安全），
+   * 百分数与分钟越界当"读不出来"。
+   */
+  function parsePower(raw) {
+    var src = raw && typeof raw === "object" ? raw : {};
+    return {
+      ac: src.ac === true ? true : src.ac === false ? false : null,
+      percent: numOrNull(src.percent, 0, 100),
+      charging: src.charging === true,
+      noBattery: src.noBattery === true,
+      critical: src.critical === true,
+      saver: src.saver === true,
+      // 一星期的分钟数已经是"坏读数"能和"估得松"分开的地方了（见 power_policy.rs）
+      minutesLeft: numOrNull(src.minutesLeft, 0, 10080),
+    };
+  }
+
+  /**
+   * 现在是什么状态。**没有电池排第一**：台式机上 `ac` 也可能是 true，
+   * 那时说"接着电"没错但没用 —— 用户真正要知道的是"这台机器没有电池可读"。
+   */
+  function powerState(power) {
+    if (power.noBattery) return "noBattery";
+    if (power.ac === true) return power.charging ? "charging" : "plugged";
+    if (power.ac === false) return "battery";
+    return "unknown";
+  }
+
+  function stateText(key) {
+    switch (key) {
+      case "noBattery":
+        return say("没有电池", "No battery");
+      case "charging":
+        return say("充电中", "Charging");
+      case "plugged":
+        return say("接着电", "Plugged in");
+      case "battery":
+        return say("用电池", "On battery");
+      default:
+        return say("没有读数", "No reading");
+    }
+  }
+
+  /**
+   * 分钟 → 人话。秒数是系统估的、往下取整过的，"不到一分钟"按 0 处理 ——
+   * 报"还能用 0 分钟"看着像已经关机了。
+   */
+  function formatMinutes(minutes) {
+    if (typeof minutes !== "number" || !isFinite(minutes) || minutes < 0) return "";
+    var total = Math.round(minutes);
+    if (total < 1) return say("不到 1 分钟", "under a minute");
+    if (total < 60) return say(total + " 分钟", total + " min");
+    var hours = Math.floor(total / 60);
+    var rest = total % 60;
+    if (!rest) return say(hours + " 小时", hours + " h");
+    return say(hours + " 小时 " + rest + " 分", hours + " h " + rest + " min");
+  }
+
+  /** 电量数字该不该标红：充着电不红（越充越红是吓人），系统说快关机一定红 */
+  function powerAlarm(power) {
+    if (power.noBattery || power.percent == null) return "none";
+    if (power.critical && !power.charging) return "critical";
+    if (!power.charging && power.percent <= WARN_PERCENT) return "low";
+    return "ok";
+  }
+
+  /** 显存：`1.7 / 8.0 GB`。总量读不到（DXGI 没给）就只报用了多少 */
+  function vramText(used, total) {
+    if (!total) return bytes(used);
+    return bytes(used) + " / " + bytes(total);
+  }
+
   // 自检页拿这几个跑断言（`tests/sysmon.html`）
   window.__latticeSysmon = {
     bytes: bytes,
@@ -208,6 +322,14 @@
     trendPoints: trendPoints,
     areaPoints: areaPoints,
     clamp01: clamp01,
+    parsePower: parsePower,
+    powerState: powerState,
+    stateText: stateText,
+    formatMinutes: formatMinutes,
+    powerAlarm: powerAlarm,
+    vramText: vramText,
+    EMPTY_POWER: EMPTY_POWER,
+    WARN_PERCENT: WARN_PERCENT,
   };
 
   // ---------- DOM ----------
@@ -226,12 +348,43 @@
     cpuLine: document.getElementById("trend-cpu"),
     memLine: document.getElementById("trend-mem"),
     cores: document.getElementById("cores"),
+    gpu: document.getElementById("sec-gpu"),
+    gpuValue: document.getElementById("gpu"),
+    gpuName: document.getElementById("gpu-name"),
+    gpuVram: document.getElementById("gpu-vram"),
+    bat: document.getElementById("sec-bat"),
+    batValue: document.getElementById("bat"),
+    batName: document.getElementById("bat-name"),
+    batState: document.getElementById("bat-state"),
+    batLeft: document.getElementById("bat-left"),
+    foot: document.getElementById("foot"),
+    rowDisk: document.getElementById("row-disk"),
+    rowNet: document.getElementById("row-net"),
     disk: document.getElementById("disk"),
     procs: document.getElementById("procs"),
     down: document.getElementById("down"),
     up: document.getElementById("up"),
     hint: document.getElementById("hint"),
   };
+
+  /*
+   * 属性面板那六个开关。默认全开 —— 和清单里的 `default` 必须一致：
+   * 清单是属性面板的画法，这里是"没拿到配置时"的兜底，两边不一样就会出现
+   * "面板上打着勾、卡片上没有"。
+   */
+  var config = {
+    trace: true,
+    cores: true,
+    gpu: true,
+    battery: true,
+    network: true,
+    disk: true,
+  };
+
+  /** 数据到位了没有。开关管"要不要"，这两个管"有没有" —— 两个条件都满足才显示 */
+  var gpuReady = false;
+  var coresReady = false;
+  var power = EMPTY_POWER;
 
   /** 缓冲里留多少拍：60 × 1 秒 = 一分钟，正好是"刚才那一下卡顿还在不在" */
   var HISTORY = 60;
@@ -276,6 +429,49 @@
     node.classList.toggle("is-critical", ratio >= 0.9);
   }
 
+  // ---------- 开关 ----------
+
+  function show(node, visible) {
+    if (!node) return;
+    // 用 `hidden` 而不是 class：`display: none` 不占 flex 的位置，下面的行会自己补上来
+    node.hidden = !visible;
+  }
+
+  /**
+   * 六个开关 → 六块内容的显隐。
+   *
+   * 每块要同时满足两件事才画得出来：用户开着它（`config`）、**而且这一拍有数**
+   * （`gpuReady` / `coresReady` / 有没有电池）。后者不是"关掉了"，是"没这回事"
+   * —— 台式机不该永远挂着一行 "电池 —"。
+   */
+  function paintSections() {
+    show(el.trend, config.trace);
+    show(el.cores, config.cores && coresReady);
+    show(el.gpu, config.gpu && gpuReady);
+    show(el.bat, config.battery && !power.noBattery);
+    show(el.rowNet, config.network);
+    show(el.rowDisk, config.disk);
+    // 两行都关掉时整条底栏一起收，不然只剩一条横线挂在卡片底部
+    show(el.foot, config.network || config.disk);
+  }
+
+  /** 配置推过来（打开时拉一次，属性面板里改一次推一次） */
+  function applyConfig(next) {
+    if (!next || typeof next !== "object") return;
+    // 字段缺省一律当"开"：清单里没写的开关不该把内容藏起来
+    config = {
+      trace: next.trace !== false,
+      cores: next.cores !== false,
+      gpu: next.gpu !== false,
+      battery: next.battery !== false,
+      network: next.network !== false,
+      disk: next.disk !== false,
+    };
+    paintSections();
+    // 折线换了宽度（哪怕只是被旁边的块挤了一下）要重新量，否则描边会被拉伸
+    resizeTrend();
+  }
+
   // ---------- 折线 ----------
 
   /**
@@ -307,12 +503,11 @@
   // ---------- 逐核 ----------
 
   function renderCores(list) {
-    if (!list || !list.length) {
-      // 后端只在"这一拍真的测到了逐核数据"时才给数组；空数组 = 收起这一行
-      el.cores.hidden = true;
-      return;
-    }
-    el.cores.hidden = false;
+    // 后端只在"这一拍真的测到了逐核数据"时才给数组；空数组 = 这一行收起来。
+    // 显不显示还取决于属性面板那个开关，两件事都交给 `paintSections` 判
+    coresReady = !!(list && list.length);
+    paintSections();
+    if (!coresReady) return;
 
     // 节点数只增删在数量变化时：每秒重建 16 个 <i> 是白费力气，还会打断过渡
     if (el.cores.childElementCount !== list.length) {
@@ -355,7 +550,9 @@
   function repaint() {
     el.title.textContent = say("系统", "System");
     el.memName.textContent = say("内存", "Memory");
+    el.batName.textContent = say("电池", "Battery");
     if (lastMetrics) paint(lastMetrics);
+    paintPower();
     paintHint();
   }
 
@@ -464,6 +661,7 @@
       : "";
 
     renderCores(cpu.perCore);
+    paintGpu(metrics.gpu);
 
     // 每次渲染前量一次：`ResizeObserver` 在无头环境里可能还没跑第一拍，
     // 而 `drawTrend` 没有尺寸就什么都不画
@@ -471,11 +669,65 @@
     drawTrend();
   }
 
+  /**
+   * GPU 那一行。`gpu` 为 `null` = 这台机器上没有可读的 GPU 计数器（没有独显 /
+   * 驱动没装 / 计数器被关掉），**不是 0%** —— 0% 是"显卡闲着"。整行收起来，
+   * 因为"读不到"这件事没有值得占一行的信息量。
+   */
+  function paintGpu(gpu) {
+    gpuReady = !!gpu;
+    if (gpu) {
+      var usage = clamp01(gpu.usage);
+      el.gpuValue.textContent = percent(usage) + "%";
+      el.gpuValue.title = say(
+        "整块卡最忙那条引擎的占用 · 0–100% 指的是这张卡，不是单个进程",
+        "The busiest engine on this adapter · 0–100% is the card, not one process",
+      );
+      markLevel(el.gpuValue, usage);
+      // 名字放副标题：`NVIDIA GeForce RTX 3060` 塞不进左边那 40px 的标签位
+      el.gpuName.textContent = gpu.name || "";
+      el.gpuVram.textContent = vramText(gpu.used, gpu.total);
+      el.gpuVram.title = say(
+        "显存 " + bytes(gpu.used) + " / " + bytes(gpu.total),
+        bytes(gpu.used) + " of " + bytes(gpu.total) + " VRAM",
+      );
+    }
+    paintSections();
+  }
+
+  /**
+   * 电池那一行。数据来自另一条心跳（半分钟一次），和指标不是同一份。
+   *
+   * 台式机没有电池：`noBattery` 时整行收起来 —— 那不是"关掉了"，是"没这回事"。
+   */
+  function paintPower() {
+    var alarm = powerAlarm(power);
+    el.batValue.textContent = power.percent == null ? "—" : power.percent + "%";
+    el.batValue.classList.toggle("is-low", alarm === "low");
+    el.batValue.classList.toggle("is-critical", alarm === "critical");
+    el.batValue.title = say(
+      "电量 " + (power.percent == null ? "读不到" : power.percent + "%") + " · 告警线 " + WARN_PERCENT + "%",
+      (power.percent == null ? "No reading" : power.percent + "%") + " · warns below " + WARN_PERCENT + "%",
+    );
+
+    var state = stateText(powerState(power));
+    if (power.saver) state += say(" · 省电模式", " · Saver");
+    el.batState.textContent = state;
+
+    var left = power.minutesLeft == null ? "" : formatMinutes(power.minutesLeft);
+    el.batLeft.textContent = left ? say("还剩 " + left, left + " left") : "";
+    paintSections();
+  }
+
   // ---------- 心跳 ----------
 
   var subscription = 0;
+  var powerSubscription = 0;
   var denied = false;
   var failures = 0;
+
+  /** 电量多久问一次。它变得很慢，半分钟一拍足够（原来那个组件的节拍） */
+  var POWER_MS = 30000;
 
   function refresh() {
     call("system.metrics")
@@ -504,6 +756,25 @@
       });
   }
 
+  /**
+   * 电源是**另一条**心跳：指标一秒一拍，电量半分钟才变一次，塞进同一条
+   * 等于每秒多搬一份用不上的数据。读失败时保留上一次的数（和指标同一个
+   * 错误模型：先怀疑是这一拍没读到，不是机器突然没有电池了）。
+   */
+  function refreshPower() {
+    call("power.status")
+      .then(function (raw) {
+        power = parsePower(raw);
+        paintPower();
+      })
+      .catch(function (error) {
+        if (error.code === "permission_denied") {
+          denied = true;
+          setHint("denied");
+        }
+      });
+  }
+
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.__lattice !== 1) return;
@@ -517,9 +788,16 @@
       applyLanguage(data.payload);
       return;
     }
+    // 属性面板里改了开关。`config.get` 是打开时的那一份，这条是"后来改了"
+    if (data.type === "config-changed") {
+      applyConfig(data.payload && data.payload.config);
+      return;
+    }
     if (data.type === "tick") {
       // 一条时间轴上可能挂着好几条心跳，认准自己那一条
-      if (data.payload && data.payload.id === subscription) refresh();
+      var id = data.payload && data.payload.id;
+      if (id && id === subscription) refresh();
+      else if (id && id === powerSubscription) refreshPower();
       return;
     }
     if (data.type !== "response") return;
@@ -559,6 +837,27 @@
     .catch(function () {
       /* 拿不到就按中文画 */
     });
+
+  /*
+   * 先问一次开关。问不到就按"全开"画 —— 属性面板里那六个开关的默认值也是开，
+   * 两边对齐才不会出现"面板上打着勾、卡片上没有"。
+   */
+  call("config.get")
+    .then(function (value) {
+      applyConfig(value);
+    })
+    .catch(function () {});
+
+  /*
+   * 电池挂在**第二条**心跳上（半分钟）。两条心跳各认各的 `tick.id`，
+   * 平台的调度器一条时间轴上能挂好几条 —— 这是它存在的意义之一。
+   */
+  call("schedule.every", { every: POWER_MS })
+    .then(function (grant) {
+      powerSubscription = grant.id;
+      refreshPower();
+    })
+    .catch(function () {});
 
   /*
    * 先打一拍再开始计时。

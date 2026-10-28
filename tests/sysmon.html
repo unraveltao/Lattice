@@ -20,7 +20,8 @@
         position: absolute;
         left: -9999px;
         width: 268px;
-        height: 240px;
+        /* 和清单里的默认高度一致：折线的视口 = 卡片高度 − 278（见 style.css 那个等式） */
+        height: 328px;
       }
     </style>
   </head>
@@ -110,18 +111,41 @@
           threads: 2143,
           handles: 61234,
         },
+        // 0.3.0：GPU 是 `Option`，读不到时后端给 `null`（不是 0）
+        gpu: { name: "NVIDIA GeForce RTX 3060", usage: 0.43, used: Math.round(1.7 * GiB), total: 8 * GiB },
         sampledAt: 1792751479549,
       };
 
-      /** 装一份组件，返回句柄。`metrics` 可以缺字段（模拟老后端） */
-      function mount({ metrics = METRICS, denied = false } = {}) {
+      /** 电源是**另一条**心跳（30 秒一拍），所以单独一份夹具 */
+      const POWER = {
+        ac: false,
+        percent: 34,
+        charging: false,
+        noBattery: false,
+        critical: false,
+        saver: true,
+        minutesLeft: 95,
+      };
+
+      /**
+       * 装一份组件，返回句柄。
+       *
+       * `metrics` 可以缺字段（模拟老后端）；`power` 换成 `{ noBattery: true }`
+       * 就是台式机。
+       */
+      function mount({ metrics = METRICS, power = POWER, denied = false } = {}) {
         const frame = document.createElement("iframe");
         frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
         frame.src = "/widgets/lattice.sysmon/index.html";
         document.body.appendChild(frame);
 
         const calls = [];
-        let scheduleId = 0;
+        /**
+         * 组件注册了**两条**心跳：1000ms 拉指标、30000ms 拉电源。每条一个 id，
+         * 组件按 `payload.id` 认领 —— 这里照实给两个不同的 id，别都回 7，
+         * 否则"认错心跳"这种 bug 会被测出来是绿的
+         */
+        const schedules = [];
 
         const ready = new Promise((resolve) => {
           window.addEventListener("message", function handler(event) {
@@ -143,8 +167,27 @@
               );
 
             if (data.method === "schedule.every") {
-              scheduleId = 7;
-              reply({ ok: true, result: { id: scheduleId, every: data.params.every } });
+              const id = 7 + schedules.length;
+              schedules.push({ id, every: data.params.every });
+              reply({ ok: true, result: { id, every: data.params.every } });
+              return;
+            }
+            // 没改过任何开关：回空对象，组件按"全开"画（和清单里的 default 一致）
+            if (data.method === "config.get") {
+              reply({ ok: true, result: {} });
+              return;
+            }
+            if (data.method === "power.status") {
+              if (denied) {
+                reply({
+                  ok: false,
+                  code: "permission_denied",
+                  error: "permission not granted: system:monitor",
+                  permission: "system:monitor",
+                });
+                return;
+              }
+              reply({ ok: true, result: power });
               return;
             }
             if (data.method === "system.metrics") {
@@ -164,10 +207,24 @@
           });
         });
 
-        /** 手动打一拍心跳。组件自己认 `payload.id`，认不上就当没发生 */
-        const tick = async () => {
+        /**
+         * 手动打一拍心跳。默认打指标那条（1000ms），`tick(30000)` 打电源那条。
+         * 组件自己认 `payload.id`，认不上就当没发生
+         */
+        const tick = async (every = 1000) => {
+          const entry = schedules.find((item) => item.every === every);
+          if (!entry) return;
           frame.contentWindow.postMessage(
-            { __lattice: 1, type: "tick", payload: { id: scheduleId } },
+            { __lattice: 1, type: "tick", payload: { id: entry.id } },
+            "*",
+          );
+          await sleep(60);
+        };
+
+        /** 属性面板里拨开关：平台推一条 `config-changed`，值是一整份（不是差量） */
+        const pushConfig = async (config) => {
+          frame.contentWindow.postMessage(
+            { __lattice: 1, type: "config-changed", payload: { config } },
             "*",
           );
           await sleep(60);
@@ -178,6 +235,7 @@
           calls,
           ready,
           tick,
+          pushConfig,
           /** 组件里的纯函数（`window.__latticeSysmon`）：断言直接调真身，不抄一份 */
           pure: () => frame.contentWindow.__latticeSysmon,
         };
@@ -246,6 +304,55 @@
         );
         log(lib.areaPoints("", 40) === "", "没有折线就没有填充");
 
+        /*
+         * 电池与显存（0.3.0 从 `lattice.battery` 那个组件搬进来的）。
+         * 这几条钉的是"坏读数不许画成好看的值"：越界当读不出来，而不是夹到边界。
+         */
+        const sample = lib.parsePower({
+          ac: false,
+          percent: 34,
+          charging: false,
+          minutesLeft: 95,
+          saver: true,
+        });
+        log(sample.percent === 34 && sample.ac === false && sample.saver, "电源读数照抄：34% / 用电池 / 省电模式");
+        log(lib.parsePower({ percent: 101 }).percent === null, "电量 101% 当读不出来（不夹成 100）");
+        log(lib.parsePower({ percent: 100 }).percent === 100, "100% 是合法读数");
+        log(lib.parsePower({ minutesLeft: 10081 }).minutesLeft === null, "剩余时间超过一星期当读不出来");
+        log(lib.parsePower(null).ac === null, "没有读数时 ac 是 null（不是 false）");
+        log(lib.parsePower({ charging: "yes" }).charging === false, "非 true 的 charging 一律当 false");
+
+        log(
+          lib.powerState(lib.parsePower({ noBattery: true, ac: true })) === "noBattery",
+          "没有电池压过「接着电」（台式机上 ac 也可能是 true）",
+        );
+        log(lib.powerState(lib.parsePower({ ac: true, charging: true })) === "charging", "插着电在充");
+        log(lib.powerState(lib.parsePower({ ac: true })) === "plugged", "插着电没在充");
+        log(lib.powerState(lib.parsePower({})) === "unknown", "什么都没读到");
+
+        log(
+          lib.powerAlarm(lib.parsePower({ percent: 10, charging: true })) === "ok",
+          "充着电不报警（越充越红是吓人）",
+        );
+        log(lib.powerAlarm(lib.parsePower({ percent: 10 })) === "low", "10% 没充电 → 黄");
+        log(
+          lib.powerAlarm(lib.parsePower({ percent: 50, critical: true })) === "critical",
+          "系统说快关机，压过阈值判断",
+        );
+        log(lib.powerAlarm(lib.parsePower({ noBattery: true })) === "none", "没有电池就没有调子");
+
+        log(lib.formatMinutes(0) === "under a minute", `0 分钟 →「${lib.formatMinutes(0)}」`);
+        log(lib.formatMinutes(59) === "59 min", `59 分钟 →「${lib.formatMinutes(59)}」`);
+        log(lib.formatMinutes(60) === "1 h", `60 分钟 →「${lib.formatMinutes(60)}」`);
+        log(lib.formatMinutes(95) === "1 h 35 min", `95 分钟 →「${lib.formatMinutes(95)}」`);
+        log(lib.formatMinutes(-3) === "", "负的分钟数不画");
+
+        log(
+          lib.vramText(1.7 * GiB, 8 * GiB) === "1.7 GB / 8 GB",
+          `显存 →「${lib.vramText(1.7 * GiB, 8 * GiB)}」`,
+        );
+        log(lib.vramText(1.7 * GiB, 0) === "1.7 GB", "读不到总量时只报用了多少，不写 0");
+
         view.frame.remove();
       }
 
@@ -292,6 +399,25 @@
         log(
           !doc.getElementById("hint").classList.contains("is-visible"),
           "没有权限问题时不留提示",
+        );
+
+        // GPU：0.3.0 新加的一行。名字在副标题，数字在最右边
+        log(text(doc, "gpu") === "43%", `GPU 显示「${text(doc, "gpu")}」`);
+        log(
+          text(doc, "gpu-name") === "NVIDIA GeForce RTX 3060",
+          `GPU 副标题是适配器名「${text(doc, "gpu-name")}」`,
+        );
+        log(text(doc, "gpu-vram") === "1.7 GB / 8 GB", `显存「${text(doc, "gpu-vram")}」`);
+        log(!doc.getElementById("sec-gpu").hidden, "有 GPU 数据时那一行露出来");
+
+        // 电池：来自另一条心跳（30 秒），和指标不是同一份
+        log(text(doc, "bat") === "34%", `电量「${text(doc, "bat")}」`);
+        log(text(doc, "bat-state") === "On battery · Saver", `电池状态「${text(doc, "bat-state")}」`);
+        log(text(doc, "bat-left") === "1 h 35 min left", `剩余时间「${text(doc, "bat-left")}」`);
+        log(!doc.getElementById("sec-bat").hidden, "有电池时那一行露出来");
+        log(
+          view.calls.filter((method) => method === "schedule.every").length === 2,
+          `指标和电源各一条心跳（${view.calls.join(", ")}）`,
         );
 
         // 逐核条
@@ -381,6 +507,10 @@
         log(text(doc, "mem-commit") === "", "提交量是 0 时不显示「commit 0 B / 0 B」");
         log(text(doc, "disk") === "—", `磁盘总量是 0 时显示占位符「${text(doc, "disk")}」`);
         log(text(doc, "cpu") === "10%", `CPU 照常显示「${text(doc, "cpu")}」`);
+        log(
+          doc.getElementById("sec-gpu").hidden,
+          "后端没给 GPU（`null` / 缺字段）时整行收起来，而不是画一个 0%",
+        );
 
         view.frame.remove();
       }
@@ -402,6 +532,73 @@
           `未授权时提示「${text(doc, "hint")}」`,
         );
         log(text(doc, "cpu") === "—", `未授权时 CPU 保持占位符「${text(doc, "cpu")}」`);
+        view.frame.remove();
+      }
+
+      // ---- 6. 六个开关：属性面板拨一下，六块内容各自收放 ----
+
+      {
+        const view = mount({});
+        await view.ready;
+        await sleep(150);
+        const doc = view.frame.contentDocument;
+        const hidden = (id) => doc.getElementById(id).hidden;
+
+        log(
+          !hidden("trend") && !hidden("cores") && !hidden("sec-gpu") && !hidden("sec-bat") && !hidden("foot"),
+          "默认全开：五块可关的内容都在",
+        );
+
+        await view.pushConfig({
+          trace: false,
+          cores: false,
+          gpu: false,
+          battery: false,
+          disk: false,
+          network: false,
+        });
+        log(hidden("trend"), "关掉走势");
+        log(hidden("cores"), "关掉逐核");
+        log(hidden("sec-gpu"), "关掉 GPU");
+        log(hidden("sec-bat"), "关掉电池");
+        log(hidden("foot"), "两行底栏都关掉时整条底栏一起收，不留一条横线");
+
+        // 只留网络：底栏还在，但只剩一行 —— 剩下那行不该顶着一个空边距。
+        // 这里必须把六项写全：缺的键按"开"处理（下一段专门钉这条）
+        await view.pushConfig({
+          trace: false,
+          cores: false,
+          gpu: false,
+          battery: false,
+          disk: false,
+          network: true,
+        });
+        log(!hidden("foot") && !hidden("row-net") && hidden("row-disk"), "只留网络时底栏只剩一行");
+
+        await view.pushConfig({});
+        log(!hidden("trend") && !hidden("sec-bat"), "再全打开又都回来");
+
+        /*
+         * 配置里缺的字段一律当"开"：清单里的 `default` 就是开，两处不一致
+         * 会出现"面板上打着勾、卡片上没有"。
+         */
+        await view.pushConfig({ trace: false });
+        log(!hidden("sec-gpu") && !hidden("sec-bat") && hidden("trend"), "只写了一项时其余按「开」处理");
+
+        view.frame.remove();
+      }
+
+      // ---- 7. 台式机：没有电池就不画那一行 ----
+
+      {
+        const view = mount({ power: { ac: true, percent: null, noBattery: true } });
+        await view.ready;
+        await sleep(150);
+        const doc = view.frame.contentDocument;
+        log(
+          doc.getElementById("sec-bat").hidden,
+          "没有电池时那一行整个不出现，而不是永远挂着一个「—」",
+        );
         view.frame.remove();
       }
 

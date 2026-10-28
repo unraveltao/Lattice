@@ -6,6 +6,11 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <!--
+      每一块都有自己的 id：属性面板里那六个开关就是按 id 收起来的
+      （`widget.js` 的 `paintSections`）。顺序 = 卡片上的顺序，从"最常用"往下排：
+      CPU → 走势 → 内存 → 逐核 → GPU → 电池 → 磁盘 / 网络。
+    -->
     <main class="sys">
       <header class="sys-head">
         <h1 class="sys-title" id="title">系统</h1>
@@ -42,12 +47,39 @@
       <!-- 逐核占用：一根竖条一个逻辑核，横着排一排 -->
       <div class="sys-cores" id="cores" hidden></div>
 
-      <footer class="sys-foot">
-        <div class="sys-foot-row">
+      <!--
+        GPU：读不到就整行收起来（`gpu: null`），不画 0% —— 0% 是"显卡闲着"，
+        两件事不一样。名字在副标题，因为它塞不进左边那 40px 的标签位。
+      -->
+      <section class="sys-metric" id="sec-gpu" hidden>
+        <div class="sys-line">
+          <span class="sys-label"><i class="sys-dot is-spacer"></i>GPU</span>
+          <span class="sys-value" id="gpu">—</span>
+        </div>
+        <div class="sys-sub">
+          <span id="gpu-name"></span>
+          <span id="gpu-vram"></span>
+        </div>
+      </section>
+
+      <!-- 电池：台式机没有电池时这一行整个不出现，不是画一个 "—" -->
+      <section class="sys-metric" id="sec-bat" hidden>
+        <div class="sys-line">
+          <span class="sys-label"><i class="sys-dot is-spacer"></i><span id="bat-name">电池</span></span>
+          <span class="sys-value" id="bat">—</span>
+        </div>
+        <div class="sys-sub">
+          <span id="bat-state"></span>
+          <span id="bat-left"></span>
+        </div>
+      </section>
+
+      <footer class="sys-foot" id="foot">
+        <div class="sys-foot-row" id="row-disk">
           <span class="sys-cell" id="disk">—</span>
           <span class="sys-cell" id="procs">—</span>
         </div>
-        <div class="sys-foot-row">
+        <div class="sys-foot-row" id="row-net">
           <span class="sys-cell" id="down">—</span>
           <span class="sys-cell" id="up">—</span>
         </div>

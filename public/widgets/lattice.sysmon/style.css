@@ -11,11 +11,17 @@
  *   4. **默认高度是算出来的，不是试出来的**：
  *
  *        12 上内边距 + 22 标题 + 6 + 20 CPU 行 + 6 + 折线(自适应) + 6
- *      + 38 内存块(20 行 + 4 + 14 副标题) + 6 + 16 逐核条 + 6 + 40 底栏
- *      + 12 下内边距 = 190 + 折线
+ *      + 38 内存块(20 行 + 4 + 14 副标题) + 6 + 16 逐核条 + 6
+ *      + 38 GPU 块(20 + 4 + 14) + 6 + 38 电池块(20 + 4 + 14) + 6 + 40 底栏
+ *      + 12 下内边距 = 278 + 折线
  *
- *      所以 240 高时折线拿 50px，缩到最小 210 时还有 20px。下面每条
- *      padding / gap / height 都是按这个等式配的，改一个就要重算一遍。
+ *      所以 328 高时折线拿 50px，缩到最小 280 时折线归零（它排第一先让位，
+ *      而不是把底栏顶出卡片）。下面每条 padding / gap / height 都是按这个
+ *      等式配的，改一个就要重算一遍 —— 加块之前先算，别加完再看。
+ *
+ *      0.3.0 并进电池、加了 GPU，等式从 190 涨到 278，默认高度跟着从 240
+ *      涨到 328。**这是老卡片会变挤的唯一原因**，所以状态迁移里给老的
+ *      sysmon placement 抬了一次高度（`store.ts` 的 `STATE_VERSION` 3）。
  */
 
 :root {
@@ -103,6 +109,18 @@ body {
   gap: 4px;
 }
 
+/*
+ * `hidden` 在 `.sys-metric` / `.sys-foot` 上必须自己再写一遍：UA 那条
+ * `[hidden] { display: none }` 特异性比类选择器低，这里给了 `display: flex`
+ * 就会把属性压掉 —— 开关拨了没反应，正是"看起来生效了其实没有"的那种 bug。
+ */
+.sys-metric[hidden],
+.sys-trend[hidden],
+.sys-foot[hidden],
+.sys-foot-row[hidden] {
+  display: none;
+}
+
 .sys-line {
   display: flex;
   align-items: baseline;
@@ -136,6 +154,15 @@ body {
   background: color-mix(in srgb, var(--fg) 42%, transparent);
 }
 
+/*
+ * GPU / 电池不在折线里，所以没有"图例色"。留一个透明的占位点，
+ * 让标签的左边缘和 CPU / 内存对齐 —— 少一个点会看出 11px 的错位，
+ * 而给它们一个真颜色会让人以为折线上也有它们。
+ */
+.sys-dot.is-spacer {
+  background: transparent;
+}
+
 .sys-value {
   font-size: 17px;
   font-weight: 600;
@@ -156,11 +183,17 @@ body {
   color: #e2564d;
 }
 
+/* 电量低是**另一种**语义：数字小才该报警，所以单独一档，别和"负载高"共用 */
+.sys-value.is-low {
+  color: #d9a12a;
+}
+
 /* ---------- 折线 ---------- */
 
 .sys-trend {
   flex: 1 1 auto;
-  min-height: 20px;
+  /* 0 而不是 20：卡片太矮时先让折线归零，别把底栏顶出卡片外（裁掉半行字最难看） */
+  min-height: 0;
   margin: 0;
   /* 折线是"装饰"，不该吃掉点击 / 拖拽 */
   pointer-events: none;
@@ -256,6 +289,10 @@ body {
 
 .sys-foot {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  /* 用 gap 而不是 `+` 相邻选择器：某一整行被开关关掉时，剩下那行不会顶着一个空边距 */
+  gap: 3px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
   font-size: 11px;
@@ -271,10 +308,6 @@ body {
   height: 14px;
   line-height: 14px;
   white-space: nowrap;
-}
-
-.sys-foot-row + .sys-foot-row {
-  margin-top: 3px;
 }
 
 .sys-cell {

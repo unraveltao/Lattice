@@ -24,6 +24,13 @@ import { dropTrash, pruneTrash, pushTrash } from "../runtime/trash";
  */
 const STATE_FILE = "lattice.platform.v1";
 
+/**
+ * 0.3.0 把电池并进了系统组件。这两个 id 只在迁移里用得到，所以写在状态这一层，
+ * 而不是去 import 组件目录 —— 迁移要能跑在"组件包已经不在了"的状态上。
+ */
+const BATTERY_WIDGET_ID = "lattice.battery";
+const SYSMON_WIDGET_ID = "lattice.sysmon";
+
 function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -459,12 +466,15 @@ export function snap(value: number, enabled: boolean): number {
  *    不迁的话，这个改动只对新装的机器生效 —— 已经用过的人会一直停在演示目录上。
  * 2：目录源从单值 `catalogueSource` 变成列表 `sources`（0010）。
  *    单值那份迁成一条源，id 照同一套规则算（官方那条固定 `official`）。
+ * 3：`lattice.battery` 下架，电池并进 `lattice.sysmon`（0.3.0）。
+ *    老的电池卡改写成"只显示电池"的系统卡，老的系统卡抬一次高度 ——
+ *    不迁的话前者是一张破卡，后者会把底栏挤到卡片外面。
  *
  * **加字段不必抬手。** `onboarded`（0011）是一个"缺了就当 false"的布尔：旧文件里没有它，
  * 读出来就是没按过引导；旧版本读到新文件会忽略它，代价只是"引导回来一次"。抬版本是为了
  * **改已有字段的含义**（那种才需要迁移），不是为了多一个键。
  */
-const STATE_VERSION = 2;
+const STATE_VERSION = 3;
 
 export function migrateState(persisted: unknown, version: number): Record<string, unknown> {
   let state = (persisted ?? {}) as Record<string, unknown>;
@@ -485,12 +495,115 @@ export function migrateState(persisted: unknown, version: number): Record<string
     const rest = { ...state };
     delete rest.catalogueSource;
     // 迁移只负责"变成列表"，把 id 与去重交给同一份归一化 —— 两处各写一遍迟早对不上
-    return {
+    state = {
       ...rest,
       sources: normalizeSources(
         [{ id: kind === "bundled" ? "bundled" : isOfficialCatalogue(url) ? "official" : sourceIdFor(url), kind, url, enabled: true }],
         OFFICIAL_CATALOGUE_URL,
       ),
+    };
+  }
+
+  /*
+   * 3：电池组件没了，电池成了系统组件里的一行。
+   *
+   * 三种东西要一起动，少一种就会出现"东西还在、但摆错了"：
+   *
+   *   - `placements`：电池卡**改写**成系统卡（不是删掉）。删掉是最省事的写法，
+   *     但那等于替用户决定"你不需要这块表"；改写成"只显示电池"的配置，
+   *     他打开看到的还是那张电量卡，只是换了个组件。
+   *   - `configs`：新实例要带上"只留电池"的那几个开关，老实例那条删掉。
+   *   - `trash` / `desktopRects` / `installedIds` / `selectedInstanceId`：
+   *     都按 instanceId 或 widgetId 挂着电池，跟着一起清 —— 留着的话，
+   *     "从回收站恢复"会恢复出一张破卡。
+   *
+   * **尺寸这一项要抬两处**：桌面窗口是按那次摆放的尺寸开的（`buildSpecs` 里
+   * `placed.h` 优先于 `placement.h`），只改 placement 的话，已经投放过的卡片在
+   * 桌面上照样是 240 高，底栏被切掉半行 —— 而且这条只在真机上看得见，画布里是好的。
+   */
+  if (version < 3) {
+    const placements = Array.isArray(state.placements) ? (state.placements as Placement[]) : [];
+    const configs = (state.configs && typeof state.configs === "object" ? state.configs : {}) as Record<
+      string,
+      ConfigValues
+    >;
+    const rects = (state.desktopRects && typeof state.desktopRects === "object" ? state.desktopRects : {}) as Record<
+      string,
+      DesktopRect
+    >;
+
+    const nextConfigs: Record<string, ConfigValues> = { ...configs };
+    const nextRects: Record<string, DesktopRect> = { ...rects };
+    /** 老 instanceId → 新 instanceId，选中的那一份和回收站要用它改指向 */
+    const renamed = new Map<string, string>();
+
+    /**
+     * 桌面那次摆放的尺寸也抬一次，**只往上不往下**（用户自己拖大过就别管）。
+     *
+     * 抬到和新 placement 一样的数，不另给一个"刚好放得下"的值：画布上和桌面上
+     * 同一张卡该是同一个尺寸，两个数不一样，用户会以为"投放之后变小了"。
+     */
+    const raiseRect = (instanceId: string, w: number, h: number) => {
+      const rect = nextRects[instanceId];
+      if (!rect) return;
+      nextRects[instanceId] = { ...rect, w: Math.max(w, rect.w), h: Math.max(h, rect.h) };
+    };
+
+    const nextPlacements = placements.map((item) => {
+      if (item.widgetId === BATTERY_WIDGET_ID) {
+        const instanceId = instanceIdFor(SYSMON_WIDGET_ID);
+        renamed.set(item.instanceId, instanceId);
+        // 只留电池：走势、逐核、GPU、底栏全关，剩下的 CPU / 内存是这张卡绕不开的底
+        nextConfigs[instanceId] = {
+          trace: false,
+          cores: false,
+          gpu: false,
+          disk: false,
+          network: false,
+        };
+        delete nextConfigs[item.instanceId];
+        if (nextRects[item.instanceId]) {
+          nextRects[instanceId] = nextRects[item.instanceId];
+          delete nextRects[item.instanceId];
+        }
+        // 原来那张卡是 240×146，装不下多出来的两行；抬到刚好放得下
+        // （只有电池一行时内容要 160，176 留 16px 余量）
+        const w = Math.max(220, item.w);
+        const h = Math.max(176, item.h);
+        raiseRect(instanceId, w, h);
+        return { ...item, widgetId: SYSMON_WIDGET_ID, instanceId, w, h };
+      }
+      // 老的系统卡：0.2 的默认是 240 高，而 0.3 的内容从 190 涨到 278
+      if (item.widgetId === SYSMON_WIDGET_ID) {
+        const h = item.h < 280 ? 328 : item.h;
+        raiseRect(item.instanceId, item.w, h);
+        if (h !== item.h) return { ...item, h };
+      }
+      return item;
+    });
+
+    const trash = Array.isArray(state.trash) ? (state.trash as ClosedPlacement[]) : [];
+    const nextTrash = trash
+      .filter((entry) => entry?.placement?.widgetId !== BATTERY_WIDGET_ID)
+      .map((entry) => {
+        const to = renamed.get(entry.placement.instanceId);
+        if (!to) return entry;
+        return { ...entry, placement: { ...entry.placement, widgetId: SYSMON_WIDGET_ID, instanceId: to } };
+      });
+
+    const selected = typeof state.selectedInstanceId === "string" ? state.selectedInstanceId : null;
+    const installed = Array.isArray(state.installedIds)
+      ? (state.installedIds as string[]).filter((id) => id !== BATTERY_WIDGET_ID)
+      : [];
+
+    state = {
+      ...state,
+      placements: nextPlacements,
+      configs: nextConfigs,
+      desktopRects: nextRects,
+      trash: nextTrash,
+      installedIds: installed,
+      selectedInstanceId: selected ? renamed.get(selected) ?? selected : null,
     };
   }
 
