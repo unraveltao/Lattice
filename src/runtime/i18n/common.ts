@@ -54,4 +54,17 @@ export const COMMON_ZH: Record<string, string> = {
   "On top": "置顶",
   // —— 全局搜索：顶栏那颗按钮和浮层的输入框共用同一句，别各译一遍 ——
   "Search widgets and the catalogue": "搜索组件与商店",
+  /*
+   * `All` 从 `assistant.ts` 搬过来的：调试面板用它当"全部记录"，
+   * 画布总览的筛选按钮也用它。**两个以上文件用到的 key 归 common**，
+   * 留在 assistant 里的话，总览一改就得去读调试面板那份文案。
+   */
+  All: "全部",
+  // —— 画布总览（只读）：退后一步看全 ——
+  Overview: "总览",
+  "Filter by layer": "按层级筛选",
+  "Nothing on the canvas yet": "画布上还没有东西",
+  "Install a widget from the library, then it shows up here at its real size and place.":
+    "从组件库装一个，它就会按真实的尺寸和位置出现在这里。",
+  "Show the whole canvas at once (Ctrl+Shift+O)": "一眼看全整个画布（Ctrl+Shift+O）",
 };

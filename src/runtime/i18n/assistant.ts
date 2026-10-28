@@ -135,7 +135,6 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "console lines": "条 console 输出",
   failed: "条失败",
   "Record type": "记录类型",
-  All: "全部",
   Bridge: "桥调用",
   Console: "console",
   "Failures only": "只看失败",

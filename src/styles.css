@@ -1063,6 +1063,273 @@ button {
   line-height: 1.6;
 }
 
+/* ---------- 画布总览（只读，Ctrl+Shift+O） ---------- */
+
+/*
+ * 比搜索浮层（60）低一层：总览是个"看"的地方，从它里面不该再开搜索；
+ * 真要开，搜索浮层压在上面才对。也比对话框低。
+ */
+.lattice-overview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  display: flex;
+  padding: 32px;
+  background: rgb(0 0 0 / 0.42);
+}
+
+/*
+ * 铺满整块窗口减去留白，而不是一个居中卡片：总览的全部价值是"尽可能多地
+ * 看见"，给它一个固定 720 宽的框等于把缩略图又缩一次。
+ */
+.lattice-overview {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--lattice-border-strong);
+  border-radius: 14px;
+  background: var(--lattice-surface);
+  box-shadow: var(--lattice-shadow-2);
+  overflow: hidden;
+}
+
+.lattice-overview-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--lattice-border);
+}
+
+.lattice-overview-title {
+  margin: 0;
+  color: var(--lattice-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* 副标题（几个组件 · 缩放比）是**读数**不是标题：小一号、淡一档 */
+.lattice-overview-sub {
+  flex: none;
+  color: var(--lattice-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lattice-overview-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.lattice-overview-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--lattice-border);
+  border-radius: 999px;
+  background: var(--lattice-surface-2);
+  color: var(--lattice-text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.lattice-overview-chip:hover {
+  border-color: var(--lattice-border-strong);
+  color: var(--lattice-text);
+}
+
+/* 选中的那颗才用强调色：三颗同时亮等于没有筛选 */
+.lattice-overview-chip.is-active {
+  border-color: var(--lattice-accent);
+  background: var(--lattice-accent-soft);
+  color: var(--lattice-accent);
+}
+
+.lattice-overview-chip-count {
+  color: var(--lattice-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.lattice-overview-chip.is-active .lattice-overview-chip-count {
+  color: var(--lattice-accent);
+}
+
+.lattice-overview-close {
+  flex: none;
+}
+
+.lattice-overview-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/*
+ * 左栏：按层级分组。宽度写死 220 —— 组件名长短差得很远，按内容撑会让整块
+ * 缩略图在换一次筛选之后跳一下。
+ */
+.lattice-overview-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: none;
+  width: 220px;
+  padding: 12px;
+  border-right: 1px solid var(--lattice-border);
+  overflow-y: auto;
+}
+
+.lattice-overview-rail-empty {
+  margin: 0;
+  color: var(--lattice-text-faint);
+  font-size: 12px;
+}
+
+/* 这一栏里的分段不要再套一层标题样式，它已经在总览的框里了 */
+.lattice-lib-section.is-overview {
+  gap: 4px;
+}
+
+.lattice-overview-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--lattice-text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lattice-overview-row:hover {
+  background: var(--lattice-surface-2);
+}
+
+.lattice-overview-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 尺寸是数字，等宽才对齐得起来 —— 一栏里十几行时这比什么都重要 */
+.lattice-overview-row-size {
+  flex: none;
+  color: var(--lattice-text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 缩略图那块。`overflow: hidden` 而不是 `auto`：总览是"一次看全"，
+ * 能滚就等于没缩到位 —— 而缩放比已经按这块的尺寸算过了。
+ */
+.lattice-overview-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--lattice-surface-2);
+}
+
+/*
+ * 平面本身没有尺寸感 —— 它只是缩放的原点。`transform-origin: 0 0` 是关键：
+ * 默认的 `50% 50%` 会让 `fitOffset` 算出来的居中偏移全部错位（缩放中心变了，
+ * 视觉左上角也就不在 `left/top` 上了）。
+ */
+.lattice-overview-plane {
+  position: absolute;
+  transform-origin: 0 0;
+}
+
+/*
+ * 一张缩略卡。尺寸来自真实摆放（`width` / `height` 内联），这里只管长相。
+ * 边框宽度由平面上的 `--ov-border` 反算（见 `OverviewPanel.tsx`），因为整块
+ * 平面被缩过 —— 写死 1px 在 0.3 倍时根本看不见。
+ */
+.lattice-overview-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px;
+  border: var(--ov-border, 1px) solid var(--lattice-border-strong);
+  border-radius: 10px;
+  background: var(--lattice-surface);
+  color: var(--lattice-text);
+  font-family: inherit;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.lattice-overview-card:hover {
+  border-color: var(--lattice-accent);
+}
+
+/* 清单里找不到的那一份：虚线框 + 淡一档，和画布上那张坏卡一个意思 */
+.lattice-overview-card.is-broken {
+  border-style: dashed;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-overview-initial {
+  color: var(--lattice-text-muted);
+  font-weight: 600;
+}
+
+.lattice-overview-name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--lattice-text-muted);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lattice-overview-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+}
+
+.lattice-overview-empty-title {
+  margin: 0;
+  color: var(--lattice-text);
+  font-size: 13px;
+}
+
+.lattice-overview-empty-hint {
+  margin: 0;
+  max-width: 320px;
+  color: var(--lattice-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .lattice-lib-section {
   display: flex;
   flex-direction: column;

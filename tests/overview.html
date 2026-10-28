@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>overview test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 画布总览的几何与分组（`runtime/overview.ts`）。
+       *
+       * 这一页只量**纯函数**，不挂 React、不挂 store —— 总览面板长什么样由
+       * `tests/overview-panel.html` 钉着。分开的理由：几何算错了，面板上看起来
+       * 只是"位置有点怪"，很难一眼看出是 `fitOffset` 还是 CSS 的问题。
+       *
+       * 五个容易写错的地方：
+       *
+       *   1. 空画布返回 `null`，不是 0×0（否则缩放算成 Infinity 再被夹成"铺满"）
+       *   2. 包围盒的左上角可以是**负的**（画布能滚，卡片能拖到原点左边）
+       *   3. 缩放只缩小不放大（一张卡铺满屏不叫"看全局"）
+       *   4. 两个方向取较小值，退化方向走 Infinity 兜底
+       *   5. 分组从最上面那层开始、空的层不出现
+       */
+      import {
+        filterByLayer,
+        fitOffset,
+        fitScale,
+        layerCounts,
+        layerGroups,
+        overviewBounds,
+      } from "/src/runtime/overview.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text}（得到 ${JSON.stringify(actual)}）`,
+        );
+
+      const at = (x, y, w = 240, h = 176, layer = "desktop") => ({ x, y, w, h, layer });
+
+      /* ── 1. 空画布 ─────────────────────────────────────────────── */
+      eq(overviewBounds([]), null, "空画布的包围盒是 null（不是 0×0 —— 那会算出无穷大的缩放）");
+      eq(fitScale(null, { w: 800, h: 600 }), 1, "没有包围盒时缩放是 max（调用方据此画空状态）");
+      eq(fitOffset(null, { w: 800, h: 600 }, 0.5), { left: 0, top: 0 }, "没有包围盒时偏移是 0");
+
+      /* ── 2. 一张卡 ─────────────────────────────────────────────── */
+      eq(overviewBounds([at(10, 20)]), { x: 10, y: 20, w: 240, h: 176 }, "一张卡：包围盒就是它自己");
+
+      /* ── 3. 负坐标不被切掉 ─────────────────────────────────────── */
+      eq(
+        overviewBounds([at(-50, -30), at(100, 100)]),
+        { x: -50, y: -30, w: 390, h: 306 },
+        "左上角取 min（卡片拖到原点左边是合法的，从 0 起算会切掉一半）",
+      );
+
+      /* ── 4. 缩放：两个方向取较小值 ─────────────────────────────── */
+      const square = { x: 0, y: 0, w: 1000, h: 1000 };
+      eq(
+        fitScale(square, { w: 500, h: 500 }, { pad: 32 }),
+        (500 - 64) / 1000,
+        "正方形内容：按可用宽度（=高度）算",
+      );
+      eq(
+        fitScale({ x: 0, y: 0, w: 2000, h: 100 }, { w: 500, h: 500 }, { pad: 32 }),
+        (500 - 64) / 2000,
+        "很宽的内容：取宽度那个比值（高度方向绰绰有余）",
+      );
+      eq(
+        fitScale({ x: 0, y: 0, w: 100, h: 2000 }, { w: 500, h: 500 }, { pad: 32 }),
+        (500 - 64) / 2000,
+        "很高的内容：取高度那个比值",
+      );
+
+      /* ── 5. 只缩小，不放大 ─────────────────────────────────────── */
+      eq(
+        fitScale({ x: 0, y: 0, w: 100, h: 80 }, { w: 2000, h: 1600 }),
+        1,
+        "内容比视口小得多时也不放大（一张便签铺满屏不叫「看全局」）",
+      );
+      eq(
+        fitScale({ x: 0, y: 0, w: 100, h: 80 }, { w: 2000, h: 1600 }, { max: 2 }),
+        2,
+        "max 可以放宽（参数化的地方别写死）",
+      );
+
+      /* ── 6. 退化与边界 ─────────────────────────────────────────── */
+      eq(
+        fitScale({ x: 0, y: 0, w: 0, h: 1000 }, { w: 500, h: 500 }, { pad: 32 }),
+        (500 - 64) / 1000,
+        "宽度退化成 0：那个方向走 Infinity，自然取高度那个比值（不用特判）",
+      );
+      eq(
+        fitScale({ x: 0, y: 0, w: 0, h: 0 }, { w: 500, h: 500 }, { pad: 32 }),
+        1,
+        "退化成一个点：两个方向都是 Infinity，夹到 max",
+      );
+      eq(
+        fitScale({ x: 0, y: 0, w: 4000, h: 4000 }, { w: 500, h: 500 }, { pad: 32, min: 0.25 }),
+        0.25,
+        "算出来比 min 还小：夹到 min（再小就只剩色块）",
+      );
+      eq(
+        fitScale({ x: 0, y: 0, w: 4000, h: 4000 }, { w: 40, h: 40 }, { pad: 32, min: 0.1 }),
+        0.1,
+        "视口比留白还小时返回 min（宁可显示成小方块，也不要放大到屏幕外）",
+      );
+
+      /* ── 7. 居中偏移 ───────────────────────────────────────────── */
+      eq(
+        fitOffset({ x: 0, y: 0, w: 400, h: 200 }, { w: 800, h: 600 }, 0.5),
+        { left: 300, top: 250 },
+        "缩完 200×100 摆在 800×600 的正中间",
+      );
+      eq(
+        fitOffset({ x: -100, y: -50, w: 400, h: 200 }, { w: 800, h: 600 }, 0.5),
+        { left: 350, top: 275 },
+        "负原点的内容也算得对（偏移里减掉了包围盒自己的 x/y）",
+      );
+
+      /* ── 8. 分组：从最上面那层开始，空的层不出现 ─────────────── */
+      const mixed = [
+        at(0, 0, 240, 176, "desktop"),
+        at(0, 0, 240, 176, "top"),
+        at(0, 0, 240, 176, "desktop"),
+        at(0, 0, 240, 176, "normal"),
+      ];
+      const groups = layerGroups(mixed);
+      eq(groups.map((group) => group.layer), ["top", "normal", "desktop"], "顺序是置顶 → 普通 → 桌面");
+      eq(groups.map((group) => group.items.length), [1, 1, 2], "每层各归各的");
+      eq(
+        layerGroups([at(0, 0)]).map((group) => group.layer),
+        ["desktop"],
+        "只有桌面层时不出「置顶层：0」这种行（一行 0 个是噪音）",
+      );
+
+      eq(
+        layerCounts(mixed),
+        { desktop: 2, normal: 1, top: 1 },
+        "三档都给（筛选按钮要摆全，没东西的那颗不画是面板的事）",
+      );
+      eq(layerCounts([]), { desktop: 0, normal: 0, top: 0 }, "空画布：三档都是 0，不是缺键");
+
+      /* ── 9. 筛选只改显示 ───────────────────────────────────────── */
+      eq(filterByLayer(mixed, null).length, 4, "null = 全部");
+      eq(filterByLayer(mixed, "top").length, 1, "只看置顶层");
+      eq(filterByLayer(mixed, "normal").length, 1, "只看普通层");
+      eq(
+        filterByLayer(mixed, null) === mixed,
+        false,
+        "返回新数组（调用方拿它去 map，不该改到 store 里那一份）",
+      );
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

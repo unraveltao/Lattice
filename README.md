@@ -51,6 +51,7 @@ The name is 棂 (*líng*), the wooden lattice inside a window pane. Every pane i
 | To get what is in your head into a tree | Mind map | An indented outline becomes a rightward tree that lays itself out. Collapse, pan, zoom, and copy the whole thing out as Markdown, Mermaid or OPML |
 | Music, weather, and a fish | Music · Weather · Big Fishy | What is playing with a level that follows the sound; one city, refreshed on a timer and still readable offline; a pet that walks along the bottom of your screen |
 | To let a model do the clicking | `Ctrl+K` assistant | You bring the model; the key never leaves Rust; it can drive the desktop and call the tools your widgets declare. A script can do the same over a loopback endpoint, `npm run agent` |
+| To see the whole canvas at once | `Ctrl+Shift+O` overview | Every widget at its real size and place, shrunk to fit, grouped by layer on the left. Read-only: click one and you are back on that card |
 | To find one widget among twenty | `Ctrl+Shift+F` search | One list over everything installed and everything in the catalogue: names, ids, descriptions, authors, permissions. Picking a result goes to that card on your canvas, or to its row in the library |
 | None of the above | Write one | Four files, no build step, [see below](#write-a-widget) |
 
@@ -168,7 +169,7 @@ The newest milestone is v0.13: the assistant gets its own window on the desktop.
 | Official widgets | 24 |
 | Permissions | 15 |
 | Tauri commands | 117 |
-| Browser assertions | 4 051 over 78 pages |
+| Browser assertions | 4 106 over 80 pages |
 | Rust tests | 504 |
 | Documented pitfalls | 128 |
 
@@ -178,8 +179,8 @@ These are measured: the browser assertions start a real dev server and a real Ch
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 27 914 lines |
-| CSS | 7 111 lines |
+| TypeScript | 28 426 lines |
+| CSS | 7 378 lines |
 | Rust | 30 635 lines |
 | SDK | 961 lines |
 | Widgets + example | 38 545 lines |

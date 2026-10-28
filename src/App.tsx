@@ -19,6 +19,7 @@ import { DictationButton } from "./platform/DictationButton";
 import { DebugPanel } from "./platform/DebugPanel";
 import { InspectorPanel } from "./platform/InspectorPanel";
 import { LibraryPanel, type InstallNotice } from "./platform/LibraryPanel";
+import { OverviewPanel } from "./platform/OverviewPanel";
 import { ReportDialog, type ReportTarget } from "./platform/ReportDialog";
 import { SearchOverlay } from "./platform/SearchOverlay";
 import type { StoreBinding } from "./platform/CatalogueSection";
@@ -326,6 +327,13 @@ export default function App() {
    */
   const [searchOpen, setSearchOpen] = useState(false);
   /**
+   * 画布总览（只读）开着没有。
+   *
+   * 和搜索浮层同一个判据：不落盘、"看一眼就走"的东西，下次启动不该自己弹出来。
+   * 两者互斥（下面开一个就关另一个）：同时叠两层浮层，Esc 到底关哪一层没有答案。
+   */
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  /**
    * 从搜索跳过去之后，画布要滚到的那一份；以及组件库要翻到的那一个。
    *
    * 两个都是"送一次"的信号，带 `nonce` 让同一个目标连点两次也能再触发
@@ -399,6 +407,24 @@ export default function App() {
   }, [toggleAssistant]);
 
   /*
+   * Ctrl+Shift+O 开画布总览。
+   *
+   * O 是 "overview"，也和 Ctrl+Shift+F / Ctrl+Shift+D 同一个修饰键组合。它和
+   * 搜索互斥：打开一个就关掉另一个，免得 Esc 该关哪一层没有答案。
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || !event.shiftKey || event.altKey) return;
+      if (event.key.toLowerCase() !== "o") return;
+      event.preventDefault();
+      setOverviewOpen((value) => !value);
+      setSearchOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  /*
    * Ctrl+Shift+F 开全局搜索。
    *
    * 用 F 而不是 Ctrl+F：Ctrl+F 在 webview 里是"找这一页里的字"，而这里找的是
@@ -413,6 +439,7 @@ export default function App() {
       if (event.key.toLowerCase() !== "f") return;
       event.preventDefault();
       setSearchOpen((value) => !value);
+      setOverviewOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -1291,6 +1318,24 @@ export default function App() {
             <Glyph d={ICON.search} />
           </button>
 
+          {/*
+            画布总览（只读）。放在搜索旁边：两件事是同一个需求的两半 ——
+            "东西太多找不着"（搜）和"东西太多看不清"（退后一步看全）。
+          */}
+          <button
+            type="button"
+            className={`lattice-icon-btn is-large${overviewOpen ? " is-active" : ""}`}
+            onClick={() => {
+              setOverviewOpen((value) => !value);
+              setSearchOpen(false);
+            }}
+            aria-expanded={overviewOpen}
+            title={t("Show the whole canvas at once (Ctrl+Shift+O)")}
+            aria-label={t("Overview")}
+          >
+            <Glyph d={ICON.grid} />
+          </button>
+
           <button
             type="button"
             className={`lattice-icon-btn is-large${assistantOpen ? " is-active" : ""}`}
@@ -1405,6 +1450,23 @@ export default function App() {
           targets={searchTargets}
           onPick={pickSearchTarget}
           onClose={() => setSearchOpen(false)}
+        />
+      )}
+
+      {/*
+        画布总览。点一张卡 = 选中它 + 回画布上那张卡（和搜索选中同一条路：
+        `canvasFocus` 滚过去 + 闪一圈）。总览自己**不写 store** —— 见那个文件的
+        头注释。
+      */}
+      {overviewOpen && (
+        <OverviewPanel
+          records={records}
+          installedIds={installedSet}
+          onPick={(instanceId) => {
+            setOverviewOpen(false);
+            setCanvasFocus((prev) => ({ instanceId, nonce: (prev?.nonce ?? 0) + 1 }));
+          }}
+          onClose={() => setOverviewOpen(false)}
         />
       )}
 

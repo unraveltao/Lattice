@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>overview panel test</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0d0d10;
+        color: #e9e8e3;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 14px 16px;
+        /* 总览铺满视口，这一页要有一块真的视口来量缩放 */
+        min-height: 100vh;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      pre {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <div id="stage"></div>
+    <script type="module" src="/tests/overview-panel.tsx"></script>
+  </body>
+</html>
