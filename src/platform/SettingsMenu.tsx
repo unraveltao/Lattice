@@ -31,9 +31,12 @@ import { readAgentStatus, setAgentEnabled, type AgentStatus } from "./agent";
 import { isStaleTarget, readAutostart, writeAutostart, type AutostartState } from "./autostart";
 import { Glyph, ICON, ThemeGlyph } from "./icons";
 import {
+  dictationReasonText,
+  dictationRecheck,
   dictationSettings,
   dictationSettingsSet,
   dictationStatus,
+  openDictationSettingsPage,
   type DictationSettings,
   type DictationStatus,
 } from "./dictation";
@@ -58,13 +61,14 @@ export type SettingsSection =
   | "language"
   | "desktop"
   | "widgets"
+  | "dictation"
   | "assistant"
   | "about"
   | "help";
 
 type Section = SettingsSection;
 
-/** 改设置的那七项。以后还会长，所以底部那两项不能靠"排在最后"来定位 */
+/** 改设置的那几项。以后还会长，所以底部那两项不能靠"排在最后"来定位 */
 const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
   { id: "account", label: "Account", icon: ICON.user },
   { id: "models", label: "Models", icon: ICON.chip },
@@ -72,6 +76,7 @@ const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
   { id: "language", label: "Language", icon: ICON.language },
   { id: "desktop", label: "Desktop", icon: ICON.monitor },
   { id: "widgets", label: "Widgets", icon: ICON.store },
+  { id: "dictation", label: "Dictation", icon: ICON.mic },
   { id: "assistant", label: "Assistant", icon: ICON.agent },
 ];
 
@@ -283,7 +288,8 @@ export function SettingsMenu({
 
   const refreshDictation = useCallback(async () => {
     try {
-      const status = await dictationStatus();
+      // 「重新检测」走 recheck：Rust 侧那份 probe 缓存必须清掉，否则这个按钮是骗人的
+      const status = await dictationRecheck();
       setDictation(status);
       if (status.hotkey) setHotkeyDraft(status.hotkey);
       setDictationError(null);
@@ -326,7 +332,7 @@ export function SettingsMenu({
   const resetDictationButton = useCallback(async () => {
     setDictationBusy(true);
     try {
-      const settings = await dictationSettingsSet({ show: true, dx: -120, dy: -120 });
+      const settings = await dictationSettingsSet({ dx: -120, dy: -120 });
       setDictationSettingsValue(settings);
     } catch (error) {
       setDictationError(String(error));
@@ -1074,44 +1080,43 @@ export function SettingsMenu({
                     </div>
                   )}
 
-                  {section === "assistant" && (
+                  {/*
+                    听写（0032）：独立一页。以前它挤在 Assistant 里 —— 用户发现麦克风
+                    是灰的，不会想到去"AI 助手"下面翻；而这一页要回答的是"能不能用、
+                    差什么、从哪儿补"，三件事都不属于模型配置。
+                  */}
+                  {section === "dictation" && (
                     <div className="lattice-settings-list">
                       <div className="lattice-menu-row is-static">
-                        <Glyph d={ICON.agent} />
-                        <span className="lattice-menu-label">{t("Agent access")}</span>
+                        <Glyph d={ICON.mic} />
+                        <span className="lattice-menu-label">{t("Speech recognition")}</span>
                         <span className="lattice-menu-note">
-                          {agentError
-                            ? agentError
-                            : agent?.enabled
-                              ? `127.0.0.1:${agent.port ?? "…"}`
-                              : ""}
+                          {dictationError ??
+                            (dictation?.available
+                              ? dictation.language
+                              : dictationReasonText(dictation))}
                         </span>
-                        <label
-                          className="lattice-switch"
-                          title={t("Let a local agent read and arrange the desktop over 127.0.0.1")}
+                        <button
+                          type="button"
+                          className="lattice-btn is-small"
+                          onClick={() => void refreshDictation()}
+                          disabled={dictationBusy}
+                          title={t("Ask Windows again — installing a speech language needs a trip to Settings")}
                         >
-                          <input
-                            type="checkbox"
-                            checked={Boolean(agent?.enabled)}
-                            disabled={!agent || agentBusy}
-                            onChange={() => void toggleAgent()}
-                            aria-label={t("Allow agent access")}
-                          />
-                        </label>
+                          {t("Check again")}
+                        </button>
                       </div>
 
                       <button
                         type="button"
                         className="lattice-menu-row"
-                        onClick={() => {
-                          close();
-                          onOpenAssistant();
-                        }}
-                        title={t("Talk to your own model with your own API key, and it arranges the desktop for you (Ctrl+K)")}
+                        onClick={() => void openDictationSettingsPage("speech")}
+                        title={t("Windows Settings → Time & language → Speech")}
                       >
-                        <Glyph d={ICON.agent} />
-                        <span className="lattice-menu-label">{t("AI assistant")}</span>
-                        <span className="lattice-menu-note">{t("Model · key · Ctrl+K")}</span>
+                        <Glyph d={ICON.language} />
+                        <span className="lattice-menu-label">
+                          {t("Open Windows speech settings")}
+                        </span>
                         <Glyph d={ICON.chevron} size={13} />
                       </button>
 
@@ -1119,10 +1124,7 @@ export function SettingsMenu({
                         <Glyph d={ICON.mic} />
                         <span className="lattice-menu-label">{t("Dictation")}</span>
                         <span className="lattice-menu-note">
-                          {dictationError ??
-                            (dictation?.available
-                              ? dictation.language
-                              : t("Needs a Chinese speech language"))}
+                          {t("The desktop button shows up while you speak")}
                         </span>
                         <label
                           className="lattice-switch"
@@ -1178,12 +1180,57 @@ export function SettingsMenu({
                           {t("Put the dictation button back")}
                         </span>
                         <span className="lattice-menu-note">
-                          {dictationSettingsValue?.show === false
-                            ? t("Hidden")
-                            : `${dictationSettingsValue?.dx ?? -120}, ${
-                                dictationSettingsValue?.dy ?? -120
-                              }`}
+                          {`${dictationSettingsValue?.dx ?? -120}, ${
+                            dictationSettingsValue?.dy ?? -120
+                          }`}
                         </span>
+                      </button>
+
+                      <p className="lattice-settings-hint">
+                        {t("Right-click the desktop button to throw that take away; a left click types it into the window you were in.")}
+                      </p>
+                    </div>
+                  )}
+
+                  {section === "assistant" && (
+                    <div className="lattice-settings-list">
+                      <div className="lattice-menu-row is-static">
+                        <Glyph d={ICON.agent} />
+                        <span className="lattice-menu-label">{t("Agent access")}</span>
+                        <span className="lattice-menu-note">
+                          {agentError
+                            ? agentError
+                            : agent?.enabled
+                              ? `127.0.0.1:${agent.port ?? "…"}`
+                              : ""}
+                        </span>
+                        <label
+                          className="lattice-switch"
+                          title={t("Let a local agent read and arrange the desktop over 127.0.0.1")}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(agent?.enabled)}
+                            disabled={!agent || agentBusy}
+                            onChange={() => void toggleAgent()}
+                            aria-label={t("Allow agent access")}
+                          />
+                        </label>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="lattice-menu-row"
+                        onClick={() => {
+                          close();
+                          onOpenAssistant();
+                        }}
+                        title={t("Talk to your own model with your own API key, and it arranges the desktop for you (Ctrl+K)")}
+                      >
+                        <Glyph d={ICON.agent} />
+                        <span className="lattice-menu-label">{t("AI assistant")}</span>
+                        <span className="lattice-menu-note">{t("Model · key · Ctrl+K")}</span>
+                        <Glyph d={ICON.chevron} size={13} />
                       </button>
 
                       <p className="lattice-settings-hint">
