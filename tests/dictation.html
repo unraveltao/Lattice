@@ -37,6 +37,8 @@
     <script type="module">
       import {
         dictationCancel,
+        dictationReasonText,
+        dictationRecheck,
         dictationSettings,
         dictationSettingsSet,
         dictationStart,
@@ -251,6 +253,30 @@
       log(
         !/dictation/i.test(bridgeSource),
         "bridge.ts 的方法表里搜不到 dictation —— 组件没有 speech 权限",
+      );
+
+      // --- 24–26. 「为什么不能听写」是三句话，不是一句（0032 §4）----------
+      const engineOff = { ...ready, available: false, reason: "no_engine" };
+      const noChinese = { ...ready, available: false, reason: "no_chinese" };
+      const engineText = dictationReasonText(engineOff);
+      const chineseText = dictationReasonText(noChinese);
+      log(
+        Boolean(engineText) && Boolean(chineseText) && engineText !== chineseText,
+        "no_engine 与 no_chinese 是两句不同的话（一个去装组件，一个去加语言）",
+      );
+      log(dictationReasonText(ready) === null, "能用的时候没有那句解释");
+      // 老后端 / 浏览器预览：只有 available: false，没有 reason，也要说得出话
+      log(
+        Boolean(dictationReasonText({ ...ready, available: false, reason: null })),
+        "reason 缺省时仍然给一句通用解释，不留空",
+      );
+
+      // --- 27. 「重新检测」必须换一条命令（Rust 侧缓存要清掉）--------------
+      reset(() => ({ ...ready, available: false, reason: "no_engine" }));
+      const rechecked = await dictationRecheck();
+      log(
+        calls[0]?.command === "dictation_recheck" && rechecked.reason === "no_engine",
+        `重新检测走 ${calls[0]?.command}，不是再读一次缓存`,
       );
 
       // --- 20. 浏览器预览里不假装能听 ---------------------------------------

@@ -29,7 +29,7 @@
 //! 不建浮钮、不注册热键、不碰麦克风。`dictation_status` 可以随时问 —— 它只读
 //! 系统语音语言，不开设备。
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -131,18 +131,29 @@ static RECOGNIZER: Mutex<Option<SpeechRecognizer>> = Mutex::new(None);
 static HOTKEY_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 /// 语言探测只做一次（`SupportedTopicLanguages()` 要几百毫秒）
-static LANGUAGE: OnceLock<Probe> = OnceLock::new();
+static LANGUAGE: Mutex<Option<Probe>> = Mutex::new(None);
 
 /// 探测结果：能用的语言 tag + 系统自己那个
 #[derive(Debug, Clone)]
 struct Probe {
     /// 实际会用的语言（`None` = 这台机器不支持中文听写）
     usable: Option<String>,
-    /// `SystemSpeechLanguage()` 报的那个，设置页要显示出来
+    /// 系统语音语言（设置页要显示出来）
     system: String,
-    /// `SupportedTopicLanguages()` 列出来几种。**0 = 这台机器一条语音识别语言都没有**，
+    /// 两套引擎加起来有几种语音识别语言。**0 = 这台机器一条都没有**，
     /// 那和"装了但不是中文"是两句完全不同的话（前者要去装组件，后者要去切语言）
     supported: usize,
+    /// 走哪一套引擎（`None` = 一条路都不通）
+    engine: Option<Engine>,
+}
+
+/// 听写的两套后端。**它们读的不是同一份语言库** —— 详见 `dictation_sapi.rs` 的文件头
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Engine {
+    /// WinRT `SpeechRecognizer`，读 `Speech_OneCore`
+    WinRt,
+    /// 经典 SAPI 5，读 `Speech\Engines\SR`
+    Sapi,
 }
 
 fn lock_live() -> std::sync::MutexGuard<'static, Live> {
@@ -163,52 +174,98 @@ fn com() {
 }
 
 /// 探一次语言。**不开麦**
-fn probe() -> &'static Probe {
-    LANGUAGE.get_or_init(|| {
-        com();
-        let system = match SpeechRecognizer::SystemSpeechLanguage() {
-            Ok(language) => match language.LanguageTag() {
-                Ok(tag) => tag.to_string(),
-                Err(error) => return broken(format!("SystemSpeechLanguage().LanguageTag() failed: {error}")),
-            },
-            Err(error) => {
-                return broken(format!("SystemSpeechLanguage() failed: {error}"));
-            }
-        };
+///
+/// 缓存的是"问过 Windows 的答案"：装语音包要跳去系统设置，回来之后缓存是旧的，
+/// 所以设置页那颗「重新检测」必须能把它清掉（`dictation_recheck`）—— 一个不会
+/// 重新检测的"重新检测"比没有这个按钮更糟。
+fn probe() -> Probe {
+    let mut slot = LANGUAGE.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(probe) = slot.as_ref() {
+        return probe.clone();
+    }
+    let probe = detect();
+    *slot = Some(probe.clone());
+    probe
+}
 
-        let mut supported = Vec::new();
-        match SpeechRecognizer::SupportedTopicLanguages() {
-            Ok(languages) => {
-                if let Ok(size) = languages.Size() {
-                    for index in 0..size {
-                        if let Ok(language) = languages.GetAt(index) {
-                            if let Ok(tag) = language.LanguageTag() {
-                                supported.push(tag.to_string());
-                            }
+fn detect() -> Probe {
+    com();
+    // 先问 WinRT。新装的 Win11 + 中文语音包只有这一套能用
+    let winrt = detect_winrt();
+    let probe = match policy::pick_language(&winrt.system, &winrt.tags) {
+        Some(tag) => Probe {
+            usable: Some(tag),
+            system: winrt.system,
+            supported: winrt.tags.len(),
+            engine: Some(Engine::WinRt),
+        },
+        None => {
+            // WinRT 没有中文：再问经典 SAPI。从 Win10 升级上来的机器只有这一套能用
+            let sapi = crate::dictation_sapi::installed();
+            let (system, chinese, total) = match sapi {
+                Some(installed) => (installed.system, installed.chinese, installed.total),
+                None => (String::new(), Vec::new(), 0),
+            };
+            let usable = policy::pick_language(&system, &chinese);
+            Probe {
+                engine: usable.as_ref().map(|_| Engine::Sapi),
+                usable,
+                system,
+                // 两套加起来才是"这台机器装了些什么"：只有 SAPI 有中文时，
+                // 报 0 会让用户去装一个其实已经装了的组件
+                supported: winrt.tags.len() + total,
+            }
+        }
+    };
+
+    // 探测结果有缓存，这条一辈子只打一次。出事时它是唯一能回答"到底走了哪套
+    // 引擎、为什么没有中文"的东西 —— 而这两件事在界面上都只表现为"按钮是灰的"
+    eprintln!(
+        "[lattice] dictation probe: engine={:?} language={:?} supported={}",
+        probe.engine, probe.usable, probe.supported
+    );
+    probe
+}
+
+/// WinRT 那半的探测结果
+struct WinRtProbe {
+    system: String,
+    tags: Vec<String>,
+}
+
+fn detect_winrt() -> WinRtProbe {
+    let system = match SpeechRecognizer::SystemSpeechLanguage() {
+        Ok(language) => match language.LanguageTag() {
+            Ok(tag) => tag.to_string(),
+            Err(error) => {
+                eprintln!("[lattice] SystemSpeechLanguage().LanguageTag() failed: {error}");
+                String::new()
+            }
+        },
+        Err(error) => {
+            eprintln!("[lattice] SystemSpeechLanguage() failed: {error}");
+            String::new()
+        }
+    };
+
+    let mut tags = Vec::new();
+    match SpeechRecognizer::SupportedTopicLanguages() {
+        Ok(languages) => {
+            if let Ok(size) = languages.Size() {
+                for index in 0..size {
+                    if let Ok(language) = languages.GetAt(index) {
+                        if let Ok(tag) = language.LanguageTag() {
+                            tags.push(tag.to_string());
                         }
                     }
                 }
             }
-            // 列不出来不是"没有"：还有个正在跑的系统语言可以试着用
-            Err(error) => eprintln!("[lattice] SupportedTopicLanguages() failed: {error}"),
         }
-
-        Probe {
-            usable: policy::pick_language(&system, &supported),
-            system,
-            supported: supported.len(),
-        }
-    })
-}
-
-fn broken(error: String) -> Probe {
-    eprintln!("[lattice] speech probe failed: {error}");
-    Probe {
-        usable: None,
-        system: String::new(),
-        // 探测失败时说成"一条都没有"：用户要做的动作是一样的（去装 / 去切语音语言）
-        supported: 0,
+        // 列不出来不是"没有"：还有个正在跑的系统语言可以试着用
+        Err(error) => eprintln!("[lattice] SupportedTopicLanguages() failed: {error}"),
     }
+
+    WinRtProbe { system, tags }
 }
 
 fn recognizer_for(tag: &str) -> Result<SpeechRecognizer, String> {
@@ -303,21 +360,20 @@ pub fn listening() -> bool {
 pub struct SettingsView {
     pub enabled: bool,
     pub hotkey: String,
-    pub show: bool,
     pub dx: i32,
     pub dy: i32,
 }
 
 /// `dictation_settings_set` 的入参：**每一项都可选**，给什么改什么。
 ///
-/// 浮钮的开关和位置也走这里（0027 §4「落盘」最后一行）：前端和 Rust 只认这一份，
-/// 不新增命令。
+/// 浮钮的位置也走这里（0027 §4「落盘」最后一行）：前端和 Rust 只认这一份，
+/// 不新增命令。`show` 在 0032 里删掉了 —— 浮钮跟不跟着出现由听写状态决定，
+/// 不再是一个用户开关。
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsPatch {
     pub enabled: Option<bool>,
     pub hotkey: Option<String>,
-    pub show: Option<bool>,
     pub dx: Option<i32>,
     pub dy: Option<i32>,
 }
@@ -343,10 +399,11 @@ fn settings(app: &AppHandle) -> policy::Settings {
         return policy::Settings::default();
     };
     let button = value.get("button");
+    // 旧文件里的 `button.show` 到这里就没用了（0032 §4）：浮钮跟不跟着出现
+    // 由听写状态决定，所以读的时候**直接不取**，下次保存自然消失。
     policy::normalize(
         value.get("enabled").and_then(serde_json::Value::as_bool),
         value.get("hotkey").and_then(serde_json::Value::as_str),
-        button.and_then(|button| button.get("show")).and_then(serde_json::Value::as_bool),
         button
             .and_then(|button| button.get("dx"))
             .and_then(serde_json::Value::as_i64)
@@ -364,7 +421,7 @@ fn save(app: &AppHandle, settings: &policy::Settings) -> Result<(), String> {
         "schema": 1,
         "enabled": settings.enabled,
         "hotkey": settings.hotkey,
-        "button": { "show": settings.show, "dx": settings.dx, "dy": settings.dy },
+        "button": { "dx": settings.dx, "dy": settings.dy },
     });
     let text = serde_json::to_string_pretty(&document)
         .map_err(|error| format!("could not serialize the dictation settings: {error}"))?;
@@ -383,7 +440,6 @@ fn view(settings: &policy::Settings) -> SettingsView {
     SettingsView {
         enabled: settings.enabled,
         hotkey: settings.hotkey.clone(),
-        show: settings.show,
         dx: settings.dx,
         dy: settings.dy,
     }
@@ -411,7 +467,7 @@ pub fn dictation_start(app: AppHandle, target: String) -> Result<(), String> {
     }
 
     let probe = probe();
-    let Some(tag) = probe.usable.clone() else {
+    let (Some(tag), Some(engine)) = (probe.usable.clone(), probe.engine) else {
         // 两句话必须分开：`SupportedTopicLanguages()` 回 0 是"这台机器没装语音识别组件"，
         // 非 0 但没有中文是"装了、没切过去"。前者要去装，后者要去切 —— 合成一句
         // "把语音语言改成中文"会把第一类用户指到错的地方。
@@ -460,7 +516,7 @@ pub fn dictation_start(app: AppHandle, target: String) -> Result<(), String> {
     let handle = app.clone();
     let spawned = std::thread::Builder::new()
         .name("lattice-dictation".to_string())
-        .spawn(move || recognizer_loop(handle, tag, target));
+        .spawn(move || recognizer_loop(handle, tag, target, engine));
 
     if let Err(error) = spawned {
         {
@@ -473,19 +529,67 @@ pub fn dictation_start(app: AppHandle, target: String) -> Result<(), String> {
     Ok(())
 }
 
-/// 识别线程：建识别器 → 挂听写约束 → 一遍遍 `RecognizeAsync` → 收尾。
-///
-/// **一条 `start` 一条线程**，结束即退。不用常驻线程是因为常驻要回答"它现在算
-/// 谁的状态" —— 而现在状态只有一份，在 `LIVE` 里。
-fn recognizer_loop(app: AppHandle, tag: String, target: Target) {
-    com();
+/// 一次开麦尝试的结局
+enum Attempt {
+    /// 已经收尾了（成功 / 出错 / 取消都由它自己 `finish` 过）
+    Handled,
+    /// **还没开始听**就失败了 —— 这时候换另一套引擎再试是有意义的
+    NotStarted(&'static str, String),
+}
 
-    let recognizer = match recognizer_for(&tag) {
+/// 识别线程：按 `detect()` 挑出来的引擎开一路，结束即退。
+///
+/// **一条 `start` 一条线程**。不用常驻线程是因为常驻要回答"它现在算谁的状态" ——
+/// 而现在状态只有一份，在 `LIVE` 里。
+///
+/// # WinRT 起不来就退到 SAPI
+///
+/// `detect()` 只看"有没有这个语言"，看不到"这个语言能不能真的开麦"。本机就是
+/// 典型：WinRT 报 `zh-Hans-CN`、约束也编得过，可一 `RecognizeAsync` 就回
+/// `0x80045509`（语音隐私政策没同意）—— 而经典 SAPI **不受这个闸门管**。
+/// 所以"WinRT 还没出声就失败"要当成"换个引擎再试"，而不是直接给用户报错。
+///
+/// 反过来的顺序不成立：SAPI 一旦开始听就听到底，它的失败（没麦克风、没令牌）
+/// 换 WinRT 也救不了，所以那一路是终点。
+fn recognizer_loop(app: AppHandle, tag: String, target: Target, engine: Engine) {
+    com();
+    match engine {
+        Engine::WinRt => match winrt_loop(&app, &tag, target) {
+            Attempt::Handled => {}
+            Attempt::NotStarted(code, message) => {
+                let fallback = crate::dictation_sapi::installed()
+                    .and_then(|installed| installed.chinese.into_iter().next());
+                match fallback {
+                    Some(sapi_tag) => {
+                        eprintln!(
+                            "[lattice] WinRT could not start ({message}); falling back to classic SAPI \"{sapi_tag}\""
+                        );
+                        match crate::dictation_sapi::listen(&app, target, &sapi_tag) {
+                            crate::dictation_sapi::Outcome::Done => finish(&app, None, None, None),
+                            crate::dictation_sapi::Outcome::Failed(code, message) => {
+                                finish(&app, Some(code), Some(message), None)
+                            }
+                        }
+                    }
+                    // 另一套也没有中文：那就只能把 WinRT 这个错报出去
+                    None => finish(&app, Some(code), Some(message), None),
+                }
+            }
+        },
+        Engine::Sapi => match crate::dictation_sapi::listen(&app, target, &tag) {
+            crate::dictation_sapi::Outcome::Done => finish(&app, None, None, None),
+            crate::dictation_sapi::Outcome::Failed(code, message) => {
+                finish(&app, Some(code), Some(message), None)
+            }
+        },
+    }
+}
+
+/// WinRT 那一路：建识别器 → 挂听写约束 → 一遍遍 `RecognizeAsync` → 收尾。
+fn winrt_loop(app: &AppHandle, tag: &str, target: Target) -> Attempt {
+    let recognizer = match recognizer_for(tag) {
         Ok(recognizer) => recognizer,
-        Err(error) => {
-            finish(&app, Some("wrong_language"), Some(error), None);
-            return;
-        }
+        Err(error) => return Attempt::NotStarted("wrong_language", error),
     };
 
     // 听写场景约束：有标点、按句子切。没有它，本地语法给的是"命令词"那一套
@@ -495,8 +599,10 @@ fn recognizer_loop(app: AppHandle, tag: String, target: Target) {
     ) {
         Ok(constraint) => constraint,
         Err(error) => {
-            finish(&app, Some("wrong_language"), Some(format!("could not build the dictation constraint: {error}")), None);
-            return;
+            return Attempt::NotStarted(
+                "wrong_language",
+                format!("could not build the dictation constraint: {error}"),
+            )
         }
     };
     let appended = (|| -> windows::core::Result<()> {
@@ -508,8 +614,10 @@ fn recognizer_loop(app: AppHandle, tag: String, target: Target) {
         Ok(())
     })();
     if let Err(error) = appended {
-        finish(&app, Some("wrong_language"), Some(format!("could not attach the constraint: {error}")), None);
-        return;
+        return Attempt::NotStarted(
+            "wrong_language",
+            format!("could not attach the constraint: {error}"),
+        );
     }
 
     if let Ok(timeouts) = recognizer.Timeouts() {
@@ -521,25 +629,26 @@ fn recognizer_loop(app: AppHandle, tag: String, target: Target) {
             // `SpeechRecognitionResultStatus::Success` —— 约束编过了
             Ok(status) if status == SpeechRecognitionResultStatus::Success => {}
             Ok(status) => {
-                finish(
-                    &app,
-                    Some("wrong_language"),
-                    Some(format!(
+                return Attempt::NotStarted(
+                    "wrong_language",
+                    format!(
                         "the dictation constraint did not compile (status {}). 这台机器的语音识别不支持听写场景，或者没装对应的语言包。",
                         status.0
-                    )),
-                    None,
-                );
-                return;
+                    ),
+                )
             }
             Err(error) => {
-                finish(&app, Some("wrong_language"), Some(format!("reading the compilation status failed: {error}")), None);
-                return;
+                return Attempt::NotStarted(
+                    "wrong_language",
+                    format!("reading the compilation status failed: {error}"),
+                )
             }
         },
         Err(error) => {
-            finish(&app, Some("wrong_language"), Some(format!("compiling the constraints failed: {error}")), None);
-            return;
+            return Attempt::NotStarted(
+                "wrong_language",
+                format!("compiling the constraints failed: {error}"),
+            )
         }
     }
 
@@ -561,27 +670,11 @@ fn recognizer_loop(app: AppHandle, tag: String, target: Target) {
                         .unwrap_or_default();
                     match policy::heard(&text) {
                         Some(heard) => {
-                            {
-                                let mut live = lock_live();
-                                if !live.text.is_empty() {
-                                    live.text.push('\n');
-                                }
-                                live.text.push_str(&heard);
-                            }
+                            let all = append_heard(&heard);
                             heard_any = true;
                             empty_rounds = 0;
                             // 逐字上屏是输入法该干的事：这里只喂面板那行预览（0027 §8）
-                            emit(
-                                &app,
-                                Update {
-                                    phase: "partial",
-                                    target: Some(target.as_str()),
-                                    text: Some(current_text()),
-                                    code: None,
-                                    error: None,
-                                    chars: None,
-                                },
-                            );
+                            emit_partial(app, target, all);
                         }
                         // 空结果 = 这一轮没听到
                         None => empty_rounds = empty_rounds.saturating_add(1),
@@ -594,15 +687,21 @@ fn recognizer_loop(app: AppHandle, tag: String, target: Target) {
                         Some("麦克风没有打开 —— 去「设置 → 隐私 → 麦克风」允许桌面应用使用麦克风。".to_string()),
                         None,
                     );
-                    return;
+                    return Attempt::Handled;
                 }
                 // 没人说话 / 说不清 / 被停。三种都按"这一轮没听到"处理：
                 // 用户按了停就收尾，没按就接着听下一句
                 _ => empty_rounds = empty_rounds.saturating_add(1),
             },
             Err(error) => {
+                // 一句都没听到就失败 = 根本没开始听。这多半是环境问题（最典型的是
+                // `0x80045509` 语音隐私政策没同意），换 SAPI 还有救
+                if !heard_any {
+                    *lock_recognizer() = None;
+                    return Attempt::NotStarted("internal", start_failure(error));
+                }
                 finish(&app, Some("internal"), Some(format!("recognition failed: {error}")), None);
-                return;
+                return Attempt::Handled;
             }
         }
         if stopping() {
@@ -611,24 +710,73 @@ fn recognizer_loop(app: AppHandle, tag: String, target: Target) {
         // 一轮都没识别到就空转：两轮之后按"没听到"收尾，而不是永远亮着"正在听"
         if !heard_any && empty_rounds >= 2 {
             finish(&app, None, None, None);
-            return;
+            return Attempt::Handled;
         }
     }
 
     finish(&app, None, None, None);
+    Attempt::Handled
 }
 
-fn current_text() -> String {
+/// `RecognizeAsync` 一开口就失败时给用户看的话。
+///
+/// `0x80045509` 是"语音隐私政策没同意"。它长得像一个内部错误码，而用户要做的
+/// 动作其实很具体（去设置里打开语音服务），所以单独翻译一句 —— 直接把这串数字
+/// 甩出去，用户只会以为程序坏了。
+fn start_failure(error: windows::core::Error) -> String {
+    let raw = error.to_string();
+    if raw.contains("0x80045509") || raw.contains("privacy policy") {
+        "Windows 的「语音隐私政策」还没同意，系统识别器不让开麦。去「设置 → 隐私和安全性 → 语音」把语音服务打开再试。".to_string()
+    } else {
+        format!("recognition failed: {raw}")
+    }
+}
+
+/// 把一句已经识别完的话并进 `LIVE.text`，返回并进去之后的全文。
+///
+/// 两套引擎都走这一条：`\n` 分隔是"每句话一行"，而用户说的结构（逗号、句号）
+/// 由识别器自己给，这里不再动。
+pub(crate) fn append_heard(heard: &str) -> String {
+    let mut live = lock_live();
+    if !live.text.is_empty() {
+        live.text.push('\n');
+    }
+    live.text.push_str(heard);
+    live.text.clone()
+}
+
+/// 只更新"正在听到什么"的预览，**不**并进 `LIVE.text`（没定下来的字不许被当成
+/// 结果交出去，0027 §8）
+pub(crate) fn emit_partial(app: &AppHandle, target: Target, text: String) {
+    emit(
+        app,
+        Update {
+            phase: "partial",
+            target: Some(target.as_str()),
+            text: Some(text),
+            code: None,
+            error: None,
+            chars: None,
+        },
+    );
+}
+
+pub(crate) fn current_text() -> String {
     lock_live().text.clone()
 }
 
-fn stopping() -> bool {
+pub(crate) fn stopping() -> bool {
     let live = lock_live();
     live.stopping || live.cancelling
 }
 
 /// 收尾。**任何分支都必须走到这里**（0027 §5：按了停止界面还一直"正在听"）
-fn finish(app: &AppHandle, code: Option<&str>, error: Option<String>, chars: Option<usize>) {
+pub(crate) fn finish(
+    app: &AppHandle,
+    code: Option<&str>,
+    error: Option<String>,
+    chars: Option<usize>,
+) {
     let (text, cancelling, target, window) = {
         let mut live = lock_live();
         let text = live.text.clone();
@@ -648,6 +796,7 @@ fn finish(app: &AppHandle, code: Option<&str>, error: Option<String>, chars: Opt
 
     if cancelling {
         // Esc / 取消：一个字都不落，但状态照样回 idle
+        crate::dictation_button::dismiss();
         emit_done(app, None, Some("cancelled"), None);
         return;
     }
@@ -659,12 +808,16 @@ fn finish(app: &AppHandle, code: Option<&str>, error: Option<String>, chars: Opt
 
     let Some(text) = policy::heard(&text) else {
         // 空文本 = 没听到。状态已经回 idle，面板给一句提示就好（0027 §5）
+        crate::dictation_button::dismiss();
         emit_done(app, None, None, None);
         return;
     };
 
     match target {
-        Target::Panel => emit_done(app, Some(text), None, chars),
+        Target::Panel => {
+            crate::dictation_button::dismiss();
+            emit_done(app, Some(text), None, chars)
+        }
         Target::System => {
             // 超限**拒绝不截断**：把半句话打进别人的窗口、而用户不知道，比不做更糟
             if policy::too_long(&text) {
@@ -687,7 +840,10 @@ fn finish(app: &AppHandle, code: Option<&str>, error: Option<String>, chars: Opt
                 return;
             }
             match crate::hands::type_text(&text) {
-                Ok(chars) => emit_done(app, None, None, Some(chars)),
+                Ok(chars) => {
+                    crate::dictation_button::dismiss();
+                    emit_done(app, None, None, Some(chars))
+                }
                 Err(error) => {
                     crate::dictation_button::flash_error();
                     emit_error(app, "input_blocked", error);
@@ -802,6 +958,9 @@ pub fn dictation_level() -> Level {
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub available: bool,
+    /// 为什么不能用（0032 §4）：`no_engine` / `no_chinese` / `null`。
+    /// 不参与任何判断，只决定设置页和 tooltip 说哪句话
+    pub reason: Option<String>,
     pub language: String,
     pub enabled: bool,
     pub hotkey: String,
@@ -814,6 +973,8 @@ pub fn dictation_status(app: AppHandle) -> Status {
     let settings = settings(&app);
     Status {
         available: probe.usable.is_some(),
+        reason: policy::unavailable_reason(probe.supported, probe.usable.is_some())
+            .map(str::to_string),
         language: probe.usable.clone().unwrap_or_else(|| probe.system.clone()),
         enabled: settings.enabled,
         hotkey: settings.hotkey,
@@ -822,6 +983,16 @@ pub fn dictation_status(app: AppHandle) -> Status {
             .unwrap_or_else(|error| error.into_inner())
             .clone(),
     }
+}
+
+/// 重新问 Windows 一次"能不能听写"。
+///
+/// 设置页那颗「重新检测」走这一条：装语音包必须先跳去系统设置，回来时缓存还是
+/// 旧的 —— 一个不会重新检测的按钮，比没有这个按钮更糟（0032 §5）。
+#[tauri::command]
+pub fn dictation_recheck(app: AppHandle) -> Status {
+    *LANGUAGE.lock().unwrap_or_else(|error| error.into_inner()) = None;
+    dictation_status(app)
 }
 
 #[tauri::command]
@@ -836,7 +1007,6 @@ pub fn dictation_settings_set(app: AppHandle, patch: SettingsPatch) -> Result<Se
     let next = policy::normalize(
         patch.enabled.or(Some(current.enabled)),
         Some(patch.hotkey.as_deref().unwrap_or(current.hotkey.as_str())),
-        patch.show.or(Some(current.show)),
         patch.dx.or(Some(current.dx)),
         patch.dy.or(Some(current.dy)),
     );
@@ -941,26 +1111,14 @@ pub fn boot(app: &AppHandle) {
     crate::dictation_button::apply(app, &settings);
 }
 
-/// 托盘菜单那一项：「隐藏浮钮」。
-///
-/// 钮上不放第二颗小叉 —— 28px 放不下两个命中区（0027 §4）。要让它回来走设置页。
-pub fn hide_button(app: &AppHandle) {
-    let mut settings = settings(app);
-    settings.show = false;
-    if let Err(error) = save(app, &settings) {
-        eprintln!("[lattice] could not hide the dictation button: {error}");
-    }
-    crate::dictation_button::apply(app, &settings);
-}
-
 /// 托盘菜单那一项：「浮钮回到右下角」。
 ///
 /// 拔掉外接屏之后偏移可能落在当前工作区外面 —— 这条永远在托盘里，找得回来。
+/// （「隐藏浮钮」那一项在 0032 里删了：钮不再常驻，没有"藏"这回事。）
 pub fn reset_button(app: &AppHandle) {
     let mut settings = settings(app);
     settings.dx = policy::DEFAULT_DX;
     settings.dy = policy::DEFAULT_DY;
-    settings.show = true;
     if let Err(error) = save(app, &settings) {
         eprintln!("[lattice] could not reset the dictation button: {error}");
     }

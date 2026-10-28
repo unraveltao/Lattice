@@ -95,6 +95,64 @@ pub fn pick_language(system: &str, supported: &[String]) -> Option<String> {
         .map(|tag| tag.trim().to_string())
 }
 
+/// SAPI 令牌的 `Language` 属性 → 语言 tag。
+///
+/// 经典 SAPI 把语言记成 **LCID 的十六进制字符串**（不带 `0x`：本机中文令牌是
+/// `804`、英文令牌是 `409;9`），而且可以是一串分号分隔的备选值。主语言 ID 在低
+/// 10 位，`0x04` 是中文；次语言 ID 在 10–15 位，决定是简体还是繁体。
+///
+/// **按十进制解析会静默错一位**：`804` 当十进制是 0x324（主语言 0x24，不是中文），
+/// 于是"这台机器有中文"被读成"没有" —— 症状和真的没装语音包一模一样。
+///
+/// **只认中文**，别的语言返回 `None`：这个功能只关心中文，把英文也映射出来只会
+/// 让调用方多写一个用不上的分支。
+///
+/// 这条判断以前不存在，是因为 WinRT 直接给 BCP-47 标签。换成 SAPI 之后语言只剩
+/// 数字，而"804 算不算中文"这种判断写进 COM 那半就再也测不了了。
+pub fn lcid_tag(raw: &str) -> Option<String> {
+    raw.split(';')
+        .filter_map(|part| u32::from_str_radix(part.trim(), 16).ok())
+        .find_map(|lcid| {
+            if lcid & 0x3ff != 0x04 {
+                return None;
+            }
+            let sub = (lcid >> 10) & 0x3f;
+            Some(
+                match sub {
+                    1 => "zh-TW",
+                    2 => "zh-CN",
+                    3 => "zh-HK",
+                    4 => "zh-SG",
+                    // 只知道是中文、不知道是哪一支：仍然能用，tag 交给上层显示
+                    _ => "zh",
+                }
+                .to_string(),
+            )
+        })
+}
+
+/// LCID 字符串 → 主语言名，只给"为什么不能听写"那句话用。
+///
+/// `lcid_tag` 对非中文一律回 `None`（判断只需要中文），但错误文案里写
+/// "系统语音语言是 (读不出来)" 是在撒谎 —— 我们明明读到了，只是不是中文。
+/// 所以这里补一个**只用来显示**的名字表，覆盖本机可能出现的那几种。
+pub fn lcid_language(raw: &str) -> Option<&'static str> {
+    let first = raw
+        .split(';')
+        .find_map(|part| u32::from_str_radix(part.trim(), 16).ok())?;
+    Some(match first & 0x3ff {
+        0x04 => "Chinese",
+        0x07 => "German",
+        0x09 => "English",
+        0x0a => "Spanish",
+        0x0c => "French",
+        0x11 => "Japanese",
+        0x12 => "Korean",
+        0x19 => "Russian",
+        _ => return None,
+    })
+}
+
 /// 识别结果 → 要不要往上交。
 ///
 /// 只有空白的结果等于"没听到"：`RecognizeAsync` 在没人说话时也会成功返回一个空
@@ -268,8 +326,6 @@ pub struct Settings {
     pub enabled: bool,
     /// 规范写法的热键字符串
     pub hotkey: String,
-    /// 浮钮要不要显示
-    pub show: bool,
     /// 浮钮相对工作区右下角的偏移
     pub dx: i32,
     pub dy: i32,
@@ -280,7 +336,6 @@ impl Default for Settings {
         Self {
             enabled: false,
             hotkey: DEFAULT_HOTKEY.to_string(),
-            show: true,
             dx: DEFAULT_DX,
             dy: DEFAULT_DY,
         }
@@ -294,7 +349,6 @@ impl Default for Settings {
 pub fn normalize(
     enabled: Option<bool>,
     hotkey: Option<&str>,
-    show: Option<bool>,
     dx: Option<i32>,
     dy: Option<i32>,
 ) -> Settings {
@@ -304,9 +358,25 @@ pub fn normalize(
         hotkey: hotkey
             .and_then(|raw| parse_hotkey(raw).ok())
             .map_or(defaults.hotkey, |parsed| parsed.label()),
-        show: show.unwrap_or(defaults.show),
         dx: clamp_offset(dx.unwrap_or(defaults.dx)),
         dy: clamp_offset(dy.unwrap_or(defaults.dy)),
+    }
+}
+
+/// "为什么不能听写"—— 三句话对应三个不同的动作（0032 §4）。
+///
+/// `supported` 是 `SupportedTopicLanguages()` 的条数，`usable` 是"挑出了一个 `zh-*`"。
+/// 前者 0 表示这台机器**没有语音识别组件**（要去装），非 0 而后者假表示
+/// **有组件但没有中文**（要去加语言）—— 0027 §7 量过这两件事，文案一直是分开的，
+/// 这次把它变成状态的一部分，好让设置页和 tooltip 说同一句话。
+pub fn unavailable_reason(supported: usize, usable: bool) -> Option<&'static str> {
+    if usable {
+        return None;
+    }
+    if supported == 0 {
+        Some("no_engine")
+    } else {
+        Some("no_chinese")
     }
 }
 
@@ -401,6 +471,58 @@ mod tests {
         let supported = vec!["en-US".to_string(), "ja-JP".to_string()];
         assert_eq!(pick_language("en-US", &supported), None);
         assert_eq!(pick_language("", &[]), None);
+    }
+
+    // --- SAPI 的 LCID -----------------------------------------------------
+
+    #[test]
+    fn the_chinese_lcids_map_to_their_branches() {
+        // 本机 zh-CN 令牌的 Language 属性就是 "804"
+        assert_eq!(lcid_tag("804").as_deref(), Some("zh-CN"));
+        assert_eq!(lcid_tag("404").as_deref(), Some("zh-TW"));
+        assert_eq!(lcid_tag("c04").as_deref(), Some("zh-HK"));
+        assert_eq!(lcid_tag("1004").as_deref(), Some("zh-SG"));
+        // 只有主语言、没有次语言：仍然是中文，只是说不清哪一支
+        assert_eq!(lcid_tag("4").as_deref(), Some("zh"));
+    }
+
+    #[test]
+    fn other_lcids_are_not_chinese() {
+        // 409 = en-US，本机英文令牌的完整属性是 "409;9"（分号后面是备选值）
+        assert_eq!(lcid_tag("409"), None);
+        assert_eq!(lcid_tag("409;9"), None);
+        assert_eq!(lcid_tag("411"), None); // ja-JP
+        assert_eq!(lcid_tag(""), None);
+        assert_eq!(lcid_tag("hmm"), None);
+    }
+
+    #[test]
+    fn a_mixed_lcid_list_still_finds_the_chinese_one() {
+        // 一个令牌可以同时声明几种语言。**列表里有中文就算有** —— 只看第一项会
+        // 把"支持中英双语"的令牌判成英文，然后告诉用户"这台机器没有中文"
+        assert_eq!(lcid_tag("409;804").as_deref(), Some("zh-CN"));
+        assert_eq!(lcid_tag(" 804 ; 409 ").as_deref(), Some("zh-CN"));
+    }
+
+    #[test]
+    fn the_lcid_tag_is_recognised_by_the_same_predicate_as_a_bcp47_tag() {
+        // 两条路最后都要过 `is_chinese`：LCID 映射出来的 tag 不许在别处被否掉
+        for raw in ["804", "404", "c04", "1004", "4"] {
+            let tag = lcid_tag(raw).expect("must map");
+            assert!(is_chinese(&tag), "lcid={raw} tag={tag}");
+        }
+    }
+
+    #[test]
+    fn the_language_name_is_only_for_the_error_message() {
+        // 本机两种令牌：中文 "804"、英文 "409;9"
+        assert_eq!(lcid_language("804"), Some("Chinese"));
+        assert_eq!(lcid_language("409;9"), Some("English"));
+        assert_eq!(lcid_language("411"), Some("Japanese"));
+        // 表里没有的语言不许瞎猜
+        assert_eq!(lcid_language("1234"), None);
+        assert_eq!(lcid_language(""), None);
+        assert_eq!(lcid_language("hmm"), None);
     }
 
     // --- 识别结果 ---------------------------------------------------------
@@ -516,33 +638,35 @@ mod tests {
 
     #[test]
     fn missing_fields_fall_back_to_defaults() {
-        let settings = normalize(None, None, None, None, None);
+        let settings = normalize(None, None, None, None);
         assert_eq!(settings, Settings::default());
         assert!(!settings.enabled);
-        assert!(settings.show);
     }
 
     #[test]
     fn bad_values_fall_back_field_by_field() {
         // 只有坏的那一项退回默认，别的照旧 —— 一份读坏的文件不该把总开关也关掉
-        let settings = normalize(
-            Some(true),
-            Some("人"),
-            Some(false),
-            Some(123_456),
-            Some(-7),
-        );
+        let settings = normalize(Some(true), Some("人"), Some(123_456), Some(-7));
         assert!(settings.enabled);
         assert_eq!(settings.hotkey, DEFAULT_HOTKEY);
-        assert!(!settings.show);
         assert_eq!(settings.dx, MAX_OFFSET);
         assert_eq!(settings.dy, -7);
     }
 
     #[test]
     fn a_good_hotkey_is_kept_in_canonical_form() {
-        let settings = normalize(None, Some("alt+Ctrl+F5"), None, None, None);
+        let settings = normalize(None, Some("alt+Ctrl+F5"), None, None);
         assert_eq!(settings.hotkey, "Ctrl+Alt+F5");
+    }
+
+    /// 0032 §4：三种原因对应三个不同动作，所以它是状态的一部分，不是文案细节
+    #[test]
+    fn the_reason_says_which_action_is_missing() {
+        assert_eq!(unavailable_reason(0, false), Some("no_engine"));
+        assert_eq!(unavailable_reason(3, false), Some("no_chinese"));
+        assert_eq!(unavailable_reason(3, true), None);
+        // 系统语言本来就是 zh-*、列表却回 0：能听，不许报原因
+        assert_eq!(unavailable_reason(0, true), None);
     }
 
     // --- 浮钮几何 ---------------------------------------------------------

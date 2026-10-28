@@ -7,6 +7,21 @@ code: src-tauri/src/dictation.rs, src-tauri/src/dictation_button.rs, src-tauri/s
 
 # 0027 —— 说话变成字：听写
 
+> **被 [0032](./0032-dictation-session.md) 推翻了两条**：浮钮不再是常驻开关（它跟着一次听写出现和消失），
+> 四个入口也不再平权（收成三个入口 + 浮钮当控制器）。这一份里关于识别器、注入路径、焦点判据、
+> `WS_EX_NOACTIVATE` 的结论**全部仍然有效**，下面照原样保留。
+
+> **识别引擎从"只有 WinRT"改成"WinRT 起不来就退经典 SAPI"**（2026-10-28，
+> `src-tauri/src/dictation_sapi.rs`）。这一份 §7① 的前提是"本地识别 = WinRT `SpeechRecognizer`"，
+> 而实测发现 WinRT 会**广告一个它其实跑不了的语言**：它报 `zh-Hans-CN`、约束也编得过，
+> 但 `RecognizeAsync` 回 `0x80045509`（语音隐私政策没同意），于是"麦克风能用、说下去没有字"。
+> 经典 SAPI 读的是另一份语言库（`Speech\Engines\SR`，本机有 54 MB 中文模型）且不看这个同意位，
+> 所以改成"WinRT 还没出声就失败 → 换 SAPI 再试一次"。
+> **注入路径、焦点判据、`WS_EX_NOACTIVATE`、事件形状、`reason` 三句话一条都没动**，
+> 改的只是"字从哪来"。没有另开设计稿：这次没有动持久化格式，也没有动跨进程契约
+> （`lattice:dictation` 的字段一个没加），按 `docs/design/README.md` 的三条判据
+> 只够写进 ROADMAP 一行 + 代码注释。
+
 > 状态：**已实现**（2026-10-27）。§6 的断言已经落地并跑绿；下面 §7 末尾记了实现时改掉的三处 ——
 > 其中第一处是这份设计的前提之一写错了（`SpeechRecognizer::Create(language)` 是有的）。
 

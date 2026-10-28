@@ -34,6 +34,12 @@ export type DictationTarget = "panel" | "system";
 export interface DictationStatus {
   /** 这台机器能不能听写（系统语音语言是中文，或者装了中文听写） */
   available: boolean;
+  /**
+   * 为什么不能（0032 §4）。三种原因对应三个不同的动作，所以它是状态的一部分，
+   * 不是文案细节：`no_engine` 要去装「语音识别」组件，`no_chinese` 要去加中文语音。
+   * `null` = 能用。
+   */
+  reason: DictationReason | null;
   /** 会用的语言 tag（`zh-CN` / `zh-Hans` / ...） */
   language: string;
   /** 总开关。默认关，和 agent 端点同一条规矩 */
@@ -44,14 +50,30 @@ export interface DictationStatus {
   hotkeyError: string | null;
 }
 
+export type DictationReason = "no_engine" | "no_chinese";
+
 export interface DictationSettings {
   enabled: boolean;
   hotkey: string;
-  /** 浮钮要不要显示 */
-  show: boolean;
-  /** 浮钮相对工作区右下角的偏移 */
+  /** 浮钮相对工作区右下角的偏移。0032 之后它不再是开关，只记位置 */
   dx: number;
   dy: number;
+}
+
+/**
+ * 不可用时那句话。**三种原因三句话**：说错了会把用户送到错误的设置页 ——
+ * 装组件和加语言是两件事（0027 §7 量过）。
+ */
+export function dictationReasonText(status: DictationStatus | null): string | null {
+  if (!status || status.available) return null;
+  if (status.reason === "no_engine") {
+    return t("Windows has no speech recognition component installed");
+  }
+  if (status.reason === "no_chinese") {
+    return t("Add a Chinese speech language in Windows");
+  }
+  // 浏览器预览 / 老版本后端：只知道"不能用"
+  return t("Dictation needs a Chinese speech language");
 }
 
 export interface DictationEvent {
@@ -72,6 +94,7 @@ export async function dictationStatus(): Promise<DictationStatus> {
   if (!hasRust()) {
     return {
       available: false,
+      reason: null,
       language: "",
       enabled: false,
       hotkey: "",
@@ -84,6 +107,15 @@ export async function dictationStatus(): Promise<DictationStatus> {
 /** 开麦。失败时 reject 的是**错误码字符串**（`wrong_language` / ...），文案在事件里 */
 export async function dictationStart(target: DictationTarget): Promise<void> {
   await callCommand<void>("dictation_start", { target });
+}
+
+/**
+ * 重新问 Windows 一次。设置页那颗「重新检测」用它 —— 装语音包要跳去系统设置，
+ * 回来时 Rust 那侧的缓存是旧的（0032 §5）。
+ */
+export async function dictationRecheck(): Promise<DictationStatus> {
+  if (!hasRust()) return await dictationStatus();
+  return await callCommand<DictationStatus>("dictation_recheck");
 }
 
 /** 按停 → 出整句 */

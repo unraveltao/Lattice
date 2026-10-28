@@ -99,38 +99,58 @@ impl Look {
 }
 
 /// 浮钮线程收到的指令。窗口操作一律在**那个线程**里做
+///
+/// 0032：浮钮不再是一个常驻开关，而是"这一轮听写现在长什么样"。所以指令分成两类 ——
+/// `Park`（记住位置、藏起来，启动和关掉听写时）和 `Show` / `Hide`（一次听写的两头）。
 pub enum Message {
-    Show { dx: i32, dy: i32 },
+    /// 记住位置并藏起来。启动时发一次，之后 `Show` 不需要再带坐标
+    Park { dx: i32, dy: i32 },
+    /// 按记住的位置出现
+    Show,
     Hide,
-    Move { dx: i32, dy: i32 },
     Listening(bool),
     Error,
 }
 
 static CHANNEL: Mutex<Option<Sender<Message>>> = Mutex::new(None);
 
-/// 起线程（只起一次），然后把指令丢进去
+/// 启动 / 改设置时调一次：把线程和位置备好，**窗口留在藏着**
 pub fn apply(app: &AppHandle, settings: &policy::Settings) {
-    if let Some(sender) = sender(app) {
-        if settings.enabled && settings.show {
-            let _ = sender.send(Message::Show {
-                dx: settings.dx,
-                dy: settings.dy,
-            });
-        } else {
+    if !settings.enabled {
+        // 关着就什么都不留：线程可以留着（窗口已经藏了），但绝不能让钮挂在桌面上
+        if let Some(sender) = sender_quiet() {
             let _ = sender.send(Message::Hide);
         }
+        return;
+    }
+    if let Some(sender) = sender(app) {
+        let _ = sender.send(Message::Park {
+            dx: settings.dx,
+            dy: settings.dy,
+        });
     }
 }
 
 /// 听写开始 / 结束。**状态只有一份**（在 `dictation.rs`），这里只是画出来
+///
+/// 开始那一半顺手把钮叫出来：这就是 0032 的全部 —— 看见钮等于在录。
 pub fn set_listening(listening: bool) {
     if let Some(sender) = sender_quiet() {
+        if listening {
+            let _ = sender.send(Message::Show);
+        }
         let _ = sender.send(Message::Listening(listening));
     }
 }
 
-/// 出错了：红一颗，两秒后回 idle
+/// 这一轮结束了（出字了 / 没听到 / 取消）：把钮收回去
+pub fn dismiss() {
+    if let Some(sender) = sender_quiet() {
+        let _ = sender.send(Message::Hide);
+    }
+}
+
+/// 出错了：红一颗，两秒后自己藏起来
 pub fn flash_error() {
     if let Some(sender) = sender_quiet() {
         let _ = sender.send(Message::Error);
@@ -321,8 +341,8 @@ mod imp {
         HWND_TOPMOST, KillTimer, MSG, PM_REMOVE, PeekMessageW, RegisterClassExW, SW_HIDE,
         SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_SHOWWINDOW, ShowWindow, TranslateMessage,
         ULW_ALPHA, UpdateLayeredWindow, WNDCLASSEXW, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-        WM_TIMER, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
-        SetTimer, SetWindowPos,
+        WM_RBUTTONUP, WM_TIMER, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+        WS_POPUP, SetTimer, SetWindowPos,
     };
 
     use super::{Look, Message, BITMAP, ERROR_MS, PHASE_MS, SIZE, TIMER_ERROR, TIMER_PHASE};
@@ -471,6 +491,9 @@ mod imp {
         /// 按下时的光标位置
         pressed_at: Option<(i32, i32)>,
         dragging: bool,
+        /// 上一次 `Park` 记下的偏移。`Show` 只认它 —— 拖动会同时改这里和磁盘
+        dx: i32,
+        dy: i32,
     }
 
     thread_local! {
@@ -558,6 +581,9 @@ mod imp {
                 listening: false,
                 pressed_at: None,
                 dragging: false,
+                // 真的值由启动时那条 `Park` 覆盖；这里只是让 `Show` 永远有一个可用的数
+                dx: policy::DEFAULT_DX,
+                dy: policy::DEFAULT_DY,
             });
         });
         let _ = ready.send(Ok(()));
@@ -582,44 +608,29 @@ mod imp {
 
     fn apply(ctx: &mut Ctx, message: Message) {
         match message {
-            Message::Show { dx, dy } => {
-                let work = work_area(ctx.hwnd);
-                let (x, y) = policy::button_origin(dx, dy, work, SIZE);
-                unsafe {
-                    SetWindowPos(
-                        ctx.hwnd as HWND,
-                        HWND_TOPMOST,
-                        x,
-                        y,
-                        SIZE,
-                        SIZE,
-                        SWP_NOACTIVATE | SWP_SHOWWINDOW,
-                    );
-                    ShowWindow(ctx.hwnd as HWND, SW_SHOWNOACTIVATE);
-                }
-                set_look(ctx, Look::Idle);
-                present(ctx, x, y);
-            }
-            Message::Hide => {
+            // 启动 / 改设置：只记位置，**不显示**。0032 之后这颗钮的存在感
+            // 只由"在不在听"决定，跟开没开过设置无关
+            Message::Park { dx, dy } => {
+                ctx.dx = dx;
+                ctx.dy = dy;
                 unsafe {
                     ShowWindow(ctx.hwnd as HWND, SW_HIDE);
                 }
             }
-            Message::Move { dx, dy } => {
-                let work = work_area(ctx.hwnd);
-                let (x, y) = policy::button_origin(dx, dy, work, SIZE);
+            Message::Show => {
+                // 每一轮都从 idle 开始：上一轮的红 / 相位图不该带到这一轮
+                ctx.look = Look::Idle;
+                ctx.phase_b = false;
+                ctx.layer.upload(&ctx.arts[Look::Idle.index()].pixels);
+                show_at_saved(ctx);
+            }
+            Message::Hide => {
                 unsafe {
-                    SetWindowPos(
-                        ctx.hwnd as HWND,
-                        HWND_TOPMOST,
-                        x,
-                        y,
-                        SIZE,
-                        SIZE,
-                        SWP_NOACTIVATE | SWP_SHOWWINDOW,
-                    );
+                    KillTimer(ctx.hwnd as HWND, TIMER_PHASE);
+                    KillTimer(ctx.hwnd as HWND, TIMER_ERROR);
+                    ShowWindow(ctx.hwnd as HWND, SW_HIDE);
                 }
-                present(ctx, x, y);
+                ctx.phase_b = false;
             }
             Message::Listening(listening) => {
                 ctx.listening = listening;
@@ -636,12 +647,33 @@ mod imp {
                 }
             }
             Message::Error => {
+                // 错误一定要看得见：先把它摆出来，再红两秒（`TIMER_ERROR` 到点自己藏）
+                show_at_saved(ctx);
                 set_look(ctx, Look::Error);
                 unsafe {
                     SetTimer(ctx.hwnd as HWND, TIMER_ERROR, ERROR_MS, None);
                 }
             }
         }
+    }
+
+    /// 按记下的偏移把钮摆出来（不改 look）
+    fn show_at_saved(ctx: &mut Ctx) {
+        let work = work_area(ctx.hwnd);
+        let (x, y) = policy::button_origin(ctx.dx, ctx.dy, work, SIZE);
+        unsafe {
+            SetWindowPos(
+                ctx.hwnd as HWND,
+                HWND_TOPMOST,
+                x,
+                y,
+                SIZE,
+                SIZE,
+                SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+            ShowWindow(ctx.hwnd as HWND, SW_SHOWNOACTIVATE);
+        }
+        present(ctx, x, y);
     }
 
     /// 换一张图并立刻贴上去（位置不变）
@@ -693,7 +725,19 @@ mod imp {
 
     extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: usize, lparam: isize) -> isize {
         CTX.with(|slot| {
-            let mut borrowed = slot.borrow_mut();
+            // 不能"先借了再说"：`apply` 里那句 `SetWindowPos`（Show / Move 两条路）
+            // 会把 `WM_WINDOWPOSCHANGING` **同步**派回这个函数，而那一刻 CTX 正被
+            // 外面借着 —— `borrow_mut` 于是 panic。panic 穿过 `extern "system"`
+            // 边界不可 unwind，进程当场 abort：实测退出码 `0xc0000409`，日志只有一句
+            // `panic in a function that cannot unwind`，看不出是这里。触发它只要
+            // 打开一次浮钮（`dictation.json` 的 `show` 从 false 变 true → `apply`
+            // → `Message::Show`）。
+            //
+            // 借不到 = 这条消息是重入进来的，交给默认处理即可（`WM_WINDOWPOSCHANGING`
+            // 的默认行为就是"什么都不改"），别在这里死。
+            let Ok(mut borrowed) = slot.try_borrow_mut() else {
+                return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+            };
             let Some(ctx) = borrowed.as_mut() else {
                 return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
             };
@@ -782,6 +826,9 @@ mod imp {
                             let work = work_area(ctx.hwnd);
                             let (dx, dy) =
                                 policy::button_offset((rect.left, rect.top), work, SIZE);
+                            // 内存和磁盘都要改：只写盘的话下一轮 `Show` 会从旧位置冒出来
+                            ctx.dx = dx;
+                            ctx.dy = dy;
                             crate::dictation::remember_button_offset(&ctx.app, dx, dy);
                         }
                     }
@@ -820,11 +867,21 @@ mod imp {
                                 KillTimer(hwnd, TIMER_ERROR);
                             }
                             if !ctx.listening {
-                                set_look(ctx, Look::Idle);
+                                // 红完了就收工：0032 里这颗钮只为"这一轮"存在
+                                unsafe {
+                                    ShowWindow(hwnd, SW_HIDE);
+                                }
                             }
                         }
                         _ => {}
                     }
+                    0
+                }
+                // 右键 = 丢弃这一轮（0032 §3）。左键是"停止并插入"，两个动作放在
+                // 同一个控件上、靠不同的键分开 —— 28px 放不下第二颗叉，而键盘手势
+                // 到不了这个窗口（它永远不抢焦点）
+                WM_RBUTTONUP => {
+                    let _ = crate::dictation::dictation_cancel();
                     0
                 }
                 _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },

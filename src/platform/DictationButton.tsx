@@ -29,6 +29,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useT } from "../runtime/i18n";
 import {
+  dictationReasonText,
   dictationStart,
   dictationStatus,
   dictationStop,
@@ -142,7 +143,7 @@ export function DictationButton() {
   const hint = dictationTooltip(status, view.listening);
   const title =
     hint === "unavailable"
-      ? t("Dictation needs a Chinese speech language")
+      ? (dictationReasonText(status) ?? t("Dictation is not available"))
       : hint === "listening"
         ? t("Stop dictation")
         : hint === "ready"
