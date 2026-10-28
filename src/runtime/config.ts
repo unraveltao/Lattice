@@ -268,8 +268,58 @@ export function resolveConfig(
   return out;
 }
 
-/** 这个实例有没有改过任何一项（属性面板据此决定 Reset 按钮可不可点） */
-export function hasConfigOverrides(overrides?: Record<string, unknown> | null): boolean {
+/**
+ * 一份 patch 能不能写进去。`null` = 可以，否则返回一句**能直接给模型看**的话。
+ *
+ * 为什么不在写完再靠 `resolveConfig` 兜：那个函数对非法值是**安静地退回出厂值**
+ * （它服务的是"读"，读的人不该因为一个坏字段拿到 `NaN`）。放到写这条路上就变成
+ * "写成功了，但值没变" —— 模型没有任何办法从结果里看出自己写错了，只会重试或
+ * 者宣布做到了。写之前判，判不过就拒绝。
+ *
+ * 也不做"部分接受"：三条里错一条就整份拒。半个 patch 落盘之后，用户看到的是
+ * 一个既不是旧值也不是新值的配置。
+ */
+export function configPatchError(
+  fields: ConfigField[],
+  patch: Record<string, unknown>,
+): string | null {
+  const keys = Object.keys(patch);
+  if (keys.length === 0) return "patch is empty";
+  const byKey = new Map(fields.map((field) => [field.key, field]));
+  for (const key of keys) {
+    const field = byKey.get(key);
+    if (!field) return `this widget has no config field named ${JSON.stringify(key)}`;
+    const value = patch[key];
+    switch (field.type) {
+      case "toggle":
+        if (typeof value !== "boolean") return `${key} must be true or false`;
+        break;
+      case "number":
+        if (typeof value !== "number" || !Number.isFinite(value)) return `${key} must be a number`;
+        if (value < field.min || value > field.max) {
+          return `${key} must be between ${field.min} and ${field.max}`;
+        }
+        break;
+      case "text":
+        if (typeof value !== "string") return `${key} must be a string`;
+        if (value.length > field.maxLength) {
+          return `${key} is longer than ${field.maxLength} characters`;
+        }
+        break;
+      case "select":
+        if (typeof value !== "string" || !field.options.some((option) => option.value === value)) {
+          return `${key} must be one of ${field.options.map((option) => option.value).join(", ")}`;
+        }
+        break;
+      case "date":
+        if (typeof value !== "string" || !isDate(value)) return `${key} must be a YYYY-MM-DD date`;
+        break;
+    }
+  }
+  return null;
+}
+
+/** 这个实例有没有改过任何一项（属性面板据此决定 Reset 按钮可不可点） */export function hasConfigOverrides(overrides?: Record<string, unknown> | null): boolean {
   return !!overrides && Object.keys(overrides).length > 0;
 }
 

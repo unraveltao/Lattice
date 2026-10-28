@@ -53,7 +53,7 @@
 
       // ---- 夹具 ----
 
-      const record = (id, size = {}, help = { sections: [] }) => ({
+      const record = (id, size = {}, help = { sections: [] }, config = []) => ({
         manifest: {
           id,
           name: id.split(".").pop(),
@@ -62,6 +62,7 @@
           layer: "desktop",
           permissions: ["clock"],
           help,
+          config,
         },
         source: "builtin",
         dir: "",
@@ -75,7 +76,12 @@
             { title: "How to use", items: ["Tap the clock to switch between 12 and 24 hour time."] },
           ],
         }),
-        record("lattice.todo", { minW: 200, minH: 150 }),
+        // 0037：`config.set` 要有 schema 才判得出"键不认识 / 越界"。字段形状照
+        // `runtime/config.ts` 的 `ConfigField`，这里只需要 key/type/default 那几个
+        record("lattice.todo", { minW: 200, minH: 150 }, { sections: [] }, [
+          { key: "fontSize", type: "number", label: "Font size", help: "", default: 14, min: 10, max: 24, step: 1, unit: "px" },
+          { key: "showDone", type: "toggle", label: "Show done", help: "", default: false },
+        ]),
       ];
 
       const reset = (patch = {}) =>
@@ -107,8 +113,9 @@
           "placement.front",
           "theme.set",
           "widgets.pause",
+          "config.set",
         ],
-        "白名单就是这 8 个，顺序也一样（agent_policy::ACTIONS）",
+        "白名单就是这 9 个，顺序也一样（agent_policy::ACTIONS）",
       );
 
       // ---- 2. 快照 ----
@@ -121,7 +128,7 @@
       eq(snap.paused, false, "快照带暂停状态");
       eq(snap.widgets.length, 2, "快照列出所有能装的组件");
       eq(snap.widgets[0].installed, true, "已装的标 installed");
-      eq(snap.actions.length, 8, "快照自己告诉 agent 有哪些动作");
+      eq(snap.actions.length, 9, "快照自己告诉 agent 有哪些动作");
       eq(
         snap.widgets[0].about,
         "Tap the clock to switch between 12 and 24 hour time.",
@@ -202,9 +209,52 @@
       eq(useLattice.getState().paused, true, "paused 真的改了");
       eq(act("widgets.pause", {}).code, "bad_args", "缺 paused");
 
+      // ---- 6b. config.set（0037 的第 9 个动作）----
+      //
+      // 三条判据都在这里：按 `instanceId` 定位、写前校验、回归一化之后的**完整**
+      // 配置。第三条最容易被省掉 —— 省掉之后模型改完只能再查一次，而它没有
+      // "查配置"的工具，于是它会开始编"我改好了"。
+
+      reset();
+      const todoId = place({ widgetId: "lattice.todo" }).result.instanceId;
+
+      const wrote = act("config.set", { instanceId: todoId, patch: { fontSize: 20 } });
+      eq(wrote.ok, true, "改配置成功");
+      eq(wrote.result.config.fontSize, 20, "回的是改完之后的值");
+      eq(wrote.result.config.showDone, false, "没改的键回出厂值 —— 组件永远拿到完整对象");
+      eq(useLattice.getState().configs[todoId].fontSize, 20, "真的落到了那一份实例上");
+
+      eq(
+        act("config.set", { instanceId: todoId, patch: { nope: 1 } }).code,
+        "bad_args",
+        "未知键被拒，不是安静丢掉（丢掉的话模型会以为改成了）",
+      );
+      eq(
+        act("config.set", { instanceId: todoId, patch: { fontSize: 99 } }).code,
+        "bad_args",
+        "越界被拒（schema 的 max 是 24）",
+      );
+      eq(
+        act("config.set", { instanceId: todoId, patch: { fontSize: "20" } }).code,
+        "bad_args",
+        "类型错被拒",
+      );
+      eq(act("config.set", { instanceId: todoId, patch: {} }).code, "bad_args", "空 patch 被拒");
+      eq(act("config.set", { instanceId: todoId }).code, "bad_args", "缺 patch");
+      eq(
+        act("config.set", { instanceId: "nope#1", patch: { fontSize: 20 } }).code,
+        "not_found",
+        "没有这一份实例时报 not_found，而不是静默成功",
+      );
+      eq(
+        useLattice.getState().configs[todoId].fontSize,
+        20,
+        "被拒的那几次一个字节都没写进去",
+      );
+
       // ---- 7. 白名单外的动作 ----
 
-      for (const denied of ["widget.grant", "widget.install", "widget.uninstall", "config.set", "state.clear"]) {
+      for (const denied of ["widget.grant", "widget.install", "widget.uninstall", "storage.write", "state.clear"]) {
         eq(act(denied, {}).code, "unknown_action", `${denied} 在前端这层也拒（第二道闸门）`);
       }
       eq(act("placement.explode", {}).code, "unknown_action", "不存在的动作");

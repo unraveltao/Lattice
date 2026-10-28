@@ -164,6 +164,33 @@
       eq(widgetToolSources([candidate({ installed: false })]), [], "没装 = 一条都不进表");
       eq(widgetToolSources([candidate({ tools: [] })]), [], "没声明工具 = 不进表");
 
+      // ---- 完全访问代开（0037）----
+      //
+      // 这一档只解 `agent:tools` 这一道闸，另外两道（装了 / 真声明了）**一道都不解**：
+      // 模式能替用户说"这一轮不用逐个授权"，不能替组件说"我声明了工具"，
+      // 更不能替用户说"我装过它"。
+
+      eq(
+        widgetToolSources([candidate({ granted: false })], { assumeGranted: true }).length,
+        1,
+        "完全访问：没授 agent:tools 的也进表",
+      );
+      eq(
+        widgetToolSources([candidate({ granted: false })], { assumeGranted: false }),
+        [],
+        "显式传 false 和不传一样 —— 代开不是默认值",
+      );
+      eq(
+        widgetToolSources([candidate({ granted: false, installed: false })], { assumeGranted: true }),
+        [],
+        "完全访问也救不了没装的",
+      );
+      eq(
+        widgetToolSources([candidate({ granted: false, tools: [] })], { assumeGranted: true }),
+        [],
+        "完全访问也救不了没声明工具的",
+      );
+
       // ---- 候选表：清单 × 摆放 ----
 
       const records = [

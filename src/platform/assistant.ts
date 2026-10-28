@@ -803,6 +803,12 @@ export async function saveSession(input: {
   });
 }
 
+/** 只改标题。**不走 `saveSession`** —— 那条会把 `updatedAt` 写成现在，
+ *  于是改个名字这份会话就跳到侧栏最上面。返回落盘之后的那句（可能被清洗过） */
+export async function renameSession(id: string, title: string): Promise<string> {
+  return await callCommand<string>("assistant_session_rename", { id, title });
+}
+
 /** 文件本来就不在也算成功 —— 用户点"删除"想要的是"它不在了" */
 export async function deleteSession(id: string): Promise<void> {
   await callCommand<void>("assistant_session_delete", { id });

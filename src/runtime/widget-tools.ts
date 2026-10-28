@@ -293,9 +293,26 @@ export function widgetToolCandidates(
   return out;
 }
 
-export function widgetToolSources(candidates: WidgetToolCandidate[]): WidgetToolSource[] {
+/**
+ * 这一轮真能调的组件（判据的唯一一份）。
+ *
+ * `assumeGranted` 是 0037 加的那一档：**完全访问期间把 `agent:tools` 视同已授**。
+ * 它和 `effectiveHands`（`runtime/hands.ts`）是同构的 —— 那个也是"这一轮不看
+ * 用户拨的开关"，不是"替他把开关写回去"。退出完全访问，没勾过的仍然是没勾。
+ *
+ * 为什么必须有这一档：算表这一步就把组件滤掉的话，模型看到的不是"被拒绝"，
+ * 是"这个组件不存在"——它连"我该请用户去授权"都学不到，只会开始猜键名。
+ * 判据仍然只有这一处，别在调用方再筛一遍。
+ */
+export function widgetToolSources(
+  candidates: WidgetToolCandidate[],
+  opts: { assumeGranted?: boolean } = {},
+): WidgetToolSource[] {
+  const assumeGranted = opts.assumeGranted === true;
   return candidates
-    .filter((item) => item.installed && item.granted && item.tools.length > 0)
+    .filter(
+      (item) => item.installed && (item.granted || assumeGranted) && item.tools.length > 0,
+    )
     .map((item) => ({
       instanceId: item.instanceId,
       widgetId: item.widgetId,

@@ -50,6 +50,8 @@
         allTools,
         approvalFor,
         compactSnapshot,
+        groupSessions,
+        sessionBucket,
         describeToolCall,
         normalizeAskMessages,
         parseArguments,
@@ -328,17 +330,22 @@
 
       // ---- 11. 组件借平台的手（`assistant.ask`）----
 
-      // 工具表按调用方裁剪：组件那一轮没有 placement.remove，其余一个不少
-      eq(Object.keys(toolsFor("platform")).sort(), Object.keys(TOOL_SPECS).sort(), "平台自己那一轮还是全部八个");
+      // 工具表按调用方裁剪：组件那一轮没有 placement.remove 和 config.set，其余一个不少
+      eq(Object.keys(toolsFor("platform")).sort(), Object.keys(TOOL_SPECS).sort(), "平台自己那一轮还是全部九个");
       const widgetTools = toolsFor("widget");
       ok(!("placement.remove" in widgetTools), "组件借手那一轮没有「移除组件」");
+      ok(!("config.set" in widgetTools), "组件借手那一轮也没有「改配置」（0037：A 组件不能借模型改 B 组件）");
       eq(
         Object.keys(widgetTools).sort(),
-        [...AGENT_ACTIONS].filter((name) => name !== "placement.remove").sort(),
-        "除了 remove，别的动作都给",
+        [...AGENT_ACTIONS].filter((name) => name !== "placement.remove" && name !== "config.set").sort(),
+        "除了这两条，别的动作都给",
       );
-      eq(toolDefs(widgetTools).length, AGENT_ACTIONS.length - 1, "发给模型的 function 定义也跟着少一个");
-      ok(WIDGET_DENIED_ACTIONS.has("placement.remove"), "被拒的动作只有 remove 这一条");
+      eq(toolDefs(widgetTools).length, AGENT_ACTIONS.length - 2, "发给模型的 function 定义也跟着少两条");
+      eq(
+        [...WIDGET_DENIED_ACTIONS].sort(),
+        ["config.set", "placement.remove"],
+        "被拒的动作就是这两条",
+      );
 
       // 提示词和工具表必须说同一件事：没有删除工具时明说，别让它宣称删了
       ok(
@@ -348,6 +355,20 @@
       ok(
         systemPrompt('{"x":1}', { tools: widgetTools }).includes("没有删除组件的工具"),
         "组件那一轮明说“你删不了”，否则模型会说“已经删掉了”",
+      );
+      // 0037：少的不止一个工具了。缺哪个就说哪句，**按表推**而不是按调用方写死
+      ok(
+        systemPrompt('{"x":1}', { tools: widgetTools }).includes("不能改组件的配置"),
+        "组件那一轮也明说“改不了配置”（它拿不到 config.set）",
+      );
+      ok(
+        !systemPrompt('{"x":1}').includes("不能改组件的配置"),
+        "平台自己那一轮不说这句（它有那个工具）",
+      );
+      ok(
+        systemPrompt('{"x":1}', { tools: toolsFor("platform", "readonly") }).includes("没有删除组件的工具") &&
+          systemPrompt('{"x":1}', { tools: toolsFor("platform", "readonly") }).includes("不能改组件的配置"),
+        "只读档两张表都空，两句都要说 —— 编号也得连上（5、6 不重复）",
       );
 
       // 语气：拼在规则之后，截到上限，且改不掉规则
@@ -483,7 +504,28 @@
       eq(approvalFor("placement.remove", "readonly"), "deny", "只读档：桌面动作也拒");
       eq(approvalFor("mcp.a.b", "readonly"), "deny", "只读档：外部服务的工具一律拒");
 
-      eq(Object.keys(toolsFor("platform", "readonly")), [], "只读档：桌面动作一个都不留（八个全都改状态）");
+      // ---- 0037：config.set 是第 9 个动作，它比别的动作多问一档 ----
+      //
+      // 它**不是**不可逆的（改回来就完了），但改的是用户亲手填的值，而且改完
+      // 界面上看不出是谁动的 —— 所以 `auto` 档也照问。`everything` 下放行，
+      // 那正是"完全访问"这个词的意思。
+
+      eq(approvalFor("config.set", "ask"), "ask", "ask 档：改配置要点头");
+      eq(approvalFor("config.set", "auto"), "ask", "auto 档：改配置**仍然**问（改的是用户亲手填的值）");
+      eq(approvalFor("config.set", "readonly"), "deny", "只读档：改配置是拒不是问");
+      eq(
+        approvalFor("config.set", "auto", { everything: true }),
+        "allow",
+        "完全访问：改配置不再问",
+      );
+      ok("config.set" in toolsFor("platform", "ask"), "平台这条路上它在表里");
+      ok(
+        !("config.set" in toolsFor("widget", "ask")),
+        "组件借手那条路拿不到它 —— 否则 A 组件能借模型改 B 组件的配置",
+      );
+      ok(!("config.set" in toolsFor("platform", "readonly")), "只读档：它连 schema 都不给");
+
+      eq(Object.keys(toolsFor("platform", "readonly")), [], "只读档：桌面动作一个都不留（九个全都改状态）");
       eq(
         Object.keys(toolsFor("platform", "auto")).sort(),
         Object.keys(TOOL_SPECS).sort(),
@@ -613,6 +655,34 @@
         "完全访问：组件声明的工具一样不问",
       );
       eq(approvalFor("file.write", "ask"), "ask", "不给第三参数时，行为和以前一模一样");
+
+      // ---- 侧栏分组（0034）----
+      // 这一条最容易悄悄错的地方不是"分几组"，是**今天零点**怎么算：
+      // `now - 86400000` 在夏令时那天会差一小时，用户会看见昨天那份跑进"今天"
+      {
+        const noon = new Date(2026, 9, 28, 12, 0, 0, 0).getTime();
+        const midnight = new Date(2026, 9, 28, 0, 0, 0, 0).getTime();
+        eq(sessionBucket(midnight, noon), "today", "今天零点整算今天");
+        eq(sessionBucket(midnight - 1, noon), "yesterday", "零点前一毫秒是昨天");
+        const yesterdayNoon = new Date(2026, 9, 27, 12, 0, 0, 0).getTime();
+        eq(sessionBucket(yesterdayNoon, noon), "yesterday", "昨天中午是昨天");
+        const twoDaysAgo = new Date(2026, 9, 26, 23, 59, 0, 0).getTime();
+        eq(sessionBucket(twoDaysAgo, noon), "earlier", "前天晚上是更早");
+        eq(sessionBucket(noon + 60000, noon), "today", "时间戳在将来（改过系统时钟）不算更早");
+        eq(sessionBucket(0, noon), "earlier", "没有时间戳的坏文件落进更早，不掉出列表");
+        eq(sessionBucket(Number.NaN, noon), "earlier", "NaN 同理");
+
+        const rows = [
+          { id: "a", updatedAt: noon },
+          { id: "b", updatedAt: midnight - 1 },
+          { id: "c", updatedAt: twoDaysAgo },
+          { id: "d", updatedAt: noon - 1000 },
+        ];
+        const groups = groupSessions(rows, noon);
+        eq(groups.map((g) => g.bucket).join(","), "today,yesterday,earlier", "空桶不出现，顺序固定");
+        eq(groups[0].items.map((r) => r.id).join(""), "ad", "组内保持传入顺序（调用方已按时间倒序）");
+        eq(groupSessions([], noon).length, 0, "没有会话就是空数组，不是三个空组");
+      }
 
       // ---- 输出 ----
 

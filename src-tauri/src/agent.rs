@@ -20,7 +20,7 @@
 //!
 //! 令牌文件就在 `%APPDATA%` 下，**同一个账户下的任何进程都读得到**。它挡的是
 //! 别的用户、以及网络上过来的东西，挡不住你自己账户里跑着的程序。真正的防线
-//! 是：默认关、动作白名单只有 8 个、每一步都进审计日志。
+//! 是：默认关、动作白名单只有 9 个、每一步都进审计日志。
 
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -36,6 +36,8 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::agent_policy::{self, ParseError};
+use crate::hands_policy;
+use crate::llm;
 
 /// 发给主窗口的事件名。前端 `platform/agent.ts` 监听它。
 pub const EVENT: &str = "lattice:agent";
@@ -652,11 +654,21 @@ pub async fn assistant_act(
 
 /// 这一轮能调的组件工具（数据平面）。**清单在画布那一侧**：只有主窗口知道装了
 /// 哪些、授没授权、摆在哪儿。小窗问它要一份，原样交给提示词和工具表。
+///
+/// 完全访问（0037）**随 op 一起过去**，不做成参数：小窗没有 store，模式只有一个
+/// 真源（`assistant.json`），而 Rust 已经在读它。让前端再判一次就有两个真源，
+/// 症状是"主窗里看得到、小窗里看不到"。
 #[tauri::command]
 pub async fn assistant_widget_tools(app: AppHandle) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || call_frontend(&app, json!({ "op": "widget-tools" })))
-        .await
-        .map_err(|error| format!("the widget tool list task failed: {error}"))?
+    let everything = hands_policy::mode_ignores_switches(&llm::hands_state(&app).mode);
+    tauri::async_runtime::spawn_blocking(move || {
+        call_frontend(
+            &app,
+            json!({ "op": "widget-tools", "everything": everything }),
+        )
+    })
+    .await
+    .map_err(|error| format!("the widget tool list task failed: {error}"))?
 }
 
 /// 敲一份组件实例（数据平面）。**执行在主窗口**：答话的是画布上的 iframe，
@@ -674,6 +686,7 @@ pub async fn assistant_widget_call(
 ) -> Result<String, String> {
     let payload = json!({
         "op": "widget-call",
+        "everything": hands_policy::mode_ignores_switches(&llm::hands_state(&app).mode),
         "args": {
             "instanceId": instance_id,
             "widgetId": widget_id,

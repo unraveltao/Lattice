@@ -116,7 +116,7 @@ export interface ToolSpec {
 }
 
 /**
- * 八个动作的说明书。
+ * 九个动作的说明书。
  *
  * 键必须和 `AGENT_ACTIONS` 一字不差（测试钉着）。描述写英文：模型对工具描述的
  * 训练语料以英文为主，写中文不省事还可能被忽略；**回复**才是用用户的语言。
@@ -201,30 +201,59 @@ export const TOOL_SPECS: Record<string, ToolSpec> = {
       required: ["paused"],
     },
   },
+  "config.set": {
+    description:
+      "Change settings on one widget instance (font size, target date, a selected option — whatever that widget declares). Keys and allowed values come from the widget's own settings schema; an unknown key or an out-of-range value is rejected rather than silently dropped. Returns the instance's full settings after the change.",
+    parameters: {
+      type: "object",
+      properties: {
+        instanceId: { type: "string", description: "One placed instance, e.g. \"lattice.note#a1b2c3d4\"" },
+        patch: {
+          type: "object",
+          description: "Settings to change, e.g. {\"fontSize\": 16}",
+        },
+      },
+      required: ["instanceId", "patch"],
+    },
+  },
 };
 
 /**
  * 谁在借这张嘴。
  *
- * - `platform`：用户自己按 Ctrl+K 说的，或者是 agent 端点 —— 全部八个动作。
- * - `widget`：组件请平台代劳（`assistant.ask`，权限 `desktop:control`）。**少一个**：
- *   `placement.remove`。理由不是"怕它恶意"，是"删掉的东西找不回来" ——
- *   撤销条只活 8 秒，而一句"帮我收拾一下桌面"完全可能把一晚上的布置收走。
+ * - `platform`：用户自己按 Ctrl+K 说的，或者是 agent 端点 —— 全部九个动作。
+ * - `widget`：组件请平台代劳（`assistant.ask`，权限 `desktop:control`）。**少两个**：
+ *   `placement.remove` 和 `config.set`。前者的理由不是"怕它恶意"，是"删掉的东西
+ *   找不回来" —— 撤销条只活 8 秒，而一句"帮我收拾一下桌面"完全可能把一晚上的
+ *   布置收走。后者是 0037 补的：组件那条路上没有确认条，给了就等于"A 组件借
+ *   模型去改 B 组件的配置"，而 B 是不是开着、改完还认不认得自己的值，A 都不知道。
  *   加 / 挪 / 缩放 / 钉 / 置顶 / 换主题都留：那些最坏也只是摆歪，手一拖就回来。
  */
 export type Caller = "platform" | "widget";
 
 /** 组件那一轮不给的动作。改这里要同时改 `systemPrompt` 里那句"你删不了" */
-export const WIDGET_DENIED_ACTIONS: ReadonlySet<string> = new Set(["placement.remove"]);
+export const WIDGET_DENIED_ACTIONS: ReadonlySet<string> = new Set([
+  "placement.remove",
+  "config.set",
+]);
 
 /**
- * 不可逆的那几个：`auto` 档**也仍然要问**。
+ * `auto` 档**也仍然要问**的那几个。
  *
- * 今天它和 `WIDGET_DENIED_ACTIONS` 恰好是同一个集合，但**是两个概念，别合并**：
+ * 两条理由并存，别只记一条：
+ * - `placement.remove`：**不可逆**。撤销条只有 8 秒。
+ * - `config.set`：改得回来，但改的是**用户亲手填的值**，而改完界面上看不出来
+ *   是谁动的 —— 一个"字号突然变成 32"的组件，用户第一反应是它坏了。
+ *
+ * 和 `WIDGET_DENIED_ACTIONS` 今天恰好还是同一个集合，但**是两个概念，别合并**：
  * 一个是"组件不许用"（组件那条路没有确认条，只能整条拿掉），一个是"连自动档
- * 也要问"。哪天 `widget.install` 进了工具表，只有第二个会跟着变。
+ * 也要问"。0037 之前这两个集合完全一样，加 `config.set` 时两条理由也是分开想的
+ * —— 下次加动作时先问"它属于哪一条"，别默认两条都进。
  */
-export const DANGEROUS_ACTIONS: ReadonlySet<string> = new Set(["placement.remove"]);
+export const DANGEROUS_ACTIONS: ReadonlySet<string> = new Set([
+  "placement.remove",
+  "config.set",
+]);
 
 /**
  * 一次工具调用的裁决（0003 §3 + 0009 两个模式）。返回三值而不是布尔：**"问"和"拒"是两件事**。
@@ -274,7 +303,7 @@ export function approvalFor(
 /**
  * 这一轮的工具表。
  *
- * `readonly` 在桌面这一侧就是**一张空表**：八个动作全都改状态（桌面快照在提示
+ * `readonly` 在桌面这一侧就是**一张空表**：九个动作全都改状态（桌面快照在提示
  * 里，不是工具），所以没有"只读的桌面动作"可留。留成"能调但会被拒"只会让模型
  * 试着调、看着它失败、然后开始编。
  */
@@ -514,11 +543,20 @@ export function systemPrompt(snapshot: string, options: PromptOptions = {}): str
     "3. 工具之外的事情（安装组件、授予权限、读写组件的数据）你做不到 —— 直接说做不到，并告诉用户在界面哪里做。不要假装做了。",
     "4. 用用户的语言回复，简短、自然，不要用 Markdown 标题。",
   ];
+  // 缺哪个工具就说哪句话。**按表推**而不是按调用方写死：0037 之后"少一个工具"
+  // 有两种（组件借手、只读档），再往下加第三种时不该有人忘掉这里。
+  const missing: string[] = [];
   if (!("placement.remove" in tools)) {
-    lines.push(
-      "5. 这一轮你没有删除组件的工具。用户想删，就让他自己在画布上点 ✕ —— 不要说「已经删掉了」。",
+    missing.push(
+      "这一轮你没有删除组件的工具。用户想删，就让他自己在画布上点 ✕ —— 不要说「已经删掉了」。",
     );
   }
+  if (!("config.set" in tools)) {
+    missing.push(
+      "这一轮你不能改组件的配置。用户想改，让他在属性面板里改 —— 不要说「已经改好了」。",
+    );
+  }
+  missing.forEach((text, index) => lines.push(`${5 + index}. ${text}`));
   if (readonly) {
     lines.push(
       "",
@@ -790,3 +828,51 @@ export function compactSnapshot(snapshot: DeskSnapshot, budget = 6000): string {
   );
 }
 
+
+/**
+ * 侧栏的分组：今天 / 昨天 / 更早（0034）。
+ *
+ * 为什么在 `runtime/` 而不是面板里：这是**纯日期判断**，而它有两个容易写错
+ * 的地方 —— 本地时区的"今天零点"不是 `now - 24h`（夏令时那天会差一小时），
+ * 以及"未来的时间戳"（用户改过系统时钟、或文件来自另一台机器）不该掉进
+ * "更早"。两件事都能单跑钉住，放进 JSX 里就只能靠眼睛看。
+ */
+export type SessionBucket = "today" | "yesterday" | "earlier";
+
+/** 那一天的零点（本地时区） */
+function startOfDay(ms: number): number {
+  const date = new Date(ms);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+export function sessionBucket(updatedAt: number, now: number): SessionBucket {
+  if (!Number.isFinite(updatedAt) || updatedAt <= 0) return "earlier";
+  const today = startOfDay(now);
+  // 用 `setDate(-1)` 而不是减 86400000：夏令时那天 24 小时是假的
+  const yesterdayDate = new Date(today);
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterday = yesterdayDate.getTime();
+  if (updatedAt >= today) return "today";
+  if (updatedAt >= yesterday) return "yesterday";
+  return "earlier";
+}
+
+/** 按桶分组，**保持传入的顺序**（调用方已经按 `updatedAt` 倒序排好），
+ *  空桶不出现 —— 侧栏里一列"昨天（0）"是纯噪音 */
+export function groupSessions<T extends { updatedAt: number }>(
+  items: T[],
+  now: number,
+): { bucket: SessionBucket; items: T[] }[] {
+  const buckets: SessionBucket[] = ["today", "yesterday", "earlier"];
+  const map = new Map<SessionBucket, T[]>();
+  for (const item of items) {
+    const key = sessionBucket(item.updatedAt, now);
+    const list = map.get(key);
+    if (list) list.push(item);
+    else map.set(key, [item]);
+  }
+  return buckets
+    .filter((bucket) => map.has(bucket))
+    .map((bucket) => ({ bucket, items: map.get(bucket) as T[] }));
+}

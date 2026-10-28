@@ -56,7 +56,7 @@ export function canvasWidgetAlive(instanceId: string): boolean {
  * 小窗没有 `useLattice` 的权威状态，问来的清单就是它这一轮的全部 —— 所以判据
  * 必须在这儿、且只在这儿过一遍，两边各拼一份的话小窗迟早会漏掉 `granted`。
  */
-export function listWidgetTools(records: WidgetRecord[]): WidgetToolSource[] {
+export function listWidgetTools(records: WidgetRecord[], everything = false): WidgetToolSource[] {
   const state = useLattice.getState();
   return widgetToolSources(
     widgetToolCandidates(
@@ -72,6 +72,9 @@ export function listWidgetTools(records: WidgetRecord[]): WidgetToolSource[] {
         grants: state.grants,
       },
     ),
+    // 完全访问（0037）：这一轮不看 `agent:tools`，但**不写盘** —— 退出后
+    // 用户没勾过的仍然是没勾的。模式从 Rust 那边随 op 过来，前端不自己猜
+    { assumeGranted: everything },
   );
 }
 

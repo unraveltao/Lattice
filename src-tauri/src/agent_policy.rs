@@ -162,6 +162,7 @@ pub enum Action {
     PlacementFront,
     ThemeSet,
     WidgetsPause,
+    ConfigSet,
 }
 
 impl Action {
@@ -175,6 +176,7 @@ impl Action {
             Action::PlacementFront => "placement.front",
             Action::ThemeSet => "theme.set",
             Action::WidgetsPause => "widgets.pause",
+            Action::ConfigSet => "config.set",
         }
     }
 }
@@ -189,6 +191,7 @@ pub const ACTIONS: &[Action] = &[
     Action::PlacementFront,
     Action::ThemeSet,
     Action::WidgetsPause,
+    Action::ConfigSet,
 ];
 
 /// **永远不给** agent 的动作。列在这里不是为了拒绝（`parse_action` 本来就不认），
@@ -197,7 +200,9 @@ pub const DENIED: &[(&str, &str)] = &[
     ("widget.grant", "提权。agent 能给自己授权，前面所有闸门就都白设了"),
     ("widget.install", "装组件 = 跑别人写的代码，必须人点"),
     ("widget.uninstall", "卸载会连备份一起清，不可撤销"),
-    ("config.set", "用户亲手填的值，需要一次界面确认，v1 没做确认流"),
+    // `config.set` 曾经在这里，理由是"用户亲手填的值，需要一次界面确认，v1 没做确认流"。
+    // 0037 把它移进 ACTIONS：确认条已经有了（`approvalFor` 的 `ask`），而且它在
+    // `auto` 档也照样问 —— 当初拒绝的那个前提没了，就不该继续拒。
     ("storage.write", "组件数据没有 schema，agent 只能瞎猜键名"),
     ("state.clear", "一条命令清空用户桌面"),
     ("agent.set_enabled", "自己给自己开门"),
@@ -399,8 +404,10 @@ mod tests {
     }
 
     #[test]
-    fn the_allowlist_is_exactly_eight_actions() {
-        assert_eq!(ACTIONS.len(), 8);
+    fn the_allowlist_is_exactly_nine_actions() {
+        // 0037 之前是八个。加一个动作**必须**同时改这里 —— 这条断言存在的意义
+        // 就是让"白名单悄悄多一条"变成一次红。
+        assert_eq!(ACTIONS.len(), 9);
         for action in ACTIONS {
             assert_eq!(parse_action(action.name()), Some(*action));
         }
