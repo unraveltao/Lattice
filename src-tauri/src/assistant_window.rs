@@ -28,7 +28,7 @@
 //! 1. **不置顶**。置顶好找，但会压在浏览器上面挡视线。
 //! 2. **关窗口 = 藏起来**，不是销毁。对话在内存里（`messages` ref），销毁 webview
 //!    等于把刚聊到一半的过程扔掉 —— 而"哪一句让它动了什么"正是这个功能的价值。
-//! 3. **位置、尺寸、底板、锁都记在磁盘上**（`assistant-window.json` v2）。
+//! 3. **位置、尺寸、底板、锁、左栏、缩放都记在磁盘上**（`assistant-window.json` v4）。
 //!
 //! 圆角走 `desktop::clip_rounded`（和卡片同一个 `CORNER_RADIUS`），不引透明窗口：
 //! 它自己会画满一块面板，逐像素透明只是多绕 DWM 一圈。
@@ -108,7 +108,7 @@ impl Default for Appearance {
     }
 }
 
-/// `assistant-window.json` v2 的全量形状。**一次读、一次写**，
+/// `assistant-window.json` v4 的全量形状。**一次读、一次写**，
 /// 前端拿到的就是这一份（别在两边各攒一份状态）
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -118,6 +118,33 @@ pub struct WindowState {
     pub rect: Rect,
     pub appearance: Appearance,
     pub locked: bool,
+    /// 左栏（会话栏）收没收起（0035）。
+    ///
+    /// 存进这份文件而不是前端的 `localStorage`：窗口的位置、模式、底板都在
+    /// 这儿，同一扇窗的外观状态不该有两个家 —— 两个家迟早会各说各的，
+    /// 表现是"重启后侧栏回来了但窗口没回来"。
+    ///
+    /// `#[serde(default = ...)]` 是给 v2 文件留的路：那份里没有这个字段，
+    /// 读出来应该是"展开"（v2 时代根本没有收起这回事）。
+    #[serde(default = "sidebar_open")]
+    pub sidebar: bool,
+    /// 面板整体缩放（0036）。**不是字号** —— 整块面板的倍率，档位表在
+    /// `policy::ZOOM_STEPS`，`src/runtime/assistant-window.ts` 有一份一字不差的镜像。
+    ///
+    /// 缺字段 = 1（v3 及以前没有缩放这回事）。存这里而不是 `localStorage`，
+    /// 理由和 `sidebar` 一样：同一扇窗的外观只有一个家。
+    #[serde(default = "one")]
+    pub font_scale: f64,
+}
+
+/// v2 文件里没有 `sidebar`：那时候侧栏还不能收，所以缺字段 = 展开
+fn sidebar_open() -> bool {
+    true
+}
+
+/// v3 文件里没有 `fontScale`：那时候还没有缩放，缺字段 = 1 倍
+fn one() -> f64 {
+    1.0
 }
 
 impl WindowState {
@@ -126,7 +153,7 @@ impl WindowState {
         let (width, height) = (policy::DEFAULT_W, policy::DEFAULT_H);
         let (x, y) = policy::default_position(width, height, work);
         Self {
-            version: 2,
+            version: 4,
             mode: Mode::Floating,
             rect: Rect {
                 x,
@@ -136,11 +163,13 @@ impl WindowState {
             },
             appearance: Appearance::default(),
             locked: false,
+            sidebar: true,
+            font_scale: 1.0,
         }
     }
 }
 
-/// v1 的形状：只有 `{x, y}`。**只用来读**，写出去永远是 v2
+/// v1 的形状：只有 `{x, y}`。**只用来读**，写出去永远是 v4
 #[derive(Debug, Deserialize)]
 struct LegacyPos {
     x: f64,
@@ -179,9 +208,14 @@ fn screen_area(app: &AppHandle) -> (f64, f64, f64, f64) {
 /// **读和写都要过这一道**：文件可能是手改的、可能来自另一块屏、可能是
 /// 一个已经缩到 0 的旧版本 —— 一次都不该变成"窗口看不见"
 fn normalize_state(state: &mut WindowState, work: (f64, f64, f64, f64)) {
-    state.version = 2;
+    state.version = 4;
     state.mode = Mode::from_str(state.mode.as_str());
-    let (width, height) = policy::clamp_size(state.rect.width, state.rect.height);
+    // `migrate_size` 而不是 `clamp_size`：单栏时代的 400×580 会被抬到新的
+    // 出厂尺寸（0034）。写回也走这一道，所以只抬一次，之后按用户拖的算
+    let (width, height) = policy::migrate_size(state.rect.width, state.rect.height);
+    // 再夹一次**上限**（0036）：`SWP_FRAMECHANGED` 之后那条补发的 `Resized` 里
+    // `inner_size()` 可能是 0，落盘就成 `800 × 65535`，下次启动窗口整块在屏幕外
+    let (width, height) = policy::clamp_size(width, height, work);
     let (x, y) = policy::clamp_position(state.rect.x, state.rect.y, width, height, work);
     state.rect = Rect {
         x,
@@ -194,6 +228,8 @@ fn normalize_state(state: &mut WindowState, work: (f64, f64, f64, f64)) {
         alpha: policy::clamp_alpha(state.appearance.alpha),
         blur: policy::clamp_blur(state.appearance.blur),
     };
+    // 缩放档位只有那五档：手改过的、来自别的版本的、NaN，一律归到最近的档
+    state.font_scale = policy::normalize_zoom(state.font_scale);
 }
 
 fn load_state(app: &AppHandle) -> WindowState {
@@ -240,7 +276,7 @@ fn apply_mode(window: &tauri::WebviewWindow, mode: Mode) -> Result<(), String> {
     match mode {
         // 能打字的那条路：不挂 WorkerW，`HWND_BOTTOM` + 底层守卫
         Mode::Desktop => {
-            desktop::apply_to(window, WindowLayer::Desktop, false, true, WindowShape::Rect)
+            desktop::apply_to(window, WindowLayer::Desktop, false, true, WindowShape::Rect)?
         }
         Mode::Floating => {
             if let Ok(handle) = window.window_handle() {
@@ -254,9 +290,13 @@ fn apply_mode(window: &tauri::WebviewWindow, mode: Mode) -> Result<(), String> {
                 .map_err(|error| format!("could not reset the window layer: {error}"))?;
             let _ = window.show();
             let _ = window.set_focus();
-            Ok(())
         }
     }
+    // 换层级会走 `SetWindowPos(SWP_FRAMECHANGED)`，DWM 按新帧把边框重画一遍 ——
+    // 上一版只在 `create` 里关过一次，所以"切到桌面再切回来，边又回来了"。
+    // 子类（`frame_proc`）是常驻的，不用重装；这里补的是 DWM 那半。
+    hide_system_border(window);
+    Ok(())
 }
 
 /// 把位置与尺寸落到窗口上（物理像素换算 + 跟着重裁圆角）
@@ -272,6 +312,129 @@ fn reclip(window: &tauri::WebviewWindow) {
             let _ = desktop::clip_rounded_current(win32.hwnd.get() as isize, desktop::CORNER_RADIUS * scale);
         }
     }
+}
+
+/// 关掉 Windows 自己画的那一圈 1px 窗口边框（**第一层**，只对 Win11 有效）。
+///
+/// `decorations(false)` 只是不让系统画**标题栏和边框按钮**，Windows 11 仍然会在
+/// 窗口四周描一条 1px 的"窗口边框"（默认浅灰）。在深色底板上它是一条很显眼的
+/// 灰线，用户的原话是"为什么这个窗口做出来会有一个灰色的边框"。
+/// `DWMWA_BORDER_COLOR = DWMWA_COLOR_NONE` 是关掉它的唯一办法；圆角仍然由
+/// `clip_rounded` 裁窗口区域，两者不冲突（边框是画上去的，区域是裁出来的）。
+///
+/// **返回值必须记下来**：这条属性是 Win11 build 22000 才有的，Win10 上调它回
+/// `E_INVALIDARG`（`0x80070057`）—— 静默失败正是上一版"改过了但没生效"的主因。
+/// 真正兜底的是 `frame_proc`（`WM_NCCALCSIZE` 归零），这一条只是让 Win11 上
+/// 少一次重绘闪烁。
+#[cfg(windows)]
+fn hide_system_border(window: &tauri::WebviewWindow) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+    };
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
+        return;
+    };
+    let value: u32 = DWMWA_COLOR_NONE;
+    let hr = unsafe {
+        DwmSetWindowAttribute(
+            win32.hwnd.get() as _,
+            DWMWA_BORDER_COLOR as u32,
+            &value as *const u32 as *const core::ffi::c_void,
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    // 0 = S_OK。负数 = 这个属性在这台机器上不存在（Win10）或 hwnd 不对
+    eprintln!("[assistant] DWMWA_BORDER_COLOR -> hr={hr:#010x}");
+}
+
+#[cfg(not(windows))]
+fn hide_system_border(_window: &tauri::WebviewWindow) {}
+
+/// 子类 id：`"ASST"`。**和 `desktop.rs` 那个底层守卫的 id 别撞** —— 桌面模式下
+/// 同一扇窗会同时挂着两个子类过程。
+#[cfg(windows)]
+const FRAME_SUBCLASS_ID: usize = 0x4153_5354;
+
+/// 把非客户区算成零：`WM_NCCALCSIZE` 且 `wParam == TRUE` 时返回 0。
+///
+/// 这是**Win10 / Win11 通吃**的那一条。DWM 那条（`hide_system_border`）只在
+/// Win11 22000+ 有那个属性；这条是系统自己的消息，两代都认。
+///
+/// 为什么只拦 `wParam == TRUE`：那一趟是"系统在算非客户区"（`lprc` 进来是窗口
+/// 矩形，出去该变成客户区矩形），返回 0 表示"不改了，客户区就等于窗口"。而
+/// `wParam == FALSE` 那一趟问的是"客户区现在多大"，必须交给系统 —— 自己返回 0
+/// 会让客户区变成 0×0，窗口里一个字都不显示。
+///
+/// 代价：客户区铺满整个窗口之后 `WM_NCHITTEST` 一律回 `HTCLIENT`，**系统那条
+/// 边缘拖动没了**，只剩页面里三个自绘手柄（它们走 `startResizeDragging`，
+/// 发的是合成消息，不受影响）。这是取舍，不是漏洞，`0036` 记着。
+#[cfg(windows)]
+unsafe extern "system" fn frame_proc(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: usize,
+    lparam: isize,
+    _id: usize,
+    _data: usize,
+) -> isize {
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::WM_NCCALCSIZE;
+    unsafe {
+        if msg == WM_NCCALCSIZE && wparam == 1 {
+            return 0;
+        }
+        DefSubclassProc(hwnd, msg, wparam, lparam)
+    }
+}
+
+/// 挂 `frame_proc`，并**立刻按给定尺寸重算一次帧**。
+///
+/// `SetWindowSubclass` 跨线程调不报错，只返回 0（`desktop.rs` 那条坑同源），
+/// 所以必须在窗口自己的线程上调 —— 调用方用 `run_on_main_thread` 投递。
+///
+/// 为什么要一起给尺寸：窗口是 `CreateWindowEx` 建的，第一次 `WM_NCCALCSIZE`
+/// 在我们挂上子类之前就跑完了，得补一条 `SWP_FRAMECHANGED` 重算。而重算时
+/// Windows 会按"客户区保持原样"把窗口**撑大**一个边框的厚度（实测 800×600 →
+/// 816×609）—— 所以同一次调用里把 cx / cy 钉死成存下来的尺寸，不然
+/// `inner_size()` 每启动一次就长 16px（`save_current_rect` 存内尺寸，下一次
+/// `create` 又当外尺寸用，窗口一次比一次大）。
+#[cfg(windows)]
+fn install_frame_proc(window: &tauri::WebviewWindow, size: (i32, i32)) -> Result<(), String> {
+    use windows_sys::Win32::UI::Shell::SetWindowSubclass;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
+    };
+    let Ok(handle) = window.window_handle() else {
+        return Err("could not obtain the window handle".to_string());
+    };
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
+        return Err("not a Win32 window".to_string());
+    };
+    let hwnd = win32.hwnd.get() as _;
+    let ok = unsafe { SetWindowSubclass(hwnd, Some(frame_proc), FRAME_SUBCLASS_ID, 0) };
+    if ok == 0 {
+        return Err("SetWindowSubclass returned 0 (called off the window thread?)".to_string());
+    }
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            size.0,
+            size.1,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn install_frame_proc(_window: &tauri::WebviewWindow, _size: (i32, i32)) -> Result<(), String> {
+    Ok(())
 }
 
 fn apply_rect(app: &AppHandle, state: &WindowState) -> Result<(), String> {
@@ -361,6 +524,22 @@ fn create(app: &AppHandle) -> Result<(), String> {
 
     // 圆角：浮窗模式下 `apply_mode` 不走 `apply_to`，所以这里补一次
     reclip(&window);
+    // 那一圈 1px 的系统边框要单独关：它不是 `decorations` 管的。
+    // **两半都要做**（0036）：`frame_proc` 把非客户区算成零（Win10 / Win11 都认），
+    // `hide_system_border` 再关掉 Win11 那层 DWM 画上去的 1px。
+    // 子类只能在窗口自己的线程上挂（跨线程静默返回 0），所以投递过去；
+    // 尺寸一起带过去 —— 重算帧会把窗口撑大一个边框（见 `install_frame_proc`）
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let target = (
+        (state.rect.width * scale).round().max(1.0) as i32,
+        (state.rect.height * scale).round().max(1.0) as i32,
+    );
+    let frame_target = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        if let Err(error) = install_frame_proc(&frame_target, target) {
+            eprintln!("[assistant] could not install the frame subclass: {error}");
+        }
+    });
 
     guard_close(&window);
     // 拖动与缩放的位置 / 尺寸由窗口自己记（页面不需要在松手时补一次 IPC）
@@ -380,6 +559,9 @@ fn create(app: &AppHandle) -> Result<(), String> {
     window
         .show()
         .map_err(|error| format!("could not show the assistant window: {error}"))?;
+    // 窗口是 `visible(false)` 建的，DWM 那一层是在第一次真正合成时才定下来的，
+    // 所以 show 之后再关一次（幂等，一行日志，比"到底哪一次生效了"便宜）
+    hide_system_border(&window);
     if state.mode == Mode::Floating {
         window
             .set_focus()
@@ -528,6 +710,29 @@ pub async fn assistant_window_locked(app: AppHandle, locked: bool) -> WindowStat
 /// 缩放结束：夹一次、落到窗口上、存盘。
 /// 前端已经夹过一遍，这里再判一次 —— **Rust 是唯一真源**，渲染进程的 bug
 /// 不该让窗口变成"0 宽"或者跑到屏外
+/// 收起 / 展开左栏。**只存盘，不碰窗口几何** —— 侧栏是面板内部的事，
+/// 窗口尺寸不跟着变（用户拖出来的大小是他自己的决定）
+#[tauri::command]
+pub async fn assistant_window_sidebar(app: AppHandle, sidebar: bool) -> WindowState {
+    let mut state = load_state(&app);
+    state.sidebar = sidebar;
+    save_state(&app, &state);
+    state
+}
+
+/// 面板缩放（`Ctrl+滚轮` / `Ctrl+±` / `Ctrl+0`，0036）。
+///
+/// **只存盘，不碰窗口几何** —— 缩放是面板自己的事，窗口尺寸是用户拖出来的，
+/// 不该被字号带着变。归一化在这里做（档位表在 `policy::ZOOM_STEPS`），
+/// 前端只负责把"下一档"送上来；界面要"立刻变大"，所以它是先本地改、再调这条。
+#[tauri::command]
+pub async fn assistant_window_font_scale(app: AppHandle, scale: f64) -> WindowState {
+    let mut state = load_state(&app);
+    state.font_scale = policy::normalize_zoom(scale);
+    save_state(&app, &state);
+    state
+}
+
 #[tauri::command]
 pub async fn assistant_window_save_rect(app: AppHandle, rect: Rect) -> Result<WindowState, String> {
     let mut state = load_state(&app);

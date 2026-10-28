@@ -351,6 +351,23 @@ pub fn assistant_session_save(
     })
 }
 
+/// 只改标题：**不碰消息、也不动 `updatedAt`**（`0034` 的会话栏要能重命名）。
+///
+/// 为什么不让前端"读出来再存一遍"：`assistant_session_save` 会把 `updatedAt`
+/// 写成现在，于是改个名字这份会话就跳到侧栏最上面 —— 用户想改的是名字，
+/// 不是排序。另起一条命令只为一个字段，是因为那条副作用藏在"保存"这个词里，
+/// 不写下来没人会想到。
+#[tauri::command]
+pub fn assistant_session_rename(app: AppHandle, id: String, title: String) -> Result<String, String> {
+    let mut session = read_session(&app, &id)
+        .ok_or_else(|| "that chat is not there anymore".to_string())?;
+    let cleaned = policy::clean_title(&title);
+    // 清空标题 = 交还给"按第一句话起名"，不是留一个空串在侧栏里
+    session.title = if cleaned == policy::FALLBACK_TITLE { String::new() } else { cleaned };
+    write_session(&app, &session)?;
+    Ok(session.title)
+}
+
 /// 删一份会话。文件本来就不在也算成功（和 `state_clear` 同一条约定：
 /// 用户点"删除"想要的是"它不在了"，不是"报一个 ENOENT 给我看"）
 #[tauri::command]

@@ -14,10 +14,13 @@
  * （见 `docs/design/0002-model-profiles.md`）。齿轮随时能切回去 —— 换模型是常事。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import {
   dictationCancel,
+  dictationReasonText,
   dictationStart,
   dictationStatus,
   dictationStop,
@@ -30,7 +33,7 @@ import {
 } from "./dictation";
 import { Glyph, ICON } from "./icons";
 
-import type { WidgetRecord } from "../runtime/registry";
+import { isTauri, type WidgetRecord } from "../runtime/registry";
 import {
   cancelActiveTurn,
   deleteSession,
@@ -39,6 +42,7 @@ import {
   localSurface,
   readLlmProfiles,
   remoteSurface,
+  renameSession,
   runAssistantTurn,
   saveSession,
   type ApprovalRequest,
@@ -64,9 +68,11 @@ import {
 } from "./hands";
 import {
   allTools,
+  groupSessions,
   systemPrompt,
   type CatalogueHint,
   type ChatMessage,
+  type SessionBucket,
   type ToolSpec,
 } from "../runtime/assistant";
 import {
@@ -101,6 +107,7 @@ import {
   promptsOf,
   type SkillView,
 } from "../runtime/skills";
+import { normalizeZoom, stepZoom } from "../runtime/assistant-window";
 import { useT } from "../runtime/i18n";
 import { describeFailure } from "../runtime/llm-errors";
 import { widgetToolSpecs, type WidgetToolSource } from "../runtime/widget-tools";
@@ -113,6 +120,32 @@ type Entry =
   | { kind: "assistant"; text: string; live?: boolean }
   | { kind: "tool"; detail: string; ok: boolean; error?: string }
   | { kind: "error"; text: string };
+
+/** 设置态左边那四格（0034）。顺序 = 从"它是谁"到"它能干什么"再到"它读什么" */
+type SettingsSection = "model" | "hands" | "services" | "skills";
+
+const SETTINGS_SECTIONS: { id: SettingsSection; label: string }[] = [
+  { id: "model", label: "Models" },
+  { id: "hands", label: "What it may do" },
+  { id: "services", label: "External services" },
+  { id: "skills", label: "Skills" },
+];
+
+const BUCKET_LABELS: Record<SessionBucket, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
+  earlier: "Earlier",
+};
+
+/**
+ * 空态那三句。**点一下是填进输入框，不是直接发** —— 直接发会当场扣配额、
+ * 还可能弹一道审批，用户还没看见自己要发什么就先付了钱。
+ */
+const EXAMPLES = [
+  "Move the clock to the top right",
+  "Switch to dark",
+  "The pet is too big, make it smaller",
+];
 
 /** 存下来的消息 → 面板的对话行。
  *
@@ -209,6 +242,30 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
    */
   const [profiles, setProfiles] = useState<ProfilesView | null>(null);
   const [view, setView] = useState<"chat" | "setup">("chat");
+  /** 设置态左栏选中哪一格。**一次只渲染一块**，不再是一整页往下滚 */
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("model");
+  /** 侧栏里展开了「⋯」的那一行；同一时刻只开一个（两个菜单同时挂着，用户分不清哪个是哪个） */
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  /** 正在改名的那一行 —— 内联输入框，不是弹窗：改名要看着上下文改 */
+  const [renaming, setRenaming] = useState<{ id: string; text: string } | null>(null);
+  /** 没有能用的模型档。**不再整页跳设置**，改成对话区顶上那一行（0034） */
+  const [modelMissing, setModelMissing] = useState(false);
+  /** 左栏收没收起（0035）。真窗口里存进 `assistant-window.json`，抽屉里只在这一次会话里有效 */
+  const [railOpen, setRailOpen] = useState(true);
+  /**
+   * 面板整体缩放（0036）。**五档，不是连续值**，档位表在
+   * `runtime/assistant-window.ts::ZOOM_STEPS`（Rust 有一份镜像）。
+   *
+   * 抽屉和小窗共用同一个值：它们是同一个面板的两个宿主，各存一份迟早会
+   * 各说各的（"小窗里放大了，抽屉里还是小的"）。`zoomRef` 是为了让滚轮
+   * 连滚时拿到的是"上一格之后的值"，不用等 React 重渲染。
+   */
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  /** 「＋」菜单开着没 */
+  const [plusOpen, setPlusOpen] = useState(false);
+  /** 「＋」菜单里那条待附加的路径（粘贴进来的，或者拖进来的） */
+  const [attachDraft, setAttachDraft] = useState("");
 
   const [entries, setEntries] = useState<Entry[]>([]);
   const [draft, setDraft] = useState("");
@@ -234,6 +291,8 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
   const stopFlag = useRef(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 面板自己那块矩形：抽屉和画布共用一个 webview，拖放要靠它判落点（0035 §5） */
+  const panelRef = useRef<HTMLElement | null>(null);
 
   /** 说出来的字追加进输入框。空框就直接放进去，不先插一个空行 */
   const appendDictation = useCallback((line: string) => {
@@ -427,6 +486,210 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
   /** 最后一条还在长 = 字正在出来，这时候不该再显示「Thinking…」 */
   const lastEntry = entries[entries.length - 1];
   const streaming = lastEntry?.kind === "assistant" && lastEntry.live === true;
+  /** 侧栏的分组。`now` 只在会话列表变化时取一次 —— 面板通常活不过一次跨天 */
+  const grouped = useMemo(() => groupSessions(sessions, Date.now()), [sessions]);
+
+  /** 输入卡随内容长高，最多 6 行（0035）。超过就内部滚 —— 再高就把对话挤没了 */
+  const grow = useCallback(() => {
+    const node = inputRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    // 18px ≈ 12px 字 × 1.5 行高。写死这个数是为了不依赖 computedStyle：
+    // 窗口在不同 DPI 下算出来的行高会带小数，`scrollHeight / 行数` 反而更飘
+    node.style.height = `${Math.min(node.scrollHeight, 18 * 6)}px`;
+  }, []);
+
+  useEffect(() => {
+    grow();
+  }, [draft, grow]);
+
+  /**
+   * 把一条路径变成输入框里的一行 `@path`。**不读文件内容** —— 读哪一段、
+   * 读多少由模型自己决定，而且每一步还过审批（0035 §3）。
+   */
+  const attachPath = useCallback(
+    (path: string) => {
+      const clean = path.trim();
+      if (!clean) return;
+      setDraft((text) => {
+        const line = `@${clean}`;
+        if (text.includes(line)) return text;
+        return text.trim() ? `${text.replace(/\s+$/, "")}\n${line}` : line;
+      });
+      setAttachDraft("");
+      setPlusOpen(false);
+      window.setTimeout(() => inputRef.current?.focus(), 0);
+    },
+    [],
+  );
+
+  /** 左栏开合。真窗口里要落盘（`assistant_window.json` v3），抽屉里只在这次会话里算 */
+  const toggleRail = useCallback(() => {
+    setRailOpen((open) => {
+      const next = !open;
+      if (variant === "window" && isTauri()) {
+        void invoke("assistant_window_sidebar", { sidebar: next }).catch(() => {});
+      }
+      return next;
+    });
+  }, [variant]);
+
+  /**
+   * 把倍率落到面板上（0036）。
+   *
+   * **只改这一块面板的 `--lattice-zoom`**（挂在 `<aside>` 的内联样式上），
+   * 不碰 `documentElement`：抽屉和画布同一个 webview，挂到根上会把画布一起放大
+   * —— 那正是不能用 `webview.setZoom()` 的原因。
+   */
+  const applyZoom = useCallback((next: number) => {
+    zoomRef.current = next;
+    setZoom(next);
+  }, []);
+
+  /** 滚一格 / 按一下。**到顶到底原地不动，也不写盘** —— 否则每次滚到底都多一次 IPC */
+  const stepPanelZoom = useCallback(
+    (dir: number) => {
+      const next = stepZoom(zoomRef.current, dir);
+      if (next === zoomRef.current) return;
+      applyZoom(next);
+      // 界面已经变了。落盘失败只意味着"下次打开回到上一档"，不值得打扰用户
+      if (isTauri()) void invoke("assistant_window_font_scale", { scale: next }).catch(() => {});
+    },
+    [applyZoom],
+  );
+
+  const resetPanelZoom = useCallback(() => {
+    if (zoomRef.current === 1) return;
+    applyZoom(1);
+    if (isTauri()) void invoke("assistant_window_font_scale", { scale: 1 }).catch(() => {});
+  }, [applyZoom]);
+
+  // 左栏开合与缩放都是**窗口状态**（0035 / 0036）：和位置、模式、底板同一个家，
+  // 不是 localStorage
+  useEffect(() => {
+    if (!open || !isTauri()) return;
+    void invoke<{ sidebar?: boolean; fontScale?: number }>("assistant_window_state")
+      .then((next) => {
+        // 缩放两个宿主共用一个值：抽屉也读这份文件，不然"小窗里放大了、
+        // 抽屉里还是小的"，用户会以为哪一边坏了
+        applyZoom(normalizeZoom(next.fontScale));
+        // 左栏只在真窗口里算：抽屉没有窗口状态，收起只对这一次会话有效
+        if (variant === "window") setRailOpen(next.sidebar !== false);
+      })
+      .catch(() => {});
+    /*
+     * WebView2 自带的 Ctrl+滚轮 缩放（`AreBrowserAcceleratorKeysEnabled` 默认是开的）
+     * 会和我们的处理器抢：两边都生效就是"滚一格跳两档"。`preventDefault()` 已经
+     * 把它挡住，这里再清一次历史值 —— 上一版（或者关掉面板时）被它放大过的话，
+     * 那个倍率会一直留着，看起来像"我的缩放坏了"。
+     */
+    void getCurrentWebview()
+      .setZoom(1)
+      .catch(() => {});
+  }, [open, variant, applyZoom]);
+
+  /**
+   * `Ctrl+滚轮`。**必须 `passive: false`** —— 否则 `preventDefault()` 无效，
+   * WebView2 自带的 Ctrl+滚轮 缩放照样跑，两套叠在一起就是"滚一格跳两档"。
+   *
+   * 面板关着时根本不挂这条监听：那时没有任何东西该被放大，内置缩放也不该
+   * 由我们背锅（要彻底关掉它得动 webview 的 `AreBrowserAcceleratorKeysEnabled`，
+   * 那会把 F5 / Ctrl+P 之类一起关掉，不值）。
+   */
+  useEffect(() => {
+    if (!open) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      stepPanelZoom(event.deltaY < 0 ? 1 : -1);
+    };
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => window.removeEventListener("wheel", onWheel);
+  }, [open, stepPanelZoom]);
+
+  /**
+   * `Ctrl+=` / `Ctrl+-` / `Ctrl+0`。
+   *
+   * 数字键盘的加号是 `"+"`、主键盘的加号要按住 Shift 才出得来（`"="`），
+   * 三个键名都得认 —— 少认一个，用户会觉得这个快捷键"时灵时不灵"。
+   */
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      if (event.key === "=" || event.key === "+") {
+        event.preventDefault();
+        stepPanelZoom(1);
+      } else if (event.key === "-" || event.key === "_") {
+        event.preventDefault();
+        stepPanelZoom(-1);
+      } else if (event.key === "0") {
+        event.preventDefault();
+        resetPanelZoom();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, stepPanelZoom, resetPanelZoom]);
+
+  // Ctrl+B 收放左栏。抽屉里也认 —— 它没有窗口状态，只在这一次会话里生效
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "b") return;
+      event.preventDefault();
+      toggleRail();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, toggleRail]);
+
+  /**
+   * 拖文件进来 → 变成 `@path`（0035）。
+   *
+   * 小窗里**不用分流**：它有自己独立的 webview，落在上面的都是给助手的。
+   * 抽屉不行 —— 它和画布同一个 webview，而画布那份处理器（`App.tsx`）管的是
+   * "装组件"。不判落点的话，往画布上拖一个组件包会**同时**装组件和给这一轮
+   * 加一条 `@path`，用户看到的是一段莫名其妙的路径出现在输入框里。
+   */
+  useEffect(() => {
+    if (!open || !isTauri()) return;
+    let dispose: (() => void) | undefined;
+    let disposed = false;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type !== "drop") return;
+        const paths = event.payload.paths ?? [];
+        if (!paths.length) return;
+        if (variant === "drawer") {
+          const node = panelRef.current;
+          if (!node) return;
+          /*
+           * **用 `elementFromPoint` 判落点，不拿矩形比**（0036）。
+           *
+           * `getBoundingClientRect()` 和 `elementFromPoint` 都收视口 CSS 像素，
+           * 但前者在 `zoom ≠ 1` 时的返回值各家实现不一致（Chromium 上带过
+           * "返回未缩放尺寸"的老问题），而后者走的是**命中测试**，和画面看到
+           * 的那一块永远是同一块。所以缩放之后仍然只加一条 `@path`。
+           */
+          const scale = window.devicePixelRatio || 1;
+          const x = event.payload.position.x / scale;
+          const y = event.payload.position.y / scale;
+          const hit = document.elementFromPoint(x, y);
+          if (!hit || !node.contains(hit)) return;
+        }
+        for (const path of paths) attachPath(path);
+      })
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else dispose = unlisten;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      dispose?.();
+    };
+  }, [open, attachPath, variant]);
 
   // 打开时读一次档列表：`llm_profiles` 只回掩码，key 本身永远不进前端
   useEffect(() => {
@@ -437,9 +700,10 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         if (cancelled) return;
         setProfiles(next);
         const current = next.profiles.find((item) => item.id === next.activeId) ?? null;
-        // 一档能用的都没有 → 直接把设置态打开。这里只判断"要不要开"，
-        // 编辑那一摊（含自动开一张空表）归 `ModelProfiles` 管
-        if (!current || !current.configured) setView("setup");
+        // 一档能用的都没有 → **不再整页跳设置**（0034）。用户点开 assistant 是想
+        // 说话，不是想填表；改成对话区顶上那一行「还没有可用的模型 · 去设置」，
+        // 点它才进设置。编辑那一摊（含自动开一张空表）仍归 `ModelProfiles` 管
+        setModelMissing(!current || !current.configured);
       })
       .catch((problem) => {
         if (!cancelled) setError(describeFailure(String(problem)));
@@ -610,19 +874,44 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     [busy, rememberSession, t],
   );
 
-  /** 删掉现在这一份。**先清界面再删文件**：删失败时用户不该还看着一段"已删"的对话 */
-  const removeCurrentSession = useCallback(async () => {
-    const id = sessionId.current;
-    if (busy) return;
-    startNewChat();
-    if (!id) return;
+  /**
+   * 删侧栏里的某一份（0034：删除从"删当前这份"变成"删点中的那一行"）。
+   *
+   * **先清界面再删文件**：删失败时用户不该还看着一段"已删"的对话。
+   * 删的不是当前这份时不动对话区 —— 用户删的可能正是他想留着的那份的反面。
+   */
+  const removeSession = useCallback(
+    async (id: string) => {
+      if (busy) return;
+      if (id === sessionId.current) startNewChat();
+      try {
+        await deleteSession(id);
+        setSessions(await listSessions());
+      } catch (problem) {
+        setSessionNote(describeFailure(String(problem instanceof Error ? problem.message : problem)));
+      }
+    },
+    [busy, startNewChat],
+  );
+
+  /**
+   * 提交改名。**空标题 = 交还给"按第一句话起名"**，不是留一个空串。
+   * 走的是一条只改标题的命令：`saveSession` 会把 `updatedAt` 写成现在，
+   * 于是改个名字这份会话就跳到侧栏最上面。
+   */
+  const commitRename = useCallback(async () => {
+    const target = renaming;
+    if (!target) return;
+    setRenaming(null);
+    const before = sessions.find((item) => item.id === target.id)?.title ?? "";
+    if (target.text.trim() === before) return;
     try {
-      await deleteSession(id);
-      setSessions(await listSessions());
+      const saved = await renameSession(target.id, target.text.trim());
+      setSessions((list) => list.map((item) => (item.id === target.id ? { ...item, title: saved } : item)));
     } catch (problem) {
       setSessionNote(describeFailure(String(problem instanceof Error ? problem.message : problem)));
     }
-  }, [busy, startNewChat]);
+  }, [renaming, sessions]);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -1089,6 +1378,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         {t("Confirmation prompts go away: it reads and writes files anywhere, runs commands, fetches pages, screenshots, moves the mouse and types, and calls the MCP servers you added — without asking. The six groups below all switch on, so you can see what it got.")}
       </p>
       <ul>
+        <li>{t("Every installed widget's declared tools become callable, including the ones you have not granted one by one.")}</li>
         <li>{t("It still cannot install, uninstall or grant widgets.")}</li>
         <li>{t("Editing Lattice's own settings always asks.")}</li>
         <li>{t("Widgets cannot borrow it, and agent calls are unaffected.")}</li>
@@ -1124,10 +1414,54 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     </div>
   );
 
+  /**
+   * 常驻模式条（0009）。**从"横贯整个窗口的一条"变成对话区顶上一颗胶囊**（0035）：
+   * 0034 的两栏之后，它横着盖住左栏，是整块面板里最不像一个聊天窗口的一行。
+   * 0009 的要求是"一直在看得见的地方"，胶囊仍然常驻，只是不再占一整行。
+   */
+  const modeBar = (
+    <div
+      className="lattice-assistant-mode"
+      data-on={modeIgnoresSwitches(mode) ? "1" : "0"}
+      data-held={modeIgnoresSwitches(mode) && !modeEffective ? "1" : "0"}
+      /* 内部模式下那段解释不占地方，改挂在这里：悬停能读到，但不用天天看。
+         **这里必须说实话**（0009）：内部模式不是"六只手一只都不给"，
+         而是"你拨了哪几组就有哪几组"，问不问另由审批档管 */
+      title={
+        modeIgnoresSwitches(mode)
+          ? undefined
+          : t("Manages Lattice, plus whichever hands you switch on. Approvals follow the mode you picked.")
+      }
+    >
+      <span className="lattice-assistant-mode-name">{fullAccess ? t("Full access") : t("Internal")}</span>
+      {/*
+        那段解释**只在完全访问时写全**。它是警告，警告要一直在、但不能占着
+        三行常驻 —— 内部模式是默认态，一句短的就说完了（那句长的挂 tooltip），
+        多写几行的代价是 400 宽的小窗里对话区少两行。0009 记的也是"一行"。
+
+        内部那一句不是凑数：0009 的失败表里第一条误解就是"内部 = 一只新手都
+        没有"，而这行字是唯一常驻在眼前的地方。
+      */}
+      <span className="lattice-assistant-mode-hint">
+        {fullAccess
+          ? modeEffective
+            ? t("Files, commands, the web, the screen, input and MCP servers. Approvals are not asked.")
+            : t("Held back by read-only mode — nothing can be changed.")
+          : t("Only the hands you switched on.")}
+      </span>
+    </div>
+  );
+
   if (!open) return null;
 
   return (
-    <aside className={`lattice-assistant${variant === "window" ? " is-window" : ""}`} aria-label={t("Assistant")}>
+    <aside
+      ref={panelRef}
+      className={`lattice-assistant${variant === "window" ? " is-window" : ""}`}
+      /* 缩放只挂在这一块面板上（0036）。挂在 `documentElement` 上会把画布一起放大 */
+      style={{ "--lattice-zoom": zoom } as CSSProperties}
+      aria-label={t("Assistant")}
+    >
       {/*
         小窗**不画这一行**。它外面已经有一条标题栏（`AssistantWindow` 的
         `.lattice-assistant-bar`：标题 + 底板/锁/模式/关闭四个按钮），这里再画一遍
@@ -1162,39 +1496,6 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
         </header>
       )}
 
-      {/* 常驻模式条（0009）：模式是存盘的，忘记自己还在「完全访问」是它唯一的价格。
-          所以这条必须一直在看得见的地方 —— 用打断去兜是另一种烦 */}
-      <div
-        className="lattice-assistant-mode"
-        data-on={modeIgnoresSwitches(mode) ? "1" : "0"}
-        data-held={modeIgnoresSwitches(mode) && !modeEffective ? "1" : "0"}
-        /* 内部模式下那段解释不占地方，改挂在这里：悬停能读到，但不用天天看。
-           **这里必须说实话**（0009）：内部模式不是"六只手一只都不给"，
-           而是"你拨了哪几组就有哪几组"，问不问另由审批档管 */
-        title={
-          modeIgnoresSwitches(mode)
-            ? undefined
-            : t("Manages Lattice, plus whichever hands you switch on. Approvals follow the mode you picked.")
-        }
-      >
-        <span className="lattice-assistant-mode-name">{fullAccess ? t("Full access") : t("Internal")}</span>
-        {/*
-          那段解释**只在完全访问时写全**。它是警告，警告要一直在、但不能占着
-          三行常驻 —— 内部模式是默认态，一句短的就说完了（那句长的挂 tooltip），
-          多写几行的代价是 400 宽的小窗里对话区少两行。0009 记的也是"一行"。
-
-          内部那一句不是凑数：0009 的失败表里第一条误解就是"内部 = 一只新手都
-          没有"，而这行字是唯一常驻在眼前的地方。
-        */}
-        <span className="lattice-assistant-mode-hint">
-          {fullAccess
-            ? modeEffective
-              ? t("Files, commands, the web, the screen, input and MCP servers. Approvals are not asked.")
-              : t("Held back by read-only mode — nothing can be changed.")
-            : t("Only the hands you switched on.")}
-        </span>
-      </div>
-
       {/* 存的就是完全访问：启动之后第一次开面板提示一次，之后靠上面那条 */}
       {modeReminder && (
         <div className="lattice-assistant-mode-note">
@@ -1213,16 +1514,41 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
       {view === "setup" && modeConfirm && modeConfirmPanel}
 
       {view === "setup" ? (
-        <div className="lattice-assistant-body">
+        <div className="lattice-assistant-panes">
+          {/*
+            设置态用的是**同一条左栏**（0034）：豆包那种形态里，设置不是"另一个
+            窗口"，是同一块地方换了右半边。四格各自独立滚动，用户不用再穿过
+            四段不相干的文字去找"技能在哪"
+          */}
+          <nav className="lattice-assistant-rail is-settings" aria-label={t("Settings sections")}>
+            {SETTINGS_SECTIONS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`lattice-rail-item${settingsSection === item.id ? " is-active" : ""}`}
+                aria-current={settingsSection === item.id ? "page" : undefined}
+                onClick={() => setSettingsSection(item.id)}
+              >
+                {t(item.label)}
+              </button>
+            ))}
+            <button type="button" className="lattice-rail-foot" onClick={() => setView("chat")}>
+              <Glyph d={ICON.back} />
+              {t("Back to chat")}
+            </button>
+          </nav>
+          <div className="lattice-assistant-pane lattice-assistant-body">
           {/*
             模型档那一整块（清单 + 编辑器）住在这里，和设置 → Models 是**同一个**
             组件：新建 / 测连接 / 存 key / 删档 / 切 active 有三百行状态，抄一份的
             代价不是多写一遍，而是以后每次改都要改两遍，而只有一处会被真的点到。
           */}
-          <ModelProfiles variant="panel" onChange={setProfiles} onReady={() => setView("chat")} />
+          <div hidden={settingsSection !== "model"}>
+            <ModelProfiles variant="panel" onChange={setProfiles} onReady={() => setView("chat")} />
+          </div>
 
           {/* 手：默认全关。打开一组等于允许它做一类事（0004 §5） */}
-          <section className="lattice-hands">
+          <section className="lattice-hands" hidden={settingsSection !== "hands"}>
             <header className="lattice-hands-head">
               <span>{t("What it may do")}</span>
               {/* 主入口：一颗「Enable Full access」（= 完全访问，同一道确认）。
@@ -1313,7 +1639,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
           </section>
 
           {/* 外部服务：服务器是用户自己配的，工具由服务器声明（0004 §6） */}
-          <section className="lattice-mcp">
+          <section className="lattice-mcp" hidden={settingsSection !== "services"}>
             <header className="lattice-hands-head">
               <span>{t("External services")}</span>
               <button
@@ -1416,7 +1742,7 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
 
           {/* 技能包（0005）：一份"怎么做"的说明书，不是权限。
               导入不等于启用，勾上才是"这一轮照它做" */}
-          <section className="lattice-skills">
+          <section className="lattice-skills" hidden={settingsSection !== "skills"}>
             <header className="lattice-hands-head">
               <span>{t("Skills")}</span>
               <span className="lattice-skills-count">
@@ -1532,75 +1858,190 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
             )}
           </p>
 
+          </div>
         </div>
       ) : (
-        <>
+        <div className="lattice-assistant-panes">
           {/*
-            会话条：一个下拉 + 新建 + 删除。**没做成一个大列表** —— 面板宽度就
-            300 多像素，一列会话会把对话挤到看不见；用户要的是"接着昨天那份聊"，
-            不是管理 50 份文件
+            会话栏（0034）：豆包那种"左边一列对话、右边一块聊天"。它取代了原来
+            那条下拉框 —— 下拉框一次只看得见一份会话，而侧栏让人一眼认出"上周
+            那份周报"在哪儿，点一下就是切过去，不用先展开再挑
           */}
-          <div className="lattice-assistant-chats">
-            <select
-              className="lattice-assistant-chat-select"
-              aria-label={t("Chats")}
-              value={currentId ?? ""}
-              onChange={(event) => void openSession(event.target.value)}
-              disabled={busy || sessions.length === 0}
-            >
-              <option value="">{t("New chat")}</option>
-              {sessions.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.damaged ? t("Damaged chat") : item.title || t("New chat")}
-                </option>
-              ))}
-            </select>
-            {/* 「新建」用图标：下拉框里那一项已经写着 "New chat"，旁边再放一个同名字的
-                按钮等于把同一句话说两遍，还吃掉 70px —— 320 宽的时候下拉框就没字了 */}
-            <button
-              type="button"
-              className="lattice-icon-btn"
-              onClick={startNewChat}
-              disabled={busy}
-              title={t("New chat")}
-              aria-label={t("New chat")}
-            >
-              ＋
+          {railOpen && (
+          <nav className="lattice-assistant-rail" aria-label={t("Chats")}>
+            <button type="button" className="lattice-rail-new" onClick={startNewChat} disabled={busy}>
+              <Glyph d={ICON.plus} />
+              {t("New chat")}
             </button>
-            {/* 没有会话可删时**不渲染**，不是灰着 —— 灰按钮也在占位 */}
-            {currentId && (
-              <button
-                type="button"
-                className="lattice-btn is-small is-danger"
-                onClick={() => void removeCurrentSession()}
-                disabled={busy}
-              >
-                {t("Delete this chat")}
-              </button>
-            )}
-            {/* 小窗没有面板头了，齿轮落到这一行 —— 它管的就是"这一份对话用哪个模型" */}
-            {variant === "window" && (
+            <div className="lattice-rail-list">
+              {grouped.map((group) => (
+                <div key={group.bucket} className="lattice-rail-group">
+                  <p className="lattice-rail-label">{t(BUCKET_LABELS[group.bucket])}</p>
+                  {group.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`lattice-rail-row${item.id === currentId ? " is-active" : ""}`}
+                      data-menu={menuFor === item.id ? "1" : "0"}
+                    >
+                      {renaming?.id === item.id ? (
+                        <input
+                          className="lattice-rail-rename"
+                          autoFocus
+                          value={renaming.text}
+                          maxLength={60}
+                          spellCheck={false}
+                          aria-label={t("Chat name")}
+                          onChange={(event) => setRenaming({ id: item.id, text: event.target.value })}
+                          onBlur={() => void commitRename()}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") void commitRename();
+                            if (event.key === "Escape") setRenaming(null);
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="lattice-rail-title"
+                            disabled={busy || item.damaged}
+                            title={item.damaged ? t("Damaged chat") : item.title || t("New chat")}
+                            onClick={() => void openSession(item.id)}
+                          >
+                            {item.damaged ? t("Damaged chat") : item.title || t("New chat")}
+                          </button>
+                          <button
+                            type="button"
+                            className="lattice-rail-more"
+                            aria-label={t("Chat actions")}
+                            aria-expanded={menuFor === item.id}
+                            onClick={() => setMenuFor(menuFor === item.id ? null : item.id)}
+                          >
+                            ⋯
+                          </button>
+                        </>
+                      )}
+                      {menuFor === item.id && (
+                        <div className="lattice-rail-menu">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMenuFor(null);
+                              setRenaming({ id: item.id, text: item.title });
+                            }}
+                          >
+                            {t("Rename")}
+                          </button>
+                          <button
+                            type="button"
+                            className="is-danger"
+                            onClick={() => {
+                              setMenuFor(null);
+                              void removeSession(item.id);
+                            }}
+                          >
+                            {t("Delete")}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {sessions.length === 0 && <p className="lattice-rail-empty">{t("No chats yet")}</p>}
+            </div>
+            <button type="button" className="lattice-rail-foot" onClick={() => setView("setup")}>
+              <Glyph d={ICON.appearance} />
+              {t("Settings")}
+            </button>
+          </nav>
+          )}
+          <section className="lattice-assistant-pane">
+            {/*
+              顶上这一条（0035）：左边一颗 ☰ 收放左栏，右边那颗模式胶囊。
+              收起之后 ＋ 和 ⚙ 也落到这儿 —— 侧栏一走，那两颗按钮不能跟着消失，
+              否则"新对话"和"设置"就只剩快捷键一条路
+            */}
+            <div className="lattice-assistant-topbar">
               <button
                 type="button"
                 className="lattice-icon-btn"
-                onClick={() => setView("setup")}
-                title={t("Model settings")}
-                aria-label={t("Assistant settings")}
+                onClick={toggleRail}
+                aria-expanded={railOpen}
+                title={railOpen ? t("Hide the chat list (Ctrl+B)") : t("Show the chat list (Ctrl+B)")}
+                aria-label={railOpen ? t("Hide the chat list") : t("Show the chat list")}
               >
-                ⚙
+                <Glyph d={ICON.menu} />
               </button>
+              {!railOpen && (
+                <>
+                  <button
+                    type="button"
+                    className="lattice-icon-btn"
+                    onClick={startNewChat}
+                    disabled={busy}
+                    title={t("New chat")}
+                    aria-label={t("New chat")}
+                  >
+                    <Glyph d={ICON.plus} />
+                  </button>
+                  <button
+                    type="button"
+                    className="lattice-icon-btn"
+                    onClick={() => setView("setup")}
+                    title={t("Settings")}
+                    aria-label={t("Settings")}
+                  >
+                    <Glyph d={ICON.appearance} />
+                  </button>
+                </>
+              )}
+              {modeBar}
+            </div>
+            {modeReminder && (
+              <div className="lattice-assistant-mode-note">
+                <span>{t("This was already on when Lattice started.")}</span>
+                <button type="button" className="lattice-btn is-small" onClick={() => setModeReminder(false)}>
+                  {t("Got it")}
+                </button>
+              </div>
             )}
-          </div>
-          {sessionNote && (
-            <p className="lattice-assistant-hint lattice-assistant-note">{sessionNote}</p>
-          )}
+            {sessionNote && (
+              <p className="lattice-assistant-hint lattice-assistant-note">{sessionNote}</p>
+            )}
           <div className="lattice-assistant-body" ref={bodyRef}>
-            {entries.length === 0 && (
-              <p className="lattice-assistant-hint">
-                {t(
-                  "Say something and it changes the desktop: “move the clock to the top right”, “switch to dark”, “the pet is too big, make it smaller”. Every step can be undone.",
-                )}
+            {/*
+              没有能用的模型：一行话 + 一颗按钮，**不是整页表单**（0034）。
+              这句话要在空态之上，因为它是"为什么我说了话没有回应"的答案
+            */}
+            {modelMissing && (
+              <p className="lattice-assistant-notice">
+                <span>{t("No model is set up yet. Pick one before asking.")}</span>
+                <button type="button" className="lattice-btn is-small" onClick={() => setView("setup")}>
+                  {t("Open settings")}
+                </button>
               </p>
+            )}
+            {entries.length === 0 && !modelMissing && (
+              <div className="lattice-assistant-empty">
+                <p className="lattice-assistant-empty-title">{t("What should it do on the desktop?")}</p>
+                <div className="lattice-assistant-examples">
+                  {EXAMPLES.map((line) => (
+                    <button
+                      key={line}
+                      type="button"
+                      className="lattice-example"
+                      onClick={() => {
+                        // 只填进输入框，**不直接发**：直接发会当场扣配额、
+                        // 还可能弹审批，用户还没看见自己要发什么就先付了钱
+                        setDraft(line);
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      {t(line)}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
             {entries.map((entry, index) => {
               if (entry.kind === "tool") {
@@ -1658,10 +2099,83 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
             {/* 输入位和下面那排是**同一张卡片**（`field`）。分开摆的时候，输入框
                 自己是个带边的浅色块、按钮们裸在面板上，两块各说各的 */}
             <div className="lattice-assistant-field">
+              {/*
+                「＋」菜单（0035）：WorkBuddy 那张图里就是这一颗。里面只放**现有**
+                的能力 —— 模式（三档审批）、附加文件、技能、服务。它不复制设置页，
+                技能和服务是"带你去那一格"，因为那些东西要一列才看得清
+              */}
+              {plusOpen && (
+                <div className="lattice-plus-menu" role="dialog" aria-label={t("Add to this turn")}>
+                  <div className="lattice-plus-group">
+                    <span className="lattice-plus-label">{t("Attach a file")}</span>
+                    <input
+                      className="lattice-plus-input"
+                      value={attachDraft}
+                      placeholder={"D:\\notes\\weekly.md"}
+                      spellCheck={false}
+                      aria-label={t("File path")}
+                      onChange={(event) => setAttachDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          attachPath(attachDraft);
+                        }
+                        if (event.key === "Escape") setPlusOpen(false);
+                      }}
+                    />
+                    <p className="lattice-plus-hint">
+                      {t("Paste a path, or drop the file on the box. It becomes @path and the model reads it itself.")}
+                    </p>
+                  </div>
+                  <div className="lattice-plus-group">
+                    <span className="lattice-plus-label">{t("Approval")}</span>
+                    <div className="lattice-approval-modes" role="group" aria-label={t("Approval")}>
+                      {APPROVAL_MODES.map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          className={`lattice-btn is-small${
+                            normalizeApproval(hands.approvalMode) === item ? " is-primary" : ""
+                          }`}
+                          aria-pressed={normalizeApproval(hands.approvalMode) === item}
+                          onClick={() => void setApprovalMode(item)}
+                        >
+                          {t(APPROVAL_LABELS[item].label)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="lattice-plus-group is-links">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlusOpen(false);
+                        setSettingsSection("skills");
+                        setView("setup");
+                      }}
+                    >
+                      {t("Skills")} →
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlusOpen(false);
+                        setSettingsSection("services");
+                        setView("setup");
+                      }}
+                    >
+                      {t("External services")} →
+                    </button>
+                  </div>
+                </div>
+              )}
               <textarea
                 ref={inputRef}
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  grow();
+                }}
                 onKeyDown={(event) => {
                   // Esc 取消这次听写：已经识别出来的字一个字都不落（0027 §5）
                   if (event.key === "Escape" && dictationView.listening) {
@@ -1669,12 +2183,17 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
                     void dictationCancel();
                     return;
                   }
+                  if (event.key === "Escape" && plusOpen) {
+                    event.preventDefault();
+                    setPlusOpen(false);
+                    return;
+                  }
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     void send();
                   }
                 }}
-                rows={2}
+                rows={1}
                 placeholder={t("Ask it to do something on the desktop (Enter to send, Shift+Enter for a new line)")}
                 disabled={busy}
               />
@@ -1694,11 +2213,21 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
               )}
               <div className="lattice-assistant-foot">
                 {/*
-                  完全访问的开关在**输入框左下角**：它和「发送」同一行，属于"我要让
-                  它放手干"那一下，不该占标题区。整颗用警示色 —— 它开的是一个不再
-                  逐条问话的开关，长得像个普通按钮才是错的。开着的时候同一颗变成
-                  「关掉」，关掉不问（0009）。
+                  从左到右：＋（这一轮加东西）、完全访问那颗警示色药丸、元信息，
+                  然后**麦克风贴着发送键**。麦克风原来在药丸右边、离发送还有一段
+                  距离，用户的原话是"麦克风可以放在 Send 旁边" —— 说一句然后发出去
+                  是同一个动作，中间不该隔着别的东西
                 */}
+                <button
+                  type="button"
+                  className="lattice-assistant-plus"
+                  aria-expanded={plusOpen}
+                  aria-label={t("Add to this turn")}
+                  title={t("Add to this turn")}
+                  onClick={() => setPlusOpen((open) => !open)}
+                >
+                  <Glyph d={ICON.plus} />
+                </button>
                 <button
                   type="button"
                   className="lattice-assistant-grant"
@@ -1724,21 +2253,33 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
                   <span>{fullAccess ? t("Turn off full access") : t("Enable Full access")}</span>
                   {!fullAccess && <ChevronIcon />}
                 </button>
-                {/*
-                  听写那颗麦克风：和「发送」同一行、贴在它左边。放别处的话
-                  "说一句然后发出去"要多换一次视线。`available` 之前不画 ——
-                  先问一次系统语音语言，问不到才灰着并说明为什么
-                */}
+                <span className="lattice-assistant-meta">
+                  {usage ? `${usage.prompt} → ${usage.completion} tokens` : ""}
+                  {active?.keySource === "env" ? ` · ${t("key from the environment")}` : ""}
+                </span>
+                {/* 缩放读数（0036）：只在放大 / 缩小时出现。点一下回 100% ——
+                    `Ctrl+0` 是同一个动作，但滚轮之后没人会想起还有那个键 */}
+                {zoom !== 1 && (
+                  <button
+                    type="button"
+                    className="lattice-assistant-zoom"
+                    onClick={resetPanelZoom}
+                    title={t("Reset zoom")}
+                    aria-label={`${t("Zoom")} ${Math.round(zoom * 100)}%`}
+                  >
+                    {Math.round(zoom * 100)}%
+                  </button>
+                )}
                 {dictation && (
                   <button
                     type="button"
                     className="lattice-assistant-mic"
                     data-on={dictationView.listening ? "1" : "0"}
-                    disabled={!dictation.available}
+                    data-unavailable={dictation.available ? "0" : "1"}
                     aria-pressed={dictationView.listening}
                     title={
                       !dictation.available
-                        ? t("Dictation needs a Chinese speech language")
+                        ? (dictationReasonText(dictation) ?? t("Dictation is not available"))
                         : dictationView.listening
                           ? t("Stop dictation")
                           : t("Start dictation")
@@ -1746,34 +2287,53 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
                     aria-label={
                       dictationView.listening ? t("Stop dictation") : t("Start dictation")
                     }
-                    onClick={() => void toggleDictation()}
+                    onClick={() => {
+                      // 灰着的时候点它不是"没反应"：直接把系统语音设置打开。
+                      // 0032 §5 立的规矩 —— 任何不可用状态都不许是一颗点了没反应的钮，
+                      // 要么能自愈，要么说出差什么
+                      if (!dictation.available) {
+                        void openDictationSettingsPage("speech").catch(() => {});
+                        return;
+                      }
+                      void toggleDictation();
+                    }}
                   >
                     <Glyph d={ICON.mic} />
                   </button>
                 )}
-                {/* 元信息在左、按钮在右：按钮固定在右下角，用户按回车之前手就在那儿 */}
-                <span className="lattice-assistant-meta">
-                  {usage ? `${usage.prompt} → ${usage.completion} tokens` : ""}
-                  {active?.keySource === "env" ? ` · ${t("key from the environment")}` : ""}
-                </span>
                 {busy ? (
-                  <button type="button" className="lattice-btn is-small" onClick={stop}>
-                    {t("Stop")}
+                  <button
+                    type="button"
+                    className="lattice-assistant-send is-stop"
+                    onClick={stop}
+                    aria-label={t("Stop")}
+                    title={t("Stop")}
+                  >
+                    <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" focusable="false">
+                      <rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor" />
+                    </svg>
                   </button>
                 ) : (
                   <button
                     type="button"
-                    className="lattice-btn is-small is-primary"
+                    className="lattice-assistant-send"
                     onClick={() => void send()}
                     disabled={!draft.trim()}
+                    aria-label={t("Send")}
+                    title={t("Send")}
                   >
-                    {t("Send")}
+                    {/* 三角箭头（0035）：和 WorkBuddy 那颗一致。空输入时是灰的 ——
+                        一颗按下去什么都不发生的钮比灰着更糟 */}
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+                      <path d="M8 3.2 13.4 12.8H2.6z" fill="currentColor" />
+                    </svg>
                   </button>
                 )}
               </div>
             </div>
           </div>
-        </>
+          </section>
+        </div>
       )}
     </aside>
   );

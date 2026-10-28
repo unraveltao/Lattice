@@ -302,6 +302,8 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Read-only mode is on and wins — switch approvals to Ask or Automatic first.":
     "只读档开着，而且它优先 —— 先把审批档换成 Ask 或 Automatic。",
   "I understand the risks and want to continue": "我明白风险，继续",
+  "Every installed widget's declared tools become callable, including the ones you have not granted one by one.":
+    "所有已装组件声明的工具都会变成可调用的 —— 包括你没逐个授权的那些。",
   "This was already on when Lattice started.": "棂启动的时候它就已经是「完全访问」了。",
   "Got it": "知道了",
 
@@ -349,4 +351,45 @@ export const ASSISTANT_ZH: Record<string, string> = {
   "Copy the text": "复制这段",
   "Copied": "已复制",
   // "Dismiss" 的家在 shell.ts（关闭），这里不再重复一份
+
+  // —— 两栏（0034）：左栏会话、右栏对话，设置也住在这条左栏里 ——
+  "Settings sections": "设置分区",
+  "Chat name": "对话名称",
+  "Chat actions": "对话操作",
+  Rename: "重命名",
+  Delete: "删除",
+  Settings: "设置",
+  Models: "模型",
+  "Open settings": "去设置",
+  "No chats yet": "还没有对话",
+  Today: "今天",
+  Yesterday: "昨天",
+  Earlier: "更早",
+  "No model is set up yet. Pick one before asking.": "还没有可用的模型，先选一个再问。",
+  "What should it do on the desktop?": "想让它对桌面做什么？",
+  "Move the clock to the top right": "把时钟挪到右上角",
+  "Switch to dark": "换成深色主题",
+  "The pet is too big, make it smaller": "桌宠太大了，小一点",
+
+  // —— 输入卡（0035）：加号菜单、收放左栏 ——
+  "Add to this turn": "这一轮要加什么",
+  "Attach a file": "附一个文件",
+  "File path": "文件路径",
+  "Paste a path, or drop the file on the box. It becomes @path and the model reads it itself.":
+    "粘一个路径，或者把文件直接拖到框上。它会变成 @路径，模型自己去读。",
+  // "Approval" 已经在本文件前面（审批档），这里不另起一个词
+  "Hide the chat list": "收起对话列表",
+  "Show the chat list": "展开对话列表",
+  "Hide the chat list (Ctrl+B)": "收起对话列表（Ctrl+B）",
+  "Show the chat list (Ctrl+B)": "展开对话列表（Ctrl+B）",
+
+  // —— 缩放（0036）：`Ctrl+滚轮` / `Ctrl+±` / `Ctrl+0` ——
+  // 说的是**整块面板的倍率**，不是字号（GLOSSARY 的 zoom 条）
+  Zoom: "缩放",
+  "Reset zoom": "重置缩放",
+
+  // —— 两条以前漏掉的 ——
+  "Dictation is not available": "听写用不了",
+  "This chat was too long, so its oldest messages were dropped.":
+    "这段对话太长了，最早的那些话已经被丢掉了。",
 };

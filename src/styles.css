@@ -3734,13 +3734,22 @@ button.lattice-chip[aria-pressed="true"] {
   z-index: 42;
   display: flex;
   flex-direction: column;
-  width: 380px;
+  /* 两栏（0034）：208 侧栏 + 592 对话。0035 又从 880 收到 800 —— 用户的原话是
+     "让整体的对话框变得小一点"。抽屉和真窗口用同一个宽度，预览里看到的才是真的 */
+  width: 800px;
   max-width: calc(100vw - 28px);
   overflow: hidden;
   background: var(--lattice-surface);
   border: 1px solid var(--lattice-border);
   border-radius: 14px;
   box-shadow: var(--lattice-shadow-2);
+  /* 缩放（0036）：整块面板的倍率，**不是字号**。
+     `zoom` 在这里是"浏览器 Ctrl+加号"那套语义 —— 面板占的屏幕面积不变、内容按
+     倍率放大、布局空间按比例缩小，所以放大到 1.5 也不会把输入卡挤出窗口
+     （`.scratch/zoom-probe.html` 量过：flex: 1 的子项照样不溢出）。
+     挂在这一层而不是 `documentElement`：抽屉和画布同一个 webview，挂根上会把
+     画布一起放大。倍率由 `AssistantPanel` 的内联样式给，缺省 1。 */
+  zoom: var(--lattice-zoom, 1);
 }
 
 .lattice-assistant-head {
@@ -3771,41 +3780,344 @@ button.lattice-chip[aria-pressed="true"] {
   gap: 4px;
 }
 
-/* 会话条：一个下拉 + 新建 + 删除。放在头和正文之间，和输入框那头（元信息）分开 ——
-   它不是"这一轮的一部分"，是"这是哪一份对话" */
-.lattice-assistant-chats {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px 0;
-}
-
-/* 会话条里的图标按钮和下拉框同高，别一个 24 一个 26 地错位 */
-.lattice-assistant-chats .lattice-icon-btn {
-  flex: none;
-}
-
 /* 会话存不上 / 被截断的那一行。**要自己的左右留白**：它是面板的直接子项，
    而面板本身没有 padding（各段各自管），不写就会贴着窗口左边缘 */
 .lattice-assistant-note {
   margin: 6px 12px 0;
 }
 
-.lattice-assistant-chat-select {
+/* ---- 两栏（0034）------------------------------------------------------
+ *
+ * 左边一条会话栏、右边一块对话。为什么不是"下拉框换个皮肤"：下拉框一次只
+ * 看得见一份会话，而侧栏让人一眼认出"上周那份周报"在哪儿 —— 那正是用户
+ * 反复回来找的东西。
+ */
+
+.lattice-assistant-panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/*
+ * 左栏：会话列表和设置分区共用这一条。208 = 880 里给对话留出 672，
+ * 而 208 刚好放得下 12px 的十六七个汉字 —— 一句话的标题不用截两次。
+ */
+.lattice-assistant-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  width: 208px;
+  min-height: 0;
+  padding: 10px 8px;
+  /* 用一层极淡的文字色而不是 surface-2：底板可以透出壁纸，写死一个浅色
+     会在深色底板上变成一块灰板 */
+  background: color-mix(in srgb, var(--lattice-text) 6%, transparent);
+  border-right: 1px solid var(--lattice-border);
+}
+
+/* 右栏。`min-width: 0` 是必须的：没有它，里面那条长句子会把整栏撑出窗口 */
+.lattice-assistant-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* `hidden` 属性在 `display: flex` 的 section 上不生效（类选择器压掉了 UA 那条），
+   所以设置态那四块要靠这一道 `!important` 才真的一格一格显示 */
+.lattice-assistant-pane [hidden] {
+  display: none !important;
+}
+
+.lattice-rail-new {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--lattice-text);
+  text-align: left;
+  background: var(--lattice-surface);
+  border: 1px solid var(--lattice-border);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.lattice-rail-new:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--lattice-focus) 45%, transparent);
+}
+
+.lattice-rail-new:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.lattice-rail-new svg {
+  flex: none;
+}
+
+.lattice-rail-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 6px;
+  overflow-y: auto;
+}
+
+.lattice-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lattice-rail-label {
+  margin: 8px 6px 2px;
+  font-size: 11px;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-rail-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 7px;
+}
+
+.lattice-rail-row:hover {
+  background: color-mix(in srgb, var(--lattice-text) 6%, transparent);
+}
+
+.lattice-rail-row.is-active {
+  background: var(--lattice-selection-soft);
+}
+
+.lattice-rail-title {
   flex: 1;
   min-width: 0;
-  padding: 4px 6px;
+  padding: 6px 8px;
+  overflow: hidden;
   font-family: inherit;
+  font-size: 12px;
+  color: var(--lattice-text);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.lattice-rail-row.is-active .lattice-rail-title {
+  font-weight: 600;
+}
+
+.lattice-rail-title:disabled {
+  color: var(--lattice-text-muted);
+  cursor: default;
+}
+
+/* 「⋯」默认不画：一行一个省略号铺满侧栏，比没有还乱。悬停 / 菜单开着 /
+   键盘走到它才出现 —— 三种都是"用户现在想动这一行" */
+.lattice-rail-more {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--lattice-text-muted);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.lattice-rail-row:hover .lattice-rail-more,
+.lattice-rail-row[data-menu="1"] .lattice-rail-more,
+.lattice-rail-more:focus-visible {
+  opacity: 1;
+}
+
+.lattice-rail-more:hover {
+  color: var(--lattice-text);
+  background: color-mix(in srgb, var(--lattice-text) 8%, transparent);
+}
+
+/* 菜单贴在那一行下面而不是 portal 到 body：侧栏自己会滚，portal 出去之后
+   滚动时菜单会留在原地，指向一个已经移走的行 */
+.lattice-rail-menu {
+  position: absolute;
+  top: 100%;
+  right: 4px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+  padding: 4px;
+  background: var(--lattice-surface);
+  border: 1px solid var(--lattice-border);
+  border-radius: 9px;
+  box-shadow: var(--lattice-shadow-2);
+}
+
+.lattice-rail-menu button {
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--lattice-text);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.lattice-rail-menu button:hover {
+  background: var(--lattice-selection-soft);
+}
+
+.lattice-rail-menu button.is-danger {
+  color: var(--lattice-danger);
+}
+
+.lattice-rail-rename {
+  width: 100%;
+  margin: 2px;
+  padding: 5px 7px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--lattice-text);
+  background: var(--lattice-surface);
+  border: 1px solid var(--lattice-focus);
+  border-radius: 6px;
+  outline: none;
+}
+
+.lattice-rail-empty {
+  margin: 10px 8px;
   font-size: 11px;
+  color: var(--lattice-text-muted);
+}
+
+/* 设置分区（设置态左栏）。和会话行分开写：那个有「⋯」和省略，这个只是字 */
+.lattice-rail-item {
+  width: 100%;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--lattice-text-muted);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.lattice-rail-item:hover {
+  color: var(--lattice-text);
+  background: color-mix(in srgb, var(--lattice-text) 6%, transparent);
+}
+
+.lattice-rail-item.is-active {
+  font-weight: 600;
+  color: var(--lattice-text);
+  background: var(--lattice-selection-soft);
+}
+
+/* 底行（设置 / 返回对话）永远贴着栏底：`margin-top: auto` 比给列表加
+   `flex: 1` 更稳 —— 列表没有内容时它也能到底 */
+.lattice-rail-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: auto;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--lattice-text-muted);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.lattice-rail-foot:hover {
+  color: var(--lattice-text);
+  background: color-mix(in srgb, var(--lattice-text) 6%, transparent);
+}
+
+.lattice-rail-foot svg {
+  flex: none;
+}
+
+/* 空态：一句问话 + 三个能点的例子。**不再是那段长句** —— 长句要读，
+   例子可以直接点；点了是填进输入框，不是当场发出去 */
+.lattice-assistant-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px 8px;
+}
+
+.lattice-assistant-empty-title {
+  margin: 0;
+  font-size: 15px;
+  color: var(--lattice-text);
+  text-align: center;
+}
+
+.lattice-assistant-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.lattice-example {
+  padding: 7px 12px;
+  font-family: inherit;
+  font-size: 12px;
   color: var(--lattice-text);
   background: var(--lattice-surface-2);
   border: 1px solid var(--lattice-border);
-  border-radius: 6px;
+  border-radius: 999px;
+  cursor: pointer;
 }
 
-.lattice-assistant-chats .lattice-btn {
-  flex-shrink: 0;
+.lattice-example:hover {
+  border-color: color-mix(in srgb, var(--lattice-focus) 45%, transparent);
+}
+
+/* 没有可用的模型：一行话 + 一颗按钮，代替原来"整页跳设置" */
+.lattice-assistant-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--lattice-text);
+  background: var(--lattice-surface-2);
+  border: 1px solid var(--lattice-border);
+  border-radius: 10px;
+}
+
+.lattice-assistant-notice span {
+  flex: 1;
+  min-width: 0;
 }
 
 .lattice-assistant-body {
@@ -3899,7 +4211,10 @@ button.lattice-chip[aria-pressed="true"] {
 .lattice-assistant-composer {
   display: flex;
   flex: none;
-  padding: 10px 12px 12px;
+  /* 卡片**不贴边**（0035）：WorkBuddy 那张图的输入卡两侧各留一圈空白，
+     "看着小"主要来自这一圈，不是来自窗口本身。40 是"能看出是一张卡"的最小留白 */
+  justify-content: center;
+  padding: 10px 40px 14px;
   border-top: 1px solid var(--lattice-border);
   /* 对话滑到它下面：一道很轻的投影比一条 1px 硬线更像"两层"。
      负数扩散把它收在输入区上方那一条上，不往中间糊 */
@@ -3917,6 +4232,7 @@ button.lattice-chip[aria-pressed="true"] {
  * 一道短投影、里面一道内阴影。**层次来自光，不来自描边**。
  */
 .lattice-assistant-field {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -3980,6 +4296,133 @@ button.lattice-chip[aria-pressed="true"] {
 /* 元信息占左边，按钮被推到右边（`margin-right: auto` 在这个方向上就是"往右顶"）。
  * 它左边还坐着完全访问那颗药丸，所以自己得能让位：缩到没有就省略号，
  * 别把「发送」挤到第二行去 */
+/* 「＋」这一颗（0035）：和麦克风、发送同一排，最左边。它开的是"往这一轮里加点
+   什么"，不是"发送"的一部分，所以用中性色，不抢发送键那颗实心的注意力 */
+.lattice-assistant-plus {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--lattice-text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--lattice-border);
+  border-radius: 999px;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.lattice-assistant-plus:hover,
+.lattice-assistant-plus[aria-expanded="true"] {
+  color: var(--lattice-text);
+  background: var(--lattice-accent-soft);
+}
+
+/* 「＋」菜单：贴在输入卡**上面**。不 portal —— 它跟着卡片走，卡片在窗口里
+   的位置变了它也跟着变，portal 出去要自己算坐标 */
+.lattice-plus-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 320px;
+  padding: 10px;
+  background: var(--lattice-surface);
+  border: 1px solid var(--lattice-border);
+  border-radius: 12px;
+  box-shadow: var(--lattice-shadow-2);
+}
+
+.lattice-plus-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lattice-plus-label {
+  font-size: 11px;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-plus-input {
+  padding: 5px 7px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--lattice-text);
+  background: var(--lattice-surface-2);
+  border: 1px solid var(--lattice-border);
+  border-radius: 7px;
+}
+
+.lattice-plus-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lattice-text-faint);
+}
+
+.lattice-plus-group.is-links {
+  flex-direction: row;
+  gap: 6px;
+}
+
+.lattice-plus-group.is-links button {
+  flex: 1;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--lattice-text);
+  text-align: left;
+  cursor: pointer;
+  background: var(--lattice-surface-2);
+  border: 1px solid var(--lattice-border);
+  border-radius: 7px;
+}
+
+.lattice-plus-group.is-links button:hover {
+  border-color: color-mix(in srgb, var(--lattice-focus) 45%, transparent);
+}
+
+/* 发送键（0035）：圆形实心 + 三角箭头，和 WorkBuddy 那颗一致。
+   空输入时是灰的 —— 一颗按下去什么都不发生的钮比灰着更糟 */
+.lattice-assistant-send {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--lattice-accent-contrast);
+  cursor: pointer;
+  background: var(--lattice-accent);
+  border: 0;
+  border-radius: 999px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.lattice-assistant-send:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--lattice-accent) 82%, #000);
+}
+
+.lattice-assistant-send:disabled {
+  color: var(--lattice-text-faint);
+  cursor: default;
+  background: color-mix(in srgb, var(--lattice-text) 12%, transparent);
+}
+
+/* 正在跑的那一颗是「停」：红色，方块。同一颗位置、同一个尺寸 ——
+   用户在同一个地方按下去，得到的是相反的意思，颜色要一眼分得清 */
+.lattice-assistant-send.is-stop {
+  color: var(--lattice-accent-contrast);
+  background: var(--lattice-danger);
+}
+
 .lattice-assistant-meta {
   flex: 1 1 auto;
   min-width: 0;
@@ -3990,6 +4433,27 @@ button.lattice-chip[aria-pressed="true"] {
   color: var(--lattice-text-faint);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* 缩放读数（0036）：只在倍率 ≠ 1 时出现，点一下回 100%。
+   放在输入卡那一排而不是设置里 —— 它和「发送」是同一类东西：这一刻的临时状态，
+   用户放大之后马上就想知道自己放到了多少 */
+.lattice-assistant-zoom {
+  flex: none;
+  padding: 2px 6px;
+  font-family: var(--lattice-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--lattice-text-faint);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--lattice-border);
+  border-radius: 5px;
+}
+
+.lattice-assistant-zoom:hover {
+  color: var(--lattice-text);
+  border-color: var(--lattice-text-faint);
 }
 
 /* ---- 听写那颗麦克风（0027）
@@ -4029,6 +4493,12 @@ button.lattice-chip[aria-pressed="true"] {
 
 .lattice-assistant-mic:disabled {
   cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* 0032：不可用时它**不是**一颗点不动的钮 —— 点下去会打开 Windows 的语音设置。
+   所以只压暗，不换 `not-allowed` 光标（那个光标的意思是"点了没用"，而这里有用） */
+.lattice-assistant-mic[data-unavailable="1"] {
   opacity: 0.45;
 }
 
@@ -4429,8 +4899,10 @@ button.lattice-chip[aria-pressed="true"] {
   flex-direction: column;
   overflow: hidden;
   background: var(--lattice-surface);
-  /* 窗口自己裁圆角，但边会有一点锯齿；内描边让边缘看起来是"设计过的" */
-  box-shadow: inset 0 0 0 1px var(--lattice-border);
+  /* 这里曾经有一圈 `inset 0 0 0 1px var(--lattice-border)`，用来把圆角那点
+     锯齿"设计化"。代价是深色底板上多一条灰边 —— 用户的原话是"为什么这个
+     窗口做出来会有一个灰色的边框"。系统那条 1px 边框在 `hide_system_border`
+     里关掉了，这一条也一起去掉：边就是内容，不再描一圈 */
 }
 
 .lattice-assistant-bar {
@@ -5707,13 +6179,32 @@ button.lattice-chip[aria-pressed="true"] {
  *
  * 用 grid 而不是 flex：模式名要和那段解释的**第一行**对齐。flex 的
  * `align-items: center` 会把 "INTERNAL" 摆到三行字的中间，看着像掉进段落里。 */
+/*
+ * 0035：从"横贯整个窗口的一条"变成对话区顶上的一颗**胶囊**。
+ * 0034 的两栏之后，那条横线连着左栏一起盖住，是整块面板里最不像聊天窗口的一行。
+ * 0009 要的是"一直在看得见的地方" —— 胶囊仍然常驻，只是不再占一整行。
+ */
 .lattice-assistant-mode {
-  display: grid;
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  /* 顶到右边：左边留给 ☰（以及收起时的 ＋ / ⚙） */
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid var(--lattice-border);
+  border-radius: 999px;
+}
+
+/* 对话区顶上那一条：☰ + 模式胶囊。高度和标题栏一档，不再单独占一条横幅 */
+.lattice-assistant-topbar {
+  display: flex;
   flex: none;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 8px;
-  padding: 8px 12px;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 4px 10px;
   border-bottom: 1px solid var(--lattice-border);
 }
 
@@ -5728,14 +6219,18 @@ button.lattice-chip[aria-pressed="true"] {
 .lattice-assistant-mode-hint {
   flex: 1;
   min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
   font-size: 11px;
   line-height: 1.5;
   color: var(--lattice-text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .lattice-assistant-mode[data-on="1"] {
   background: var(--lattice-danger-soft);
-  border-bottom-color: var(--lattice-danger);
+  border-color: var(--lattice-danger);
 }
 
 .lattice-assistant-mode[data-on="1"] .lattice-assistant-mode-name,

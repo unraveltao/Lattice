@@ -23,16 +23,51 @@ import {
 export const ASSISTANT_WINDOW_MODES = ["floating", "desktop"] as const;
 export type AssistantWindowMode = (typeof ASSISTANT_WINDOW_MODES)[number];
 
-/** 再小输入框和最后一条回答就叠在一起了（和 `assistant_window_policy.rs` 同一个数） */
-export const MIN_ASSISTANT_W = 320;
+/** 再小两栏就挤在一起了（和 `assistant_window_policy.rs` 同一个数，改一处必须改另一处） */
+export const MIN_ASSISTANT_W = 560;
 export const MIN_ASSISTANT_H = 420;
 
-/** 出厂尺寸：和这个窗口一直以来的 400×580 一致 */
-export const DEFAULT_ASSISTANT_W = 400;
-export const DEFAULT_ASSISTANT_H = 580;
+/** 出厂尺寸 800×600（0035：用户要"对话框小一点"） */
+export const DEFAULT_ASSISTANT_W = 800;
+export const DEFAULT_ASSISTANT_H = 600;
 
 /** 默认落点离屏幕边缘的余量（下边留两份，一份给任务栏） */
 export const ASSISTANT_MARGIN = 28;
+
+/**
+ * 面板缩放的五档（0036）。**和 `assistant_window_policy.rs::ZOOM_STEPS`
+ * 一字不差** —— 两边对同一份文件给出不同的档位，会让"存进去的"和"读出来的"
+ * 不是同一个数，下一次滚轮就从别的档位起跳。
+ *
+ * 界面要"立刻变大"，不能等 IPC 回来再变，所以前端也存一份表：先本地走一档、
+ * 再 invoke 落盘。落盘失败只意味着"下次打开回到上一个档"，不影响这一次。
+ */
+export const ZOOM_STEPS = [0.85, 1, 1.15, 1.3, 1.5] as const;
+
+/** 认不出来 / 不在档位表上 → 最近的档位；坏值（NaN / 无穷 / ≤ 0）→ 1。
+ *  两个"最近的"一样近时取小的那个（1.4 → 1.3），和 Rust 同一判据 */
+export function normalizeZoom(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return 1;
+  let best: number = ZOOM_STEPS[0];
+  let bestGap = Number.POSITIVE_INFINITY;
+  for (const step of ZOOM_STEPS) {
+    const gap = Math.abs(step - value);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = step;
+    }
+  }
+  return best;
+}
+
+/** `dir > 0` 放大一档，`dir < 0` 缩小一档；到顶到底原地不动（不循环） */
+export function stepZoom(current: unknown, dir: number): number {
+  const at = normalizeZoom(current);
+  const index = ZOOM_STEPS.indexOf(at as (typeof ZOOM_STEPS)[number]);
+  const start = index < 0 ? 1 : index;
+  const next = Math.min(Math.max(start + Math.sign(dir), 0), ZOOM_STEPS.length - 1);
+  return ZOOM_STEPS[next];
+}
 
 export interface AssistantRect {
   x: number;
@@ -49,13 +84,17 @@ export interface AssistantWorkArea {
   height: number;
 }
 
-/** `assistant-window.json` v2 的全量形状 */
+/** `assistant-window.json` v4 的全量形状 */
 export interface AssistantWindowState {
-  version: 2;
+  version: 4;
   mode: AssistantWindowMode;
   rect: AssistantRect;
   appearance: Appearance;
   locked: boolean;
+  /** 左栏收没收起（0035）。v2 文件里没有这个字段 = 展开 */
+  sidebar: boolean;
+  /** 面板整体缩放（0036）。v3 文件里没有这个字段 = 1 倍。**不是字号** */
+  fontScale: number;
 }
 
 /** 认不出来一律退回 `floating`：**不是** `desktop`。
@@ -70,11 +109,23 @@ export function normalizeAssistantMode(raw: unknown): AssistantWindowMode {
     : "floating";
 }
 
-/** 尺寸夹进 `MIN..`；坏值（NaN / 0 / 负数）落回出厂，不然会变成一个看不见的窗口 */
+/**
+ * 尺寸夹进 `MIN..`；坏值（NaN / 0 / 负数）落回出厂，不然会变成一个看不见的窗口。
+ *
+ * `width < MIN` 时**整份取出厂，不是抬到 560**：560 宽是"两栏刚放得下"，
+ * 但比它还窄的记录只可能出自 0034 之前（那时候出厂就是 400 宽）—— 那是老用户
+ * 从没调过尺寸，不是他想要一个 560 的窗。真把窗口拖到过 560 以上的人，
+ * 记录里的宽度就在 560 以上，这条分支碰不到他（`min_inner_size` 拦着拖动）。
+ *
+ * 判据必须和 `assistant_window_policy.rs::migrate_size` 一字不差：两边对同一份
+ * 文件给出不同尺寸，会让"看得见的窗口"和"记着的窗口"差一截，下一次拖动就把
+ * 它缩回去。
+ */
 export function clampAssistantSize(width: unknown, height: unknown): [number, number] {
   const w = typeof width === "number" && Number.isFinite(width) && width > 0 ? width : DEFAULT_ASSISTANT_W;
   const h =
     typeof height === "number" && Number.isFinite(height) && height > 0 ? height : DEFAULT_ASSISTANT_H;
+  if (w < MIN_ASSISTANT_W) return [DEFAULT_ASSISTANT_W, DEFAULT_ASSISTANT_H];
   return [Math.max(MIN_ASSISTANT_W, w), Math.max(MIN_ASSISTANT_H, h)];
 }
 
@@ -106,7 +157,8 @@ export function defaultAssistantRect(work: AssistantWorkArea): AssistantRect {
  * 把磁盘上读到的东西变成一份可用状态。
  *
  * 三种输入都要接住，**一个都不能让它拦住窗口**：
- *   - v2（带 `version: 2`）：逐字段归一化；
+ *   - v4 / v3 / v2（带 `version`）：逐字段归一化，v2 缺的 `sidebar` 当展开，
+ *     v3 缺的 `fontScale` 当 1 倍；
  *   - v1（只有 `{x, y}`）：位置照用，尺寸取默认、底板出厂、不锁 —— 就地升级；
  *   - 别的（坏文件 / 空 / 不是对象）：整份出厂，落右下角。
  */
@@ -115,11 +167,13 @@ export function migrateAssistantWindow(
   work: AssistantWorkArea,
 ): AssistantWindowState {
   const fallback: AssistantWindowState = {
-    version: 2,
+    version: 4,
     mode: "floating",
     rect: defaultAssistantRect(work),
     appearance: { ...DEFAULT_APPEARANCE },
     locked: false,
+    sidebar: true,
+    fontScale: 1,
   };
   if (!raw || typeof raw !== "object") return fallback;
   const input = raw as Record<string, unknown>;
@@ -140,10 +194,14 @@ export function migrateAssistantWindow(
   );
 
   return {
-    version: 2,
+    version: 4,
     mode: isLegacy ? "floating" : normalizeAssistantMode(input.mode),
     rect,
     appearance: normalizeAppearance(input.appearance),
     locked: input.locked === true,
+    // v2 文件没有这个字段：那时候侧栏还不能收，缺字段就是展开
+    sidebar: input.sidebar !== false,
+    // v3 文件没有这个字段：那时候还没有缩放，缺字段就是 1 倍
+    fontScale: normalizeZoom(input.fontScale),
   };
 }
