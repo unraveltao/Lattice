@@ -1,6 +1,6 @@
 //! 听写：系统语音语言 → WinRT 本地识别 → 字交回面板 / 打进前台窗口。
 //!
-//! 设计在 [docs/design/0027-voice-dictation.md](../docs/design/0027-voice-dictation.md)。
+//! 设计在 [docs/design/LAT-0027-voice-dictation.md](../docs/design/LAT-0027-voice-dictation.md)。
 //! 这里只落三件事：**识别器**、**六个命令**、**一条事件**。
 //!
 //! # 为什么结果走事件而不是命令返回值

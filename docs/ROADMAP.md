@@ -18,17 +18,17 @@
 | --- | --- | --- | --- |
 | v0.1 | 骨架 | ✅ 完成 | 组件在沙箱里跑起来，桥与权限能验 |
 | v0.2 | 真桌面 | ✅ 完成 | 组件是独立的 Win32 窗口，能拖能缩能锁，重启不丢 |
-| v0.3 | 平台能力 | ✅ 完成 | 调度器、系统指标、落盘备份、关闭撤销、CSP 锁定、出网闸门、每实例配置、网络白名单代理、托盘/自启、目录监听、崩溃隔离、双屏边界夹紧全部落地；**组件自己开的帧循环也有了停的条件**（拾起时降帧、看不见就停，见 [design/0017](./design/0017-widget-frame-budget.md)） |
+| v0.3 | 平台能力 | ✅ 完成 | 调度器、系统指标、落盘备份、关闭撤销、CSP 锁定、出网闸门、每实例配置、网络白名单代理、托盘/自启、目录监听、崩溃隔离、双屏边界夹紧全部落地；**组件自己开的帧循环也有了停的条件**（拾起时降帧、看不见就停，见 [design/0017](./design/LAT-0017-widget-frame-budget.md)） |
 | v0.4 | 开发体验 | ✅ 完成 | SDK、脚手架、打包工具、媒体控制、调试面板 |
 | v0.5 | 分发 | ✅ 完成 | 目录是一份静态 JSON：装、更新、回滚、举报、新权限复核全部落地 |
-| v0.6 | 生态 | 🟡 进行中 | 目录上线（Pages 已开）+ 目录缓存/断网兜底 + **多源列表**落地（`sources: [...]`，合并成一张表、每源一行读况，见 [design/0010](./design/0010-multi-source-catalogue.md)）；剩真机验收与官方组件继续补 |
+| v0.6 | 生态 | 🟡 进行中 | 目录上线（Pages 已开）+ 目录缓存/断网兜底 + **多源列表**落地（`sources: [...]`，合并成一张表、每源一行读况，见 [design/0010](./design/LAT-0010-multi-source-catalogue.md)）；剩真机验收与官方组件继续补 |
 | v0.7 | 交付 | 🟡 进行中 | NSIS 安装包 + 自动更新（见 v0.7 一节） |
 | v0.8 | Agent 接入 | 🟡 进行中 | 默认关的回环端点：只绑 127.0.0.1、令牌、审计日志、8 个白名单动作（读日志用 `npm run agent -- state`）；还差一次 CLI 往返的真机验收 |
 | v0.9 | 声音与链接 | ✅ 完成 | `lattice.music` 改名 + 播放器名翻人话、`audio:level`、`lattice.bookmarks`、`shell:open` |
 | v0.10 | 内置 assistant | 🟡 进行中 | 自备 OpenAI 兼容模型与 key（**key 只在 Rust 里**）、工具调用走同一套 8 个动作、组件那侧只有 `llm:chat`；桌面上是一个能拖的独立小窗（Ctrl+K），真厂商 key 的往返已走通；平台界面中英双语（英文原句当 key，缺翻译退化成英文），**组件作者写的字也是双语**（清单里写 `{ zh, en }`，HTML 里自己读 `lang.get`） |
 | v0.11 | 模型的形状与 agent 纪律 | 🟡 进行中 | 模型配置已经多档：`assistant.json` v3（每条档自带 key / auth / model，v1 就地迁移）、预设只填表、能力表决定送不送 temperature、`/chat/completions` 走 SSE 边读边出字（可取消）；agent 终于有手（**P1–P6**：六组能力开关默认全关、审批写在 `assistant_tool` 之前、三道预算、文件四只 + `shell.run` + `web.fetch`（跟 ≤5 跳重定向、HTML 折成正文）+ 屏幕（窗口列表 / 截图）与键鼠（点、敲字、组合键）+ 外部服务（自己配的 MCP 服务：stdio 起子进程或 streamable HTTP，工具现发现、一次调用一条连接）），六只手全接上了；0003 的**会话与观察已落地**（`assistant-sessions/<id>.json` 一条会话一个文件，50 份 / 200 条 / 1 MB 三道额度，面板顶部一条能挑回 / 新开 / 删的会话条，提示词里补了组件说明首句与商店那一段），**审批档也落了**（`approvalMode` 三档 `ask` / `auto` / `readonly`，`readonly` 连 schema 都不给、Rust 再拒一次，`auto` 仍然问删除），**B 数据平面也落了**（组件清单加 `agent.tools`：工具名 `widget.<id>.<tool>`、多份实例合成一条、新权限 `agent:tools` 独立授权、答话的是画布那一份实例、回话超 4000 字符拒绝不截断；留的缺口逐条收窄（SDK 那半见 0012、小窗那半见 0013），只剩「不唤醒窗口」一处，见下面那条） |
-| v0.12 | 技能包、工作区与两个模式 | ✅ 完成 | `workspace` 从"相对路径的默认值"变成"免问区"（只对 `file.write`）；技能是说明书不是权限 —— `skills/<id>/SKILL.md` 进提示词、四条命令、`assistant.json` v4 的 `skills.enabled`，见 [design/0005](./design/0005-skills-and-workspace.md)；**两个模式**（内部 / 完全访问）是一个存盘的开关：内部 = 桌面动作 + 组件工具 + **你拨开的那几组手**（默认六组全关）、审批照档；完全访问 = 六组全开、审批不问、审计 fail-closed，启用走一道 DSH 形状的确认（风险段 + 四条硬线 + 必须勾的「我明白风险」+ 灰着的 Enable），见 [design/0009](./design/0009-assistant-modes.md)；不是第四档审批（0006 的定时授权已被它推翻） |
-| v0.13 | assistant 上桌面 | 🟡 进行中 | 两种窗口模式（浮窗 / 桌面，同一窗口不重建）：桌面模式走 `interactive` 那条路（不挂 WorkerW —— 挂了就拿不到键盘焦点，聊天框等于废了）；底板复用组件那套 appearance（tint / alpha / blur，出厂值一像素不改）；可锁、可拖边缩放（320×420 起，夹进工作区）；状态在 `assistant-window.json` v2，见 [design/0007](./design/0007-assistant-on-desktop.md)。**八条命令全在册**（含面板要的 `state` / `appearance` / `locked`），剩真机验收那几条 |
+| v0.12 | 技能包、工作区与两个模式 | ✅ 完成 | `workspace` 从"相对路径的默认值"变成"免问区"（只对 `file.write`）；技能是说明书不是权限 —— `skills/<id>/SKILL.md` 进提示词、四条命令、`assistant.json` v4 的 `skills.enabled`，见 [design/0005](./design/LAT-0005-skills-and-workspace.md)；**两个模式**（内部 / 完全访问）是一个存盘的开关：内部 = 桌面动作 + 组件工具 + **你拨开的那几组手**（默认六组全关）、审批照档；完全访问 = 六组全开、审批不问、审计 fail-closed，启用走一道 DSH 形状的确认（风险段 + 四条硬线 + 必须勾的「我明白风险」+ 灰着的 Enable），见 [design/0009](./design/LAT-0009-assistant-modes.md)；不是第四档审批（0006 的定时授权已被它推翻） |
+| v0.13 | assistant 上桌面 | 🟡 进行中 | 两种窗口模式（浮窗 / 桌面，同一窗口不重建）：桌面模式走 `interactive` 那条路（不挂 WorkerW —— 挂了就拿不到键盘焦点，聊天框等于废了）；底板复用组件那套 appearance（tint / alpha / blur，出厂值一像素不改）；可锁、可拖边缩放（320×420 起，夹进工作区）；状态在 `assistant-window.json` v2，见 [design/0007](./design/LAT-0007-assistant-on-desktop.md)。**八条命令全在册**（含面板要的 `state` / `appearance` / `locked`），剩真机验收那几条 |
 
 六个"进行中"怎么收、下一版是什么 —— 见[接下来做什么](#接下来做什么)。这一节的表回答"走到哪"，那一节回答"下一步"，别混着读。
 
@@ -130,7 +130,7 @@
 ### 10. 层级"贴桌面 / 置顶"两档 → 三档（`desktop` / `normal` / `top`）
 
 - **当初**：两档看起来已经覆盖了全部需求 —— "贴在桌面上"（沉到最底，永远不挡你）和"置顶"（压在所有东西上面，看板就该这样）。中间那一档被当成"不需要"：普通窗口会被别人盖住，对一个看板来说像是缺陷。
-- **撞墙**：用户连报三轮"置顶没用"（[`design/0029`](./design/0029-three-window-layers.md)）。前两轮修的是**同步**（宿主页那份 `HostConfig.layer` 副本没人更新、`patch_layer` 谎报"已应用"），修完之后构建里确实带着全部修复，dev server 也在发新代码 —— 他还是说没用。真机上一问才明白：他要的是"浮在资源管理器上面、但不压全屏视频"，而这一档**在模型里根本不存在**。他点来点去只在"最下面"和"最上面"之间跳，于是描述成"调节和属性没有关联"。第二件事把问题放大：`desktop` 对可输入的组件其实只是 `HWND_BOTTOM`（挂 WorkerW 就拿不到键盘焦点），而检查器对便签和时钟说同一句"Sits above desktop icons"，屏幕上写的和窗口做的是两件事。
+- **撞墙**：用户连报三轮"置顶没用"（[`design/0029`](./design/LAT-0029-three-window-layers.md)）。前两轮修的是**同步**（宿主页那份 `HostConfig.layer` 副本没人更新、`patch_layer` 谎报"已应用"），修完之后构建里确实带着全部修复，dev server 也在发新代码 —— 他还是说没用。真机上一问才明白：他要的是"浮在资源管理器上面、但不压全屏视频"，而这一档**在模型里根本不存在**。他点来点去只在"最下面"和"最上面"之间跳，于是描述成"调节和属性没有关联"。第二件事把问题放大：`desktop` 对可输入的组件其实只是 `HWND_BOTTOM`（挂 WorkerW 就拿不到键盘焦点），而检查器对便签和时钟说同一句"Sits above desktop icons"，屏幕上写的和窗口做的是两件事。
 - **现在**：`WindowLayer` 三值，顺序就是 z 序从下到上，`runtime/layer.ts` 是联合类型唯一的家（以前三处各抄一份，加档必漏一处且不报错）。宿主页那颗箭头从"切换"变"循环"（桌面 → 普通 → 置顶 → 桌面），提示语先说现在在哪再说点一下去哪儿；检查器那排分段按钮同序。检查器多一行**真话读数**（`widget_layer_probe`，等宽小字）：`workerw` / `bottom` / `normal` / `topmost` 五种实际状态五句话，要的和实际的对不上就红字写出来。
 - **代价**：`WindowLayer` 加值要动六处（Rust 枚举与 `apply` 分支、TS 类型、窗饰、检查器、文案、四份文档）；箭头从两态变三态，用户猜不出另一半了，所以提示语必须把"现在"和"下一步"都说全；多一条 Tauri 命令。存档**不需要迁移**（旧两值照旧解析），但新值 `"normal"` 被旧版本读到会落到默认档 —— 单向兼容。
 - **顺带钉住的教训**：**"修了两次还是没用"时，先怀疑模型缺一档，别第三次修同步。** 每一次修复都真的生效了，问题从来不在那条链路上。
@@ -211,7 +211,7 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
   - **顺带验一次真机**：现在所有验签都是打本地 `127.0.0.1:1420` 的目录。跨域 + 真 HTTPS + 真 DNS 的组合没跑过，第一次上线必须拿真地址装一遍、更新一遍、回滚一遍。
   - **进度**：仓库已经推到 GitHub（`unraveltao/lattice-registry`），CI 全绿 —— 六个官方包 + sidecar + 图标 + `build.mjs` / `sign.mjs` / `serve.mjs` / Pages workflow 都在，`registry.json` 已生成并通过真实解析器与真实 HTTP 的端到端校验。**目录自己不再签一遍**：签名在 sidecar 里，由作者在自己机器上做，CI 只校验不签名（一旦 CI 能签，私钥就得进仓库）。官方包用的是新生成的发布者钥匙 `f842c1bf…`，**不是**仓库里那把公开的 `dev-publisher.key` —— 后者任何人都能用，拿它签公开发布的包等于没有签名。代价：已经用内置目录装过组件的机器，第一次切到这个源会看到一次"发布者钥匙变了"的确认。
   - **Pages 已经开了**（`https://unraveltao.github.io/lattice-registry/registry.json` 返回 200，六个包都能下载，`Access-Control-Allow-Origin: *`）。那个开关只能人点一次：`configure-pages` 的 `enablement: true` 试过两次都是 `Resource not accessible by integration` —— GITHUB_TOKEN 没有创建站点的权限。
-- [x] **多目录源（列表，不是单值）** —— `catalogueSource` 曾是 `{ kind, url }` 单值，切源等于"上一份目录整个消失"。真生态里一个人会同时订阅官方源和别人的源。现在 `state.json` v2 里是 `sources: [{ id, kind, url, enabled }]`：并发读、合并成一张表、每源单独一行显示"读到几条 / 为什么读不到 / 已关掉"，卡片带来源角标。推理与四条边界在 [`design/0010`](./design/0010-multi-source-catalogue.md)。
+- [x] **多目录源（列表，不是单值）** —— `catalogueSource` 曾是 `{ kind, url }` 单值，切源等于"上一份目录整个消失"。真生态里一个人会同时订阅官方源和别人的源。现在 `state.json` v2 里是 `sources: [{ id, kind, url, enabled }]`：并发读、合并成一张表、每源单独一行显示"读到几条 / 为什么读不到 / 已关掉"，卡片带来源角标。推理与四条边界在 [`design/0010`](./design/LAT-0010-multi-source-catalogue.md)。
   - **id 冲突不做"高版本胜"**：那等于谁都能覆盖别人的包。按源顺序取一份，另一份在卡片上明写"另外还有来源提供它：…"。同名不是安全问题（信任锚点是包上的钥匙），是显示问题。
   - **退回内置那份只给官方源**：自定义源读不到就显示读不到 —— 拿演示目录的包顶在一个第三方源的名字底下，等于把包挂在错误的发布者名下。
   - 断言：`tests/catalogue.html` 71 → 92（id 计算、归一化、合并顺序与冲突）、`tests/catalogue-cache.html` 20 → 30（v0/v1 → v2 迁移 + store 上那列动作，含"最后一个源删不掉"）。**真机还没走**：设置里加一个真的第三方目录，看两行读况、断网只红一行、顺序换过之后冲突那句换名字、重启后顺序还在。
@@ -228,7 +228,7 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
   - **落成一张卡 + 一句话，没有模态向导**。库面板顶上那张三步卡（装一个 / 摆上去 / 加源）**只在"一件组件都没装"时出现**（`!onboarded && installedCount === 0`），装第一个就自己退场，`Got it` 写 `state.json` 的 `onboarded` 给它一个手动出口。判据刻意要两个条件：只看 `onboarded` 的话，缺省 `false` 会让这台装了一堆组件的老机器升级上来被问一次"要开始吗"。
   - **"加别人的目录"是一步到位的按钮，不是一句说明**。它直接打开 Settings → Widgets（源列表那一页）；源编辑器不复制一份到组件库 —— 那件事的家在 `SettingsMenu.tsx`（0010 定的）。实现是一条 `openAt: { section, nonce }`：`nonce` 让"点一次、关掉、再点一次"两次都生效。
   - **目录区见底时补一句**。两种"没得装"（源里一条没有 / 全都装过了）都会在统计行后面补"还能加一个源"+ 入口；统计行本身一字不动 —— 它说的是"你装过什么"，这句说的是"还能从哪儿拿"。
-  - 推理与失败模式在 [`design/0011`](./design/0011-first-run-onboarding.md)。断言：新增 `tests/onboarding.html` 22 条（判据表 + 12 种组合），`tests/store-ui.tsx` 63 → 75（卡在图里、三步、两颗按钮真调到了回调、搜索中不铺、装过/按过都不铺、空目录那句）。
+  - 推理与失败模式在 [`design/0011`](./design/LAT-0011-first-run-onboarding.md)。断言：新增 `tests/onboarding.html` 22 条（判据表 + 12 种组合），`tests/store-ui.tsx` 63 → 75（卡在图里、三步、两颗按钮真调到了回调、搜索中不铺、装过/按过都不铺、空目录那句）。
   - **真机还没走**：清空 `installedIds` 重启看卡 → 点 `Add another source` 落到 Widgets → 装第一个包卡消失 → 全装完看目录区那句 → 按 `Got it` 重启不再出现。
 - [x] **组件库搜索排序** —— 以前只有"命中 / 不命中"，搜 `clock` 出来的顺序就是清单原顺序：名字就叫 Clock 的那个可能排在 Clockwork / World clock / TurboClock 后面。搜到是搜到了，用户还得自己在结果里再找一遍，而"搜索"承诺的正是"第一个就是你要的"。
   - **两维打分，档位压过字段**：每处命中给一个**档位**（整串相等 5000 > 从头开始 4000 > 词首 3000 > 出现在中间 2000），再加**字段权重**（名字 80 > id 60 > 描述 40 > 作者 20 > 权限名 10）。档间差一千分，所以"名字里以它开头"永远压过"描述里恰好有一模一样的词"；同一档里才比字段。多词的分数是**每个词各自最好那一处之和**（AND 判据不变）。
@@ -244,7 +244,7 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
   - **"清空"两段式**。这一栏本身就是撤销的最后一层，一下点掉就没有下一层了 —— 第一下只把按钮换成"确定清空？"，旁边留"留着"。
   - 判据全在 `runtime/trash.ts`（纯函数，`tests/trash.html` 20 条钉着过期边界、条数上限、去重、未来时间戳、`canRestore`），`tests/store-ui.tsx` 75 → 94 条（回收站那一段的接线：空着连标题都不出、组件装不装决定 Restore 灰不灰、两颗删除按钮叫到的回调、清空两段式）。**真机还没走**：删一个组件 → 等 8 秒撤销条消失 → 组件库底部的"最近删除"里恢复它（位置与设置都在）→ 卸载那个包后再看恢复按钮是按灰的 → 清空一次。
 
-- [x] **长势（`lattice.momentum`）** —— 两个页签：查一个项目的活跃度（52 周提交曲线 + 近 4 周对比 + 发版节奏 + 判定），和看 `github.com/trending` 的榜单（带本周新增 star）。设计在 [`design/0025-momentum-widget.md`](./design/0025-momentum-widget.md)。
+- [x] **长势（`lattice.momentum`）** —— 两个页签：查一个项目的活跃度（52 周提交曲线 + 近 4 周对比 + 发版节奏 + 判定），和看 `github.com/trending` 的榜单（带本周新增 star）。设计在 [`design/LAT-0025-momentum-widget.md`](./design/LAT-0025-momentum-widget.md)。
   - **star 曲线不做**：`/stargazers` 要翻页，10 万 star 是 1000 次请求。而 trending 页一次请求就白送"本周新增 star" —— 那个数 API 永远给不了。
   - **抓页面是会断的**：解析 0 条必须报"页面结构变了"，不能报"今天没有热门"。白名单要为它开 `github.com`，月度页 707 KB 已经贴着 `network.fetch` 的 1 MB 上限。
   - **`participation` 的最后一桶是本周进行中**，对比要跳过它（`weeks[-5:-1]`），否则近 4 周系统性偏低。
@@ -253,7 +253,7 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
   - **切块比一条大正则稳**。trending 页按 `<article class="Box-row"` 切块，最后一块被 1 MB 上限截断时只丢它自己；一条跨块的全局正则会把前面十几天全丢掉。真实样本（15 条）连同它的 `tmp-pr-4` 类名一起进了夹具 —— 设计稿里写的 `pr-4` 和真实页面对不上，是抓下来才看见的。
   - **302 之外还有 202**：`stats/participation` 会在 GitHub 还没算完时回 202，隔 2 秒重试两次、仍不行就只缺曲线（其余照常）。把它当失败，一个很活跃的仓库会因为没有曲线落到"没读到"。
   - 判据全在 `momentum-core.js`（纯函数，`tests/momentum.html` 112 条钉着判定顺序、跳过最后一桶、四道小样本门槛、发版按日期去重、真样本解析、实体反转义、截断、缓存容错与两条 TTL）。**真机还没走**：查 `tauri-apps/tauri` 与 `wailsapp/wails` → 切三个时间窗 → 断网看是不是"没读到"。受限的是这台机器的出口 IP：不带 token 时 GitHub 一小时只给 60 次。
-- [x] **密封的密钥（DPAPI）** —— `assistant.json` 里的 key 现在是**明文**。改成 DPAPI 封一个 `secrets.bin`，同时给组件开一条按 id 隔离的 `secret.*`。设计在 [`design/0026-sealed-secrets.md`](./design/0026-sealed-secrets.md)。
+- [x] **密封的密钥（DPAPI）** —— `assistant.json` 里的 key 现在是**明文**。改成 DPAPI 封一个 `secrets.bin`，同时给组件开一条按 id 隔离的 `secret.*`。设计在 [`design/LAT-0026-sealed-secrets.md`](./design/LAT-0026-sealed-secrets.md)。
   - **这不是加密**：DPAPI 绑 Windows 账户，挡别的用户和拷走的文件，挡不住本机同账户的程序。文档与权限文案都要这么写，否则它会被当成"有主密码"。
   - **迁移失败不吞**：写不进密封就保留明文并挂一行提示，绝不为了"迁移成功"把 key 删掉。
   - **校验提到清明文之前**。设计稿写的是"先写密封、再清明文、最后校验"，实现改成 seal → **verify** → clear：校验放在后面的话，它失败时明文已经没了，而那一把 key 用户再也拿不回来。三步的先后依赖没变（清明文永远是最后一步），失败面却只剩"什么都没发生"。顺序在 `secrets_policy::run_migration` 里，而且是**注入闭包**的形式 —— 所以"第 2 条密封失败，明文一行不动"有单测钉着，不是靠人读一遍 `if` 缩进。
@@ -263,11 +263,11 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
   - 判据全在 `secrets_policy.rs`（16 条 `rustc --test`：命名空间拼接、`widget_id` 按 `manifest.ts` 的 `ID_RE` 逐字对齐、magic 头三种损坏、迁移幂等与三步顺序），桥那一侧 `tests/secret.html` 17 条（`name` 形状、**组件递上来的 `widgetId` 被忽略**、`null` 与"读不出来"不合并、浏览器预览不退回 localStorage）。`secrets.rs` 的 DPAPI 与原子写只有 review —— `cargo test` 跑不了，那部分只能真机验。
   - **真机还没走**（设计 0026 §6）：填一个模型 key → 关掉设置 → 看 `assistant.json` 里 `apiKey` 是空的、`secrets.bin` 在 → 重启后模型仍可用 → 把 `secrets.bin` 拷到另一个 Windows 账户下确认读不出来**且文件还在** → 用一块临时组件试 `secret.get`，确认它读不到 `llm.*`。
   - 做完之后，`lattice.related` 这类组件才能从匿名 60 次/小时升到 5000 次/小时。
-- [ ] **相似项目（`lattice.related`）** —— 粘一个 GitHub 地址进来，列出做同一件事的其他项目，按 star 排前 10。**零平台改动**（只用 `network.fetch` / `llm.chat` / `shell.open` / `storage`），设计在 [`design/0024-github-related-widget.md`](./design/0024-github-related-widget.md)。
+- [ ] **相似项目（`lattice.related`）** —— 粘一个 GitHub 地址进来，列出做同一件事的其他项目，按 star 排前 10。**零平台改动**（只用 `network.fetch` / `llm.chat` / `shell.open` / `storage`），设计在 [`design/LAT-0024-github-related-widget.md`](./design/LAT-0024-github-related-widget.md)。
   - **模型提名、代码核对**：实测过，纯 topic 检索给的是"同类"不是"同题" —— 搜 `tauri-apps/tauri` 的前六全是**用 Tauri 写出来的应用**；`in:readme` 检索则被 `awesome-*` 霸榜（它们 README 里什么都提一句）。模型知道 electron / wails / neutralinojs 是它的替代品，代码负责把名字换成真实 star。
   - **一次查询只花 1 次核心 + 1 次搜索**（未认证额度 60 次/小时、搜索 10 次/分）。所以不拉候选 README，也用一次 `OR` 搜索批量核对全部名字。
   - **相似度当筛子、star 当尺子**。没配模型时降级到 topic 检索，横幅必须写明"同标签，不是替代品"。
-- [ ] **转码器（`lattice.transcode`）与第六族能力** —— 拖进视频/音频，选目标格式，转完在资源管理器里选中。九种目标（mp4 / mkv / webm / mov / mp3 / m4a / flac / wav / opus），串行队列，能取消。取舍、方法表、格式表与失败模式在 [`design/0023-media-transcode.md`](./design/0023-media-transcode.md)。
+- [ ] **转码器（`lattice.transcode`）与第六族能力** —— 拖进视频/音频，选目标格式，转完在资源管理器里选中。九种目标（mp4 / mkv / webm / mov / mp3 / m4a / flac / wav / opus），串行队列，能取消。取舍、方法表、格式表与失败模式在 [`design/LAT-0023-media-transcode.md`](./design/LAT-0023-media-transcode.md)。
   - **不复用 `terminal:exec`**，这是这次最值钱的决定。`lattice.term` 那条常驻 shell 让"零平台改动"变得可能 —— 但那等于为了转一个 mp4，把完整 shell 交给第三方组件；接上 `agent.tools` 之后模型就能借"转换"跑任意命令。所以新开一族 `media:transcode`，**权限只有一条**。
   - **Rust 拼参数、算输出路径，组件只递一个枚举**（`format: "mp4"`）。参数是注入面，路径是越权面，两个都不给组件。
   - **路径闸门**：只认用户亲手拖进这个实例的文件（宿主页登记，不进桥方法表）。组件点名 `C:\Windows\…` 是做不到的。和 `network.rs` 的"宿主页随请求带 hosts"同一个形状。
@@ -284,7 +284,7 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **奇偶周只在填了 `Term starts` 时生效**：没填就全部显示，不猜；周次用 UTC 日期戳做差，跨夏令时不会少一周。
     - **数据按 `widgetId` 共享**：和 todo / calendar 一样，所有 Timetable 是同一份课表；两份不同课表要换 id。
     - **导入走粘贴，不走文件对话框**：从 Excel / WPS 里选中一片格子复制出来，就是制表符分隔的文本 —— 粘进一个文本域当场解析，比"选文件 + 解析 xlsx"少两步，也少引 `calamine`。列固定为 `课程 / 星期 / 开始 / 结束 / [教室] / [周次]`，分隔符逐行认 `\t` / `,` / `;`（带引号的字段里那个逗号不算分隔），第一行像表头就跳过，**坏行逐条丢并报数**（和 `normalizeCourses` 同一条规矩：一行不合法不该让另外二十行白粘）。判重按 `name|day|start|end`，且**在按下去之前**就把"会加进来几节 / 几节已经在表里 / 几行读不出来"写在按钮上 —— 按完才发现只进来一半，用户会以为是 bug。星期认数字 / `周三` / `星期三` / `礼拜三` / `wed`，时刻认 Excel 那种带秒的 `08:00:00`，周次只有每周 / 单 / 双三档（`1-16` 落到每周，数据里没有范围这个概念）。xlsx 文件解析仍然没做，那要文件对话框 + xlsx 解析，而它换来的唯一好处是不用先复制一次。
-  - [x] **架构图 / 流程图（`lattice.diagram`）** —— 卡内一块能平移缩放、能画矩形 / 圆 / 菱形 / 文本 + 曲线连线的图面。权限只有 `storage` 和 `agent:tools`，**桥方法一条没加、Tauri 命令一条没加**。取舍、工具契约、落盘格式和失败模式在 [`design/0008-diagram-widget.md`](./design/0008-diagram-widget.md)，`tests/diagram.html` 97 条。
+  - [x] **架构图 / 流程图（`lattice.diagram`）** —— 卡内一块能平移缩放、能画矩形 / 圆 / 菱形 / 文本 + 曲线连线的图面。权限只有 `storage` 和 `agent:tools`，**桥方法一条没加、Tauri 命令一条没加**。取舍、工具契约、落盘格式和失败模式在 [`design/LAT-0008-diagram-widget.md`](./design/LAT-0008-diagram-widget.md)，`tests/diagram.html` 97 条。
     - **图形不是 placement**：桌面上一个 placement 建一个真窗口，一张 30 个框的图就是 30 个窗口 —— 所以图只能长在组件里。代价写清楚了：没有剪贴板导出（沙箱没有 `allow-downloads`），图大了只能缩放。
     - **agent 给语义、组件排版**：模型不擅长坐标，给它"三个服务、A→B→C"，位置由确定性的分层算法算（有环时退回按输入顺序分列）。
     - **参数只能传标量**（§3.6），所以 agent 写的是几行文本（`Web -> Api -> Db`、`Cache:circle`），不是一组对象。这条是动笔时才发现的，不是设计时想到的。
@@ -301,9 +301,9 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **百分比不夹紧**：>100 当成读不到（`null`），不画成满格 —— 坏读数装成满电比不显示更糟。
     - **不做平台侧缓存**：节流交给组件的 `schedule.every`（30 秒一拍，卡片藏起来就停），平台每秒问一次只是空转。
     - **单独一条命令，没折进 `system_metrics`**：两条命令读两套 Win32 API，失败模式也不同 —— 台式机没有电池是「正常但没有电池」，不是错误。
-  - [x] **思维导图（`lattice.mindmap`，21 个官方组件）** —— 存树、位置算出来的大纲编辑器；右向生长，`Tab` / `Shift+Tab` / `Alt+↑↓` 改结构，导出走剪贴板（Markdown / Mermaid / OPML）。权限只有 `storage` / `agent:tools` / `clipboard:write`，**桥方法一条没加、Tauri 命令一条没加**。取舍、大纲格式、工具契约与失败模式在 [`design/0022-mindmap-widget.md`](./design/0022-mindmap-widget.md)，`tests/mindmap.html` 172 条，`tests/mindmap-drag.html` 20 条（真按下真拖）。
+  - [x] **思维导图（`lattice.mindmap`，21 个官方组件）** —— 存树、位置算出来的大纲编辑器；右向生长，`Tab` / `Shift+Tab` / `Alt+↑↓` 改结构，导出走剪贴板（Markdown / Mermaid / OPML）。权限只有 `storage` / `agent:tools` / `clipboard:write`，**桥方法一条没加、Tauri 命令一条没加**。取舍、大纲格式、工具契约与失败模式在 [`design/LAT-0022-mindmap-widget.md`](./design/LAT-0022-mindmap-widget.md)，`tests/mindmap.html` 172 条，`tests/mindmap-drag.html` 20 条（真按下真拖）。
     - **和 `lattice.diagram` 的分工**：那边位置由人摆，这边位置由结构决定。想要"把框拖到任意地方"的人要的是 diagram —— 两个都在目录里，选错的那个会被当成 bug。
-    - **节点可以拖，但树里仍然没有坐标**（[`design/0033-mindmap-drag.md`](./design/0033-mindmap-drag.md)）：被拖过的节点在 `offsets` 里记一对 `dx/dy`，`layout()` 把它叠在自动算出来的位置上。所以自动布局还是底 —— 加一个兄弟节点，被拖过的那个跟着自己那行走，这是"偏移"的定义。拖动只改位置**不改从属关系**，整支跟着走，纵向吸到 28px 的行（按住 `Alt` 不吸），一次拖动 = 一步撤销，`Esc` 中途取消。`version` 不升：升了 `normalizeDoc` 会把所有人现有的图当成"读不出已保存的图"。`agent` 的 `draw` 整张替换时清空摆位（它会重新编号），`append` 保留。
+    - **节点可以拖，但树里仍然没有坐标**（[`design/LAT-0033-mindmap-drag.md`](./design/LAT-0033-mindmap-drag.md)）：被拖过的节点在 `offsets` 里记一对 `dx/dy`，`layout()` 把它叠在自动算出来的位置上。所以自动布局还是底 —— 加一个兄弟节点，被拖过的那个跟着自己那行走，这是"偏移"的定义。拖动只改位置**不改从属关系**，整支跟着走，纵向吸到 28px 的行（按住 `Alt` 不吸），一次拖动 = 一步撤销，`Esc` 中途取消。`version` 不升：升了 `normalizeDoc` 会把所有人现有的图当成"读不出已保存的图"。`agent` 的 `draw` 整张替换时清空摆位（它会重新编号），`append` 保留。
     - **导出只能是剪贴板**：沙箱没有 `allow-downloads`，`shell.open` 只收 http/https。所以 `help` 里得正面写"复制 → 粘到你想要的地方"，而不是让用户去找"另存为"。
     - **大纲文本一个格式三个用途**（agent 输入 / 剪贴板导出 / 手工粘贴），缩进用栈解析，不猜步长。参数只能传标量（§3.6），和 0008 撞的是同一堵墙。
     - **位置不进磁盘，只存 `view`**：节点是 `{ id, text, collapsed, tone, children[] }`，坐标每次从树算。于是"换个父节点"就是换个数组位置，不用挪任何框，agent 也不用编造坐标。
@@ -337,7 +337,7 @@ v0.5 把"能分发"做完了，但分发的前提是**有人托管**。这件事
     - **一次性的话不许被保存状态机盖掉**：状态行有两个说话的人。0.3.0 里拒收那句话 400ms 后就被 `save()` 改成「已保存」，用户根本没看见。现在一次性事件写进 `notice`，保存状态机照常记账但不许画上去，**真敲键盘才收掉**。
     - **「清空」为什么不该比手滑更危险**：它和「恢复上一版」共用底栏那个位置，而且永不同时出现（前者要正文非空、后者要正文为空）；清空后上一版进了 `backup`，24 小时内可恢复。改过字它就收起来 —— 那时屏幕上的东西已经不是刚导出的那一份了。导出不动正文，而"导完不敢删、只增不减"才是这张便签撞上 1MB 的真正来路。
     - **没有开新的设计文档**：按 [`design/README.md`](./design/README.md) 的三条判据（动持久化格式或跨进程契约 / 有两种以上方案 / 做错了要重做），这一条只中一条 —— 正文格式、桥方法、存储结构一个都没变，改回来只是几个常量。所以推理写在代码注释里，结论写在这里，`design/0028` 保持原样（它记的是当时的想法，8 张这个数在那时是对的）。
-  - [x] **便签导出有三种形状（`lattice.note` 0.4.0，2026-10-28）** —— 底栏那颗「导出」改成一个菜单：`md`（正文一个字都不改，图片是 data URI，自包含）/ `zip`（`note.md` + `images/`，GitHub 认）/ `html`（渲染成一份网页，图片内联，双击就能看）。桥多认一个可选参数 `document: "md" | "html"`（缺省 `md`），它只决定"单个文本文件补哪个扩展名、挂哪个对话框过滤器"，**要不要打 zip 仍然由内容决定**。断言：`tests/note-images.html` 60 → 77 条、`tests/note-save.html` 21 → 35 条、`tests/export.html` 27 → 32 条、`export_policy.rs` 14 → 16 条 `rustc --test`。推理、候选与失败模式在 [`design/0031`](./design/0031-note-export-formats.md)。
+  - [x] **便签导出有三种形状（`lattice.note` 0.4.0，2026-10-28）** —— 底栏那颗「导出」改成一个菜单：`md`（正文一个字都不改，图片是 data URI，自包含）/ `zip`（`note.md` + `images/`，GitHub 认）/ `html`（渲染成一份网页，图片内联，双击就能看）。桥多认一个可选参数 `document: "md" | "html"`（缺省 `md`），它只决定"单个文本文件补哪个扩展名、挂哪个对话框过滤器"，**要不要打 zip 仍然由内容决定**。断言：`tests/note-images.html` 60 → 77 条、`tests/note-save.html` 21 → 35 条、`tests/export.html` 27 → 32 条、`export_policy.rs` 14 → 16 条 `rustc --test`。推理、候选与失败模式在 [`design/0031`](./design/LAT-0031-note-export-formats.md)。
     - **为什么 `.md` 那条一个字都不改**：0028 把图片压进正文，换来的就是"正文自己就是那份文档"；导出时再改写一遍等于把那个前提拆掉一点，而改写买不到东西 —— GitHub 反正剥 `data:` URI，而认 `{width}` 的渲染器（Typora / Obsidian）本来就是这条路的读者。
     - **为什么 `document` 要当一个参数、而不是让组件把 `.html` 写进 `name`**：用户在保存框里会把名字改掉（`周报.md`），改完就再也看不出"这份东西本来是网页"，于是 HTML 被写进 `.md` 文件 —— 那正是"别信用户在对话框里敲的名字"要挡的事。同理，`"zip"` 不是一个 document：打不打 zip 由内容决定，认它会让同一个参数有两套意思。
     - **`note-md.js` 现在有两种输出**：`doc=true` 时链接出真 `<a href>`、内联图不带预览用的 `data-note-index`。只有两处，一眼数得完；将来加语法要两条路都验，第三条差别一出现就该拆函数。
@@ -398,7 +398,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **状态码只表达传输层的事**。`200` = 处理了（哪怕业务上失败）、`401` 令牌不对、`403` 动作在白名单外、`503` 窗口没答上来；业务失败用 `ok:false` + `code`。混在一起 agent 就分不清"重试有用"和"重试也没用"。
   - **白名单要改三处**：`agent_policy.rs` 的 `ACTIONS`、`platform/agent.ts` 的 `AGENT_ACTIONS`、文档那张表。`tests/agent.html` 第一条断言就把两张表逐字比一遍 —— 少改一处会红。
   - **测试分三块，各测各的**：`agent_policy.rs` 26 条（HTTP 解析的"没收全 / 畸形 / 超长"三态、Bearer、白名单、`say` 的单行化与超长拒绝、响应头）；`tests/agent.html` 57 条（跑的是**真 store**，不是替身 —— 用替身测等于只测了 if 分支）；`npm run test:agent` 14 条（起假端点，测 CLI 发出去的请求形状、`say` 的整句传递、失败时的退出码）。
-- [x] **数据平面（这一版只到设计）** —— 组件清单加一节 `agent.tools`，agent 经平台调组件自己声明的方法。三个先回答的问题的答案、以及调用链，写在 AGENT_ACCESS.md §2.2 / §2.4；规范在 WIDGET_SPEC §3.6。**真正落地是 v0.11**（`539c81c`，见那一条）—— 这一节当时只定下了形状。落下来的形状：工具名 `widget.<组件 id>.<工具名>`（和 `mcp.<server>.<tool>` 同一副形状）、同一组件的多份实例**合成一条工具**（`instanceId` 只在多于一份时必填）、新权限 `agent:tools` 是**独立的授权轴**（默认拒，"允许联网"≠"允许 agent 往里塞数据"）、答话的是**画布上那一份实例**（每个 placement 都有一个 iframe，主窗口只是 hide，于是"没在跑"缩成"没装 / 破卡"）、回话超 4000 字符**拒绝不截断**。一条原则没变：**agent 永远不碰原始存储**，要数据走组件声明的工具，平台不当数据出口。三处留着的缺口后来收了一处：SDK 那一侧包了一层 `lattice.agentTools()`（[0012](./design/0012-sdk-agent-tools.md)），作者只挂实现、不抄信封。**还开着的两处收了一处**：① **小窗那一轮没有组件工具** —— 已修：清单与执行都收进 `AssistantSurface`，小窗走 `assistant_widget_tools` / `assistant_widget_call` 问主窗口要（[0013](./design/0013-widget-tools-across-windows.md)），`tests/widget-tools.html` 55 条 + `tests/agent.html` 70 条钉着；② **不唤醒窗口** —— 仍然故意不做（`not-running` 直接回给模型："建窗口 → 等宿主页 boot → 再投递"是一串会输的竞态）。
+- [x] **数据平面（这一版只到设计）** —— 组件清单加一节 `agent.tools`，agent 经平台调组件自己声明的方法。三个先回答的问题的答案、以及调用链，写在 AGENT_ACCESS.md §2.2 / §2.4；规范在 WIDGET_SPEC §3.6。**真正落地是 v0.11**（`539c81c`，见那一条）—— 这一节当时只定下了形状。落下来的形状：工具名 `widget.<组件 id>.<工具名>`（和 `mcp.<server>.<tool>` 同一副形状）、同一组件的多份实例**合成一条工具**（`instanceId` 只在多于一份时必填）、新权限 `agent:tools` 是**独立的授权轴**（默认拒，"允许联网"≠"允许 agent 往里塞数据"）、答话的是**画布上那一份实例**（每个 placement 都有一个 iframe，主窗口只是 hide，于是"没在跑"缩成"没装 / 破卡"）、回话超 4000 字符**拒绝不截断**。一条原则没变：**agent 永远不碰原始存储**，要数据走组件声明的工具，平台不当数据出口。三处留着的缺口后来收了一处：SDK 那一侧包了一层 `lattice.agentTools()`（[0012](./design/LAT-0012-sdk-agent-tools.md)），作者只挂实现、不抄信封。**还开着的两处收了一处**：① **小窗那一轮没有组件工具** —— 已修：清单与执行都收进 `AssistantSurface`，小窗走 `assistant_widget_tools` / `assistant_widget_call` 问主窗口要（[0013](./design/LAT-0013-widget-tools-across-windows.md)），`tests/widget-tools.html` 55 条 + `tests/agent.html` 70 条钉着；② **不唤醒窗口** —— 仍然故意不做（`not-running` 直接回给模型："建窗口 → 等宿主页 boot → 再投递"是一串会输的竞态）。
 - [x] **agent 当组件** —— 一个官方组件 `lattice.agent`，但**不是聊天窗，也不带模型**：没有 baseUrl、没有 API key、没有 `network` 权限、不碰网络，只读审计日志把"agent 说了什么、改了什么"列出来。当初的聊天窗方案要付三笔钱，第三笔最贵：组件的配置里存用户的 API key、`network.fetch` 的主机白名单因为用户能自己填 baseUrl 而形同虚设、**有嘴就有手**（一个能发请求的组件离"能改布局"只差一条桥方法，那条口子开出去收不回来）。而它要解决的问题是"我看不见 agent 在干什么"—— agent 宿主本来就有自己的界面，它只是**说不出话**。
   - **所以给它一条 `say`**：`{"op": "say", "text": "…"}` 是 agent 唯一的嘴，`agent.rs` 直接写进 `agent/audit.log`，**不走前端往返** —— 说一句话不需要等窗口答上来，窗口没开的时候这句话也该留下。两条约束：压成一行（审计日志是 JSONL，多行会把后面每一行拆坏）；**超长拒绝，不截断**（上限 500 字符 —— 截断等于替 agent 决定"后半句不重要"，而它会以为自己说完了）。
   - **看板骗不了人**：`act` 那几行是**平台**写的，`say` 那几行是 agent 自己的话，在数据里就是不同的 `op`。组件只负责显示，不解释、不执行、没有任何调用动作的接口 —— 它结构上做不了事，也就没法被诱导去做事。另外加了第七项权限 `agent:activity`：审计日志里有用户的操作历史，白给不合适。`agent` 关着时照样显示历史（发生过的事不会因为关掉开关就变成没发生过），只是不再有新行进来。
@@ -437,7 +437,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **偏好变了、生效语言没变，也要通知订阅者**。系统是中文时，"中文"和"跟随系统"解析出来是同一个语言、界面上一个字都不变；只按"语言变了"通知的话，用户点那一下看不到任何反应。
   - **桌面窗口读不到这档偏好**。`widgetHost.ts` 是独立 webview、**不加载 store** —— 让它自己用 `navigator.language` 猜一遍，就会出现"界面已切成英文、桌面卡片上的提示还是中文"。所以语言随 `HostConfig.lang` 下去当初值、变化走 `lattice:language` 广播，和 `lattice:theme` 同一个形状（这两条是仅有的两条**故意全局**的事件，见不变量 9）。
   - **权限名要走 `permissionLabel()`**。`PERMISSION_LABELS` 是英文原文，同时也是中文表的 key —— 界面上直接读它，中文环境里权限列表就永远是英文。
-  - 边界：组件清单里那些字（`name` / `description` / `config` 标签 / `help` / `changelog`）**不进这张表** —— 它们是作者写的，跟着包和签名走，平台没有理由认识第三方组件的每一句话；它们怎么双语见下一条；`tests/i18n.html` 钉住"分片都在 / 占位符两边一致 / 同一句没有两种译法 / 偏好变了要通知"。**当时留着的缺口已经收了**（[0014](./design/0014-llm-failure-codes.md)）：供应商与网络失败那几句不再由 Rust 拼成英文 —— Rust 只回"哪一种失败 + 状态码 + 供应商原话"（一行 `@@llm:{…}` 抬头），句子由 `runtime/llm-errors.ts` 按界面语言拼；`llm.rs` 自己那几条 IO / 配置读写错误仍然有意留英文（"文件坏了"是事实，不是文案）。
+  - 边界：组件清单里那些字（`name` / `description` / `config` 标签 / `help` / `changelog`）**不进这张表** —— 它们是作者写的，跟着包和签名走，平台没有理由认识第三方组件的每一句话；它们怎么双语见下一条；`tests/i18n.html` 钉住"分片都在 / 占位符两边一致 / 同一句没有两种译法 / 偏好变了要通知"。**当时留着的缺口已经收了**（[0014](./design/LAT-0014-llm-failure-codes.md)）：供应商与网络失败那几句不再由 Rust 拼成英文 —— Rust 只回"哪一种失败 + 状态码 + 供应商原话"（一行 `@@llm:{…}` 抬头），句子由 `runtime/llm-errors.ts` 按界面语言拼；`llm.rs` 自己那几条 IO / 配置读写错误仍然有意留英文（"文件坏了"是事实，不是文案）。
 - [x] **组件的字也跟着换语言**。上一版把**平台**的字统一了，可桌宠叫"大肥鱼"、气泡里写"说点什么…"—— 界面切成英文，她还是中文的。用户指出的正是这条缝。两半一起补：
   - **清单里能写两门**：`name` / `description` / `config[].label` / `.help` / `.placeholder` / `options[].label` / `help[].title` / `help[].items[]` / `changelog[].changes[]` 都接受 `{ "zh": …, "en": … }`，平台按当前语言挑（`runtime/widget-text.ts` 的 `normalizeText` / `pickText` / `textVariants`）。**单字符串永远有效**，只写一门的第三方组件照旧能用，缺的那门**退到另一门**而不是空白 —— 和 `t()` 缺翻译退成英文同一个取舍。上限按门各算，写坏一门只丢那一门。
   - **HTML 里的字由组件自己挑**：桥加了 `lang.get`（不要权限，返回 `{ lang, locale }`）和一条 `language` 推送。两个宿主都在 `ready`、iframe `load`、语言变化三处推 —— 只读一次的话用户换语言组件不动，只听推送的话组件停在建文档那一刻（重载、热更新都会碰上）。SDK 把它包成 `lattice.language` + `lattice.on("language")`，启动时自动拉一次。
@@ -463,14 +463,14 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **闸门而不是文档**：`tests/help.html` 新的一段核对"清单该双语的字段两门齐全 + 组件源码里既有 `lang.get` 也有 `language` 推送"。14 个组件、几十个字段，靠人眼记必漏，而且漏一半的症状很隐蔽（只听推送的，热重载之后就停在旧语言）。
   - 每个组件都抬了一个 patch 位（`0.2.0 → 0.2.1` 这种）并在 changelog 最前面补一条双语记录 —— 它是包的一部分，改了却不抬版本，商店里那个条目永远显示"已是最新"。
   - 验证：`tests/help.html` **33 条**（新增的第 5 段钉两件事：清单里该双语的字段两门齐全；每个组件的源码里既有 `lang.get` 也有 `language` 推送），14 个组件的测试页各自补了中文断言（课程表 152、天气 108、日历 97、音乐 71、系统 63、秒表 60、专注 59、换算 55、书签 48、计算器 46、待办 29、便签 11 + 10），`npm run typecheck` 干净、`npm run test:sdk` 干净、全量自检 **40 页 / 1709 条 / 0 failed**（比上一版 +66 条）。真机两处都点过：设置里选中文之后，组件库卡片上那颗 `?` 的标题是「收藏夹 怎么用」、正文六节全中文；右侧属性面板的「怎么用」、配置项标签与选项、权限名也全中文 —— 再切英文，整份换回去。`npm run store:index` 重新打了 15 个包，`registry.json` 里 `name` / `description` 现在都带 `zh`（内置目录读的就是这一份，不重打就还是英文名）。**线上目录也重发了一遍**：14 个组件各自 `publish:widget` 到 `lattice-registry`（`bd104d1`），`registry.json` 从 5 个组件 5 条英文名变成 14 个组件、每条 `{ zh, en }`、九份新图标 —— 顺带发现并修了那边 `build.mjs` 的一个静默 bug：条目级字段（名字 / 描述 / 图标 / 主页）取的是**最旧**那一版包的清单（`packages/` 按文件名排序），所以本地清单改了名、线上纹丝不动，一行报错都没有。现在取最新那一版；排序遇到 `{ zh, en }` 先挑 `en` 再比（`localeCompare` 对对象会直接抛）。
-- [x] **浏览器预览那条配置镜像不再是逐字段白名单**（[0015](./design/0015-preview-config-mirror.md)）。预览里没有 Rust，`scripts/dev-llm-proxy.mjs` 是 `llm.rs` 的替身，**也是同一个 `assistant.json` 的第二个写者**：它原来「造一份空的、再逐个字段搬」，`skills` 就这么丢过一版 —— 在预览里拨一下手的开关，盘上的技能清单被洗成空数组，桌面端下次启动看到「一份都没启用」，没有任何报错。现在认得的字段照旧归一化，**不认识的顶层键原样带回去**：`llm.rs` 新加一个字段不用再改这里。失败那几句也统一说 `@@llm:` 抬头（[0014](./design/0014-llm-failure-codes.md)），中文界面下预览里看到的也是中文。`npm run test:llm-proxy` 26 → 28 条，钉住「种一份带 `futureThing` 的配置、存一次手、那个键还在」。
+- [x] **浏览器预览那条配置镜像不再是逐字段白名单**（[0015](./design/LAT-0015-preview-config-mirror.md)）。预览里没有 Rust，`scripts/dev-llm-proxy.mjs` 是 `llm.rs` 的替身，**也是同一个 `assistant.json` 的第二个写者**：它原来「造一份空的、再逐个字段搬」，`skills` 就这么丢过一版 —— 在预览里拨一下手的开关，盘上的技能清单被洗成空数组，桌面端下次启动看到「一份都没启用」，没有任何报错。现在认得的字段照旧归一化，**不认识的顶层键原样带回去**：`llm.rs` 新加一个字段不用再改这里。失败那几句也统一说 `@@llm:` 抬头（[0014](./design/LAT-0014-llm-failure-codes.md)），中文界面下预览里看到的也是中文。`npm run test:llm-proxy` 26 → 28 条，钉住「种一份带 `futureThing` 的配置、存一次手、那个键还在」。
 - 验证：`llm_policy.rs` **21 条** `rustc --test`（归一化、回环、请求体、消息与工具校验、应答解析、401/404/429 的话）、`tests/assistant.html` **114 条**、`tests/i18n.html` **50 条**、`tests/widget-text.html` **40 条**（新增：两门归一化、按门截断、缺一门退另一门、搜索索引），`tests/help.html` / `config.html` / `catalogue.html` / `library-search.html` / `sdk.html`（**47 条**，新增 `assistant.ask` 的参数形状与它自己那条超时）各补了双语与 `lang.get` 的断言；`npm run typecheck` 干净、`npm run test:sdk` 干净（内嵌 SDK 副本已同步）、全量自检 **40 页 / 1643 条 / 0 failed**（比上一版少一页 57 条 —— 看板组件删了）。真机走过三条：先是假端点（卡片从 (32,40) 挪到 (300,120)、错的 key 得到那句 401），再是**真厂商** —— 天枢 Dubhe 的 OpenAI 兼容根是 `…/v1/8686/v1`（`/v1/8686` 本身返回一张 HTML SPA，少写那截 `/v1` 会得到 404 而不是"地址不对"）：列出 4 个模型、`finish_reason: "tool_calls"` 的往返、`role: "tool"` 回填都被接受；第三条是**组件借手那条路**：给桌宠勾上「替我调整桌面」后，主窗口里打一轮"把 lattice.pet#49898d37 挪到 700, 240 并置顶"，`actions` 两条 `ok`、盘上那只真的到了 `(700,240)`、审计里 `widget.ask` 加每一步的 `assistant.chat`；再问"把 lattice.pet#demo01 删掉"，她回"我删不了自己呀，手里没有删除工具"，`actions: []`、`placements` 一个字没动；最后在画布上的桌宠气泡里真打一句"把 lattice.pet#9c90cc09 挪到 900, 100"，气泡里出现回话加"· 移动 lattice.pet#9c90cc09"，盘上那只到了 `900,100`。中英切换在真机上也点过一遍（设置里三档来回点：`<html lang>` 跟着变、菜单整份换语言、切回"跟随系统"后按 WebView2 报的 `en-US` 落回英文）。**没走的**："断网时那句话对不对"（要拔网线），以及 agent 端点的 CLI 往返（见 §8 已知缺口）。
 
 ## v0.11 —— 模型的形状与 agent 纪律（进行中）
 
 用户的原话是"实现一个功能可以像使用 dsh 一样配置 model，可以调用模型"。v0.10 已经把"通路"修好了（一个档、五个命令、八个动作、真厂商往返走通），这一版补的是**形状**：配置的形状像 DSH（多档、可选模型、能力差异），干活的形状有纪律（会话、审批、预算、观察）。两件事都会动持久化格式，所以先写设计文档、再分两刀落地。
 
-- [x] **模型从"一个表单"变成"几档"**（[`design/0002-model-profiles.md`](./design/0002-model-profiles.md) 的前半）—— `assistant.json` 升 v2：`profiles[]` 每条自带 key / auth / model / temperature，v1 的平铺四字段就地迁成一条。**读失败绝不写回**（顺手写一次空配置 = 一次解析失败永久丢 key）。命令从 5 个变 7 个：`llm_profiles` / `llm_profile_save` / `llm_profile_remove` / `llm_profile_activate`，`llm_set_key` 改成按档存，`llm_models` 能试草稿、也能按 `profileId` 复用存着的 key。
+- [x] **模型从"一个表单"变成"几档"**（[`design/LAT-0002-model-profiles.md`](./design/LAT-0002-model-profiles.md) 的前半）—— `assistant.json` 升 v2：`profiles[]` 每条自带 key / auth / model / temperature，v1 的平铺四字段就地迁成一条。**读失败绝不写回**（顺手写一次空配置 = 一次解析失败永久丢 key）。命令从 5 个变 7 个：`llm_profiles` / `llm_profile_save` / `llm_profile_remove` / `llm_profile_activate`，`llm_set_key` 改成按档存，`llm_models` 能试草稿、也能按 `profileId` 复用存着的 key。
   - **`auth` 三值**（`bearer` / `api-key-header` / `none`）：本机 Ollama 不要 key，单档时代"没有 key 就不算配置好"直接让它的「测试连接」永远点不动。
   - **预设只填表**：DeepSeek / OpenAI / OpenRouter / Kimi / Qwen / Ollama / LM Studio 只是把地址、鉴权、默认模型填好；落盘的永远是 `baseUrl` + `auth` + `model` 三个自由字段（多一个 `provider` 枚举就多一处要维护的映射）。
   - **能力表**（`runtime/llm-models.ts`）：按模型名最长前缀认出"推理模型不收 temperature"（送了 400）、"有些模型不能调工具"（能说话但改不了桌面），上下文决定历史预算（`trimHistory` 的第三参）；未知模型走宽松默认 —— 表是"踩过的坑的索引"，不是厂商规格的副本。
@@ -481,8 +481,8 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **增量只用来画**：`lattice:llm-delta` 带 `requestId`（广播，不变量 9），前端只在气泡里滚字；权威结果是命令的返回值，最后覆盖整条气泡。所以"拼增量拼错了"最多闪一下，不会留下一句错话。
   - **工具参数按 `index` 累加**，拼完整才解析；用户按停止时**不再执行任何工具** —— 半截参数要么解析失败，要么更糟：解析成功但少一个字段，模型会拿错的值去改桌面。
   - 代价照旧：分片节奏只有真机算数（`cargo test` 在本机跑不了），所以纯逻辑先在 `llm_policy.rs` 钉住 23 条（半包 / 多字节 / `[DONE]` / 坏帧 / 多档位累加），传输层靠真机验一次。
-- [x] **agent 加纪律，手不扩**（[`design/0003-agent-discipline.md`](./design/0003-agent-discipline.md)）—— 会话落 `assistant-sessions/`（关掉应用还能接着聊）、审批默认 `ask` 只拦不可逆动作、每轮 token / 墙钟上限、提示词补一段"装了哪些组件、它们怎么用"。**装组件、卸组件、授权、写存储仍然不进工具表**：那等于让一段提示词替用户点"信任这把新钥匙"（不变量 15 / 8）。**题面四件现在全落了**：审批档与三道预算被下面 0004 的 P1 吸收并扩成"按能力组开关 + 写/跑必问"；**会话与观察已于 2026-10-25 落地**（`assistant-sessions/<id>.json` 一条会话一个文件、面板顶部那条会话条、提示词里组件说明首句与商店一段），题面里的"审批默认 `ask`"由 0003 §3 的 `approvalMode` 三档接上（`ask` / `auto` / `readonly`，默认 `ask`），每轮的 token 与墙钟两道额度落成 `runtime/hands.ts::overBudget`。
-- [x] **给 assistant 一双手，落 P1–P6**（[`design/0004-agent-hands.md`](./design/0004-agent-hands.md)）—— 用户要的是"和其他 agent 一样：读文件、跑代码、上网、调外部服务、动屏幕"。六期全落地（纪律 / 文件 / 命令 / 网页 / 屏幕与键鼠 / MCP）—— 最后那期"调各种外部服务"就是 P6，`mcp.json` 里配一条服务，它的工具就出现在工具表里：
+- [x] **agent 加纪律，手不扩**（[`design/LAT-0003-agent-discipline.md`](./design/LAT-0003-agent-discipline.md)）—— 会话落 `assistant-sessions/`（关掉应用还能接着聊）、审批默认 `ask` 只拦不可逆动作、每轮 token / 墙钟上限、提示词补一段"装了哪些组件、它们怎么用"。**装组件、卸组件、授权、写存储仍然不进工具表**：那等于让一段提示词替用户点"信任这把新钥匙"（不变量 15 / 8）。**题面四件现在全落了**：审批档与三道预算被下面 0004 的 P1 吸收并扩成"按能力组开关 + 写/跑必问"；**会话与观察已于 2026-10-25 落地**（`assistant-sessions/<id>.json` 一条会话一个文件、面板顶部那条会话条、提示词里组件说明首句与商店一段），题面里的"审批默认 `ask`"由 0003 §3 的 `approvalMode` 三档接上（`ask` / `auto` / `readonly`，默认 `ask`），每轮的 token 与墙钟两道额度落成 `runtime/hands.ts::overBudget`。
+- [x] **给 assistant 一双手，落 P1–P6**（[`design/LAT-0004-agent-hands.md`](./design/LAT-0004-agent-hands.md)）—— 用户要的是"和其他 agent 一样：读文件、跑代码、上网、调外部服务、动屏幕"。六期全落地（纪律 / 文件 / 命令 / 网页 / 屏幕与键鼠 / MCP）—— 最后那期"调各种外部服务"就是 P6，`mcp.json` 里配一条服务，它的工具就出现在工具表里：
   - **两条执行器通道，永不合并**：桌面动作仍是 `AGENT_ACTIONS` + `runAgentAction`（8 个别名），新的手走 `runtime/hands.ts` → Rust `assistant_tool`；`handGroup(name)` 非空就是后者。`toolsFor("widget")` 里一条新手都没有 —— 组件那侧的手不扩。
   - **能力组默认全关**，`assistant.json` 升 v3（`{version: 3, activeId, hands, workspace, profiles[]}`），v1 就地升级成一条档、**手落成全关**。开一组 = 把那一组的 schema 递给模型，同时 Rust 独立再判一次（前端开关不是安全边界）。
   - **第四道闸 `HAND_READY`**（动手时才发现的）：`mcp` 的工具是服务器运行时声明的、`hands.rs` 也没有发现服务器的代码 —— 只按用户开关裁的话，拨一下就把一个必定失败的工具递给模型，它会绕着一句 "not implemented" 打转。所以没接的组**一律不递**，设置里那一行也拨不动，挂"后续版本"标记；每落一期把那一组改成 `true`（`web` 在 P4、`screen` / `input` 在 P5、`mcp` 在 P6 翻的）—— **现在六组全是 `true`**，这道闸留着继续用（下一个组要接时才需要它）。
@@ -502,23 +502,23 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   - **一次调用一条连接，不复用**：省掉"连接池 + 谁负责重启 + 半死连接怎么判"三个问题；代价写明 —— stdio 的 `npx` 服务每次调用都要重付一次启动（几秒），慢但不会错。额度：握手 30s、调用 120s、返回文本 40k 字、描述 300 字、`tools/list` 缓存一份。
   - **MCP 一律问，而且没有沙箱**：`mcp.*` 全部走审批（`needsApproval` 认前缀），因为服务器是用户自己配的可执行文件、跑起来之后平台关不住它 —— 没有文件、网络、命令那三道收窄，`AGENTS.md` §7 第 15 条把这条写作承诺而不是缺口。审计只记工具名本身（哪台服务、哪个工具），不记参数、不记返回。
   - 验证：`tests/hands.html` **97 条**（P1 建、P5 补、P6 补）、`tests/assistant.html` 122 条、`input_policy.rs` 23 + `screen_policy.rs` 21 + `web_policy.rs` 21 + `hands_policy.rs` 12 + `fs_policy.rs` 14 + `shell_policy.rs` 9 条 `rustc --test`、`mcp_policy.rs` 17 条 `rustc --test`、全量自检 **46 页 / 1 981 条 / 0 failed**。`hands.rs` 那 7 条与 `mcp.rs` 那 8 条只有 `cargo test` 跑得了（本机跑不了）。**真机还没走**：读一个中文路径的文件、`echo 你好`、`Deny` 之后磁盘没变化、Stop 之后子进程真的没了、取一个真页面并跟一次 302、列一次窗口、在一张空白画布上点一下再 `Ctrl+S`；P6 再走一条：`npx -y @modelcontextprotocol/server-filesystem D:\` 存进 `mcp.json`、点 Refresh 看到工具、真调一个（列一次目录）、`Deny` 之后什么都没发生 —— 记在 `AGENTS.md` §8。
-- 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P6 全落了 —— **六只手到这里齐全**；0003 的会话、观察与审批三档随后也落了（会话落盘 + 提示词里的观察段 + `approvalMode`），最后 B 数据平面也落了（组件把能力声明成工具）。接下来的实用缺口：组件工具只剩「不唤醒窗口」一处（SDK 那半已收口，见 [`0012`](./design/0012-sdk-agent-tools.md)；小窗那半也已收口，见 [`0013`](./design/0013-widget-tools-across-windows.md)），以及 P6 留下的几条：HTTP 服务的 OAuth / 自定义头、websocket 传输、连接复用（现在一次调用一条连接，`npx` 那类服务首调慢几秒）。
+- 顺序：0002 两半、0003 的审批与预算（并入 0004 P1）、0004 的 P1–P6 全落了 —— **六只手到这里齐全**；0003 的会话、观察与审批三档随后也落了（会话落盘 + 提示词里的观察段 + `approvalMode`），最后 B 数据平面也落了（组件把能力声明成工具）。接下来的实用缺口：组件工具只剩「不唤醒窗口」一处（SDK 那半已收口，见 [`0012`](./design/LAT-0012-sdk-agent-tools.md)；小窗那半也已收口，见 [`0013`](./design/LAT-0013-widget-tools-across-windows.md)），以及 P6 留下的几条：HTTP 服务的 OAuth / 自定义头、websocket 传输、连接复用（现在一次调用一条连接，`npx` 那类服务首调慢几秒）。
 
 ## v0.12 —— 技能包、工作区与两个模式（已落地）
 
-用户的原话是"可以让项目的 agent 支持更高的权限吗，可以导入 skills 什么的处理文本之类的"。结论：**"更高权限"不落在第四档审批上，落在范围上**；技能是流程，不是权限。完整推理在 [`design/0005-skills-and-workspace.md`](./design/0005-skills-and-workspace.md)。
+用户的原话是"可以让项目的 agent 支持更高的权限吗，可以导入 skills 什么的处理文本之类的"。结论：**"更高权限"不落在第四档审批上，落在范围上**；技能是流程，不是权限。完整推理在 [`design/LAT-0005-skills-and-workspace.md`](./design/LAT-0005-skills-and-workspace.md)。
 
-紧接着用户又提了一次："我需要他有较高的权限和自由度，为它设计一个 Full access 功能，让用户选择是否自己开启"。这一条不能靠第四档审批回答（三档已经表达了问 / 不问 / 别改，`auto` 之上只剩"连删除也不问"），真正缺的是**一个显式的、随时能看见也能关掉的开关**，推理最初在 [`design/0006-full-access.md`](./design/0006-full-access.md)，**后来改成了两个模式的开关**，见 [`design/0009-assistant-modes.md`](./design/0009-assistant-modes.md)。
+紧接着用户又提了一次："我需要他有较高的权限和自由度，为它设计一个 Full access 功能，让用户选择是否自己开启"。这一条不能靠第四档审批回答（三档已经表达了问 / 不问 / 别改，`auto` 之上只剩"连删除也不问"），真正缺的是**一个显式的、随时能看见也能关掉的开关**，推理最初在 [`design/LAT-0006-full-access.md`](./design/LAT-0006-full-access.md)，**后来改成了两个模式的开关**，见 [`design/LAT-0009-assistant-modes.md`](./design/LAT-0009-assistant-modes.md)。
 
 - [x] **`workspace` 从"相对路径的默认值"变成"免问区"**（**已落地**：`insideWorkspace` 在 `runtime/hands.ts`，审批那一条在 `approvalFor` 的 `ctx.path` / `ctx.workspace`，`platform/assistant.ts` 把这次调用的 `path` 与当前 `workspace` 一起递过去） —— `ask` 档下 `file.write` 落在里面不问、外面照旧问；**只对 `file.write` 生效**（`shell.run` 一条命令就能写出这棵树，假装它是围栏是自欺）。判定是纯函数 `insideWorkspace`（`/` 与 `\` 归一、`..` 先折叠、盘符不分大小写、相对路径算在里面、空 workspace 与盘根一律 false —— 盘根不算"一棵树"，那和全开没区别）。
 - [x] **技能包**（**已落地**：`skills/<id>/SKILL.md` 的扫描与四条命令在 `skills.rs`、解析与三道上限在 `skills_policy.rs`、提示词那一段在 `runtime/skills.ts`、面板一段在 `AssistantPanel.tsx`） —— front matter 三个字段 `name` / `description` / `tools` + 正文，启用的正文进系统提示（≤4 份 / 每份 ≤4 000 字 / 合计 ≤8 000 字，**按码点**算，超了**在启用时拒**，不截断）；`assistant.json` v4 加 `skills.enabled`；四条命令 `assistant_skills` / `assistant_skills_save` / `assistant_skill_import` / `assistant_skill_remove`。**不新增执行通道**：技能里让做的事仍然走那六只手、仍然要审批、仍然进审计；**导入不启用**（和"新权限不自动授予"同一条规矩），坏掉的一份标 `damaged`、不进提示词、不拦列表。
-- [x] **两个模式：内部 / 完全访问（Full access）**（**已落地**：`assistant.json` v4 的 `mode`、`assistant_mode` / `assistant_mode_set` 两条命令、面板常驻模式条 + 启用那一道确认 + 启动提示；真机上 internal ↔ everything 来回切过，`assistant.json` 跟着变、审计有 `assistant.mode` 一条） —— 一个存盘的开关（`assistant.json` v4 的 `mode`，值仍是 `internal` / `everything`，界面上叫「完全访问」），不是第四档审批、也不是 0006 那种定时授权（[0009](./design/0009-assistant-modes.md) 推翻了 [0006](./design/0006-full-access.md)）：**内部**（默认）= 8 个桌面动作 + 组件声明的工具 + **你拨开的那几组手**（默认六组全关），审批照档；**完全访问** = 六组全开、审批不问（问就不叫完全访问了），之后靠**常驻模式条**而不是靠打断。**启用走一道 DSH 形状的确认**：标题「Enable Full access?」+ 一段讲清楚会做什么的风险段 + 四条硬线 + 一句"关掉从来不问" + **必须勾的「我明白风险，继续」**（没勾上那颗按钮是灰的）；确认时**顺手把六组拨开**（`grantAllHands`，只写那六个开关）再写 `mode` —— 按完面板上那六个勾就是它真的拿到的权力。两个入口（输入框左下那颗警示色药丸、手那一段那颗）走同一个 `requestFullAccess`。**关掉不问、也不收手**（手留着，问话回来；要收能力按「全关」，它同时停这一轮、关六组、退回内部）；只读档压住时不许启用（框里写明，按钮是灰的）。四条硬线照旧（装卸授权不在表里、改平台自身配置永远问、组件借手拿不到、agent 端点不受影响），审计行尾 ` · everything` 且写不进去就不执行，`readonly` 仍然优先，**预算不变**。
+- [x] **两个模式：内部 / 完全访问（Full access）**（**已落地**：`assistant.json` v4 的 `mode`、`assistant_mode` / `assistant_mode_set` 两条命令、面板常驻模式条 + 启用那一道确认 + 启动提示；真机上 internal ↔ everything 来回切过，`assistant.json` 跟着变、审计有 `assistant.mode` 一条） —— 一个存盘的开关（`assistant.json` v4 的 `mode`，值仍是 `internal` / `everything`，界面上叫「完全访问」），不是第四档审批、也不是 0006 那种定时授权（[0009](./design/LAT-0009-assistant-modes.md) 推翻了 [0006](./design/LAT-0006-full-access.md)）：**内部**（默认）= 8 个桌面动作 + 组件声明的工具 + **你拨开的那几组手**（默认六组全关），审批照档；**完全访问** = 六组全开、审批不问（问就不叫完全访问了），之后靠**常驻模式条**而不是靠打断。**启用走一道 DSH 形状的确认**：标题「Enable Full access?」+ 一段讲清楚会做什么的风险段 + 四条硬线 + 一句"关掉从来不问" + **必须勾的「我明白风险，继续」**（没勾上那颗按钮是灰的）；确认时**顺手把六组拨开**（`grantAllHands`，只写那六个开关）再写 `mode` —— 按完面板上那六个勾就是它真的拿到的权力。两个入口（输入框左下那颗警示色药丸、手那一段那颗）走同一个 `requestFullAccess`。**关掉不问、也不收手**（手留着，问话回来；要收能力按「全关」，它同时停这一轮、关六组、退回内部）；只读档压住时不许启用（框里写明，按钮是灰的）。四条硬线照旧（装卸授权不在表里、改平台自身配置永远问、组件借手拿不到、agent 端点不受影响），审计行尾 ` · everything` 且写不进去就不执行，`readonly` 仍然优先，**预算不变**。
 - 验证：`tests/skills.html` **55 条**（front matter、id 与撞名、三道上限、提示词渲染、`insideWorkspace` 的整张路径表、`approvalFor` 的免问区四条）、`tests/hands.html` **103 条**（`effectiveHands` 内部照开关、`grantAllHands` 只动那六个值）、`skills_policy.rs` **19 条** `rustc --test`、`hands_policy.rs` 21 条、全量自检 **50 页 / 2 325 条 / 0 failed**。**真机还没走**：导入一个真实技能目录 → 启用 → 问"按那个流程做" → 落在 workspace 内的写没有确认条、落在 `D:\GitDev\lattice` 的有 → 关掉技能它回到默认做法（记在 `AGENTS.md` §8）。
 - 明确不做：剪贴板读写、浏览器自动化 / 任意 HTTP 方法、多根 workspace —— 三条各自的反对理由写在 0005 §3；**第四档审批**也不做（把"全权"写成 `approvalMode` 的第四个值，等于让"要不要问"这一个设置兼职表达"能碰什么"）；用户要的是**一个开关**，所以走的是 0009 的模式（存盘、常驻可见、切过去确认一次），代价"会被忘掉"由那条模式条和启动时的一次提示兜。都不是"以后随便加"。
 
 ## v0.13 —— assistant 上桌面（代码已落地，待真机验收）
 
-用户的原话是"这个 agent 的面板要支持放在桌面，背景还跟其他组件一样可以调节，还可以固定放大缩小之类的"。推理在 [`design/0007-assistant-on-desktop.md`](./design/0007-assistant-on-desktop.md)。
+用户的原话是"这个 agent 的面板要支持放在桌面，背景还跟其他组件一样可以调节，还可以固定放大缩小之类的"。推理在 [`design/LAT-0007-assistant-on-desktop.md`](./design/LAT-0007-assistant-on-desktop.md)。
 
 - [x] **两种窗口模式，同一个窗口** —— 浮窗（默认，现状）/ 桌面。桌面模式用 `desktop::apply_to(Desktop, interactive: true)`：**不能挂 WorkerW**（那是桌面的子窗口，拿不到键盘焦点，聊天框就废了），走的是"`HWND_BOTTOM` 普通窗口 + 底层守卫"。切模式**不重建窗口**（两条都是事后可改的属性），所以对话一行都不丢。
 - [x] **底板跟组件同一套 appearance** —— `{tint, alpha, blur}`，三层 `canvas`（`widget_wallpaper`，`pad = MAX_BLUR × 2`）→ `veil` → 内容；出厂 `auto / 1 / 0` 不覆盖任何令牌（不变量 6）；控件在标题栏那颗"底板"按钮里。
@@ -526,7 +526,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 - **八条命令接线完成**（`toggle` / `hide` / `save_pos` / `state` / `mode` / `appearance` / `locked` / `save_rect`，全 `async fn`）：面板开局读 `state`、改底板与改锁都拿返回值覆盖本地，标题栏那颗模式药丸、底板面板和锁因此真的生效（以前 invoke 会 reject、界面只是"看着能点"）。断言：`tests/assistant-window.html` 33 条 + `assistant_window_policy.rs` 11 条（`rustc --test` 壳子），`cargo check --all-targets` 干净。
 - **真机还差最后一遍**（人点一次，记在 `AGENTS.md` §8 与 0007 第 6 节）：桌面模式下 Win+D / 被别的应用盖住之后还在、点它敲字进输入框、锁上拖不动、拉到 900×700 松手重启还是这个尺寸、切回浮窗对话一行没少。
 - 明确不做：9 个方向的缩放手柄、"画面缩放"（会让字体一起变大，和"把面板拉宽"是两件事）、把 assistant 做成 placement（那会把"聊到一半"挂在一次布局同步上）。
-- [x] **终端组件（`lattice.term`）** —— 一条常驻 `powershell.exe` 的皮肤（每实例一条，实测每条命令 480ms → 常驻之后约 40ms，`cd` 与变量都留着）：命令和哨兵整段 UTF-8 后 base64 送进去（GUI 进程 spawn 出来的 stdin 按 OEM 代码页解码，直接写中文命令会乱），哨兵单独一行切出退出码与 `cd` 之后的位置；正文走 `lattice:term` 事件（桥只回编号），环形缓冲靠 `term.state { since }` 补发；新权限 `terminal:exec`（默认拒，没有"内置组件例外"）；两条收尸路（实例销毁 / 应用退出）。见 [design/0018](./design/0018-terminal-widget.md)。断言：`tests/term.html` 70 条 + `term_policy.rs` 16 条 `rustc --test`，`cargo check --all-targets` 干净。**协议那一半真机走过了**（`.scratch/term-probe` 把 `term_policy` 接上真的 `powershell -Command -`：`cd C:\Windows` 之后 `dir` 列的是 `C:\Windows`、`ping -n 5` 分 12 段跨 4.1 秒到、`echo 你好` 不乱码、`cmd /c exit 3` 报 3 而 `Get-Item C:\nope` 报 1、杀掉之后进程没了）。**界面那一半也走了**（2026-10-26 在真 app 里用探针组件，`Rust emit → 宿主页 → iframe` 整条链路）：逐行流的时间戳（四次 350ms 的 tick 到齐在 322 / 696 / 1053 / 1416 / 1775ms）、中文、stderr + `code=1`、`cd C:\Windows` 保留、哨兵不外泄、`term.state { since }` 重放、`term.stop` 换 shell、退出后不留进程 —— 顺手抓到并修了两条真坑（PowerShell 把"一行 + 换行"分两次写导致哨兵卡死；`term.write` 回话比输出慢 5ms，所以组件要从事件里认领编号，两条都在 `PITFALLS.md`）；**还没走的四处**（Stop 按钮本身、删卡片、`dir` 长输出与窄卡折行、`ping` 的真实节奏）记在 `AGENTS.md` §8。明确不做：交互式程序（`vim` / `ssh`）、ANSI 颜色、分页、管道输入、单条命令的 `Ctrl+C`（停 = 杀 shell）
+- [x] **终端组件（`lattice.term`）** —— 一条常驻 `powershell.exe` 的皮肤（每实例一条，实测每条命令 480ms → 常驻之后约 40ms，`cd` 与变量都留着）：命令和哨兵整段 UTF-8 后 base64 送进去（GUI 进程 spawn 出来的 stdin 按 OEM 代码页解码，直接写中文命令会乱），哨兵单独一行切出退出码与 `cd` 之后的位置；正文走 `lattice:term` 事件（桥只回编号），环形缓冲靠 `term.state { since }` 补发；新权限 `terminal:exec`（默认拒，没有"内置组件例外"）；两条收尸路（实例销毁 / 应用退出）。见 [design/0018](./design/LAT-0018-terminal-widget.md)。断言：`tests/term.html` 70 条 + `term_policy.rs` 16 条 `rustc --test`，`cargo check --all-targets` 干净。**协议那一半真机走过了**（`.scratch/term-probe` 把 `term_policy` 接上真的 `powershell -Command -`：`cd C:\Windows` 之后 `dir` 列的是 `C:\Windows`、`ping -n 5` 分 12 段跨 4.1 秒到、`echo 你好` 不乱码、`cmd /c exit 3` 报 3 而 `Get-Item C:\nope` 报 1、杀掉之后进程没了）。**界面那一半也走了**（2026-10-26 在真 app 里用探针组件，`Rust emit → 宿主页 → iframe` 整条链路）：逐行流的时间戳（四次 350ms 的 tick 到齐在 322 / 696 / 1053 / 1416 / 1775ms）、中文、stderr + `code=1`、`cd C:\Windows` 保留、哨兵不外泄、`term.state { since }` 重放、`term.stop` 换 shell、退出后不留进程 —— 顺手抓到并修了两条真坑（PowerShell 把"一行 + 换行"分两次写导致哨兵卡死；`term.write` 回话比输出慢 5ms，所以组件要从事件里认领编号，两条都在 `PITFALLS.md`）；**还没走的四处**（Stop 按钮本身、删卡片、`dir` 长输出与窄卡折行、`ping` 的真实节奏）记在 `AGENTS.md` §8。明确不做：交互式程序（`vim` / `ssh`）、ANSI 颜色、分页、管道输入、单条命令的 `Ctrl+C`（停 = 杀 shell）
 
 - [x] **两栏与会话栏（`design/0034`）** —— 用户原话"能不能改得像豆包那个形式，就是左边的"，以及"每次打开都是一堆提问"。病根不在文案：`AssistantPanel` 一打开就把 `configured === false` 当成"该显示设置"，于是每次都被推到模型档 / 六只手 / MCP / 技能四张表前面。改法是把**落点**换成对话（没有可用模型时只在对话区顶上一行 + 一颗「去设置」），同时把那条下拉框换成 208px 的会话栏（按 今天/昨天/更早 分组、悬停「⋯」重命名/删除，设置态复用同一条栏做四格分区）。窗口出厂 `400 × 580` → `880 × 640`、最小宽 `320` → `560`，盘上存的旧出厂值被 `migrate_size` 抬一次。重命名走一条新命令 `assistant_session_rename` —— 不用 `assistant_session_save` 是因为那条会把 `updatedAt` 写成现在，改个名字会话就跳到最上面。断言：`tests/assistant.html` 188 → 198（今天零点、夏令时、未来时间戳、空桶不出现、组内保序），`assistant_window_policy.rs` 10 条。**真机还差**：880 宽在真窗口里好不好看、560 时右栏文字有没有横向溢出、改完名重启顺序没变。
 
@@ -534,7 +534,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 - [x] **小窗的第三层边、`Ctrl+滚轮` 缩放（`design/0036`）** —— 用户原话"为什么这个窗口做出来会有一个灰色的边框，能不能去掉，就让它跟对话框一样纯色就行"、"我需要 Ctrl 加滚轮可以实现字体放大和字体的缩小功能"。边其实是**三层**：DWM 画的 1px、`WS_THICKFRAME` 的非客户区、`SetWindowRgn` 裁圆角那一圈。前两层上一版动过但没成，原因写在失败表里（`apply_mode` 的 `SWP_FRAMECHANGED` 会把 DWM 那层重画回来）；这一版把非客户区用 `WM_NCCALCSIZE` 归零（只拦 `wParam == TRUE` 那一趟，`FALSE` 那趟返回 0 会让客户区变 0×0），子类必须 `run_on_main_thread` 投递（跨线程只静默返回 0），重算帧那次 `SetWindowPos` 还要把`cx/cy` 一起钉住（不钉就按"保住客户区"往外长一个边框厚度，实测 800×600 → 816×609）。第三层是清掉区域再截一次证出来的。缩放走 CSS `zoom` 挂在 `.lattice-assistant` 上（不是 `documentElement`：抽屉和画布同一个 webview），五档 `0.85 / 1 / 1.15 / 1.3 / 1.5`、`Ctrl+0` 回 1，落盘在 `assistant-window.json` v4 的 `fontScale`，两个宿主共用一个值。顺带一条上限：`clamp_size` 把尺寸夹进工作区 —— 重算帧之后那条 `Resized` 里的 `inner_size()` 可能是 0，换算成 `u32` 落盘就是 `800 × 65535`。断言：`tests/assistant-window.html` 39 → 48，`assistant_window_policy.rs` 10 → 16。**真机还差**：四边那 1px 浅色线真的没了、切模式不回来、`Ctrl+0` 与"一格一档"。
 
 ## 0.3.0 —— 系统组件并进电池、加 GPU（代码已落地，待真机验收）
-起因是两句用户原话："我的 System 组件。和这个 Battery 组件。可以合并一下" 和 "system 可以添加个 gpu 的显示"。推理在 [`design/0030-merged-system-widget.md`](./design/0030-merged-system-widget.md)。
+起因是两句用户原话："我的 System 组件。和这个 Battery 组件。可以合并一下" 和 "system 可以添加个 gpu 的显示"。推理在 [`design/LAT-0030-merged-system-widget.md`](./design/LAT-0030-merged-system-widget.md)。
 
 - [x] **电池并进 `lattice.sysmon` 0.3.0，`lattice.battery` 下架** —— 两张卡本来就是"这台机器现在怎么样"的同一件事，当初按数据源拆包，于是用户把两张摞在一起，标题、窗饰、底边距各付两遍。合的是**用户看见的东西**，不是**每次要搬多少字节**：`power.status` 仍然是独立一条命令，系统卡挂两条 `schedule.every`（1000ms 指标 / 30000ms 电源）。
 - [x] **GPU 走 PDH，不引依赖** —— `\GPU Engine(*)\Utilization Percentage` + `\GPU Adapter Memory(*)\Dedicated Usage`，适配器名与显存总量走 DXGI（`windows` crate 已在依赖里，只加 feature）。口径：**同引擎求和、跨引擎取最大、按 LUID 分组、混合显卡挑最忙那块**，和任务管理器一致。中文系统上必须 `PdhAddEnglishCounterW` 先试（英文名反查本地化名），直接 `PdhAddCounterW` 会 `PDH_CSTATUS_NO_OBJECT`。读不到就是 `gpu: null`，组件整行收起 —— **不画 0%**。
@@ -545,7 +545,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 
 ## 0037 —— 完全访问接管组件工具（代码已落地，待真机验收）
 
-用户的原话是"我希望我的 Agent 的操控的权限可以更大，起码掌控我所有的组件，提高权限后就像一个全能的 Agent"。推理在 [`design/0037-agent-omnipotence.md`](./design/0037-agent-omnipotence.md)。
+用户的原话是"我希望我的 Agent 的操控的权限可以更大，起码掌控我所有的组件，提高权限后就像一个全能的 Agent"。推理在 [`design/LAT-0037-agent-omnipotence.md`](./design/LAT-0037-agent-omnipotence.md)。
 
 - [x] **`everything` 期间 `agent:tools` 视同已授** —— 根因不在 `approvalFor`：`allTools` 收到的 `widgets` 是**已经筛过的表**，改第二道闸没有用。判据加在 `widgetToolSources` 的 `assumeGranted` 入参上，和 `effectiveHands` 同构（这一轮不看开关，**不写盘**）。模式**不做成新参数**，走 op：Rust 从 `hands_state` 读 mode 塞进 `{op:"widget-tools", everything}` —— 小窗没有 store，模式只能有一个真源。
 - [x] **`config.set` 成第 9 个动作** —— 它原本在 `DENIED` 里，理由是"需要一次界面确认，v1 没做确认流"；确认条早有了，前提没了就不该继续拒。写前按清单 schema 校验（未知键 / 越界 / 类型错 / 空 patch 一律拒，**不做部分接受**），回归一化之后的完整配置。`auto` 档也照问（改的是用户亲手填的值，改完界面上看不出是谁动的）；组件借手那条路拿不到它。
@@ -589,8 +589,8 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
 1. **目录里真有第三方包。** 冷启动的死结不是官方组件不够多，是"目录里只有自己人发的 20 个"（v0.6 那条"还没真发生过一次"）。这件事**没有代码可写**，只有去找人 —— 所以它排在第一位，也最容易被一直往后推。
 2. **组件数量上去之后的性能。** WebView 是内存杀手，见下面风险表第一行。现在 21 个组件没把它逼出来，不代表 60 个还没有。**动手前先量**：1 / 5 / 10 / 20 个组件的 RSS 各一次，量出斜率再选方案（合并 WebView / 池化 / 看不见就卸，三样代价都不小）。`ARCHITECTURE.md` §9 那张预算表里"每组件内存"一格现在空着，就是为了不填一个看着像结论的数。
 3. **第二个更新源**（如果 v0.14 里那条没顺手做掉）。
-4. **能力描述符（第六族能力出现时）。** 五族能力五种装配方式，加一组手实测要动八处，而漏一处不报错。推理、候选与**触发条件**在 [design/0020](./design/0020-capability-descriptor.md) —— 那份是 `draft`，现在只当判断依据，别照着它重构。
-5. **吊销与时效。** 本地手动那一半已经有了（`blockedKeys`，`planInstall` 第一道闸），缺的是**分发**（作者没渠道说"我的钥匙被偷了"）与**已装**（拉黑只挡新装，已装的照跑），外加签名无时效。它和上面第 1 条是同一件事的两半：目录里真有第三方包之前，得先想清楚"谁有权把谁划掉"—— 推理与那条治理代价在 [design/0021](./design/0021-revocation.md)。
+4. **能力描述符（第六族能力出现时）。** 五族能力五种装配方式，加一组手实测要动八处，而漏一处不报错。推理、候选与**触发条件**在 [design/0020](./design/LAT-0020-capability-descriptor.md) —— 那份是 `draft`，现在只当判断依据，别照着它重构。
+5. **吊销与时效。** 本地手动那一半已经有了（`blockedKeys`，`planInstall` 第一道闸），缺的是**分发**（作者没渠道说"我的钥匙被偷了"）与**已装**（拉黑只挡新装，已装的照跑），外加签名无时效。它和上面第 1 条是同一件事的两半：目录里真有第三方包之前，得先想清楚"谁有权把谁划掉"—— 推理与那条治理代价在 [design/0021](./design/LAT-0021-revocation.md)。
 6. **贴图规格可量化（`check:art`）。** `shape: "region"` 的代价全在美术上 —— 一个水印、一圈白边、
    一块半透明阴影都会被裁进轮廓，而 [`WIDGET_SPEC.md` 2.5](./WIDGET_SPEC.md) 那张表现在只能靠眼睛对。
    `review/pr-1` 上有一版零依赖的实现（自带 zlib 解 PNG 的五种行过滤器，量块数 / 留白 / 悬空透明 /
@@ -605,7 +605,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
   装了哪一套来挑：WinRT 本地语法（听写场景约束、停顿 1 秒收尾）和经典 SAPI 5（持续听写、
   `SPEI_RECOGNITION` 事件），结果都走 `lattice:dictation` 事件；`target: "system"` 那条判
   "开听时的 HWND == 出字前的 HWND"，不一致就把字交回面板而不是乱打。见
-  [design/0027](./design/0027-voice-dictation.md)。
+  [design/0027](./design/LAT-0027-voice-dictation.md)。
   - **为什么是两套**：WinRT 读 `Speech_OneCore`、经典 SAPI 读 `Speech\Engines\SR`，**两份
     互不相干的语言库**，同一台机器可以只有其中一套（本机就只 classic 那套有中文）。
     `dictation::detect()` 先问 WinRT，没有中文再问 `dictation_sapi::installed()`，
@@ -626,7 +626,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
     入口收成三个（面板 / 顶栏 / 热键），`button.show` 删掉、托盘里的「隐藏浮钮」也删掉；
     设置页多了一区 `Dictation`（语音语言状态 + 重新检测 + 打开系统语音设置），
     `dictation_status` 多一个 `reason`（`no_engine` / `no_chinese`）—— 不可用时麦克风不再是
-    `disabled`，点它是打开系统设置。见 [design/0032](./design/0032-dictation-session.md)。
+    `disabled`，点它是打开系统设置。见 [design/0032](./design/LAT-0032-dictation-session.md)。
   - 断言：`tests/dictation.html` **28 条**（命令形状 + `reduceDictation` 的判据 + `reason` 三句话 +
     `dictation_recheck` + 桥表里搜不到 `dictation` + 没有 Rust 时不假装能听）、
     `dictation_policy.rs` **33 条** `rustc --test`（含 4 条 LCID：`lcid_tag` 认 zh-CN/TW/HK/SG、

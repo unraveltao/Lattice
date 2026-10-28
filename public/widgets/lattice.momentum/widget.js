@@ -6,7 +6,7 @@
  *  - **榜单**：抓 github.com/trending 的 HTML（带本周新增 star）
  *
  * 纯逻辑全在 `momentum-core.js`（判定顺序、跳过最后一桶、发版去重、HTML 解析），
- * 这一层只管 DOM、桥、缓存和调度。规格是 `docs/design/0025-momentum-widget.md`。
+ * 这一层只管 DOM、桥、缓存和调度。规格是 `docs/design/LAT-0025-momentum-widget.md`。
  *
  * # 四条这一层必须自己担着的事
  *

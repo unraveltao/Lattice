@@ -311,19 +311,33 @@ function checkLines() {
 // 在提交那一刻红，而不是等到有人翻不到。
 const DESIGN_STATUS = ["draft", "accepted", "superseded"];
 
+// 前缀抽成常量，**别在两处各写一遍**。文件名过滤和取号是同一个身份的两种用法，
+// 分开写的话改前缀只会改到一处，另一处把 `LAT-0001` 取成 `LAT-` —— 于是"编号
+// 不重"这条检查静默失效：`files` 非空、编号全一样、报一堆撞号，或者更糟，
+// 过滤正则没改、`files` 空掉、打印 `✓ 0 份` 而 CI 全绿。这两种都比报错难查。
+const DESIGN_PREFIX = "LAT-";
+const DESIGN_FILE = new RegExp(`^${DESIGN_PREFIX}\\d{4}-.*\\.md$`);
+const DESIGN_NUMBER = new RegExp(`^${DESIGN_PREFIX}(\\d{4})-`);
+
 function checkDesign() {
   const dir = path.join(ROOT, "docs", "design");
-  if (!fs.existsSync(dir)) return { count: 0, problems: [] };
+  if (!fs.existsSync(dir)) return { count: 0, problems: [`没有 ${path.relative(ROOT, dir)} 这个目录`] };
 
   const problems = [];
   const files = fs
     .readdirSync(dir)
-    .filter((name) => /^\d{4}-.*\.md$/.test(name))
+    .filter((name) => DESIGN_FILE.test(name))
     .sort();
+
+  // 一份都没匹配上 = 文件名形状和正则对不上。不报的话这里打印的是
+  // `✓ 0 份，编号不重、status 都在词表里` —— 一个什么都没查的绿灯。
+  if (files.length === 0) {
+    problems.push(`一份 ${DESIGN_PREFIX}NNNN-*.md 都没找到 —— 文件名形状和正则对不上？`);
+  }
 
   const byNumber = new Map();
   for (const name of files) {
-    const number = name.slice(0, 4);
+    const number = name.match(DESIGN_NUMBER)[1];
     byNumber.set(number, [...(byNumber.get(number) ?? []), name]);
   }
   for (const [number, list] of byNumber) {

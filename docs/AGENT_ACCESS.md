@@ -246,7 +246,7 @@ AssistantSurface（主窗口一份，桌面小窗一份）
 
 - **组件借手那一轮（`assistant.ask`）没有组件工具**：那条路上没有确认条，给了就等于
   "A 组件借模型去改 B 组件的数据"。这条写死在 `allTools` 里，不靠调用方记得传。
-- **桌面上那个小窗那一轮也有一份**：清单与执行都问主窗口（`assistant_widget_tools` / `assistant_widget_call`），判据仍在 `listWidgetTools`；执行前主窗口再过一道「这份实例真能调吗 —— 清单不是授权」。见 [0013](./design/0013-widget-tools-across-windows.md)。
+- **桌面上那个小窗那一轮也有一份**：清单与执行都问主窗口（`assistant_widget_tools` / `assistant_widget_call`），判据仍在 `listWidgetTools`；执行前主窗口再过一道「这份实例真能调吗 —— 清单不是授权」。见 [0013](./design/LAT-0013-widget-tools-across-windows.md)。
 - **返回值上限 4000 字符，超了拒绝不截断**：半截 JSON 会让模型把残片当真。
 - **审计**：和手一样只记形状（工具名、ok、耗时），不记返回值内容。
 
@@ -517,12 +517,12 @@ store）。这里有个必须想清楚的地方：**`state.json` 不是状态，
 （28 条）用 Rust 测试里的同一组样例钉住它，这是唯一的提醒。
 
 **形状这一半已经不用人跟了**：`parseConfig` 搬完认得的字段之后，把文件里**不认识的顶层键
-原样带回去**（[0015](./design/0015-preview-config-mirror.md)）。所以 `llm.rs` 新加一个字段，
+原样带回去**（[0015](./design/LAT-0015-preview-config-mirror.md)）。所以 `llm.rs` 新加一个字段，
 在浏览器预览里保存一次也不会把它洗掉 —— `skills` 丢过一版，丢的就是这种"白名单里没有"。
 仍然要人跟的两处：认得的字段**语义**变了（新的枚举取值、新的归一化规则），以及 `hands`
 那六组开关本身（第七组手要同时在两处加，而预览里本来也跑不了它）。
 失败那几句说同一种话：抬头 `@@llm:{code,status,detail}` + 英文原句
-（[0014](./design/0014-llm-failure-codes.md)），界面显示的那句由前端按语言拼。
+（[0014](./design/LAT-0014-llm-failure-codes.md)），界面显示的那句由前端按语言拼。
 
 ### 4.9 六只手在真机上的样子 [已实现，2026-10-25 验过]
 

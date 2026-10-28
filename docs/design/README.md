@@ -29,14 +29,20 @@
 ## 二、放哪、叫什么
 
 ```
-docs/design/0010-multi-source-catalogue.md
-              ↑     ↑
-              │     └─ 英文小写短横线。中文文件名在 Windows / git / 各种工具链上
-              │        各有一处坑，省下这点表达力不值得
-              └─ 四位编号，永不复用
+docs/design/LAT-0010-multi-source-catalogue.md
+            ↑   ↑   ↑
+            │   │   └─ 英文小写短横线。中文文件名在 Windows / git / 各种工具链上
+            │   │      各有一处坑，省下这点表达力不值得
+            │   └─ 四位编号，永不复用
+            └─ 路径里必须带 LAT-
 ```
 
-开头四行状态头，`0000-template.md` 里有现成的：
+**路径写 `LAT-NNNN`，正文里提编号可以只写四位。** 这条分工是刻意的：链接要能被
+`check:docs` 校验，所以必须写全；而"见 0037"这种句子写全了反而更难读，四位数字
+本身就是唯一的，加前缀只增加噪音。文件名里那四位永远不省 —— 少了它，`git log`
+和文件管理器里的排序就散了。
+
+开头四行状态头，`LAT-0000-template.md` 里有现成的：
 
 ```
 status: draft | accepted | superseded
@@ -116,4 +122,4 @@ code: src/runtime/catalogue.ts, src-tauri/src/store.rs
 
 ## 七、现成的模板
 
-复制 [`0000-template.md`](./0000-template.md)，改文件名，填。
+复制 [`LAT-0000-template.md`](./LAT-0000-template.md)，改文件名，填。

@@ -13,7 +13,7 @@
  *
  * # 预设为什么不是"供应商类型"
  *
- * 落盘的永远只有 `baseUrl` + `auth` + `model` 三个自由字段（见 `docs/design/0002-model-profiles.md`）。
+ * 落盘的永远只有 `baseUrl` + `auth` + `model` 三个自由字段（见 `docs/design/LAT-0002-model-profiles.md`）。
  * 预设只是把这三个字段**填好**的按钮：协议已经收敛到 OpenAI 兼容，多一个
  * `provider` 枚举就多一处要维护的映射，而中转站、局域网里的 vLLM 这些地址
  * 压根没有预设可列。

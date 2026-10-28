@@ -17,8 +17,9 @@
  * # 为什么只列十份
  *
  * `docs/` 下还有 `AGENT_ACCESS.md` / `CODE_SIGNING.md` / `VELA-REUSE.md`
- * 这些专题，以及九份 design 文档。它们**能被链接跳到**（glob 覆盖整个目录），
+ * 这些专题，以及一整批 design 文档。它们**能被链接跳到**（glob 覆盖整个目录），
  * 但不进首页清单：帮助页的第一屏要回答"我该读哪一份"，列二十条就等于没列。
+ * 份数不写在这里 —— 这个数字没人会来更新，而 `check:docs` 也不查注释。
  */
 
 export interface DocEntry {
@@ -127,7 +128,7 @@ function key(path: string): string {
   return `../../${path}`;
 }
 
-/** 这个仓库路径有没有对应的文档（`docs/design/0007-*.md` 也算） */
+/** 这个仓库路径有没有对应的文档（`docs/design/LAT-0007-*.md` 也算） */
 export function hasDoc(path: string): boolean {
   return key(path) in SOURCES;
 }
@@ -219,7 +220,7 @@ export function docTitleFromMarkdown(source: string): string {
   return match ? match[1].trim() : "";
 }
 
-/** 路径的最后一段，兜底用（`docs/design/0007-x.md` → `0007-x.md`） */
+/** 路径的最后一段，兜底用（`docs/design/LAT-0007-x.md` → `LAT-0007-x.md`） */
 export function docFileName(path: string): string {
   return path.split("/").pop() ?? path;
 }

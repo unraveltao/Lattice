@@ -11,7 +11,7 @@
  *
  * 没配好之前显示设置，配好之后显示对话。设置里是**一列档**而不是一个表单：
  * 一个人可能同时留着公司中转站和本机 Ollama，切换不该要求重粘 key
- * （见 `docs/design/0002-model-profiles.md`）。齿轮随时能切回去 —— 换模型是常事。
+ * （见 `docs/design/LAT-0002-model-profiles.md`）。齿轮随时能切回去 —— 换模型是常事。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";

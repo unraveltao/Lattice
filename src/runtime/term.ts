@@ -9,7 +9,7 @@
  * Rust 的 `emit` 到不了 iframe。`config-changed` / `store-changed` 都是这么走的，
  * 这条也一样。
  *
- * 字段和设计稿（[0018](../../docs/design/0018-terminal-widget.md) §4）一致，
+ * 字段和设计稿（[0018](../../docs/design/LAT-0018-terminal-widget.md) §4）一致，
  * 只多一个 `seq`：窗口藏起来回来时靠它跟 `term.state` 对账。
  */
 

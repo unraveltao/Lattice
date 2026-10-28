@@ -5,7 +5,7 @@
 //! 三件事只有 Rust 做得到：
 //!
 //! 1. **key 不进前端**。它落在密封库（`%APPDATA%\com.iron-tom.lattice\secrets.bin`，
-//!    DPAPI 封着，见 `secrets.rs` 与 `docs/design/0026-sealed-secrets.md`），
+//!    DPAPI 封着，见 `secrets.rs` 与 `docs/design/LAT-0026-sealed-secrets.md`），
 //!    前端拿到的永远只有 `sk-1…cdef` 这种掩码。key 一旦进了 JS 状态，就会跟着
 //!    调试面板、截图、某次 `JSON.stringify` 一起外泄，而它换不了（用户得去后台吊销）。
 //! 2. **出网只有一个出口**。请求走 `network::send`（WinHTTP），和组件联网**同一条**
@@ -19,7 +19,7 @@
 //! 一个人可能同时留着公司中转站和本机 Ollama。单档配置下，切一次要重粘一次 key、
 //! 改一次地址，切回来再粘一次 —— 而本机模型压根不要 key，单档那条路连"配置好"
 //! 都判不出来。所以 `assistant.json` 升到 v2：一条档 = 一个端点 + 自己的鉴权
-//! 形状 + 自己的 key + 自己的模型。取舍见 `docs/design/0002-model-profiles.md`。
+//! 形状 + 自己的 key + 自己的模型。取舍见 `docs/design/LAT-0002-model-profiles.md`。
 //!
 //! # 谁在用
 //!

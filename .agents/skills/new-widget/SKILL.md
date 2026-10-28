@@ -59,7 +59,7 @@ npm run create:widget -- demo.weather --name "Weather" --permissions network
 组件可以在清单里声明工具，让平台的 assistant 直接调它 —— `lattice.diagram` 就是这么画图的（模型说一句 `Api -> Db`，组件自己画）。完整契约在 [WIDGET_SPEC §3.6](../../../docs/WIDGET_SPEC.md)，这里只记三件最容易漏的：
 
 - **`agent:tools` 是独立的一根授权轴**，和 `network` 无关：没授这条，声明的工具**一条都不会**出现在模型那一侧。授权界面上那行字是 "Agent tool calls"。
-- **收消息得自己听，或者让 SDK 替你听**。用 `@lattice/sdk` 的话是 `lattice.agentTools({ add: (args) => … })`（[0012](../../../docs/design/0012-sdk-agent-tools.md)：返回值就是 `result`、抛错就是 `ok:false`，没注册的名字回 `unknown tool`）；官方组件刻意不用 SDK，那就自己 `window.addEventListener("message", …)` 认 `type === "agent-call"`，并且**一定回一条 `agent-result` 带同一个 `callId`** —— 不回的那一次平台等 8 秒，然后回去告诉模型"它没应"。
+- **收消息得自己听，或者让 SDK 替你听**。用 `@lattice/sdk` 的话是 `lattice.agentTools({ add: (args) => … })`（[0012](../../../docs/design/LAT-0012-sdk-agent-tools.md)：返回值就是 `result`、抛错就是 `ok:false`，没注册的名字回 `unknown tool`）；官方组件刻意不用 SDK，那就自己 `window.addEventListener("message", …)` 认 `type === "agent-call"`，并且**一定回一条 `agent-result` 带同一个 `callId`** —— 不回的那一次平台等 8 秒，然后回去告诉模型"它没应"。
 - **参数只能是 `string` / `number` / `boolean`，最多 6 个**，所以"画一张图"这种活得压成一行文本（`"Api -> Db"`、`"Cache:circle"`），而不是传一个对象进来。回话上限 4000 字符，超了是**拒绝**不是截断。
 
 ## 7. 生成索引 / 打包 / 签名
