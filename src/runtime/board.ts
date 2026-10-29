@@ -11,15 +11,27 @@
  * Rust 那半守的是**上限与夹取**（状态在谁手里，闸就在谁手里）。所以这一份
  * 解析器的错误只负责"说清第几行坏了"，不负责"最后能不能落盘"。
  *
- * # 为什么坐标是世界坐标
+ * # 为什么坐标是世界坐标，而窗口是视口
  *
- * 窗口可以拉大拉小，板不该跟着变形。世界固定 1600×1000，窗口是视口，
- * 等比缩放居中（`fitTransform`）。代价是 16:9 的窗口上下留白 —— 那是
- * "板是一张纸"的代价，不是 bug。
+ * 世界固定 1600×900，窗口**按轴拉伸**去填满它（`fillTransform`）。所以板永远
+ * 铺满窗口、没有留白。世界取 16:9，是因为最常见的形态是"最大化"，而桌面显示器
+ * 绝大多数是 16:9 —— 那种窗口上 `sx === sy`，圆就是圆，两个要求同时成立。
+ * 16:10 的笔记本上纵向会被拉长一成，那是对比才看得出的量。
+ *
+ * 试过的另一条是"等比缩放 + 居中留白"：不变形，但全屏时上下各有一条白边，
+ * 用户会以为画丢了。留白是**看得见的错**，轻微变形是**要对比才看得出**的错，
+ * 后者更便宜。想彻底不二选一，得让世界跟着窗口长（平移/缩放那套），那是
+ * 下一步的事。
  */
 
-/** 世界尺寸。落盘时一并写下去，将来换尺寸靠它判断 */
-export const BOARD_WORLD = { w: 1600, h: 1000 } as const;
+/**
+ * 世界尺寸。落盘时一并写下去，将来换尺寸靠它判断。
+ *
+ * **16:9，不是 16:10**：这块板最常见的形态是"最大化"，而桌面显示器绝大多数是
+ * 16:9 —— 那样 `sx === sy`，贴满窗口和不变形同时成立。换成 16:10 就等于在
+ * 最常见的那块屏上主动压 10%。
+ */
+export const BOARD_WORLD = { w: 1600, h: 900 } as const;
 
 /** 一条形状的描边。文字只有 `color` 和 `size`，没有 `width` */
 export interface Stroke {
@@ -244,32 +256,55 @@ function clampNumber(value: number, lo: number, hi: number): number {
 }
 
 /**
- * 窗口 → 世界 的变换：等比缩放 + 居中。
+ * 视口变换：**按轴拉伸，填满窗口**。
  *
- * `scale` 只取决于窗口和世界的比例，所以窗口变了画不变形，只是整体变大。
+ * 没有 `dx` / `dy` —— 板铺满窗口，不需要居中。`sx === sy` 只在窗口比例正好是
+ * 16:10 时成立；其余比例下差多少，画就被压多少。
  */
-export function fitTransform(
+export interface Viewport {
+  sx: number;
+  sy: number;
+}
+
+export function fillTransform(
   view: { w: number; h: number },
   world: { w: number; h: number } = BOARD_WORLD,
-): { scale: number; dx: number; dy: number } {
-  if (view.w <= 0 || view.h <= 0) return { scale: 1, dx: 0, dy: 0 };
-  const scale = Math.min(view.w / world.w, view.h / world.h);
-  return {
-    scale,
-    dx: (view.w - world.w * scale) / 2,
-    dy: (view.h - world.h * scale) / 2,
-  };
+): Viewport {
+  // 窗口还没有尺寸（第一帧就是这个状态）：退回 1:1，别算出 NaN 铺满整个画布
+  if (view.w <= 0 || view.h <= 0) return { sx: 1, sy: 1 };
+  return { sx: view.w / world.w, sy: view.h / world.h };
 }
 
 /** 世界坐标 → 视口坐标 */
-export function toView(x: number, y: number, t: { scale: number; dx: number; dy: number }): [number, number] {
-  return [x * t.scale + t.dx, y * t.scale + t.dy];
+export function toView(x: number, y: number, t: Viewport): [number, number] {
+  return [x * t.sx, y * t.sy];
 }
 
 /** 视口坐标 → 世界坐标。**每次 pointerdown 只算一次**，之后全在世界上算 */
-export function toWorld(x: number, y: number, t: { scale: number; dx: number; dy: number }): [number, number] {
-  if (t.scale <= 0) return [0, 0];
-  return [(x - t.dx) / t.scale, (y - t.dy) / t.scale];
+export function toWorld(x: number, y: number, t: Viewport): [number, number] {
+  return [t.sx > 0 ? x / t.sx : 0, t.sy > 0 ? y / t.sy : 0];
+}
+
+/**
+ * 线宽和字号跟着缩多少。
+ *
+ * 取几何平均而不是某一个轴：按 `sx` 缩，纵向压扁时线会显胖；按 `sy` 缩，
+ * 横向拉长时线会显瘦。平均是"两边都不对，但都不明显"。
+ */
+export function inkScale(t: Viewport): number {
+  const value = Math.sqrt(Math.abs(t.sx * t.sy));
+  return value > 0 ? value : 1;
+}
+
+/**
+ * 视口里的一个圆（橡皮半径）换成世界距离。
+ *
+ * 按轴拉伸之后，视口里的圆在世界里是个椭圆。这里用几何平均把它折成一个数 ——
+ * 橡皮是"大概擦这一片"，12px 的误差比"为它写一套椭圆距离"划算。
+ */
+export function worldRadius(radius: number, t: Viewport): number {
+  const scale = inkScale(t);
+  return scale > 0 ? radius / scale : radius;
 }
 
 /**

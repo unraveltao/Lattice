@@ -40,8 +40,9 @@
         MAX_SHAPES_PER_CALL,
         MAX_TEXT_CHARS,
         MAX_TOTAL_SHAPES,
-        fitTransform,
+        fillTransform,
         hitsShape,
+        inkScale,
         parseSpec,
         shapePath,
         shapesBounds,
@@ -49,6 +50,7 @@
         summarize,
         toView,
         toWorld,
+        worldRadius,
       } from "/src/runtime/board.ts";
 
       const lines = [];
@@ -180,16 +182,25 @@
         ok(!hitsShape(shapes[0], 400, 95, 2, measure), "命中：文字右边很远不算中");
       }
 
-      // ---- 10. 视口变换：等比、居中、能来回 ----
+      // ---- 10. 视口变换：填满窗口，16:9 上不二选一 ----
       {
-        const t = fitTransform({ w: 960, h: 680 });
-        eq([t.scale, t.dx, t.dy], [0.6, 0, 40], "变换：960×680 的窗口 -> 0.6 倍，上下各留 40");
+        // 960×540 是 16:9，和世界同比例 —— 贴满和不变形同时成立
+        const t = fillTransform({ w: 960, h: 540 });
+        eq([t.sx, t.sy], [0.6, 0.6], "变换：16:9 的窗口上两个轴一样（圆就是圆，且没有留白）");
         const back = toWorld(...toView(300, 200, t), t);
         eq([Math.round(back[0]), Math.round(back[1])], [300, 200], "变换：视口 <-> 世界 来回一趟不丢");
       }
       {
-        const t = fitTransform({ w: 0, h: 0 });
-        eq([t.scale, t.dx, t.dy], [1, 0, 0], "变换：窗口还没有尺寸时不炸（第一帧就是这个状态）");
+        // 16:10 的笔记本：横向不缩、纵向拉长，这就是"贴满"的代价
+        const t = fillTransform({ w: 1600, h: 1000 });
+        eq([t.sx, Math.round(t.sy * 1000) / 1000], [1, 1.111], "变换：16:10 的窗口纵向被拉长一成");
+        eq(Math.round(inkScale(t) * 1000) / 1000, 1.054, "变换：线宽按几何平均缩，两个轴都不偏袒");
+        eq(Math.round(worldRadius(12, t) * 10) / 10, 11.4, "变换：橡皮半径折回世界距离");
+      }
+      {
+        const t = fillTransform({ w: 0, h: 0 });
+        eq([t.sx, t.sy], [1, 1], "变换：窗口还没有尺寸时不炸（第一帧就是这个状态）");
+        eq(inkScale({ sx: 0, sy: 0 }), 1, "变换：零尺寸时线宽退回 1，不是 0");
       }
 
       // ---- 11. 包围盒与摘要 ----
