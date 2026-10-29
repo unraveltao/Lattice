@@ -8,7 +8,7 @@
 
 | 你要做的事 | 去哪 |
 | --- | --- |
-| 改平台代码 | [`AGENTS.md`](./AGENTS.md)（先读第 4 节那二十条不变量） |
+| 改平台代码 | [`AGENTS.md`](./AGENTS.md)（先读第 4 节的不变量；按你要动的挑） |
 | 写一个组件 | [`docs/WIDGET_SPEC.md`](./docs/WIDGET_SPEC.md) |
 | 某个词到底指什么 | [`GLOSSARY.md`](./GLOSSARY.md) |
 | 新内容该写成哪份文档 | [`docs/README.md`](./docs/README.md) 第三节 |
@@ -19,7 +19,7 @@
 
 - **平台是 Windows-only。** 整个窗口层是 Win32 的，macOS / Linux 上只能跑前端那一半（画布、组件沙箱、桥、权限），桌面那一层跑不起来。
 - **Node 22**（CI 用的就是这个）。`npm install` 之后 `npm run dev` 就有界面，不需要 Rust；`npm run tauri:dev` 才要工具链，那条路的坑写在 [`docs/reference/build.md`](./docs/reference/build.md)。
-- 先读 [`AGENTS.md`](./AGENTS.md) 第 4 节。那二十条不是风格偏好，每条背后都有一段"违反之后坏了什么"。
+- 先读 [`AGENTS.md`](./AGENTS.md) 第 4 节。那些不变量不是风格偏好，每条背后都有一段"违反之后坏了什么"。**按你要动的挑，不用全读** —— 开头那张表告诉你哪一行对应哪几条。
 
 ## 二、交付之前：按一个陌生人的顺序走一遍
 

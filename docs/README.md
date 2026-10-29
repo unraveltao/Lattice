@@ -19,7 +19,7 @@
 | **现在** | 我卡住了 / 这算不算 bug | [`FAQ.md`](./FAQ.md) | 用这个应用的人，**先查这里再开 issue** |
 | **现在** | 组件作者必须遵守什么 | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 写组件的人 |
 | **现在** | 改平台代码不许碰什么 | [`../AGENTS.md`](../AGENTS.md) | 改平台的人，人或 agent |
-| **现在** | 查一下就好：agent 接入 / 签名 / 素材 / 邻仓 / 构建发版 | `AGENT_ACCESS.md`、`CODE_SIGNING.md`、`PET_REFERENCE.md`、`VELA-REUSE.md`、[`reference/build.md`](./reference/build.md) | 碰到那一块的时候 |
+| **现在** | 查一下就好：文件在哪 / agent 接入 / 签名 / 素材 / 邻仓 / 构建发版 | [`reference/structure.md`](./reference/structure.md)、`AGENT_ACCESS.md`、`CODE_SIGNING.md`、`PET_REFERENCE.md`、`VELA-REUSE.md`、[`reference/build.md`](./reference/build.md) | 碰到那一块的时候 |
 | **未来** | 下一版做什么、还没做的事怎么想 | [`ROADMAP.md`](./ROADMAP.md) 待办 + [`design/`](./design/)（`draft`） | 要开一件新事的人 |
 
 「现在」这一层分三块：`GLOSSARY` 是**前提**（词先定，别的才谈得上），`WIDGET_SPEC` / `AGENTS` 是**契约**（不遵守就出错），最后一条是**参考**（查一下，不构成约束）。契约只有两份，别再加第三份。
@@ -69,7 +69,8 @@
 | **装上之后某个地方不对劲** | [`FAQ.md`](./FAQ.md)（按"卡在哪一步"分组，搜症状） | 1 分钟 |
 | 写一个组件（从零跑起来） | [`../README.md`](../README.md#write-a-widget) 的 *Write a widget* + [`../examples/counter`](../examples/counter) | 30 分钟 |
 | 查组件的契约（方法表 / 配置字段 / 清单规则） | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 按需 |
-| 改平台代码 | [`../AGENTS.md`](../AGENTS.md)（先读第 4 节二十条不变量） | 20 分钟 |
+| 改平台代码 | [`../AGENTS.md`](../AGENTS.md)（先读第 4 节的不变量；按你要动的挑，别通读） | 20 分钟 |
+| **找某个文件 / 某个目录是干什么的** | [`reference/structure.md`](./reference/structure.md)（`AGENTS.md` 第 3 节只留五条） | 1 分钟 |
 | 加一个能力（桥方法 / 权限 / 窗口行为） | [`AGENTS.md` 第 7 节"常见改动的配方"](../AGENTS.md) + `WIDGET_SPEC` 对应章节 | 按需 |
 | 想知道某个奇怪设计为什么是这样 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的十个决定」 | 按需 |
 | **手上有个说不通的症状** | [`PITFALLS.md`](./PITFALLS.md)（`Ctrl+F` 搜现象，别搜原因） | 1 分钟 |
