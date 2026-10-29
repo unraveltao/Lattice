@@ -169,7 +169,7 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖进窗口
 | 官方组件 | 24 |
 | 权限 | 15 |
 | Tauri 命令 | 117 |
-| 浏览器断言 | 80 页 4 106 条 |
+| 浏览器断言 | 81 页 4 154 条 |
 | Rust 单测 | 504 |
 | 记下来的坑 | 128 |
 
@@ -179,7 +179,7 @@ npm run pack:widget -- demo.mine      # 目录 → .lattice，直接拖进窗口
 
 | 部分 | 行数 |
 | --- | --- |
-| TypeScript | 28 426 行 |
+| TypeScript | 28 910 行 |
 | CSS | 7 378 行 |
 | Rust | 30 635 行 |
 | SDK | 961 行 |

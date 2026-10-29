@@ -169,7 +169,7 @@ The newest milestone is v0.13: the assistant gets its own window on the desktop.
 | Official widgets | 24 |
 | Permissions | 15 |
 | Tauri commands | 117 |
-| Browser assertions | 4 106 over 80 pages |
+| Browser assertions | 4 154 over 81 pages |
 | Rust tests | 504 |
 | Documented pitfalls | 128 |
 
@@ -179,7 +179,7 @@ These are measured: the browser assertions start a real dev server and a real Ch
 
 | Area | Lines |
 | --- | --- |
-| TypeScript | 28 426 lines |
+| TypeScript | 28 910 lines |
 | CSS | 7 378 lines |
 | Rust | 30 635 lines |
 | SDK | 961 lines |
