@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>board test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 画板的文本语法与渲染几何（runtime/board.ts，`0040`）。
+       *
+       * 这一页钉的是"agent 说一句话，板上出现的东西是不是它说的那个"。三件事
+       * 一旦松动，症状都不在本地：
+       *
+       *   1. **一行坏了整份不算**。跳过坏行继续，模型会以为自己画了五个、
+       *      用户只看到三个，而没人知道少了哪两个。
+       *   2. **坐标一定落在世界框里**。漏夹一次，形状就画在纸外面 ——
+       *      用户看到的是"它什么都没画"。
+       *   3. **path 是确定的**。同输入两次必须逐字相同，否则导出的 SVG
+       *      每次 diff 一大片，"这一版改了什么"就看不出来了。
+       */
+      import {
+        BOARD_WORLD,
+        MAX_PEN_POINTS,
+        MAX_SHAPES_PER_CALL,
+        MAX_TEXT_CHARS,
+        MAX_TOTAL_SHAPES,
+        fitTransform,
+        hitsShape,
+        parseSpec,
+        shapePath,
+        shapesBounds,
+        smoothPath,
+        summarize,
+        toView,
+        toWorld,
+      } from "/src/runtime/board.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(JSON.stringify(actual) === JSON.stringify(expected), `${text}（得到 ${JSON.stringify(actual)}）`);
+      const ok = (value, text) => log(Boolean(value), text);
+
+      // ---- 1. 六种形状 ----
+      {
+        const { shapes, errors } = parseSpec("pen 10,10 20,15 30,12");
+        eq(errors.length, 0, "pen：没有报错");
+        eq(shapes[0].kind, "pen", "pen：认出来了");
+        eq(shapes[0].points, [10, 10, 20, 15, 30, 12], "pen：点按顺序摊平成一维");
+      }
+      {
+        const { shapes } = parseSpec("arrow 100,100 400,300");
+        eq([shapes[0].x1, shapes[0].y1, shapes[0].x2, shapes[0].y2], [100, 100, 400, 300], "arrow：两个端点");
+      }
+      {
+        // 从右下往左上画是常事，两个角点谁大谁小都要能接
+        const { shapes } = parseSpec("rect 200,120 40,40");
+        eq([shapes[0].x, shapes[0].y, shapes[0].w, shapes[0].h], [40, 40, 160, 80], "rect：反着给的角点被摆正");
+      }
+      {
+        const { shapes } = parseSpec("ellipse 300,200 -60,-40");
+        eq([shapes[0].cx, shapes[0].cy, shapes[0].rx, shapes[0].ry], [300, 200, 60, 40], "ellipse：负半径取绝对值");
+      }
+      {
+        const { shapes } = parseSpec("text 60,90 hello world");
+        eq(shapes[0].text, "hello world", "text：整行剩下的都算正文");
+        eq(shapes[0].size, 18, "text：没给字号就是默认字号");
+      }
+
+      // ---- 2. 行尾修饰：颜色和线宽 ----
+      {
+        const { shapes } = parseSpec("line 0,0 100,100 w=6 #f00");
+        eq([shapes[0].width, shapes[0].color], [6, "#f00"], "修饰符：w= 和 #hex 可以同时出现");
+      }
+      {
+        const { shapes } = parseSpec("text 60,90 issue #42");
+        eq(shapes[0].text, "issue #42", "修饰符：两位的 #42 不是颜色，留在正文里");
+      }
+      {
+        const { shapes } = parseSpec("pen 1,1 2,2 w=99");
+        eq(shapes[0].width, 12, "修饰符：线宽被夹到 1–12");
+      }
+
+      // ---- 3. 空行与注释 ----
+      {
+        const { shapes, errors } = parseSpec("\n# 这是一行注释\n\nrect 0,0 10,10\n");
+        eq(errors.length, 0, "注释与空行：不报错");
+        eq(shapes.length, 1, "注释与空行：只剩一条形状");
+      }
+
+      // ---- 4. 坏行：整份不算，而且指出第几行 ----
+      {
+        const { shapes, errors } = parseSpec("rect 0,0 10,10\nblob 1,2\nrect 0,0 20,20");
+        eq(shapes.length, 0, "坏行：一条形状都不给（不是给前两条）");
+        eq(errors.length, 1, "坏行：只报一条");
+        eq(errors[0].line, 2, "坏行：行号是 2");
+        ok(/unknown shape/.test(errors[0].reason), "坏行：说的是不认识的形状名");
+      }
+      {
+        const { shapes, errors } = parseSpec("line 0,0");
+        eq([shapes.length, errors.length], [0, 1], "坏行：line 少一个点 -> 整份退回");
+      }
+      {
+        const { errors } = parseSpec(`text 0,0 ${"字".repeat(MAX_TEXT_CHARS + 1)}`);
+        ok(errors[0].reason.includes(String(MAX_TEXT_CHARS)), "上限：文字超长，报错里带上限数字");
+      }
+      {
+        const points = Array.from({ length: MAX_PEN_POINTS + 1 }, () => "0,0").join(" ");
+        const { errors } = parseSpec(`pen ${points}`);
+        ok(errors[0].reason.includes("pen"), "上限：一条 pen 点数超了");
+      }
+
+      // ---- 5. 两个数量上限 ----
+      {
+        const many = Array.from({ length: MAX_SHAPES_PER_CALL + 1 }, (_, i) => `rect ${i},0 ${i + 1},1`).join("\n");
+        const { shapes, errors } = parseSpec(many);
+        eq(shapes.length, 0, "上限：一次调用超过 200 条 -> 整份退回");
+        eq(errors.length, 1, "上限：只报一条，不是每条都报");
+      }
+      {
+        const { errors } = parseSpec("rect 0,0 10,10", { existing: MAX_TOTAL_SHAPES });
+        eq(errors[0].line, 0, "上限：板上装满了，报的是总量（行号 0，不指向某一行的错）");
+      }
+
+      // ---- 6. 坐标夹取 ----
+      {
+        const { shapes } = parseSpec("line -100,-100 5000,5000");
+        eq([shapes[0].x1, shapes[0].y1, shapes[0].x2, shapes[0].y2], [0, 0, BOARD_WORLD.w, BOARD_WORLD.h], "夹取：出界的点落到纸边上");
+      }
+
+      // ---- 7. 平滑：端点一个像素都不动，而且确定 ----
+      {
+        const path = smoothPath([0, 0, 10, 10, 20, 0]);
+        ok(path.startsWith("M 0 0"), "平滑：起点没被挪");
+        ok(path.endsWith("L 20 0"), "平滑：终点没被挪");
+        eq(path, smoothPath([0, 0, 10, 10, 20, 0]), "平滑：同输入两次逐字相同");
+      }
+      {
+        eq(smoothPath([5, 5, 15, 5]), "M 5 5 L 15 5", "平滑：只有两个点时就是一条直线");
+        eq(smoothPath([5, 5]), "M 5 5", "平滑：一个点也能出 path（不会炸）");
+      }
+
+      // ---- 8. path 的形状 ----
+      {
+        const { shapes } = parseSpec("rect 40,40 240,160");
+        eq(shapePath(shapes[0]), "M 40 40 h 200 v 120 h -200 Z", "path：矩形是一圈闭合");
+      }
+      {
+        const { shapes } = parseSpec("text 0,0 hi");
+        eq(shapePath(shapes[0]), "", "path：文字没有 path（由调用方画 <text>）");
+      }
+
+      // ---- 9. 命中：按"到线的距离"，不按包围盒 ----
+      {
+        const { shapes } = parseSpec("line 0,0 100,100");
+        ok(hitsShape(shapes[0], 50, 52, 2), "命中：贴着斜线的点算中");
+        ok(!hitsShape(shapes[0], 10, 90, 2), "命中：包围盒的空白角落不算中（这正是不能用包围盒的理由）");
+        ok(!hitsShape(shapes[0], 50, 70, 2), "命中：离线 20px 不算中");
+      }
+      {
+        const { shapes } = parseSpec("text 100,100 hello");
+        const measure = (text, size) => text.length * size * 0.5;
+        ok(hitsShape(shapes[0], 120, 95, 2, measure), "命中：文字用注入的 measure 算宽度");
+        ok(!hitsShape(shapes[0], 400, 95, 2, measure), "命中：文字右边很远不算中");
+      }
+
+      // ---- 10. 视口变换：等比、居中、能来回 ----
+      {
+        const t = fitTransform({ w: 960, h: 680 });
+        eq([t.scale, t.dx, t.dy], [0.6, 0, 40], "变换：960×680 的窗口 -> 0.6 倍，上下各留 40");
+        const back = toWorld(...toView(300, 200, t), t);
+        eq([Math.round(back[0]), Math.round(back[1])], [300, 200], "变换：视口 <-> 世界 来回一趟不丢");
+      }
+      {
+        const t = fitTransform({ w: 0, h: 0 });
+        eq([t.scale, t.dx, t.dy], [1, 0, 0], "变换：窗口还没有尺寸时不炸（第一帧就是这个状态）");
+      }
+
+      // ---- 11. 包围盒与摘要 ----
+      {
+        eq(shapesBounds([]), null, "包围盒：空板是 null，不是 0×0 的框");
+        const { shapes } = parseSpec("rect 10,20 110,120");
+        eq(shapesBounds(shapes), { x: 10, y: 20, w: 100, h: 100 }, "包围盒：矩形");
+      }
+      {
+        const { shapes } = parseSpec("pen 0,0 10,10\ntext 0,0 hello");
+        eq(summarize(shapes), "2 shapes (1 pen, 1 text): hello", "摘要：数量 + 正文");
+      }
+      {
+        const { shapes } = parseSpec(`text 0,0 ${"字".repeat(MAX_TEXT_CHARS)}`);
+        eq(summarize(shapes, 20), "1 shapes (1 text)", "摘要：超过上限只回计数，不截半句");
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>
