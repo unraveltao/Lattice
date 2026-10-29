@@ -37,7 +37,7 @@ whenToUse: 用户丢来一句范围不明的话（"搞一下""优化优化""这�
 | 这一步该按什么顺序 | `.agents/skills/`（`invariants` / `verify` / `new-widget`） |
 | 这个词指什么 | `GLOSSARY.md` |
 | 以前踩过吗 | `docs/PITFALLS.md`（搜症状） |
-| 之前怎么决定的 | `docs/ROADMAP.md`「被推翻的九个决定」、`docs/design/` |
+| 之前怎么决定的 | `docs/ROADMAP.md`「被推翻的十个决定」、`docs/design/` |
 
 查完还剩的真歧义，一次问 **1–3 个**，每个都带上**我的默认答案 + 理由**："我打算按 A 做，因为 B；除非你要 C。" —— 别问"你想怎么办"。
 

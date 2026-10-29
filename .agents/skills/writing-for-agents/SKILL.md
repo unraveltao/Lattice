@@ -38,7 +38,7 @@ whenToUse: 要新增或改写 docs/ 下任何一份、AGENTS.md 的一节、GLOS
 | --- | --- |
 | 约束、不变量、已知缺口 | `AGENTS.md` |
 | 归属、"该放哪"、文风 | `docs/README.md` |
-| 某个决定当初怎么选、被什么撞翻 | `docs/ROADMAP.md`「被推翻的九个决定」 |
+| 某个决定当初怎么选、被什么撞翻 | `docs/ROADMAP.md`「被推翻的十个决定」 |
 | 症状 | `docs/PITFALLS.md`（按症状分组，搜现象别搜原因） |
 | 词的意思 | `GLOSSARY.md` |
 

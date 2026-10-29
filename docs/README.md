@@ -11,7 +11,7 @@
 | 层 | 它回答 | 文档 | 谁读 |
 | --- | --- | --- | --- |
 | **过去** | 为什么长成这样（分层、沙箱、窗口、数据） | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | 想改一个"看着奇怪"的设计之前 |
-| **过去** | 哪些决定被现实撞翻过 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的九个决定」 | 同上，先看这里再动手 |
+| **过去** | 哪些决定被现实撞翻过 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的十个决定」 | 同上，先看这里再动手 |
 | **过去** | 已定案的推理（`accepted` / `superseded`） | [`design/`](./design/) | 想知道当时否掉了什么 |
 | **过去** | 每个版本当时怎么做的、验到什么程度 | [`reference/history.md`](./reference/history.md) | 想知道某段代码当初是怎么撞出来的 |
 | **过去** | 撞到过什么、怎么绕开的（**按症状**分组） | [`PITFALLS.md`](./PITFALLS.md) | 见到一个说不通的症状时，先 `Ctrl+F` 这里 |
@@ -71,7 +71,7 @@
 | 查组件的契约（方法表 / 配置字段 / 清单规则） | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 按需 |
 | 改平台代码 | [`../AGENTS.md`](../AGENTS.md)（先读第 4 节二十条不变量） | 20 分钟 |
 | 加一个能力（桥方法 / 权限 / 窗口行为） | [`AGENTS.md` 第 7 节"常见改动的配方"](../AGENTS.md) + `WIDGET_SPEC` 对应章节 | 按需 |
-| 想知道某个奇怪设计为什么是这样 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的九个决定」 | 按需 |
+| 想知道某个奇怪设计为什么是这样 | [`ROADMAP.md`](./ROADMAP.md)「被推翻的十个决定」 | 按需 |
 | **手上有个说不通的症状** | [`PITFALLS.md`](./PITFALLS.md)（`Ctrl+F` 搜现象，别搜原因） | 1 分钟 |
 | 要编译 / 打包 / 发版 | [`reference/build.md`](./reference/build.md) | 15 分钟 |
 | 要动 agent 接入 | [`AGENT_ACCESS.md`](./AGENT_ACCESS.md) | 20 分钟 |
