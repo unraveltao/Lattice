@@ -16,6 +16,7 @@
     { "path": "docs/PET_REFERENCE.md", "layers": ["now"] },
     { "path": "docs/VELA-REUSE.md", "layers": ["now"] },
     { "path": "docs/reference/build.md", "layers": ["now"] },
+    { "path": "docs/reference/structure.md", "layers": ["now"] },
     { "path": "docs/design/README.md", "layers": ["now"] },
     { "path": "design/logo/README.md", "layers": ["now"] },
     { "path": "examples/counter/README.md", "layers": ["now"] },
