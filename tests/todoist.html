@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>todoist / core + card</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        width: 280px;
+        height: 240px;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script src="/widgets/lattice.todoist/todoist-core.js"></script>
+    <script type="module">
+      /*
+       * 这页盯的是 LAT-0042 那几条"写错了不会报错、只会静静说错话"的地方。
+       *
+       * 上半页测纯逻辑（todoist-core.js 真身），下半页把组件整个挂进一个假宿主：
+       * secret / network / storage 全部打桩，于是 401、限流、截断、分页这些
+       * 真机不好造的状态都能钉住。
+       *
+       * 最要紧的三条：
+       *   1. token 一次都不许出现在 storage 里（那是明文 JSON）
+       *   2. 失败时列表不许清空（"连不上"顺手把上次的内容也弄丢最糟）
+       *   3. 没画完的条数要写 "+"，不能把 40 条说成"一共 40 条"
+       */
+      const C = window.__latticeTodoistCore;
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          actual === expected,
+          text + " = " + JSON.stringify(actual) + (actual === expected ? "" : " ≠ " + JSON.stringify(expected)),
+        );
+      const ok = (value, text) => log(Boolean(value), text);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      // =========================================================================
+      // 一、纯逻辑
+      // =========================================================================
+
+      // ---- 优先级是反的：Todoist 4 最高 ----
+      eq(C.priorityKey(4), "high", "priority 4 → high");
+      eq(C.priorityKey(3), "med", "priority 3 → med");
+      eq(C.priorityKey(2), "low", "priority 2 → low");
+      eq(C.priorityKey(1), null, "priority 1（p4）→ 没设");
+      eq(C.priorityKey(undefined), null, "priority 缺失 → 没设");
+      eq(C.priorityKey(9), null, "priority 认不出来 → 没设（不猜）");
+
+      // ---- 到期日只留日期 ----
+      eq(C.dueOf({ date: "2026-10-30T09:00:00" }), "2026-10-30", "带时间的到期日切到天");
+      eq(C.dueOf({ date: "nope" }), null, "坏日期 → null");
+      eq(C.dueOf(null), null, "没有 due → null");
+      ok(C.isOverdue("2026-10-28", "2026-10-29"), "昨天到期算过期");
+      ok(!C.isOverdue("2026-10-29", "2026-10-29"), "今天到期不算过期");
+      eq(C.dueLabel("2026-10-30", "zh"), "10月30日", "中文日期");
+      eq(C.dueLabel("2026-10-30", "en"), "Oct 30", "英文日期");
+      eq(C.todayOf(new Date(2026, 9, 29, 23, 30).getTime()), "2026-10-29", "todayOf 用本地日期（跨午夜不漂）");
+      eq(C.clockOf(new Date(2026, 9, 29, 8, 5).getTime()), "08:05", "clockOf 补零");
+
+      // ---- 响应两种形状 ----
+      eq(C.parsePage(JSON.stringify([{ id: 1, content: "a" }])).shape, "array", "裸数组是认出来了");
+      const paged = C.parsePage(JSON.stringify({ results: [{ id: 1, content: "a" }], next_cursor: "abc" }));
+      eq(paged.shape, "page", "results + next_cursor 是认出来了");
+      eq(paged.nextCursor, "abc", "cursor 带出来了");
+      eq(C.parsePage("{oops").shape, "bad", "坏 JSON → bad");
+      eq(C.parsePage(JSON.stringify({ hello: 1 })).shape, "bad", "不认识的形状 → bad");
+      eq(C.parsePage(JSON.stringify({ results: [], next_cursor: null })).nextCursor, null, "空页的 cursor 是 null");
+
+      // ---- 状态码不是布尔 ----
+      eq(C.classify({ status: 401, ok: false }).kind, "token", "401 → token");
+      eq(C.classify({ status: 403, ok: false }).kind, "forbidden", "403 → forbidden");
+      eq(C.classify({ status: 404, ok: false }).kind, "notfound", "404 → notfound");
+      eq(C.classify({ status: 429, ok: false, headers: { "retry-after": "42" } }).retryAfter, 42, "429 读出 Retry-After");
+      eq(C.classify({ status: 503, ok: false }).kind, "server", "5xx → server");
+      eq(C.classify({ status: 302, ok: false }).kind, "redirect", "3xx 不跟（桥不跟重定向）");
+      eq(C.classify({ status: 200, ok: true, truncated: true }).kind, "truncated", "200 但被截断 → truncated");
+      // 先判状态码再判截断：一个错 token 的响应被截断，说的仍然是 token 不对
+      eq(C.classify({ status: 401, ok: false, truncated: true }).kind, "token", "被截断的 401 仍然是 token");
+      eq(C.retryAfterOf({ "retry-after": "9999" }), 600, "Retry-After 夹到 600 秒");
+      eq(C.retryAfterOf({}), 0, "没有 Retry-After 就是 0");
+      eq(C.classifyError({ code: "permission_denied" }).kind, "permission", "permission_denied → permission");
+      eq(C.classifyError({ code: "internal", message: "network.fetch is only available in the desktop app" }).kind, "nodesktop", "不在桌面应用里 → nodesktop");
+      eq(C.classifyError({ code: "internal", message: "the network request failed: timeout" }).kind, "offline", "其余 internal → offline");
+
+      // ---- 缓存认不出来就当没有 ----
+      ok(C.normalizeCache({ v: 1, at: 1000, tasks: [] }) !== null, "v1 缓存认");
+      eq(C.normalizeCache({ v: 2, at: 1000, tasks: [] }), null, "版本对不上 → 当没有");
+      eq(C.normalizeCache({ v: 1, tasks: [] }), null, "没有 at → 当没有");
+      eq(C.normalizeCache("x"), null, "不是对象 → 当没有");
+      ok(C.cacheFresh({ at: 1000 }, 1000 + 60 * 1000), "一分钟前的缓存还算新");
+      ok(!C.cacheFresh({ at: 1000 }, 1000 + C.TTL + 1), "过了 TTL 就不新");
+
+      // 缓存里存的是**归一化之后**的形状（text / "high" / "2026-10-28"），
+      // 读回来必须原样保住 —— 拿 API 的形状去解析缓存，圆点和日期会静默消失
+      {
+        const round = C.normalizeCache({
+          v: 1,
+          at: 1000,
+          tasks: [{ id: "c", text: "带优先级和日期", priority: "high", due: "2026-10-28" }],
+        });
+        eq(round.tasks[0].text, "带优先级和日期", "缓存里的正文读得回来");
+        eq(round.tasks[0].priority, "high", "缓存里的 priority 字符串不许退化成空心圈");
+        eq(round.tasks[0].due, "2026-10-28", "缓存里的日期不许丢");
+        eq(C.priorityKey("high"), "high", "priorityKey 也认自己存的字符串");
+      }
+
+      // ---- 正文处理 ----
+      eq(C.normalizeTask({ id: 1, content: "  a\n\n b  " }).text, "a b", "换行压成一个空格");
+      eq(C.normalizeTask({ id: 1, content: "   " }), null, "空标题的任务丢掉");
+      const long = C.normalizeTask({ id: 1, content: "x".repeat(400) }).text;
+      eq(long.length, C.MAX_TEXT, "超长正文截到 MAX_TEXT");
+      ok(long.slice(-1) === "…", "截断后有省略号");
+      eq(C.normalizeTasks([{ content: "a" }, null, { content: "" }, { content: "b" }]).length, 2, "坏的条目被跳过，好的留下");
+      eq(C.tasksUrl(null), "https://api.todoist.com/api/v1/tasks", "第一页地址");
+      eq(C.tasksUrl("a b"), "https://api.todoist.com/api/v1/tasks?cursor=a%20b", "cursor 要编码");
+
+      // ---- 本地草稿本：只有 text / done，认不出来就当没有 ----
+      eq(C.normalizeLocalItems([{ id: "a", text: "x", done: true }]).length, 1, "本地条目认");
+      eq(C.normalizeLocalItems([{ text: "   " }]).length, 0, "空条目丢掉");
+      eq(C.normalizeLocalItems("x").length, 0, "不是数组 → 空");
+      eq(C.normalizeLocalItems([{ text: "a", done: "1" }])[0].done, false, "done 只认 true（脏值当没做完）");
+      eq(C.addLocal([], { id: "n", text: " 新 " })[0].text, "新", "新增压掉首尾空白");
+      eq(C.addLocal([{ id: "a", text: "a", done: false }], { id: "n", text: "n" })[0].id, "n", "新的落在最上面");
+      eq(C.addLocal([], { id: "n", text: "   " }).length, 0, "空正文不加");
+      eq(C.toggleLocal([{ id: "a", text: "a", done: false }], "a")[0].done, true, "勾掉翻成 true");
+      eq(C.toggleLocal([{ id: "a", text: "a", done: true }], "a")[0].done, false, "再点翻回 false");
+      eq(C.toggleLocal([{ id: "a", text: "a", done: false }], "zz")[0].done, false, "id 对不上不动");
+      eq(C.removeLocal([{ id: "a" }, { id: "b" }], "a").length, 1, "删掉一条");
+      const many = [];
+      for (let i = 0; i < C.MAX_LOCAL + 5; i++) many.push({ id: String(i), text: "t" + i });
+      eq(C.normalizeLocalItems(many).length, C.MAX_LOCAL, "本地清单封顶 MAX_LOCAL");
+
+      // =========================================================================
+      // 二、把组件挂进假宿主
+      // =========================================================================
+
+      const response = (body, extra) =>
+        Object.assign({ status: 200, ok: true, headers: {}, body: JSON.stringify(body), truncated: false }, extra || {});
+
+      const tasks = (...items) => response(items);
+
+      function makeHost(options) {
+        return Object.assign(
+          {
+            cache: null,
+            local: null,
+            token: null,
+            secretError: null,
+            respond: () => tasks({ id: "1", content: "任务一", priority: 4 }),
+            fetches: [],
+            sets: [],
+            secretSets: [],
+            shellOpens: [],
+          },
+          options || {},
+        );
+      }
+
+      function mount(host) {
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+        frame.src = "/widgets/lattice.todoist/index.html";
+        document.body.appendChild(frame);
+
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+
+            switch (data.method) {
+              case "lang.get":
+                reply({ ok: true, result: { lang: "zh" } });
+                return;
+              case "storage.get": {
+                const key = data.params.key;
+                reply({
+                  ok: true,
+                  result: key === "cache" ? host.cache : key === "local" ? host.local : null,
+                });
+                return;
+              }
+              case "storage.set": {
+                const key = data.params.key;
+                host.sets.push({ key: key, value: data.params.value });
+                if (key === "cache") host.cache = data.params.value;
+                else if (key === "local") host.local = data.params.value;
+                reply({ ok: true, result: { ok: true } });
+                return;
+              }
+              case "shell.open":
+                host.shellOpens.push(data.params.url);
+                reply({ ok: true, result: { ok: true } });
+                return;
+              case "secret.get":
+                if (host.secretError) {
+                  reply({ ok: false, code: host.secretError.code, error: host.secretError.message });
+                  return;
+                }
+                reply({ ok: true, result: { value: host.token } });
+                return;
+              case "secret.set":
+                host.secretSets.push(data.params.value);
+                host.token = data.params.value;
+                reply({ ok: true, result: { ok: true } });
+                return;
+              case "secret.delete":
+                host.token = null;
+                reply({ ok: true, result: { ok: true } });
+                return;
+              case "schedule.every":
+                reply({ ok: true, result: { id: 1, every: data.params.every } });
+                return;
+              case "schedule.clear":
+                reply({ ok: true, result: { ok: true } });
+                return;
+              case "network.fetch": {
+                host.fetches.push(data.params);
+                let result;
+                try {
+                  result = host.respond(data.params, host);
+                } catch (error) {
+                  reply({ ok: false, code: error.code || "internal", error: error.message || String(error) });
+                  return;
+                }
+                reply({ ok: true, result: result });
+                return;
+              }
+              default:
+                reply({ ok: false, code: "unknown_method", error: "unknown " + data.method });
+            }
+          });
+        });
+
+        return { frame, host, ready };
+      }
+
+      const rows = (doc) => Array.from(doc.querySelectorAll(".tz-row"));
+      const texts = (doc) => rows(doc).map((row) => row.querySelector(".tz-text").textContent);
+      const meta = (doc) => doc.getElementById("meta").textContent;
+      const status = (doc) => doc.getElementById("status").textContent;
+      const state = (doc) => doc.getElementById("root").getAttribute("data-view");
+      const connect = async (doc, value) => {
+        doc.getElementById("tokenInput").value = value;
+        doc.getElementById("tokenForm").requestSubmit();
+        await sleep(120);
+      };
+
+      // ---- 组 1：没有 token 时不联网 ----
+      {
+        const card = mount(makeHost());
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(80);
+
+        eq(state(doc), "setup", "没有 token 时显示第一次用的界面");
+        eq(card.host.fetches.length, 0, "没有 token 时一次都没联网");
+        eq(meta(doc), "未连接", "头部写「未连接」");
+        eq(doc.getElementById("cancel").hidden, true, "没有 token 时不显示「取消」（取消了回到哪儿？）");
+
+        // 粘进去 → 存进密封库 → 立刻拉一遍
+        await connect(doc, "tok-abc");
+        eq(card.host.secretSets[0], "tok-abc", "token 交给 secret.set");
+        eq(state(doc), "remote", "存住之后回到列表");
+        eq(texts(doc).join("|"), "任务一", `列表是「${texts(doc).join("|")}」`);
+        eq(card.host.fetches[0].headers.authorization, "Bearer tok-abc", "请求头带 Bearer");
+
+        // 最要紧的一条：token 一个字都不许进 storage
+        ok(
+          !JSON.stringify(card.host.sets).includes("tok-abc"),
+          "token 没有出现在 storage.set 里（写进去就是明文落盘）",
+        );
+        eq(card.host.sets.filter((call) => call.key === "cache").length, 1, "成功之后写了一次缓存");
+        eq(card.host.cache.tasks.length, 1, "缓存里是 1 条");
+        eq(card.host.cache.v, C.CACHE_VERSION, "缓存带版本号");
+
+        card.frame.remove();
+      }
+
+      // ---- 组 2：圆点、过期、缺日期 ----
+      {
+        const host = makeHost({
+          token: "tok",
+          respond: () =>
+            tasks(
+              { id: "1", content: "红", priority: 4, due: { date: "2026-10-28" } },
+              { id: "2", content: "黄", priority: 3 },
+              { id: "3", content: "绿", priority: 2, due: { date: "2099-01-01" } },
+              { id: "4", content: "没设", priority: 1 },
+              { id: "5", content: "   ", priority: 4 },
+            ),
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(80);
+
+        eq(rows(doc).length, 4, "空标题那条不画（5 条进来，4 行）");
+        eq(
+          rows(doc).map((row) => row.getAttribute("data-p")).join("|"),
+          "high|med|low|none",
+          "优先级圆点 4→high、3→med、2→low、1→none",
+        );
+        ok(rows(doc)[0].classList.contains("is-late"), "昨天到期的那行标成过期");
+        ok(!rows(doc)[2].classList.contains("is-late"), "2099 年到期的不算过期");
+        eq(doc.querySelectorAll(".tz-due").length, 2, "只有 2 行写了日期");
+        eq(meta(doc), "4 项", "头部写 4 项");
+
+        card.frame.remove();
+      }
+
+      // ---- 组 3：缓存先画，网络回来再换 ----
+      {
+        const cached = {
+          v: C.CACHE_VERSION,
+          at: Date.now() - 60000,
+          tasks: [{ id: "c1", text: "缓存里的", priority: "high", due: null }],
+        };
+        const host = makeHost({
+          token: "tok",
+          cache: cached,
+          respond: () => tasks({ id: "n1", content: "网络里的", priority: 4 }),
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+
+        // ready 是在缓存落地之后、网络回话之前报的 —— 这一刻画的是缓存
+        eq(texts(doc).join("|"), "缓存里的", `首帧画的是缓存：「${texts(doc).join("|")}」`);
+        eq(rows(doc)[0].getAttribute("data-p"), "high", "缓存里的优先级也画出来了");
+        await sleep(120);
+        eq(texts(doc).join("|"), "网络里的", `网络回来之后换成「${texts(doc).join("|")}」`);
+        eq(host.cache.tasks[0].text, "网络里的", "新的一份写回缓存");
+
+        card.frame.remove();
+      }
+
+      // ---- 组 4：失败时列表不清空 ----
+      {
+        const cached = {
+          v: C.CACHE_VERSION,
+          at: new Date(2026, 9, 29, 10, 42).getTime(),
+          tasks: [{ id: "c1", text: "昨天的三条", priority: "high", due: null }],
+        };
+        const host = makeHost({ token: "tok", cache: cached, respond: () => ({ status: 401, ok: false, headers: {}, body: "", truncated: false }) });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(120);
+
+        eq(state(doc), "remote-error", "401 之后状态是 remote-error");
+        ok(status(doc).includes("token 失效"), `底栏说「${status(doc)}」`);
+        eq(texts(doc).join("|"), "昨天的三条", "列表没有被清空 —— 画的还是缓存");
+        ok(status(doc).includes("10:42"), "底栏带上缓存的时间");
+        eq(meta(doc), "1 项", "头部仍然说有几项");
+
+        card.frame.remove();
+      }
+
+      // ---- 组 5：限流要说等几秒 ----
+      {
+        const host = makeHost({
+          token: "tok",
+          respond: () => ({ status: 429, ok: false, headers: { "retry-after": "42" }, body: "", truncated: false }),
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(120);
+        ok(status(doc).includes("42"), `429 的底栏带秒数：「${status(doc)}」`);
+        card.frame.remove();
+      }
+      {
+        const host = makeHost({
+          token: "tok",
+          respond: () => ({ status: 429, ok: false, headers: {}, body: "", truncated: false }),
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(120);
+        ok(status(doc).includes("过一会儿"), `429 没有 Retry-After 时换个说法：「${status(doc)}」`);
+        card.frame.remove();
+      }
+
+      // ---- 组 6：截断 / 不是列表 / 桥被拒 ----
+      {
+        const host = makeHost({
+          token: "tok",
+          respond: () => ({ status: 200, ok: true, headers: {}, body: '[{"id":1,"conte', truncated: true }),
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(120);
+        ok(status(doc).includes("截断"), `被截断时说的是截断，不是「不是任务列表」：「${status(doc)}」`);
+        card.frame.remove();
+      }
+      {
+        const host = makeHost({ token: "tok", respond: () => response({ hello: "world" }) });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(120);
+        ok(status(doc).includes("不是任务列表"), `认不出的形状说「${status(doc)}」`);
+        card.frame.remove();
+      }
+      {
+        const host = makeHost({
+          token: "tok",
+          respond: () => {
+            const error = new Error("network.fetch is only available in the desktop app");
+            error.code = "internal";
+            throw error;
+          },
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(120);
+        ok(status(doc).includes("桌面应用"), `浏览器里跑时说「${status(doc)}」`);
+        card.frame.remove();
+      }
+      {
+        const host = makeHost({
+          token: "tok",
+          respond: () => {
+            const error = new Error("permission not granted: network");
+            error.code = "permission_denied";
+            throw error;
+          },
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(120);
+        ok(status(doc).includes("缺联网权限"), `撤销权限后说「${status(doc)}」`);
+        card.frame.remove();
+      }
+      {
+        const host = makeHost({
+          token: "tok",
+          respond: () => {
+            const error = new Error("the network request failed: name not resolved");
+            error.code = "internal";
+            throw error;
+          },
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(120);
+        ok(status(doc).includes("连不上"), `断网时说「${status(doc)}」`);
+        card.frame.remove();
+      }
+
+      // ---- 组 7：分页 ----
+      {
+        const host = makeHost({
+          token: "tok",
+          respond: (request) =>
+            request.url.includes("cursor=")
+              ? response({ results: [{ id: "2", content: "第二页" }], next_cursor: null })
+              : response({ results: [{ id: "1", content: "第一页" }], next_cursor: "c1" }),
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(150);
+
+        eq(host.fetches.length, 2, "跟了一跳 cursor，一共两次请求");
+        ok(host.fetches[1].url.includes("cursor=c1"), `第二跳带上了 cursor：${host.fetches[1].url}`);
+        eq(texts(doc).join("|"), "第一页|第二页", "两页合并成一个列表");
+        eq(meta(doc), "2 项", "两页合并之后是 2 项（没有加号）");
+
+        card.frame.remove();
+      }
+      {
+        // 每一页都说"还有下一页"：跟满 MAX_PAGES 就停，头部要写 "+"
+        const host = makeHost({
+          token: "tok",
+          respond: (request) => {
+            const page = host.fetches.length;
+            return response({ results: [{ id: String(page), content: "第 " + page + " 页" }], next_cursor: "c" + page });
+          },
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(250);
+
+        eq(host.fetches.length, C.MAX_PAGES, `最多跟 ${C.MAX_PAGES} 页`);
+        ok(meta(doc).includes("+"), `还有没画的条数时头部写「${meta(doc)}」`);
+
+        card.frame.remove();
+      }
+
+      // ---- 组 8：缓存读坏了当作没有 ----
+      {
+        const host = makeHost({ token: "tok", cache: { v: 99, at: Date.now(), tasks: [{ text: "不该出现" }] } });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(80);
+        ok(!texts(doc).includes("不该出现"), "版本对不上的缓存不画");
+        card.frame.remove();
+      }
+
+      // ---- 组 9：刷新 / 换 token / 取消 ----
+      {
+        const host = makeHost({ token: "tok" });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(80);
+        eq(host.fetches.length, 1, "载入时拉了一次");
+
+        doc.getElementById("refresh").click();
+        await sleep(120);
+        eq(host.fetches.length, 2, "按刷新再拉一次");
+
+        doc.getElementById("settings").click();
+        await sleep(80);
+        eq(state(doc), "setup", "齿轮回到第一次用的界面");
+        eq(doc.getElementById("tokenInput").value, "", "输入框是空的（不把旧 token 填回去）");
+        eq(doc.getElementById("cancel").hidden, false, "已经有 token 时能取消");
+
+        doc.getElementById("cancel").click();
+        await sleep(80);
+        eq(state(doc), "remote", "取消回到列表");
+        eq(host.secretSets.length, 0, "取消没有覆盖密封库里的 token");
+
+        doc.getElementById("settings").click();
+        await sleep(80);
+        await connect(doc, "tok-2");
+        eq(host.secretSets[0], "tok-2", "换 token 写进密封库");
+        eq(host.fetches[host.fetches.length - 1].headers.authorization, "Bearer tok-2", "之后的请求用新的 token");
+
+        card.frame.remove();
+      }
+
+      // ---- 组 10：密封库读不出来 ≠ 没填过 ----
+      {
+        const host = makeHost({ secretError: { code: "internal", message: "secret_get: cannot unprotect" } });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(80);
+        eq(state(doc), "setup", "读不出来也落在第一次用的界面");
+        ok(
+          doc.getElementById("setupError").textContent.includes("重新填"),
+          `提示是「${doc.getElementById("setupError").textContent}」`,
+        );
+        card.frame.remove();
+      }
+
+      // ---- 组 11：没有账号也能用（本地草稿本） ----
+      {
+        const host = makeHost();
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(80);
+
+        eq(state(doc), "setup", "没 token 也没本地条目时落在第一次用的界面");
+        eq(doc.getElementById("useLocal").hidden, false, "有一条「没有 Todoist？先用本地清单」");
+        eq(doc.getElementById("localForm").hidden, true, "还没进草稿本，输入框不出现");
+
+        doc.getElementById("useLocal").click();
+        await sleep(80);
+        eq(state(doc), "local", "点了之后进本地草稿本");
+        eq(doc.getElementById("localForm").hidden, false, "草稿本有输入框");
+        eq(card.host.fetches.length, 0, "草稿本一次都不联网");
+        eq(meta(doc), "0 条", "头部写 0 条");
+
+        doc.getElementById("localInput").value = "买牛奶";
+        doc.getElementById("localForm").requestSubmit();
+        await sleep(140);
+        eq(texts(doc).join("|"), "买牛奶", "加进去的那条画出来了");
+        const first = host.sets.filter((call) => call.key === "local").pop();
+        eq(first.value.length, 1, "落盘一条");
+        eq(first.value[0].text, "买牛奶", "落盘的是正文");
+        eq(first.value[0].done, false, "新条目是没做完");
+        ok(Boolean(first.value[0].id), "新条目带 id");
+
+        // 读屏：一排"完成、完成、完成"等于什么都没说
+        eq(
+          doc.querySelector(".tz-check").getAttribute("aria-label"),
+          "买牛奶",
+          "勾选框的标签是那一条的内容",
+        );
+        ok(
+          doc.querySelector(".tz-del").getAttribute("aria-label").includes("买牛奶"),
+          "删除按钮的标签带条目内容",
+        );
+
+        // 勾掉：留在列表里划线，不是消失（Q10 = B）
+        rows(doc)[0].click();
+        await sleep(140);
+        eq(rows(doc).length, 1, "勾掉之后那一行还在");
+        ok(rows(doc)[0].classList.contains("is-done"), "勾掉的那行带 is-done");
+        eq(host.sets.filter((call) => call.key === "local").pop().value[0].done, true, "落盘 done=true");
+
+        rows(doc)[0].click();
+        await sleep(140);
+        ok(!rows(doc)[0].classList.contains("is-done"), "再点一下放回");
+
+        doc.querySelector(".tz-del").click();
+        await sleep(140);
+        eq(rows(doc).length, 0, "× 删掉了");
+        eq(host.sets.filter((call) => call.key === "local").pop().value.length, 0, "删掉也落盘");
+
+        card.frame.remove();
+      }
+
+      // ---- 组 12：本地有东西 = 选了草稿本（不另存模式标记） ----
+      {
+        const host = makeHost({ local: [{ id: "a", text: "本地的", done: false }] });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(80);
+        eq(state(doc), "local", "没 token 但本地有条目 → 直接进草稿本");
+        eq(texts(doc).join("|"), "本地的", "条目画出来了");
+        card.frame.remove();
+      }
+
+      // ---- 组 13：连上那一刻说一次"本地还有几条" ----
+      {
+        const host = makeHost({
+          local: [{ id: "a", text: "本地的", done: false }],
+          respond: () => tasks({ id: "n1", content: "远端的", priority: 4 }),
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(80);
+
+        doc.getElementById("connect").click();
+        await sleep(80);
+        eq(state(doc), "setup", "草稿本底栏那颗云回到连接界面");
+        // 这是从草稿本进来的 setup，唯一的回路就是这一颗。曾经按"本地有条目
+        // 就别再劝"把它藏了，结果是卡片停在 setup、本地那几条再也看不见
+        eq(doc.getElementById("useLocal").hidden, false, "回得去：没有 token 时那颗按钮一直在");
+        eq(doc.getElementById("useLocal").textContent, "返回本地清单", "标签是「返回」，不是劝你换一个");
+
+        doc.getElementById("useLocal").click();
+        await sleep(80);
+        eq(state(doc), "local", "点回去还是草稿本");
+        eq(texts(doc).join("|"), "本地的", "本地那几条一条没少");
+
+        doc.getElementById("connect").click();
+        await sleep(80);
+
+        await connect(doc, "tok-abc");
+        eq(state(doc), "remote", "连上之后进远端那一档");
+        eq(doc.getElementById("note").hidden, false, "出现一次性提示");
+        ok(
+          doc.getElementById("noteText").textContent.includes("1"),
+          `提示里写了条数：「${doc.getElementById("noteText").textContent}」`,
+        );
+        ok(
+          doc.getElementById("noteText").textContent.includes("不会同步"),
+          "提示里说清不会同步",
+        );
+        eq(texts(doc).join("|"), "远端的", "列表是远端的，不是本地那几条");
+
+        doc.getElementById("noteClose").click();
+        await sleep(60);
+        eq(doc.getElementById("note").hidden, true, "「知道了」之后收起来");
+
+        card.frame.remove();
+      }
+
+      // ---- 组 14：断开之后草稿本回来（数据还在） ----
+      {
+        const host = makeHost({
+          local: [{ id: "a", text: "本地的", done: false }],
+          token: "tok",
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(120);
+        eq(state(doc), "remote", "有 token 时进远端那一档");
+
+        doc.getElementById("settings").click();
+        await sleep(80);
+        eq(doc.getElementById("disconnect").hidden, false, "有 token 时能断开");
+        doc.getElementById("disconnect").click();
+        await sleep(120);
+
+        eq(state(doc), "local", "断开之后回到草稿本");
+        eq(texts(doc).join("|"), "本地的", "本地那几条还在");
+        ok(host.secretSets.length === 0, "断开没有顺手把本地数据也清了");
+
+        card.frame.remove();
+      }
+      {
+        const host = makeHost({ token: "tok" });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(120);
+
+        doc.getElementById("settings").click();
+        await sleep(80);
+        doc.getElementById("disconnect").click();
+        await sleep(120);
+        eq(state(doc), "setup", "本地是空的 → 断开之后回到第一次用的界面");
+
+        card.frame.remove();
+      }
+
+      // ---- 组 15：那颗按钮真的打开 Todoist 的设置页 ----
+      {
+        const card = mount(makeHost());
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(80);
+        doc.getElementById("openSettings").click();
+        await sleep(80);
+        eq(
+          card.host.shellOpens[0],
+          "https://app.todoist.com/app/settings/integrations/developer",
+          "打开的是开发者那一页",
+        );
+        card.frame.remove();
+      }
+
+      // ---- 组 16：断开时那条提示一起收起来（它讲的是"你现在看不见它们"） ----
+      {
+        const host = makeHost({
+          local: [{ id: "a", text: "本地的", done: false }],
+          respond: () => tasks({ id: "n1", content: "远端的", priority: 4 }),
+        });
+        const card = mount(host);
+        await card.ready;
+        const doc = card.frame.contentDocument;
+        await sleep(80);
+
+        await connect(doc, "tok-abc");
+        eq(doc.getElementById("note").hidden, false, "连上时提示还在（这一组故意不点「知道了」）");
+
+        doc.getElementById("settings").click();
+        await sleep(60);
+        doc.getElementById("disconnect").click();
+        await sleep(120);
+
+        eq(state(doc), "local", "断开回到草稿本");
+        eq(doc.getElementById("note").hidden, true, "断开之后提示也收起来了 —— 已经看得见了");
+
+        card.frame.remove();
+      }
+
+      const passed = lines.filter((line) => line.startsWith("PASS")).length;
+      document.getElementById("out").textContent =
+        lines.join("\n") + "\n\n" + passed + "/" + lines.length + " passed";
+    </script>
+  </body>
+</html>

@@ -1,17 +1,11 @@
 name: ci
 
-# 三件事分开跑，谁红看谁：
-#   frontend —— 类型 + 构建 + 六个 node:test（注入规则、SDK 副本一致性、agent CLI、
-#               三张表的守门人、winget 清单生成器、浏览器预览那条通道）+ 文档体检
-#   browser  —— tests/*.html 里的全部断言（以前靠人肉开几十个标签页）
-#   rust     —— cargo test。本机跑不了（安全策略拦 target/debug/deps 下的 exe），
-#               所以那些断言从来没有在任何人的机器上跑过，runner 是唯一的机会
+# **跑什么不在这里** —— `verify.yml` 是唯一一份命令清单，`release.yml` 也调它。
+# 这一页只回答两件事：什么时候跑，以及同一个 ref 连推两次怎么办。
 #
-# 这里**不写具体条数**。写过一次（"1060 条断言 / 33 个标签页"），而写这段的时候
-# 实际已经是 44 页 1850 条 —— 没有人会去核一个注释。要数字就看 `npm run test:browser`
-# 的输出，或者 README，那个有 `npm run check:docs` 盯着。
-#
-# 都跑在 push/PR 上，`workflow_dispatch` 留着手动触发。
+# 2026-10-31 之前这里写着三组 job 的全部命令，而 `release.yml` 只跑 typecheck。
+# 抄两份清单的结果是"发得出去"和"测过了"重新变成两件事 —— 同一提交上 release
+# 成功、ci 失败真的发生过（40882357297 对 40882358315）。
 on:
   push:
     branches: [main]
@@ -24,137 +18,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# 门禁只读仓库；写权限只在 release 那条里给。
+permissions:
+  contents: read
+
 # 这里刻意**不写** paths-ignore。文档改动看着"只是字"，但 frontend job 里有一条
 # `check:docs` 专门盯相对链接和 README 里的数字 —— 那正是文档改错时唯一会红的
 # 地方。跳过它等于把这条规矩关掉。真要省时间，省的是别的。
 jobs:
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      # build 会先跑 widgets:index 生成 public/widgets/index.json（该文件不入库）
-      - run: npm run build
-      # 两个都是 node:test，不需要 dev server，跑一遍不到一秒
-      - run: npm run test:injection
-      - run: npm run test:sdk
-      # agent CLI：起一个假端点，测请求形状和退出码。不需要应用在跑
-      - run: npm run test:agent
-      # 三张表（字号 / 圆角 / 间距）的守门人。规矩写在 styles.css 头部，
-      # 但注释拦不住人 —— 收敛完的当天下午，同一个文件里就又长回了 10.5px。
-      # test:tokens 钉规则本身（半像素、豁免、font 简写），check:tokens 钉仓库现状。
-      - run: npm run test:tokens
-      - run: npm run check:tokens
-      # winget 清单生成器的形状（哈希大小写、直链与附件名、Publisher 取哪个名字）。
-      # 它不读安装包，只需要一个假字节串 —— 真清单在 release.yml 那一侧从真 exe 上生成
-      - run: npm run test:winget
-      # 浏览器预览那条 assistant 通道（dev server 的 `/api/llm`）。起一个假 provider
-      # 在 `127.0.0.1:0` 上（端口由系统给，runner 上不撞），测请求形状、失败抬头、
-      # 以及 `assistant.json` 的往返 —— 那是同一个文件的**第二个写者**，洗掉过一次
-      # 字段（`skills`），所以这条不该只在本机跑
-      - run: npm run test:llm-proxy
-      # 文档体检：相对链接是否可达、README 的数字和代码对不对得上。
-      # 这两件事过期了不会报错，只能靠一条命令盯着
-      - run: npm run check:docs
-
-  browser:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-
-      # 测试页 import 的是 .ts/.tsx，必须有 dev server 转译。
-      # `npm run dev` 顺带生成 widgets:index / store:index，测试页用得上。
-      - name: Start the dev server
-        run: |
-          npm run dev -- --port 1420 > /tmp/vite.log 2>&1 &
-          for _ in $(seq 1 60); do
-            if curl -sf http://localhost:1420/tests/semver.html > /dev/null; then
-              echo "dev server is up"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "::error::the dev server never came up"
-          cat /tmp/vite.log
-          exit 1
-
-      # runner 上自带 Chrome；没有就报清楚，别让脚本报一句"找不到 Chrome"
-      - name: Find Chrome
-        run: |
-          CHROME_BIN=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)
-          if [ -z "$CHROME_BIN" ]; then
-            echo "::error::no Chrome on this runner"
-            exit 1
-          fi
-          echo "CHROME=$CHROME_BIN" >> "$GITHUB_ENV"
-          echo "chrome: $CHROME_BIN"
-
-      - name: Run every self-check page
-        run: |
-          # `run:` 默认是 `bash -e`：pipeline 一失败就整步退出，后面的 annotation
-          # 代码根本不会执行（上一轮就是这样，注解里一条都没出现）。先关掉 -e。
-          set +e
-          npm run test:browser -- --base http://localhost:1420 2>&1 | tee /tmp/browser.log
-          status=${PIPESTATUS[0]}
-          set -e
-
-          if [ "$status" -ne 0 ]; then
-            # 把最后十几行写成 annotation。
-            # 理由很实在：runner 上的完整日志要登录才看得到，而 annotation 走
-            # `/check-runs/<id>/annotations` 是公开可读的 —— 下次排查不用再找人贴日志。
-            # 用 tail 而不是 grep：脚本自己崩掉时，要看的正是那段堆栈。
-            tail -12 /tmp/browser.log | while IFS= read -r line; do
-              echo "::error::$line"
-            done
-            exit 1
-          fi
-
-      # 失败时把 dev server 的日志一起打出来 —— 页面渲染不出来最常见的原因在那边
-      - name: Dump the dev server log
-        if: failure()
-        run: tail -50 /tmp/vite.log || true
-
-  rust:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - run: npm ci
-      # tauri-build 要读 frontendDist（`../dist`），先把它建出来
-      - run: npm run build
-
-      - name: cargo test
-        working-directory: src-tauri
-        shell: pwsh
-        run: |
-          # 测试二进制在 target/debug/deps/，而 WebView2Loader.dll 在 target/debug/ ——
-          # 一度以为 DLL 搜不到会让进程起不来（0xc0000135），实测不需要：
-          # 97 条断言跑起来了，唯一红的是断言本身。
-          $output = cargo test --lib 2>&1
-          $code = $LASTEXITCODE
-          $output | Tee-Object -FilePath ../cargo-test.log
-
-          if ($code -ne 0) {
-            # 最后十几行才是重点（编译错误的 error、测试失败的 failures 列表）。
-            # 写成 annotation 是为了不登录也能读到，见 browser job 里那段说明。
-            Get-Content ../cargo-test.log -Tail 12 | ForEach-Object { Write-Host "::error::$_" }
-            exit 1
-          }
+  verify:
+    uses: ./.github/workflows/verify.yml

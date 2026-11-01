@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>pet render test</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0d0d10;
+        color: #e9e8e3;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 14px 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      pre {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 桌宠的几何（`src/runtime/pet/model.ts`）—— 纯函数，不需要 canvas、
+       * 不需要贴图、不需要 Tauri。
+       *
+       * 这一页钉的是**"换素材不会破"那几条**：
+       *
+       *   - `fit` 的三道夹取。第三道（整只装得下）少了的症状是"把大小调大，
+       *     她的头顶被切掉"——而那种 bug 只有把系数拧到最大才看得见。
+       *   - 轮廓是从 alpha 网格折出来的，所以"一行里两段分开的她"必须出两条矩形。
+       *     折错了的症状是点击区域连成一片，中间空的地方也能点。
+       *   - `avoid` 和 Rust 的 `pet_policy::avoid` 是同一个判据。两边算出来的
+       *     答案不一致就是 bug —— 而 Rust 那边有 7 条测试，这边也得有。
+       */
+      import {
+        avoid,
+        expressionFor,
+        FACE_BOX,
+        FACE_PART_ID,
+        FACE_Z,
+        facePart,
+        fit,
+        GROUND_INSET,
+        masterBox,
+        masterToModel,
+        MIN_VISIBLE,
+        partsFor,
+        place,
+        POSTURES,
+        runsFromMask,
+        texPath,
+        unionBox,
+      } from "/src/runtime/pet/model.ts";
+
+      const lines = [];
+      const log = (ok, text) => lines.push(`${ok ? "PASS" : "FAIL"} ${text}`);
+      const eq = (actual, expected, text) =>
+        log(JSON.stringify(actual) === JSON.stringify(expected), `${text} → ${JSON.stringify(actual)}`);
+      const near = (actual, expected, text, tolerance = 0.001) =>
+        log(Math.abs(actual - expected) <= tolerance, `${text} → ${actual}（期望 ≈${expected}）`);
+
+      // ---- 并集 ----------------------------------------------------------
+      eq(unionBox([]), [0, 0, 1, 1], "空部件表给一个 1×1，不返回 Infinity");
+      eq(
+        unionBox([
+          { box: [10, 20, 30, 40] },
+          { box: [0, 0, 10, 10] },
+          { box: [5, 50, 10, 10] },
+        ]),
+        [0, 0, 40, 60],
+        "并集覆盖所有部件",
+      );
+
+      // ---- 贴图路径 ------------------------------------------------------
+      eq(texPath({ tex: "tail" }), "tex/tail.png", "默认路径是 tex/<名字>.png");
+      eq(texPath({ tex: "cape_hood", src: "outfits/cape/hood.png" }), "outfits/cape/hood.png",
+        "服装部件用自己的 src");
+
+      // ---- 服装 ----------------------------------------------------------
+      const model = {
+        units: { S: 0.19, X0: 650, FEET: 1363, DS: 0.6, featDS: 1 },
+        parts: [{ id: "base", tex: "base", z: 1, parent: "root", grid: [2, 2], box: [0, 0, 10, 10] }],
+        outfits: [
+          { id: "plain" },
+          { id: "cape", parts: [{ id: "cape", tex: "cape", z: 1, parent: "root", grid: [2, 2], box: [0, 0, 20, 20] }] },
+        ],
+      };
+      eq(partsFor(model).map((p) => p.id), ["base"], "没有服装时用基础部件");
+      eq(partsFor(model, "cape").map((p) => p.id), ["cape"], "服装整体替换基础部件，不是叠加");
+      eq(partsFor(model, "plain").map((p) => p.id), ["base"], "没有 parts 的服装等于基础部件");
+      eq(partsFor(model, "nope").map((p) => p.id), ["base"], "认不出的服装退回基础部件，不炸");
+
+      // ---- 表情层：master 像素 → 模型坐标 --------------------------------
+      //
+      // 这套换算是 `pet-rig.js` 的 `U` / `V`。写错一位的症状不是报错，是
+      // **五官错位** —— 眼睛画到额头上，而且只在真的画出来时才看得见。
+      // 所以这里钉的是三个"锚点"：身体枢轴自己、表情框的左上角、以及宽高。
+      eq(masterToModel(model, 650, 1363), [128, 256], "枢轴点（X0, FEET）映回 pivots.body");
+      const faceOrigin = masterToModel(model, FACE_BOX[0], FACE_BOX[1]);
+      near(faceOrigin[0], 128 + (520 - 650) * 0.19, "表情框左上角的 x");
+      near(faceOrigin[1], 256 - (1363 - 578) * 0.19, "表情框左上角的 y");
+      eq(masterBox(model, FACE_BOX), [faceOrigin[0], faceOrigin[1], 390 * 0.19, 252 * 0.19],
+        "表情框的宽高各乘 S（换算对 x 和 y 都是线性的）");
+
+      // 没有 `feat` 就没有表情层 —— 部件表原样返回，不塞一个画不出东西的假部件
+      eq(facePart(model), null, "皮肤没声明 feat 时没有表情部件");
+      eq(partsFor(model).length, 1, "没有 feat 时部件数不变");
+
+      const faced = { ...model, feat: { eyes: { eyeL: {}, eyeR: {} }, sprites: {} } };
+      const fp = facePart(faced);
+      eq(fp.id, FACE_PART_ID, "有 feat 时多出一个 faceFx 部件");
+      eq(fp.z, FACE_Z, "表情层在 z=9：压过眉毛、被刘海盖住");
+      eq(fp.box, masterBox(faced, FACE_BOX), "表情部件的矩形就是 masterBox(FACE_BOX)");
+      eq(partsFor(faced).map((p) => p.id), ["base", FACE_PART_ID], "表情层追加在最后，不属于任何一套服装");
+      eq(partsFor(faced, "cape").map((p) => p.id), ["cape", FACE_PART_ID], "换服装也换不掉脸");
+
+      // ---- 姿态 → 表情 ---------------------------------------------------
+      //
+      // 下标顺序必须和 `pet_policy::POSTURES` 一致。错一位的症状是
+      // "她开心的时候一脸惊恐"，而且不会报任何错。
+      eq(POSTURES, ["idle", "working", "waiting", "done", "error", "asleep"],
+        "姿态顺序就是 Rust 那边 POSTURES 的顺序");
+      const postures = ["neutral", null, "surprised", "happy", "dizzy", "sleep"];
+      eq(expressionFor(postures, "idle"), "neutral", "声明了就照声明画");
+      eq(expressionFor(postures, "done"), "happy", "done 画开心");
+      eq(expressionFor(postures, "asleep"), "sleep", "asleep 画睡着");
+      eq(expressionFor(postures, "working"), "neutral", "没声明的姿态回落到 idle 那张");
+      eq(expressionFor(postures, "dancing"), null, "平台不认识的姿态什么都不返回，别瞎猜");
+      eq(expressionFor(["neutral", null, null, null, null, null], "error"), "neutral",
+        "只有 idle 有声明的皮肤，其他姿态都画 idle 那张");
+      eq(expressionFor([null, null, null, null, null, null], "idle"), null,
+        "一句都没声明的皮肤返回 null，让渲染器自己决定默认值");
+
+      // ---- 拟合 ----------------------------------------------------------
+      const box = [0, 0, 100, 200];
+      const layout = fit(box, 420, 340, 1);
+      near(layout.k, 1.22, "高瘦的 box 由高度定 k（(340-96)/200）");
+      near(layout.ox, 420 / 2 - 50 * layout.k, "水平居中");
+      near(layout.oy, 340 - GROUND_INSET - 200 * layout.k, "脚踩在底部留白之上");
+
+      // 第三道夹取：系数拧大之后头顶不能出界。少了它，症状是"她的头被切掉"。
+      const big = fit([0, 0, 100, 300], 420, 340, 2);
+      log(big.oy >= -0.001, `放大到 2 倍时头顶仍在画布内（oy=${big.oy.toFixed(2)}）`);
+      log(
+        big.k <= (340 - GROUND_INSET) / 300 + 0.001,
+        `放大后的 k 被"整只装得下"夹住（k=${big.k.toFixed(3)}）`,
+      );
+
+      // 小窗口：不能算出负的 k，也不能把宽高算成 0
+      const tiny = fit([0, 0, 100, 200], 120, 120, 1);
+      log(tiny.k > 0, `很小的窗口也给正的 k（${tiny.k.toFixed(3)}）`);
+
+      // ---- 落位 ----------------------------------------------------------
+      eq(place({ k: 2, ox: 10, oy: 20 }, [5, 5, 10, 10]), [20, 30, 20, 20], "画布 = o + 模型 × k");
+
+      // ---- 轮廓 ----------------------------------------------------------
+      // 3 列 × 2 行：第一行前两格有她，第二行后两格有她
+      eq(
+        runsFromMask(new Uint8Array([1, 1, 0, 0, 1, 1]), 3, 2, 6),
+        [
+          { kind: "rect", x: 0, y: 0, w: 12, h: 6 },
+          { kind: "rect", x: 6, y: 6, w: 12, h: 6 },
+        ],
+        "一行里连续的格子合成一条矩形",
+      );
+      // 中间断开必须是两条 —— 否则点击区域连成一片，空白处也能点
+      eq(
+        runsFromMask(new Uint8Array([1, 0, 1]), 3, 1, 6),
+        [
+          { kind: "rect", x: 0, y: 0, w: 6, h: 6 },
+          { kind: "rect", x: 12, y: 0, w: 6, h: 6 },
+        ],
+        "断开的一段出两条矩形",
+      );
+      eq(runsFromMask(new Uint8Array(9), 3, 3, 6), [], "全是空的就一条都不给（整窗点透）");
+      eq(
+        runsFromMask(new Uint8Array([1, 1, 1]), 3, 1, 6).length,
+        1,
+        "整行都有她时只有一条",
+      );
+      // 宽度至少 1 像素：0 宽的矩形会让 SetWindowRgn 报错
+      const thin = runsFromMask(new Uint8Array([1]), 1, 1, 0.4);
+      log(thin[0].w >= 1 && thin[0].h >= 1, `格子比 1 像素还小时仍给 1×1（${thin[0].w}×${thin[0].h}）`);
+
+      // ---- 让位（和 Rust 的 pet_policy::avoid 同一套用例）------------------
+      const WORK = [0, 0, 1920, 1040];
+      const PET = [1920 - 420 - 28, 1040 - 340 - 12, 420, 340];
+      const WINDOW = [560, 220, 800, 600];
+
+      eq(avoid(PET, WINDOW, WORK), [PET[0], PET[1]], "不重叠时不动");
+      eq(avoid(PET, [PET[0] - 800, PET[1], 800, 340], WORK), [PET[0], PET[1]], "边贴边不算重叠");
+      eq(avoid(PET, [1000, 400, 800, 600], WORK), [1000 + 800 + 12, PET[1]], "压在右下角时往右挪 12");
+      eq(avoid([200, 400, 420, 340], WINDOW, WORK), [560 - 420 - 12, 400], "在左边时往左挪");
+      eq(avoid(PET, [0, 0, 1920, 1040], WORK), [PET[0], PET[1]], "小窗铺满工作区时原地不动");
+      log(
+        !(
+          avoid(PET, [1400, 300, 520, 700], WORK)[0] < 1400 + 520 &&
+          avoid(PET, [1400, 300, 520, 700], WORK)[0] + 420 > 1400
+        ),
+        "被夹回工作区后仍然重叠的候选要作废",
+      );
+      // 让位不能把人推出屏幕
+      for (const wx of [0, 200, 700, 1200, 1500]) {
+        const [x, y] = avoid(PET, [wx, 200, 800, 600], WORK);
+        log(
+          x >= -420 + MIN_VISIBLE && x <= 1920 - MIN_VISIBLE && y >= 0 && y <= 1040 - MIN_VISIBLE,
+          `小窗在 x=${wx} 时让位结果仍在工作区内（${x}, ${y}）`,
+        );
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

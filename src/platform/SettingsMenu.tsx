@@ -52,6 +52,7 @@ import { ModelProfiles } from "./ModelProfiles";
 import { ProfilePanel } from "./ProfilePanel";
 import { openRepo, REPO, REPO_URL } from "./repo";
 import { DocsPanel } from "./DocsPanel";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
 
 /** 设置面板的九个分区。外面（首次引导）要能"打开到某一页"，所以这一类得导出去 */
 export type SettingsSection =
@@ -63,6 +64,7 @@ export type SettingsSection =
   | "widgets"
   | "dictation"
   | "assistant"
+  | "diagnostics"
   | "about"
   | "help";
 
@@ -87,6 +89,9 @@ const SECTIONS: Array<{ id: Section; label: string; icon: string }> = [
  * 而"这是什么 / 出问题怎么办"这两件事的位置不该随设置项的数量漂移。
  */
 const SECTIONS_FOOT: Array<{ id: Section; label: string; icon: string }> = [
+  // 诊断排在 About 上面：出问题的人先找它，想查版本的人不会介意多滑一格。
+  // 它也不改任何设置，所以归在这一组（这一组的意思是"打开看一眼"）
+  { id: "diagnostics", label: "Diagnostics", icon: ICON.pulse },
   { id: "about", label: "About", icon: ICON.info },
   { id: "help", label: "Get help", icon: ICON.help },
 ];
@@ -1331,6 +1336,8 @@ export function SettingsMenu({
                     是"左导航 + 右正文"，再嵌一层就是三层缩进。所以它是两态：
                     目录 / 阅读，退出来靠工具栏那颗返回。
                   */}
+                  {section === "diagnostics" && <DiagnosticsPanel />}
+
                   {section === "help" && <DocsPanel />}
                 </div>
               </section>

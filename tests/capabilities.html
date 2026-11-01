@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>capabilities test</title>
+    <style>
+      body {
+        margin: 0;
+        background: #0d0d10;
+        color: #e9e8e3;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 14px 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      pre {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 能力体检的读法（`src/runtime/capabilities.ts`）。
+       *
+       * Rust 那边给的是 `{ id, available, reason, detail }`，码是 `snake_case`；
+       * 翻成人话这一步在这里。所以这一页钉的是**码和句子之间那张表**：
+       *
+       *   - 每个码都得有一句话。漏一个的后果不是报错，是界面上出现一行空白的
+       *     状态说明 —— 比不报还糟，因为用户会以为"没有原因"。
+       *   - `detail` 的含义跟着 `reason` 变。同一个字段，缺命令时是命令名、
+       *     被系统拒绝时是系统那句话。拿错了就是把系统错误拼进"缺命令"里。
+       *   - 认不出来的 id 不许丢。丢了等于"新加一条能力，界面上没有它"，
+       *     而那种缺失永远没人报 bug。
+       */
+      import { setLanguage } from "/src/runtime/i18n.ts";
+      import {
+        capabilityLabel,
+        capabilityReasonText,
+        groupRows,
+        stampOf,
+        tally,
+      } from "/src/runtime/capabilities.ts";
+
+      // 断言写的是英文原文（英文就是 key）。系统语言是中文时也得说同一件事
+      setLanguage("en");
+
+      const lines = [];
+      const log = (pass, text) => lines.push(`${pass ? "PASS" : "FAIL"}  ${text}`);
+      const eq = (actual, expected, text) =>
+        log(JSON.stringify(actual) === JSON.stringify(expected), `${text} → ${JSON.stringify(actual)}`);
+
+      const row = (id, reason = null, detail = null) => ({
+        id,
+        available: reason === null,
+        reason,
+        detail,
+      });
+
+      // ---- 分块 ----------------------------------------------------------
+      const report = [
+        row("hands.files"),
+        row("hands.shell", "switched_off"),
+        row("hands.mcp", "not_configured"),
+        row("mcp.github"),
+        row("mcp.notes", "missing_command", "npx"),
+        row("platform.llm", "no_key"),
+        row("platform.audio"),
+        row("something.new"),
+      ];
+      const groups = groupRows(report);
+      eq(groups.hands.length, 3, "hands.* 进第一块");
+      eq(groups.servers.length, 2, "mcp.* 进服务器块（和组那一行分开）");
+      eq(
+        groups.platform.map((item) => item.id),
+        ["platform.llm", "platform.audio", "something.new"],
+        "platform.* 进第三块，**认不出来的 id 也不丢**，落在这一块里",
+      );
+      eq(
+        groups.hands.length + groups.servers.length + groups.platform.length,
+        report.length,
+        "三块加起来一行不少",
+      );
+
+      // ---- 名字 ----------------------------------------------------------
+      eq(capabilityLabel("hands.files"), "Files", "静态 id 有名");
+      eq(capabilityLabel("platform.secrets"), "Key store", "平台那几条也有名");
+      eq(capabilityLabel("mcp.github"), "MCP: github", "服务器那一行带着自己的名字");
+      eq(capabilityLabel("hands.something"), "hands.something", "没登记的 id 原样显示，不显示空白");
+
+      // ---- 原因：一句话都不能少 ------------------------------------------
+      /*
+       * 这张表要和 Rust 的 `capability_policy::REASONS` 一一对应（那边有一条
+       * 断言钉着它自己是封闭集合）。这里逐个走一遍，**每一个都必须给出一句
+       * 和兜底不同的话** —— 走到 default 就说明漏了。
+       */
+      const FALLBACK = capabilityReasonText(row("x", "not_a_real_reason"));
+      log(FALLBACK.length > 0, "认不出来的码也有兜底的话（空白比笼统更糟）");
+      const REASONS = [
+        ["switched_off", null],
+        ["missing_command", "npx"],
+        ["not_configured", null],
+        ["no_key", null],
+        ["no_device", null],
+        ["bad_config", "the address is empty"],
+        ["blocked", "BitBlt could not copy the screen"],
+        ["unreadable", "the sealed store could not be opened"],
+      ];
+      for (const [reason, detail] of REASONS) {
+        const text = capabilityReasonText(row("x", reason, detail));
+        log(typeof text === "string" && text.length > 0, `${reason} 有一句话`);
+        log(text !== FALLBACK, `${reason} 不是靠兜底那句话混过去的`);
+        log(!/undefined|null/.test(text), `${reason} 的句子里没有漏出 undefined`);
+      }
+
+      // ---- detail 要进句子（不能只存着不用）-------------------------------
+      for (const [reason, detail] of [
+        ["missing_command", "ffmpeg"],
+        ["bad_config", "the address is empty"],
+        ["blocked", "BitBlt could not copy the screen"],
+        ["unreadable", "the sealed store could not be opened"],
+      ]) {
+        const text = capabilityReasonText(row("x", reason, detail));
+        log(text.includes(detail), `${reason} 把具体那一截说出来了（${detail}）`);
+      }
+
+      // 模型档那两条带的是"缺哪一栏"，读法和"某个名字"不一样
+      const noBase = capabilityReasonText(row("platform.llm", "not_configured", "address"));
+      const noModel = capabilityReasonText(row("platform.llm", "not_configured", "model"));
+      log(noBase !== noModel, "缺地址和缺模型名是两句话（用户要改的不是同一处）");
+      eq(
+        capabilityReasonText(row("platform.llm", "not_configured", null)),
+        "Not set up yet",
+        "没带细节时给最笼统的那句",
+      );
+
+      // ---- 好的一行不该有"原因"-------------------------------------------
+      eq(capabilityReasonText(row("hands.files")), null, "可用时返回 null，调用方据此不画那行小字");
+      eq(capabilityReasonText(row("x", "switched_off", "pwsh")), capabilityReasonText(row("x", "switched_off")),
+        "switched_off 就算带了 detail 也只说那一句（开关才是用户要动的）");
+
+      // ---- 计数 ----------------------------------------------------------
+      eq(tally(report), { ok: 4, bad: 4 }, "几好几坏");
+      eq(tally([]), { ok: 0, bad: 0 }, "空表不炸");
+
+      // ---- 时间戳 --------------------------------------------------------
+      /*
+       * 只到分钟：这份结果本来就是"启动时探的"，秒级精度会让人以为它是实时的。
+       * 跨天要带日期 —— "最后检查 09:41" 在第二天早上读起来像刚探过。
+       */
+      const morning = new Date(2026, 9, 29, 9, 41, 30).getTime();
+      eq(stampOf(morning, morning + 60_000), "09:41", "同一天只给时分");
+      eq(stampOf(morning, new Date(2026, 9, 30, 8, 0, 0).getTime()), "2026-10-29 09:41", "跨天补上日期");
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

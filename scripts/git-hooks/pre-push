@@ -4,14 +4,23 @@
 # 为什么值得这 40 秒：CI 也会跑这几条，但 CI 是"红了才知道"，而 main 是直接推的 ——
 # 等它红的时候，坏提交已经在远端了，回滚比等 40 秒贵得多。
 #
-# 只放不依赖 dev server 的三条：
+# 只放不依赖 dev server 的四条：
 #   npm run typecheck     静态那一半
 #   npm run check:tokens  字号 / 圆角 / 间距三张表
 #   npm run check:docs    相对链接 + README 的数字对不对得上
+#   npm run check:guards  桥对账 / 命令对账 / policy 单测（见下）
 #
 # `check:tokens` 是 2026-10-27 补进来的：那天 CI 红在 `test:tokens`，而本机
 # typecheck 和 check:docs 都是绿的 —— 一个 10.5px 的字号就能这么过去。这条跑一次
 # 几十毫秒，没有任何理由留在 CI 那一侧。
+#
+# `check:guards` 是 2026-10-29 补进来的，三条都是"不报错、只是不工作"的那类：
+#   桥对账    一个权限要落六处（`PERMISSION_READY` 漏一处，权限被静默丢掉）
+#   命令对账  `invoke("x")` 拼错、或 `#[tauri::command]` 没进 `generate_handler!`
+#   policy     `*_policy.rs` 一旦引了 crate 就不能 `rustc --test` 单跑，而本机
+#             跑不了 `cargo test`，于是那些断言再也没在任何人的机器上跑过
+# 前两条各几十毫秒；第三条改过 Rust 才重编（并行约 18 秒，走缓存约 2 秒），
+# 没装 rustc 会自己跳过。
 #
 # 全量断言（test:browser）要 dev server + Chrome，留在 CI。一个推一次要三分钟的
 # 钩子，第三天就会被 --no-verify 绕过 —— 那时候它连现在这点用都没有了。
@@ -43,7 +52,7 @@ log="${TMPDIR:-/tmp}/lattice-pre-push.log"
 : > "$log"
 
 fail=0
-for task in typecheck check:tokens check:docs; do
+for task in typecheck check:tokens check:docs check:guards; do
   printf 'pre-push: npm run %s ... ' "$task" >&2
   if npm run --silent "$task" >>"$log" 2>&1; then
     echo "ok" >&2

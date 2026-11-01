@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>manifest sdk test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 清单里的 `sdk` 区间（依赖的桥协议版本）。
+       *
+       * 这一页钉的是"哪种不匹配该拦、哪种只该提示"，因为拦错的代价不对称：
+       *
+       *   - **要的比平台新**（`^0.2` 装在 0.1 上）：这是装错了。放过去的表现是
+       *     调用某个还不存在的桥方法 -> `unknown_method`，组件作者以为自己的代码
+       *     有问题，用户以为组件坏了，而真正的原因一个字都没出现过。必须拦。
+       *   - **要的比平台旧**（`^0.0` 装在 0.1 上）：严格讲 0.x 的 minor 就是破坏性
+       *     变更，所以不保证能用。但升级平台之后把桌面上已经摆着的组件变成一排
+       *     错误卡片，代价比它可能出的错还大 —— 所以只给判断，不拦。
+       *   - **区间写坏了**（`"sdk": "banana"`）：不确定就必须当成不行，和
+       *     `satisfies` 那条"解析失败一律 false"同一条规矩。
+       *
+       * 另外钉一条不变量：`SUPPORTED_SDK`（没写时填进去的默认区间）必须包含
+       * `SDK_VERSION`（这一版实现的版本）。两者分开写是为了能各改各的，但**它们
+       * 一旦互相不包含，所有没声明 `sdk` 的组件会在下一次启动时集体加载失败**。
+       */
+      import {
+        normalizeManifest,
+        checkSdk,
+        SDK_VERSION,
+        SUPPORTED_SDK,
+      } from "/src/runtime/manifest.ts";
+      import { satisfies } from "/src/runtime/semver.ts";
+
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const eq = (actual, expected, text) =>
+        log(
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `${text}（得到 ${JSON.stringify(actual)}）`,
+        );
+
+      /** 一份最小的合法清单，其余字段都靠默认值 */
+      const base = { id: "lattice.clock", version: "1.0.0" };
+      const withSdk = (sdk) => normalizeManifest({ ...base, sdk }, "dir");
+
+      /** 期望抛错；返回错误文案（没抛就是 null） */
+      const throwsOn = (sdk) => {
+        try {
+          withSdk(sdk);
+          return null;
+        } catch (error) {
+          return String(error.message ?? error);
+        }
+      };
+
+      // ---- 1. 没写就填默认值，而且默认值这一版是满足的 ----
+      eq(normalizeManifest(base, "dir").sdk, SUPPORTED_SDK, "没声明 sdk -> 填 SUPPORTED_SDK");
+      eq(throwsOn(undefined), null, "没声明 sdk -> 照常加载");
+      log(
+        satisfies(SDK_VERSION, SUPPORTED_SDK),
+        `SUPPORTED_SDK 必须包含 SDK_VERSION（SDK_VERSION=${SDK_VERSION}，SUPPORTED_SDK=${SUPPORTED_SDK}）`,
+      );
+
+      // ---- 2. 这一版能用的几种写法 ----
+      for (const range of ["^0.1", "^0.1.0", "0.1.0", "0.1.x", ">=0.1.0", "~0.1", "*"]) {
+        eq(throwsOn(range), null, `sdk "${range}" -> 能装`);
+      }
+      eq(withSdk("^0.1.0").sdk, "^0.1.0", "声明的区间原样留在清单里（不归一化）");
+
+      // ---- 3. 要的比平台新：拦住，而且文案里两个版本都要有 ----
+      for (const range of ["^0.2", ">=0.2.0", "0.2.0", "^1.0"]) {
+        const message = throwsOn(range);
+        log(message !== null, `sdk "${range}" -> 拒绝安装`);
+        log(
+          message !== null && message.includes(range) && message.includes(SDK_VERSION),
+          `sdk "${range}" 的报错里同时有要求的区间和平台版本（得到 ${JSON.stringify(message)}）`,
+        );
+      }
+
+      // ---- 4. 要的比平台旧：只提示，不拦 ----
+      const older = checkSdk("^0.0");
+      eq(older.ok, false, "checkSdk('^0.0') -> 不满足");
+      eq(older.direction, "too-old", "checkSdk('^0.0') -> 方向是 too-old");
+      eq(older.blocking, false, "checkSdk('^0.0') -> 不拦");
+      eq(throwsOn("^0.0"), null, "sdk \"^0.0\" -> 仍然加载（旧组件不该变成错误卡片）");
+
+      // ---- 5. 区间写坏：当成不行，而且方向报 too-new（不要把人引去升级） ----
+      eq(checkSdk("banana").ok, false, "checkSdk('banana') -> 不满足");
+      eq(checkSdk("banana").blocking, true, "checkSdk('banana') -> 拦");
+      log(throwsOn("banana") !== null, 'sdk "banana" -> 拒绝安装');
+
+      // ---- 6. 满足的时候 verdict 里也要有那两个版本，方便调用方直接显示 ----
+      eq(checkSdk("^0.1"), { ok: true, required: "^0.1", actual: SDK_VERSION, direction: null, blocking: false }, "checkSdk('^0.1') 的完整形状");
+
+      // ---- 输出 ----
+      const out = document.getElementById("out");
+      out.textContent = lines.join("\n");
+      out.className = lines.some((line) => line.startsWith("FAIL")) ? "bad" : "ok";
+    </script>
+  </body>
+</html>

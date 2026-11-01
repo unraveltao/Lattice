@@ -50,12 +50,16 @@ export function escapeHtml(text: string): string {
  *
  * 中文原样留着 —— GitHub 也这样，所以 `WIDGET_SPEC.md#36-把能力声明成工具…`
  * 这种仓库里已经写好的链接能对上。
+ *
+ * 下划线**保留**，因为 GitHub 保留它：`## INV-9 \`emit_to\` 是广播` 在 GitHub 上的
+ * 锚点是 `inv-9-emit_to-…`，去掉下划线就变成另一个地址，同一条链接不可能两边都对。
+ * 这条规则的家在这里 —— `scripts/check-docs.mjs` 直接 import 它，不另写一份。
  */
 export function slugify(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[`*_~]/g, "")
-    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .replace(/[`*~]/g, "")
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
     .trim()
     .replace(/\s+/g, "-");
 }
@@ -208,8 +212,15 @@ function renderTable(lines: string[], start: number): { html: string; next: numb
   }
 
   const cell = (tag: "th" | "td", text: string, index: number) => {
-    const style = align[index] ? ` style="text-align:${align[index]}"` : "";
-    return `<${tag}${style}>${inline(text)}</${tag}>`;
+    // 对齐走**类名**，不走 `style="text-align:…"`。
+    //
+    // 这一段 HTML 是 `dangerouslySetInnerHTML` 塞进主窗口的，而主窗口有一条
+    // CSP（`tauri.conf.json` 的 `app.security.csp`）。内联 **style 属性**没有
+    // nonce 可用 —— Tauri 只给 `<style>` 元素和 `<script>` 发 nonce / 哈希，
+    // 属性上的样式一律算 `'unsafe-inline'`。为了这一处对齐就把 `style-src`
+    // 放开 `'unsafe-inline'`，等于用整页的样式注入面换一张表格的居中对齐。
+    const cls = align[index] ? ` class="lattice-align-${align[index]}"` : "";
+    return `<${tag}${cls}>${inline(text)}</${tag}>`;
   };
 
   const headHtml = head.some((text) => text.trim())

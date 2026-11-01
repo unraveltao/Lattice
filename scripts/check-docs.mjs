@@ -1,25 +1,51 @@
 #!/usr/bin/env node
 /**
- * 文档体检：相对链接是否可达 + README 的数字和代码对不对得上。
+ * 文档体检：相对链接与**锚点**是否指得到东西 + 文档归属 + 应用内清单 + 代码量。
  *
- * 两件事都属于"过期了不会报错"的类型 —— 链接死了只影响读者，数字旧了只影响可信度，
- * 而两者都是靠人手维护必然漂移的东西。所以放进 CI。
+ * 这几件事都属于"过期了不会报错"的类型 —— 链接死了只影响读者，归属乱了只影响
+ * 下一个人找东西，行数旧了只影响可信度。所以放进 CI。
  *
- * 数的东西分两类，因为它们的"正确"标准不一样：
+ * 锚点那条和「获取帮助」清单那条是后加的，因为原来的"471 条全部可达"是**假绿灯**：
+ * 它只 `existsSync` 路径，把 `#fragment` 整段剥掉了。
  *
- * - **计数类**（组件、权限、命令、坑）：离散的，必须精确相等。
- * - **行数类**（TS / CSS / Rust / SDK / 组件 / 脚本）：只回答"这是个多大的项目"，
- *   每次提交都会动。要求精确相等等于让每个 PR 都去改 README，而一张没人愿意
- *   维护的表最后会被删掉 —— 所以按 1% 容差比，只在"明显旧了"的时候才红。
+ * **数字不在这里了。** 曾经这里自己算组件 / 权限 / 命令 / 坑四项，`guards/bridge.mjs`
+ * 又各算一遍、`guards/commands.mjs` 再算一遍 —— 三份正则里有一份先失配，那一处就
+ * 打印 0 并退出 0，体检全绿而数字全错。现在只有 `scripts/stats.mjs` 一份实现，
+ * 文档里每一处数字由 `npm run check:stats` 对账（含"这是历史数吗"）。
+ *
+ * 这里留下的行数是另一类：它们只回答"这是个多大的项目"，每次提交都会动，
+ * 要求精确相等等于让每个 PR 都去改 README —— 所以按 1% 容差比。
  *
  *   node scripts/check-docs.mjs            体检
- *   node scripts/check-docs.mjs --verbose  连能自动数的那几项也逐条打印
+ *   node scripts/check-docs.mjs --verbose  连能自动数的那几项也逐条打印（长行也全列）
  *
- * 退出码：全过 0，有问题 1。
+ * 退出码：全过 0，有问题 1。长行**不影响退出码**（见 `checkLineLength`）。
+ *
+ * 所有按行切分的地方都用 `/\r?\n/`：`.gitattributes` 是 `text=auto`，Windows 工作区
+ * 检出的是 CRLF，而 JS 正则里 `.` 不匹配 `\r`、无 `m` 的 `$` 只认字符串末尾 ——
+ * 按换行符裸切会让标题正则**一条都匹配不上**（这个坑真踩过：修的时候锚点检查报的是"71 条全过"）。
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+
+/**
+ * 锚点规则只有一份实现：应用内渲染标题 id 用的是 `src/runtime/markdown.ts` 的 `slugify`，
+ * 体检必须用同一个 —— 两份实现各自漂，漂的永远是没人看的那一份。
+ *
+ * 这里是**动态** import 一个 `.ts`（Node 从 22.18 起才默认剥类型）。拿不到就立刻红并
+ * 退出 1，不能退化成"跳过锚点这一项继续报绿"：一个什么都没查的绿灯，比没有这条检查
+ * 更糟，因为它教所有人相信那条 `✓`（`PIT-115` 记的就是这个形状的事故）。
+ */
+const anchorRule = await import("../src/runtime/markdown.ts")
+  .then((module) => module.slugify)
+  .catch(() => null);
+
+if (!anchorRule) {
+  console.error("锚点检查跑不起来：import src/runtime/markdown.ts 失败。需要 Node 22.18+（剥类型）。");
+  process.exit(1);
+}
+const slugify = anchorRule;
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SKIP_DIRS = new Set([
@@ -82,6 +108,164 @@ function checkLinks(files) {
   return { total, broken };
 }
 
+/* ------------------------------------------------------------------ 锚点 */
+
+// 链接**指向的文件**可达，不等于链接**指向的那一节**存在。以前这里把 `#` 整段剥掉，
+// 于是 `AGENTS.md` 里 24 条 `INVARIANTS.md#inv-1` 全都算"可达"—— 而真实锚点是
+// `inv-1-零内置`，一条都跳不到。断链只影响读者，所以必须机器查。
+//
+// 锚点规则的家在 `src/runtime/markdown.ts` 的 `slugify`（应用内渲染标题 id 用的就是它）。
+// 这里 import 它，不另写一份 —— 两份实现各自漂，漂的那份恰好是没人看的那一份。
+const HEADING = /^(#{1,6})\s+(.*)$/;
+
+/**
+ * 逐行去掉围栏代码块。
+ *
+ * 不能用 `stripCode` —— 它还会把**行内代码**抹掉，而标题里到处是行内代码
+ * （`## INV-4 权限按 \`widgetId\` 授予`）。抹掉之后算出来的锚点和渲染器算的不是一个，
+ * 体检就会一片假红 —— 假红比不查更糟，因为它教人忽略这条检查。
+ */
+function withoutFences(text) {
+  const kept = [];
+  let fence = null;
+  for (const line of text.split(/\r?\n/)) {
+    const open = line.match(/^\s*(```|~~~)/);
+    if (fence) {
+      if (open && open[1] === fence) fence = null;
+      continue;
+    }
+    if (open) {
+      fence = open[1];
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept;
+}
+
+/** 一份 md 里所有能当锚点用的东西：标题（含重名时的 `-N` 后缀）、显式 `<a id>`。 */
+function anchorsOf(file) {
+  const lines = withoutFences(fs.readFileSync(file, "utf8"));
+  const found = new Set();
+  const used = new Map();
+  for (const line of lines) {
+    const match = line.match(HEADING);
+    if (!match) continue;
+    const base = slugify(match[2]) || `section-${match[1].length}`;
+    const seen = used.get(base) ?? 0;
+    used.set(base, seen + 1);
+    found.add(seen === 0 ? base : `${base}-${seen}`);
+  }
+  const text = lines.join("\n");
+  for (const match of text.matchAll(/<a\s+[^>]*id=["']([^"']+)["']/gi)) found.add(match[1]);
+  for (const match of text.matchAll(/\{#([^\s}]+)\}/g)) found.add(match[1]);
+  return found;
+}
+
+function checkAnchors(files) {
+  const anchors = new Map(files.map((file) => [file, anchorsOf(file)]));
+  const problems = [];
+  let total = 0;
+
+  for (const file of files) {
+    const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+    let fence = null;
+    let lineNo = 0;
+
+    for (const raw0 of lines) {
+      lineNo += 1;
+      const open = raw0.match(/^\s*(```|~~~)/);
+      if (fence) {
+        if (open && open[1] === fence) fence = null;
+        continue;
+      }
+      if (open) {
+        fence = open[1];
+        continue;
+      }
+      // 行内代码里的链接是写法示范，不是要跳的地址（和 checkLinks 同一个口径）
+      const line = raw0.replace(/`[^`\n]*`/g, "");
+
+      for (const match of line.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
+        const raw = match[1];
+        if (/^(https?:|mailto:|data:)/.test(raw)) continue;
+        const cut = raw.indexOf("#");
+        if (cut < 0) continue;
+        const fragment = raw.slice(cut + 1);
+        if (!fragment) continue;
+        const target = raw.slice(0, cut);
+
+        let host = file;
+        if (target) {
+          const resolved = path.resolve(path.dirname(file), decodeURI(target.split("?")[0]));
+          // 非 .md（图片、svg）的 fragment 由链接检查管，这里不猜
+          if (!resolved.endsWith(".md") || !anchors.has(resolved)) continue;
+          host = resolved;
+        }
+        total += 1;
+        let wanted = fragment;
+        try {
+          wanted = decodeURI(fragment);
+        } catch {
+          // 写歪的转义按原样比，下面会报出来
+        }
+        if (!anchors.get(host).has(wanted)) {
+          problems.push(`${relative(file)}:${lineNo} → ${raw}`);
+        }
+      }
+    }
+  }
+
+  return { total, problems };
+}
+
+/* ------------------------------------------------------------------ 长行 */
+
+/**
+ * 一行写满一整段，是"查不动"的头号原因：grep 命中一行就吐出一段，Ctrl+F 落不到
+ * 句子上，diff 一行改动整段红。这里**只报不断** —— 文风规矩只对新老文档执行
+ * （docs/README.md 第六节），回头批量改旧文档的 diff 会淹掉真正的改动。
+ */
+const LONG_LINE = 200;
+
+function checkLineLength(files) {
+  const rows = [];
+  for (const file of files) {
+    const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+    let over = 0;
+    let longest = 0;
+    for (const line of lines) {
+      if (line.length > LONG_LINE) over += 1;
+      if (line.length > longest) longest = line.length;
+    }
+    if (over > 0) rows.push({ file: relative(file), over, lines: lines.length, longest });
+  }
+  rows.sort((a, b) => b.over - a.over);
+  return rows;
+}
+
+/* ------------------------------------------------------------ 应用内清单 */
+
+/**
+ * 「设置 → 获取帮助」那份十来条的清单写在 `src/runtime/docs.ts` 里，靠 glob 打包。
+ * 清单里的路径没了，界面上就是一片空白 —— 而 `check:docs` 只看磁盘，看不见界面。
+ * 所以这里反过来查：清单点的每一份都要在磁盘上、且被 catalog 认领。
+ */
+function checkAppList(byPath, wildcards) {
+  const source = path.join(ROOT, "src", "runtime", "docs.ts");
+  if (!fs.existsSync(source)) return { count: 0, problems: ["src/runtime/docs.ts 不存在"] };
+  const text = fs.readFileSync(source, "utf8");
+  const paths = [...text.matchAll(/\bpath:\s*"([^"]+)"/g)].map((match) => match[1]);
+  const problems = [];
+  for (const rel of paths) {
+    if (!fs.existsSync(path.join(ROOT, rel))) problems.push(`应用内清单点了 ${rel}，磁盘上没有`);
+    else if (!byPath.has(rel) && !wildcards.some((pattern) => globMatch(pattern, rel))) {
+      problems.push(`应用内清单点了 ${rel}，catalog 里没认领它`);
+    }
+  }
+  return { count: paths.length, problems };
+}
+
 /* ------------------------------------------------------------------ 数字 */
 
 function firstNumbers(text) {
@@ -93,54 +277,6 @@ function tableRow(text, label) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = text.match(new RegExp(`\\|\\s*\\*{0,2}${escaped}\\*{0,2}\\s*\\|([^|]*)\\|`));
   return match ? match[1] : null;
-}
-
-function countTrackedWidgets() {
-  try {
-    const out = execFileSync("git", ["ls-files", "public/widgets/*/manifest.json"], {
-      cwd: ROOT,
-      encoding: "utf8",
-    });
-    return out.split("\n").filter(Boolean).length;
-  } catch {
-    const dir = path.join(ROOT, "public", "widgets");
-    return fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(dir, entry.name, "manifest.json")))
-      .length;
-  }
-}
-
-function countPermissions() {
-  const source = fs.readFileSync(path.join(ROOT, "src", "runtime", "catalogue.ts"), "utf8");
-  const block = source.match(/KNOWN_PERMISSIONS[\s\S]*?\]\);/);
-  if (!block) throw new Error("src/runtime/catalogue.ts 里找不到 KNOWN_PERMISSIONS");
-  return (block[0].match(/"[a-z:]+"/g) ?? []).length;
-}
-
-function countCommands() {
-  const dir = path.join(ROOT, "src-tauri", "src");
-  let total = 0;
-  for (const name of fs.readdirSync(dir)) {
-    if (!name.endsWith(".rs")) continue;
-    const source = fs.readFileSync(path.join(dir, name), "utf8");
-    total += (source.match(/#\[tauri::command\]/g) ?? []).length;
-  }
-  return total;
-}
-
-/** 坑的条数不用人数：数 PITFALLS.md 里的表行，顺带和它自己开头那句对账。 */
-function countPitfalls() {
-  const source = fs.readFileSync(path.join(ROOT, "docs", "PITFALLS.md"), "utf8");
-  const rows = source
-    .split("\n")
-    .filter((line) => line.startsWith("|") && !/^\|\s*-{3,}/.test(line) && !line.startsWith("| 症状"));
-  const claimed = source.match(/现在 \*\*(\d+) 条\*\*/);
-  if (!claimed) throw new Error("docs/PITFALLS.md 里找不到「现在 **N 条**」这句");
-  if (Number(claimed[1]) !== rows.length) {
-    throw new Error(`docs/PITFALLS.md 开头写 ${claimed[1]} 条，表里实际 ${rows.length} 行`);
-  }
-  return rows.length;
 }
 
 /* ---------------------------------------------------------------- 行数 */
@@ -177,15 +313,6 @@ function countTrackedLines(globs, exts) {
     .reduce((total, file) => total + lineCount(fs.readFileSync(path.join(ROOT, file), "utf8")), 0);
 }
 
-const METRICS = [
-  { key: "widgets", en: "Official widgets", zh: "官方组件", derive: countTrackedWidgets },
-  { key: "permissions", en: "Permissions", zh: "权限", derive: countPermissions },
-  { key: "commands", en: "Tauri commands", zh: "Tauri 命令", derive: countCommands },
-  { key: "assertions", en: "Browser assertions", zh: "浏览器断言", derive: null },
-  { key: "rustTests", en: "Rust tests", zh: "Rust 单测", derive: null },
-  { key: "pitfalls", en: "Documented pitfalls", zh: "记下来的坑", derive: countPitfalls },
-];
-
 /** 「代码量，大致」那张表。标签在中英两份里不一样，所以三条标签分开写。 */
 const LINE_METRICS = [
   { key: "typescript", en: "TypeScript", zh: "TypeScript", derive: () => countLines("src", [".ts", ".tsx"]) },
@@ -200,60 +327,6 @@ const LINE_METRICS = [
   },
   { key: "scripts", en: "Scripts", zh: "脚本", derive: () => countLines("scripts", [".mjs", ".js"]) },
 ];
-
-function checkNumbers() {
-  const en = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
-  const zh = fs.readFileSync(path.join(ROOT, "README.zh-CN.md"), "utf8");
-  const rows = [];
-
-  for (const metric of METRICS) {
-    const enCell = tableRow(en, metric.en);
-    const zhCell = tableRow(zh, metric.zh);
-    const row = { ...metric, label: metric.en, en: null, zh: null, actual: null, ok: true, note: "" };
-
-    if (!enCell || !zhCell) {
-      row.ok = false;
-      row.note = !enCell ? `README.md 里找不到「${metric.en}」` : `README.zh-CN.md 里找不到「${metric.zh}」`;
-      rows.push(row);
-      continue;
-    }
-
-    const enNums = firstNumbers(enCell);
-    const zhNums = firstNumbers(zhCell);
-    row.en = enNums;
-    row.zh = zhNums;
-
-    const samePair =
-      enNums.length === zhNums.length && [...enNums].sort((a, b) => a - b).join() === [...zhNums].sort((a, b) => a - b).join();
-    if (!samePair) {
-      row.ok = false;
-      row.note = "中英文两份对不上";
-    }
-
-    if (metric.derive) {
-      let actual = null;
-      try {
-        actual = metric.derive();
-      } catch (error) {
-        // 派生失败本身就是一处要修的文档问题（比如 PITFALLS 开头那句和表对不上），
-        // 不该让整个脚本带着堆栈崩掉 —— 那样人只会看到「脚本坏了」。
-        row.ok = false;
-        row.note = error.message;
-        rows.push(row);
-        continue;
-      }
-      row.actual = actual;
-      if (!enNums.includes(actual)) {
-        row.ok = false;
-        row.note = `README 写的是 ${enNums.join(" / ")}`;
-      }
-    }
-
-    rows.push(row);
-  }
-
-  return rows;
-}
 
 function checkLines() {
   const en = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
@@ -493,17 +566,19 @@ function checkCatalog(files) {
     }
   }
 
-  return { count: claimed.size, problems };
+  return { count: claimed.size, problems, byPath, wildcards };
 }
 
 /* ------------------------------------------------------------------ 输出 */
 
 const files = walk(ROOT);
 const { total, broken } = checkLinks(files);
-const rows = checkNumbers();
+const anchors = checkAnchors(files);
 const lineRows = checkLines();
 const design = checkDesign();
 const catalog = checkCatalog(files);
+const appList = checkAppList(catalog.byPath ?? new Map(), catalog.wildcards ?? []);
+const longLines = checkLineLength(files);
 
 console.log(`文档体检：${files.length} 份 .md，${total} 条相对链接\n`);
 
@@ -512,6 +587,13 @@ if (broken.length === 0) {
 } else {
   console.log(`  链接      ✗ ${broken.length} 条不可达`);
   for (const item of broken) console.log(`            ${item.file} → ${item.target}`);
+}
+
+if (anchors.problems.length === 0) {
+  console.log(`  锚点      ✓ ${anchors.total} 条带 # 的链接，落到的那一节都在`);
+} else {
+  console.log(`  锚点      ✗ ${anchors.problems.length} 条指不到标题（文件可达不等于那一节存在）`);
+  for (const item of anchors.problems) console.log(`            ${item}`);
 }
 
 if (design.problems.length === 0) {
@@ -528,6 +610,13 @@ if (catalog.problems.length === 0) {
   for (const item of catalog.problems) console.log(`            ${item}`);
 }
 
+if (appList.problems.length === 0) {
+  console.log(`  应用清单  ✓ ${appList.count} 份在「获取帮助」里，磁盘与 catalog 都对得上`);
+} else {
+  console.log(`  应用清单  ✗ ${appList.problems.length} 处`);
+  for (const item of appList.problems) console.log(`            ${item}`);
+}
+
 const pad = (text, width) => String(text).padEnd(width);
 const cell = (numbers) => (numbers === null ? "—" : numbers.join(" / "));
 
@@ -541,21 +630,29 @@ function printRow(row) {
   );
 }
 
-console.log("");
-rows.forEach(printRow);
-
 console.log("\n  代码量（大致，1% 容差）");
 lineRows.forEach(printRow);
 
-const failed = [...rows, ...lineRows].filter((row) => !row.ok);
+const failed = lineRows.filter((row) => !row.ok);
 if (VERBOSE) {
-  console.log(`\n  能自动数的四项：组件 ${countTrackedWidgets()} / 权限 ${countPermissions()} / 命令 ${countCommands()} / 坑 ${countPitfalls()}`);
-  console.log(`  能自动数的六项行数：${LINE_METRICS.map((m) => `${m.en} ${m.derive()}`).join(" / ")}`);
+  console.log(`\n  能自动数的六项行数：${LINE_METRICS.map((m) => `${m.en} ${m.derive()}`).join(" / ")}`);
+  console.log("  计数类（组件 / 权限 / 桥方法 / 命令 / 坑）不在这里：`npm run check:stats`");
 }
 
-if (broken.length || failed.length || design.problems.length || catalog.problems.length) {
+if (longLines.length) {
+  const rows = longLines.slice(0, VERBOSE ? longLines.length : 6);
+  console.log(`\n  长行（>${LONG_LINE} 字，只报不断）：${longLines.length} 份，共 ${longLines.reduce((n, r) => n + r.over, 0)} 行`);
+  for (const row of rows) {
+    console.log(`            ${row.file}  ${row.over}/${row.lines} 行  ·  最长 ${row.longest} 字`);
+  }
+  if (!VERBOSE && longLines.length > rows.length) console.log(`            …… 其余 ${longLines.length - rows.length} 份：--verbose`);
+  console.log("  改法：一行一句（Markdown 里单个换行不改变渲染）。新写和重写的文档按这个来，别回头批量改旧的。");
+}
+
+const blocking = broken.length + anchors.problems.length + failed.length + design.problems.length + catalog.problems.length + appList.problems.length;
+if (blocking) {
   console.log(
-    `\n${broken.length + failed.length + design.problems.length + catalog.problems.length} 处要修。`,
+    `\n${blocking} 处要修。（链接 ${broken.length} · 锚点 ${anchors.problems.length} · 归属 ${catalog.problems.length} · 设计文档 ${design.problems.length} · 应用清单 ${appList.problems.length} · 行数 ${failed.length}）`,
   );
   process.exit(1);
 }

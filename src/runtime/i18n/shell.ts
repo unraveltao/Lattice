@@ -17,6 +17,10 @@ export const SHELL_ZH: Record<string, string> = {
   "Assistant — tell it what to change on your desktop (Ctrl+K, separate window)":
     "助手 —— 说一句就能改桌面（Ctrl+K，独立小窗）",
   "Toggle assistant": "开关助手",
+  "Companion — she is on your desktop; click to hide her":
+    "伴侣 —— 她在桌面上，点一下收起来",
+  "Companion — hidden; click to bring her back": "伴侣 —— 已收起，点一下放出来",
+  "Toggle the companion": "开关伴侣",
   "Theme: {current} — click for {next}": "主题：{current} —— 点击切换到 {next}",
   "Theme: {current}": "主题：{current}",
 

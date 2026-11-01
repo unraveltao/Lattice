@@ -31,9 +31,39 @@ use crate::widgets;
 /// 协议名。前端 `registry.ts` 里有一份同名常量，改这里要一起改。
 pub const SCHEME: &str = "lattice-widget";
 
+/// 桌宠皮肤用的第二个协议（LAT-0041）。
+///
+/// 为什么不复用 `lattice-widget://`：那个协议的根是 `widgets/`，而皮肤在 `pets/`
+/// —— 两者是**两套文件约定**（组件有 `manifest.json`，皮肤有 `pet.json`），
+/// 混在一个根里之后，"这个目录是组件还是皮肤"要靠试，而不是靠位置。
+///
+/// 处理逻辑是同一份（`serve`），差别只有根目录和"要不要往 HTML 里塞错误上报脚本"
+/// —— 皮肤里没有 HTML，塞不了也不该塞。
+pub const PET_SCHEME: &str = "lattice-pet";
+
 pub fn handle<R: Runtime>(
     ctx: UriSchemeContext<'_, R>,
     request: Request<Vec<u8>>,
+) -> Response<Vec<u8>> {
+    serve(ctx, request, widgets::user_widgets_dir, true)
+}
+
+pub fn handle_pet<R: Runtime>(
+    ctx: UriSchemeContext<'_, R>,
+    request: Request<Vec<u8>>,
+) -> Response<Vec<u8>> {
+    serve(ctx, request, crate::pet::skins_dir, false)
+}
+
+/// 两个协议共用的一份。
+///
+/// `root_of` 是"这个协议的文件根在哪"，`inject` 是"要不要往 HTML 里塞错误上报脚本"
+/// （只有组件文档需要：沙箱 iframe 里的错宿主看不见，见 `diagnostics.rs`）。
+fn serve<R: Runtime>(
+    ctx: UriSchemeContext<'_, R>,
+    request: Request<Vec<u8>>,
+    root_of: fn(&tauri::AppHandle<R>) -> Result<PathBuf, String>,
+    inject: bool,
 ) -> Response<Vec<u8>> {
     let method = request.method().as_str().to_owned();
     /*
@@ -56,7 +86,7 @@ pub fn handle<R: Runtime>(
     // 组件目录里用反斜杠的情况不存在，统一成正斜杠再给人看
     let requested = relative.to_string_lossy().replace('\\', "/");
 
-    let root = match widgets::user_widgets_dir(ctx.app_handle()) {
+    let root = match root_of(ctx.app_handle()) {
         Ok(dir) => dir,
         Err(_) => return failure_response(Failure::NoStorage, document, &id, &requested, None),
     };
@@ -72,9 +102,10 @@ pub fn handle<R: Runtime>(
         return failure_response(Failure::Unreadable, document, &id, &requested, Some(&root));
     };
 
-    // 组件文档里塞一段错误上报脚本 —— 沙箱 iframe 的错宿主看不见，只能这么办
+    // 组件文档里塞一段错误上报脚本 —— 沙箱 iframe 的错宿主看不见，只能这么办。
+    // 皮肤目录里没有 HTML（只有 json 和贴图），所以 `inject` 那边是关的。
     let mut body = bytes;
-    if mime_of(&file).starts_with("text/html") {
+    if inject && mime_of(&file).starts_with("text/html") {
         let injected = std::str::from_utf8(&body)
             .ok()
             .map(|text| diagnostics::inject_reporter(text).into_bytes());

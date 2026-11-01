@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>todo levels test</title>
+    <style>
+      body {
+        background: #111;
+        color: #eee;
+        font: 12px/1.6 ui-monospace, monospace;
+        padding: 16px;
+      }
+      .ok {
+        color: #5dcaa5;
+      }
+      .bad {
+        color: #f09595;
+      }
+      iframe {
+        position: absolute;
+        left: -9999px;
+        width: 300px;
+        height: 240px;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <script type="module">
+      /*
+       * 这页盯的是 0.3.0 的三档（docs/design/LAT-0038）。
+       *
+       * 七组要钉住的事：
+       *   1. 老数据没有 level，全部落在 L3，而且**读一次不写盘**（惰性迁移）
+       *   2. `view` 认不出来（null / 脏值）都当 3
+       *   3. 加一条落在**当前页签**，不是写死 3
+       *   4. L1 没有勾选框，但 done: true 的老数据不许被抹掉
+       *   5. 升格改的是 level：id、优先级都跟着走；顶档升格、底档降格是灰的
+       *   6. 拖到页签上松手 = 换档（页签在拖的过程中拿到 is-drop）
+       *   7. 换档落盘，第二个实例打开就在那一档
+       */
+      const lines = [];
+      const log = (pass, text) => lines.push((pass ? "PASS " : "FAIL ") + text);
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      /**
+       * 一份"磁盘"。两个实例传同一个对象，就相当于同一个 widgetId 的两个宿主 ——
+       * 真实平台上它们共用一个 widget-data/<id>.json。
+       */
+      function makeStore(items) {
+        return { items: items, view: null, setCalls: 0 };
+      }
+
+      function mountTodo(store) {
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
+        frame.src = "/widgets/lattice.todo/index.html";
+        document.body.appendChild(frame);
+
+        const ready = new Promise((resolve) => {
+          window.addEventListener("message", function handler(event) {
+            if (event.source !== frame.contentWindow) return;
+            const data = event.data;
+            if (!data || data.__lattice !== 1) return;
+            if (data.type === "ready") {
+              resolve();
+              return;
+            }
+            if (data.type !== "request") return;
+
+            const reply = (payload) =>
+              frame.contentWindow.postMessage(
+                Object.assign({ __lattice: 1, type: "response", id: data.id }, payload),
+                "*",
+              );
+
+            if (data.method === "lang.get") {
+              reply({ ok: true, result: { lang: "zh" } });
+              return;
+            }
+            // 按 key 分开存 —— 合成一份的话，写 view 会把 items 覆盖掉，
+            // 而真实平台是两个 key 各存各的
+            if (data.method === "storage.get") {
+              reply({ ok: true, result: data.params.key === "view" ? store.view : store.items });
+              return;
+            }
+            if (data.method === "storage.set") {
+              store.setCalls += 1;
+              if (data.params.key === "view") store.view = data.params.value;
+              else store.items = data.params.value;
+              reply({ ok: true, result: { ok: true } });
+              return;
+            }
+            reply({ ok: false, error: "unknown" });
+          });
+        });
+
+        return { frame, ready };
+      }
+
+      const texts = (doc) =>
+        Array.from(doc.querySelectorAll(".todo-text")).map((el) => el.textContent);
+      const tabs = (doc) => Array.from(doc.querySelectorAll(".todo-tab"));
+      const selected = (doc) =>
+        tabs(doc)
+          .filter((tab) => tab.getAttribute("aria-selected") === "true")
+          .map((tab) => tab.textContent.trim())
+          .join("|");
+      const clickTab = async (doc, n) => {
+        tabs(doc)[n - 1].click();
+        await sleep(80);
+      };
+      // 菜单是靠 pointerdown 关闭的，合成 click 关不掉它 —— 想关就用 pointerdown 打 body
+      const closeAll = (doc) => {
+        doc.body.dispatchEvent(new doc.defaultView.PointerEvent("pointerdown", { bubbles: true }));
+      };
+      const openMenu = async (doc, rowIndex) => {
+        closeAll(doc);
+        doc.querySelectorAll(".todo-more")[rowIndex].click();
+        await sleep(40);
+        return Array.from(doc.querySelectorAll(".todo-menu-item"));
+      };
+
+      // ---- 组 1：老数据全落 L3、默认档、惰性迁移 ----
+      {
+        const store = makeStore([
+          { id: "a", text: "给房东打电话", done: false, priority: "high" },
+          { id: "b", text: "也许该学 Rust", done: false, priority: "low", level: 1 },
+          { id: "c", text: "改完简历", done: false, level: 2 },
+        ]);
+        const todo = mountTodo(store);
+        await todo.ready;
+        const doc = todo.frame.contentDocument;
+        await sleep(80);
+
+        log(texts(doc).join("|") === "给房东打电话", `默认档里是「${texts(doc).join("|")}」`);
+        log(selected(doc) === "L3", `默认选中的页签是「${selected(doc)}」`);
+        log(
+          doc.getElementById("levelName").textContent === "L3 · 执行",
+          `标题栏写的是「${doc.getElementById("levelName").textContent}」`,
+        );
+        log(doc.getElementById("meta").textContent === "还剩 1 项", `计数是「${doc.getElementById("meta").textContent}」`);
+        // 惰性迁移：读一次不能写盘。写盘就是"种子数据覆盖"那类事故的入口
+        log(store.setCalls === 0, `载入老数据后写盘 ${store.setCalls} 次`);
+        log(
+          !("level" in store.items[0]),
+          `老数据那条没有被改写：level=${JSON.stringify(store.items[0].level)}`,
+        );
+
+        // ---- 组 2：切档 ----
+        await clickTab(doc, 1);
+        log(texts(doc).join("|") === "也许该学 Rust", `L1 里是「${texts(doc).join("|")}」`);
+        log(
+          doc.getElementById("levelName").textContent === "L1 · 想法",
+          `L1 标题栏是「${doc.getElementById("levelName").textContent}」`,
+        );
+        // 想法没有"完成"这回事，所以数的是总条数
+        log(doc.getElementById("meta").textContent === "1 条", `L1 计数是「${doc.getElementById("meta").textContent}」`);
+        log(store.view && store.view.level === 1, `换档落盘 ${JSON.stringify(store.view)}`);
+
+        await clickTab(doc, 2);
+        log(texts(doc).join("|") === "改完简历", `L2 里是「${texts(doc).join("|")}」`);
+        log(doc.getElementById("meta").textContent === "还剩 1 项", `L2 计数是「${doc.getElementById("meta").textContent}」`);
+
+        // ---- 组 3：落点跟当前页签 ----
+        await clickTab(doc, 1);
+        const input = doc.getElementById("input");
+        log(input.placeholder === "加一条 L1", `L1 的占位符是「${input.placeholder}」`);
+        input.value = "买一本 Rust 的书";
+        doc.getElementById("form").requestSubmit();
+        await sleep(120);
+        log(store.items[0].level === 1, `L1 里加的那条落盘 level=${store.items[0].level}`);
+        log(texts(doc).join("|") === "买一本 Rust 的书|也许该学 Rust", `L1 现在「${texts(doc).join("|")}」`);
+
+        await clickTab(doc, 3);
+        log(
+          texts(doc).join("|") === "给房东打电话",
+          `切回 L3 只剩「${texts(doc).join("|")}」—— 档与档不串`,
+        );
+        input.value = "交电费";
+        doc.getElementById("form").requestSubmit();
+        await sleep(120);
+        log(store.items[0].level === 3, `L3 里加的那条落盘 level=${store.items[0].level}`);
+
+        todo.frame.remove();
+      }
+
+      // ---- 组 4：L1 没有勾选框，但 done 不许被抹掉 ----
+      {
+        const store = makeStore([
+          { id: "a", text: "旧想法", done: true, level: 1 },
+          { id: "b", text: "今天要做", done: false, level: 3 },
+        ]);
+        const todo = mountTodo(store);
+        await todo.ready;
+        const doc = todo.frame.contentDocument;
+        await sleep(80);
+
+        await clickTab(doc, 1);
+        log(doc.querySelectorAll(".todo-check").length === 0, `L1 里勾选框有 ${doc.querySelectorAll(".todo-check").length} 个`);
+        log(!doc.querySelector(".todo-item").classList.contains("is-done"), "L1 的行不画成已完成的样子");
+
+        // 点整行：L1 没有"完成"这回事，状态不许翻
+        doc.querySelector(".todo-text").click();
+        await sleep(100);
+        log(store.items[0].done === true, `点 L1 的行之后 done=${store.items[0].done}`);
+
+        // 一次正常写入之后，那个 done 还在
+        doc.getElementById("input").value = "再一个想法";
+        doc.getElementById("form").requestSubmit();
+        await sleep(120);
+        log(
+          store.items.filter((item) => item.id === "a")[0].done === true,
+          "写盘之后老数据里的 done: true 还在（没被抹掉）",
+        );
+
+        await clickTab(doc, 3);
+        log(doc.querySelectorAll(".todo-check").length === 1, "L3 的行有勾选框");
+        todo.frame.remove();
+      }
+
+      // ---- 组 5：升格 / 降格（⋯ 菜单） ----
+      {
+        const store = makeStore([
+          { id: "a", text: "也许该学 Rust", done: false, priority: "low", level: 1 },
+          { id: "b", text: "给房东打电话", done: false, level: 3 },
+        ]);
+        const todo = mountTodo(store);
+        await todo.ready;
+        const doc = todo.frame.contentDocument;
+        await sleep(80);
+
+        // 顶档（L3）升格、底档（L1）降格都是灰的，但**还在**（位置稳定才点得准）
+        await clickTab(doc, 1);
+        let items = await openMenu(doc, 0);
+        log(items.length === 3, `菜单里 ${items.length} 项`);
+        log(items[0].disabled === false, "L1 的「升格」能点（想法可以升成目标）");
+        log(items[1].disabled === true, "L1 的「降格」是灰的（L1 已经是最底下那一档）");
+        closeAll(doc);
+        await sleep(30);
+
+        // 升格：level 变 2，id 和优先级跟着走
+        items = await openMenu(doc, 0);
+        items[0].click();
+        await sleep(120);
+        const promoted = store.items.filter((item) => item.id === "a")[0];
+        log(promoted.level === 2, `升格后 level=${promoted.level}`);
+        log(promoted.priority === "low", `升格没动优先级：${promoted.priority}`);
+        log(texts(doc).join("|") === "", `升格后 L1 里「${texts(doc).join("|")}」（应当空了）`);
+        log(
+          tabs(doc)[1].classList.contains("is-bumped"),
+          "目标页签闪了一下（is-bumped）—— 否则那一条看起来像被删了",
+        );
+
+        await sleep(700);
+        log(!tabs(doc)[1].classList.contains("is-bumped"), "600ms 之后 is-bumped 自己退掉");
+
+        await clickTab(doc, 2);
+        log(texts(doc).join("|") === "也许该学 Rust", `切到 L2 第一行是「${texts(doc).join("|")}」`);
+
+        // L2 的菜单：两个方向都通
+        items = await openMenu(doc, 0);
+        log(
+          doc.querySelectorAll(".todo-menu").length === 1,
+          `DOM 里 ${doc.querySelectorAll(".todo-menu").length} 个菜单；项：${items
+            .map((b) => b.textContent + ":" + b.disabled)
+            .join(" / ")}`,
+        );
+        log(items[0].disabled === false && items[1].disabled === false, "L2 的升格和降格都能点");
+        items[1].click();
+        await sleep(120);
+        log(
+          store.items.filter((item) => item.id === "a")[0].level === 1,
+          `降格后 level=${store.items.filter((item) => item.id === "a")[0].level}`,
+        );
+        todo.frame.remove();
+      }
+
+      // ---- 组 6：拖到页签上换档 ----
+      {
+        const store = makeStore([{ id: "a", text: "给房东打电话", done: false, level: 3 }]);
+        const todo = mountTodo(store);
+        await todo.ready;
+        const doc = todo.frame.contentDocument;
+        const Win = todo.frame.contentWindow;
+        await sleep(80);
+
+        const fire = (target, type, y) =>
+          target.dispatchEvent(
+            new Win.PointerEvent(type, { clientY: y, pointerId: 1, button: 0, bubbles: true }),
+          );
+
+        const row = doc.querySelector(".todo-item");
+        const rowY = row.getBoundingClientRect().top + 12;
+        const tabBox = tabs(doc)[0].getBoundingClientRect();
+        const tabY = tabBox.top + tabBox.height / 2;
+
+        fire(row, "pointerdown", rowY);
+        fire(doc, "pointermove", tabY);
+        await sleep(30);
+        log(tabs(doc)[0].classList.contains("is-drop"), "拖到 L1 页签上时页签给了 is-drop 提示");
+        fire(doc, "pointerup", tabY);
+        await sleep(150);
+
+        log(store.items[0].level === 1, `拖到 L1 页签松手后 level=${store.items[0].level}`);
+        log(texts(doc).join("|") === "", `当前档（L3）里「${texts(doc).join("|")}」（应当空了）`);
+        log(!tabs(doc)[0].classList.contains("is-drop"), "松手之后 is-drop 退掉了");
+        todo.frame.remove();
+      }
+
+      // ---- 组 7：换档落盘，第二个实例打开就在那一档 ----
+      {
+        const store = makeStore([{ id: "a", text: "给房东打电话", done: false, level: 3 }]);
+        const first = mountTodo(store);
+        await first.ready;
+        const doc1 = first.frame.contentDocument;
+        await sleep(60);
+        await clickTab(doc1, 2);
+        log(store.view && store.view.level === 2, `切到 L2 之后落盘 ${JSON.stringify(store.view)}`);
+        first.frame.remove();
+
+        const second = mountTodo(store);
+        await second.ready;
+        const doc2 = second.frame.contentDocument;
+        await sleep(60);
+        log(selected(doc2) === "L2", `第二个实例打开在「${selected(doc2)}」`);
+
+        // 脏值：view 被写成别的东西，应当当 3，而不是白屏
+        store.view = "garbage";
+        second.frame.remove();
+        const third = mountTodo(store);
+        await third.ready;
+        const doc3 = third.frame.contentDocument;
+        await sleep(60);
+        log(selected(doc3) === "L3", `view 是脏值时回到「${selected(doc3)}」`);
+        third.frame.remove();
+      }
+
+      document.getElementById("out").innerHTML = lines
+        .map((line) => `<span class="${line.startsWith("PASS") ? "ok" : "bad"}">${line}</span>`)
+        .join("\n");
+      window.__done = true;
+    </script>
+  </body>
+</html>

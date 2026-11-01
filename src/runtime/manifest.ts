@@ -13,6 +13,7 @@ import { t } from "./i18n";
 import { normalizeText, type LocalizedText } from "./widget-text";
 import { normalizeAgentTools, type AgentToolSpec } from "./widget-tools";
 import { asLayer, type WindowLayer } from "./layer";
+import { compareVersions, isValidRange, satisfies } from "./semver";
 
 /**
  * 组件在桌面上的层级。
@@ -172,7 +173,78 @@ export interface WidgetManifest {
 }
 
 export const DEFAULT_SIZE: WidgetSize = { w: 240, h: 140, minW: 120, minH: 80 };
+
+/**
+ * 这一版平台实现的**桥协议版本**，具体到一个点。
+ *
+ * 和 `SUPPORTED_SDK` 的区别是这次真的要用它：`SUPPORTED_SDK` 是"没写 `sdk` 时
+ * 默认填进清单的那个区间"，而这里要回答的是"我这一版说的是哪一版协议"——
+ * 区间没法拿来比，必须有个具体的点。桥有不兼容改动时**改这里**，同时把
+ * `SUPPORTED_SDK` 一起往前推。
+ */
+export const SDK_VERSION = "0.1.0";
+
+/** 没写 `sdk` 时填进清单的区间。和 `SDK_VERSION` 必须互相包含（见下方注释）。 */
 export const SUPPORTED_SDK = "^0.1";
+
+/**
+ * 清单声明的 SDK 区间，这一版平台满不满足。
+ *
+ * 为什么要有这条：`sdk` 字段从 0.1 就在清单里，但**从来没有人读过它**。于是
+ * "给 0.2 写的组件"装在 0.1 上，表现是调用某个还不存在的桥方法 → `unknown_method`
+ * —— 组件作者看到的是"我的代码在报错"，用户看到的是"这个组件坏了"，而真正的原因
+ * 是版本不匹配，没有任何一处说得出来。
+ *
+ * 两种不满足要分开说：
+ *   - `too-new`：清单要的比平台新。这是**装错了**，必须拦住。
+ *   - `too-old`：清单要的比平台旧。0.x 语义下 minor 就是破坏性变更，所以严格讲
+ *     也不保证能用 —— 但把已经装上的组件变成一张错误卡片，代价比它可能出的错还大，
+ *     所以这条只作为提示（`ok: false` 但 `blocking: false`）。
+ *
+ * 区间本身写坏（`"sdk": "banana"`）算 `too-new`：不确定就必须当成不行。
+ */
+export interface SdkVerdict {
+  ok: boolean;
+  /** 清单要的区间 */
+  required: string;
+  /** 这一版平台实现的版本 */
+  actual: string;
+  /** `ok: false` 时：往哪个方向不满足 */
+  direction: "too-new" | "too-old" | null;
+  /** `ok: false` 且这个方向必须拦住（装不进来 / 不加载） */
+  blocking: boolean;
+}
+
+export function checkSdk(range: string, actual: string = SDK_VERSION): SdkVerdict {
+  if (satisfies(actual, range)) {
+    return { ok: true, required: range, actual, direction: null, blocking: false };
+  }
+  // 区间解析不出来时 `satisfies` 一律返回 false，所以这里要单独判一次，
+  // 否则"清单写坏了"会被报成"需要更新的平台"，把人引去升级。
+  if (!isValidRange(range)) {
+    return { ok: false, required: range, actual, direction: "too-new", blocking: true };
+  }
+  // 区间下界比平台还新 = 这份组件不是给这一版写的。
+  // 拿区间里最小的那个可满足版本比：`^0.2` 的下界是 0.2.0，`>=0.2.0` 也是。
+  const floor = rangeFloor(range);
+  const direction = floor !== null && (compareVersions(floor, actual) ?? 0) > 0 ? "too-new" : "too-old";
+  return { ok: false, required: range, actual, direction, blocking: direction === "too-new" };
+}
+
+/**
+ * 区间里最小的可满足版本，只用来判方向。
+ *
+ * 不需要一般化：`satisfies` 已经把"能不能用"答完了，这里只回答"往哪边偏"。
+ * 所以取不到就返回 null（调用方当成"不比平台新"），宁可不拦也不要误拦。
+ */
+function rangeFloor(range: string): string | null {
+  const match = range.trim().match(/^(?:\^|~|>=?|=)?\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+  if (!match) return null;
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? 0);
+  const patch = Number(match[3] ?? 0);
+  return `${major}.${minor}.${patch}`;
+}
 
 export const ID_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
@@ -227,6 +299,23 @@ export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest
   // 否则一个笔误就让组件变成一块看不见的剪影（组件没上报区域时窗口是空的）
   const shape: WidgetShape = input.shape === "region" ? "region" : "rect";
 
+  /*
+   * `sdk` 是唯一一处"声明了但一直没人读"的字段。现在读了 —— 而且**只拦一个方向**：
+   * 要的比这一版新就装不进来（那是真装错了），比这一版旧只留个判断给调用方。
+   * 不在这里直接抛"太旧"：那会让升级平台之后，桌面上已经摆着的组件变成一排
+   * 错误卡片，而它们多半还能用。
+   */
+  const sdk = optionalString(input.sdk) || SUPPORTED_SDK;
+  const verdict = checkSdk(sdk);
+  if (!verdict.ok && verdict.blocking) {
+    throw new ManifestError(
+      t('needs a newer Lattice: manifest wants SDK "{required}", this build speaks {actual}', {
+        required: verdict.required,
+        actual: verdict.actual,
+      }),
+    );
+  }
+
   return {
     id,
     name: normalizeText(input.name) || dirName,
@@ -241,7 +330,7 @@ export function normalizeManifest(raw: unknown, dirName: string): WidgetManifest
     shape,
     permissions: normalizePermissions(input.permissions),
     network: normalizeNetwork(input.network),
-    sdk: optionalString(input.sdk) || SUPPORTED_SDK,
+    sdk,
     appearance: normalizeAppearance(input.appearance),
     config: normalizeConfig(input.config),
     help: normalizeHelp(input.help),

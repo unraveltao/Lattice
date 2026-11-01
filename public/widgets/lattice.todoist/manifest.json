@@ -1,0 +1,146 @@
+{
+  "id": "lattice.todoist",
+  "name": { "zh": "Todoist 待办", "en": "Tasks for Todoist" },
+  "version": "0.2.0",
+  "description": {
+    "zh": "Todoist 的只读镜像：列出所有未完成的任务，带优先级圆点与到期日；没有账号时它就是一个本地草稿本。非官方组件，与 Todoist 无关联、未获其支持。",
+    "en": "A read-only mirror of Todoist: every open task with its priority dot and due date. Without an account it doubles as a local scratch list. Not created by, affiliated with, or supported by Todoist."
+  },
+  "author": "Lattice",
+  "entry": "index.html",
+  "icon": "icon.svg",
+  "size": { "w": 280, "h": 240, "minW": 200, "minH": 170 },
+  "layer": "top",
+  "permissions": ["network", "secret", "storage", "shell:open"],
+  "network": {
+    "hosts": ["api.todoist.com"]
+  },
+  "help": {
+    "sections": [
+      {
+        "title": { "zh": "连上 Todoist", "en": "Connecting" },
+        "items": [
+          {
+            "zh": "按「打开 Todoist 设置页」，在「集成 → 开发者」里复制 API token，粘进输入框。它只存进本机密封库，不落组件存储。",
+            "en": "Press Open the Todoist settings page, copy the API token under Integrations → Developer, and paste it in. It goes into the local sealed store only."
+          },
+          {
+            "zh": "这个组件不是 Todoist 做的，也没得到它的支持 —— 数据来自 Todoist 的公开接口，接口变了这里会跟着坏。",
+            "en": "This widget is not made or supported by Todoist. It reads Todoist's public API, so when that API changes, this breaks with it."
+          },
+          {
+            "zh": "换 Windows 账户或重装系统之后要重新填：密封库绑的是当前这个账户。底栏的齿轮里可以断开。",
+            "en": "After switching Windows accounts or reinstalling, paste it again — the sealed store is tied to this account. Disconnect lives behind the gear in the footer."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "这是镜像，不是第二份清单", "en": "A mirror, not a second list" },
+        "items": [
+          {
+            "zh": "连上之后卡片只读：勾选、新增、改期都在 Todoist 里做。这里看到什么，Todoist 里就是什么。",
+            "en": "Once connected the card is read-only: tick, add and reschedule in Todoist. What you see here is what Todoist has."
+          },
+          {
+            "zh": "每十分钟对一次；卡片不可见时不发请求。底栏写着上次同步的时间。",
+            "en": "It syncs every ten minutes, and never while the card is hidden. The footer shows when it last synced."
+          },
+          {
+            "zh": "只列未完成的任务。任务多的时候只画前 40 条，标题里写「40+ 项」—— 那个加号是真的没画完。",
+            "en": "Only open tasks. Past 40 rows it stops and the header reads 40+ — that plus means the rest is not drawn."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "没有 Todoist 也能用", "en": "Without a Todoist account" },
+        "items": [
+          {
+            "zh": "没连 Todoist 时，它是一个本地草稿本：加一条、点一下勾掉、× 删掉。数据按组件存在本机。",
+            "en": "Without Todoist it is a local scratch list: add one, click a row to tick it, × to delete. It is stored on this machine, per widget."
+          },
+          {
+            "zh": "草稿本永远不会推到 Todoist —— 它没有同步这回事。勾掉的留在列表里划线，再点一下放回。",
+            "en": "The scratch list never gets pushed to Todoist — there is no sync here. Ticked rows stay, struck through; click again to undo."
+          },
+          {
+            "zh": "连上 Todoist 之后草稿本会收起来，内容留着；断开就又能看到。想要一个正经的本地待办，装「待办」那个组件。",
+            "en": "Connecting hides the scratch list but keeps it — disconnect to see it again. For a real local to-do list, install the Todo widget instead."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "圆点和日期", "en": "Dots and dates" },
+        "items": [
+          {
+            "zh": "圆点对应 Todoist 的优先级：红 p1、黄 p2、绿 p3；空心圈是 p4，也就是没设。",
+            "en": "Dots follow Todoist priority: red p1, amber p2, green p3; an empty circle is p4, which means none."
+          },
+          {
+            "zh": "右边是到期日，过期的画成红色。没有到期日的行不写日期。",
+            "en": "The right column is the due date, in red once it is past. Rows without a due date show nothing."
+          }
+        ]
+      },
+      {
+        "title": { "zh": "底栏那几句话", "en": "Reading the footer" },
+        "items": [
+          {
+            "zh": "「token 失效了」：在 Todoist 里重置过 token，或者粘错了一截。按齿轮换一个。",
+            "en": "Token is no longer valid: it was reset in Todoist, or pasted incompletely. Use the gear to replace it."
+          },
+          {
+            "zh": "「被限流了」：短时间请求太多。它会把要等的秒数写出来（来自 Retry-After）。",
+            "en": "Rate-limited: too many requests in a short window. It prints how long to wait, from Retry-After."
+          },
+          {
+            "zh": "连不上时列表不会清空 —— 画的是上次成功的那一份，时间就在那句话后面。",
+            "en": "When it cannot connect the list is kept — it is the last good copy, and the footer shows its time."
+          }
+        ]
+      }
+    ]
+  },
+  "changelog": [
+    {
+      "version": "0.2.0",
+      "date": "2026-10-29",
+      "changes": [
+        {
+          "zh": "改名「Todoist 待办」并加免责声明：这个组件不是 Todoist 做的，也没得到它的支持。",
+          "en": "Renamed to Tasks for Todoist and added a disclaimer: this widget is not made or supported by Todoist."
+        },
+        {
+          "zh": "没有 Todoist 账号也能用：本地草稿本，能加、能勾、能删，只在没连 Todoist 时出现。",
+          "en": "Works without a Todoist account now: a local scratch list you can add to, tick and delete, shown only while disconnected."
+        },
+        {
+          "zh": "填 token 那一屏多了一颗「打开 Todoist 设置页」，少找两步。",
+          "en": "The token screen gained an Open the Todoist settings page button, saving two steps."
+        },
+        {
+          "zh": "连上之后如果本地还有几条，会说一次它们留在本机、不会同步。",
+          "en": "If local items exist when you connect, it says once that they stay on this machine and are not synced."
+        }
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-10-29",
+      "changes": [
+        {
+          "zh": "第一个版本：只读列出 Todoist 里所有未完成的任务，带优先级圆点、到期日与过期标记。",
+          "en": "First release: every open Todoist task, read-only, with priority dots, due dates and overdue marks."
+        },
+        {
+          "zh": "token 走平台的密封库，不进组件存储；填一次，重启还在。",
+          "en": "The token goes into the platform's sealed store, not widget storage — paste it once and it survives restarts."
+        },
+        {
+          "zh": "断网或限流时保留上一次的列表，底栏说清楚是哪一种。",
+          "en": "Offline or rate-limited keeps the previous list, and the footer says which one it was."
+        }
+      ]
+    }
+  ],
+  "sdk": "^0.1"
+}

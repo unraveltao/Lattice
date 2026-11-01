@@ -25,6 +25,9 @@ dist-ssr
 
 # 构建产物
 src-tauri/target
+# 根目录这份是 `CARGO_TARGET_DIR=target/check cargo check` 留下的（见 PIT-111：
+# 借独立 target 躲开 tauri dev 占着 build 锁的 os error 32）。3.2G，别让它进仓库。
+target/
 
 # 调试时的临时截图 / 日志
 .shot-*.png

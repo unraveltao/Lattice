@@ -19,6 +19,10 @@ pub mod audio_policy;
 pub mod autostart;
 pub mod autostart_policy;
 pub mod backup;
+// 能力体检：判据（纯逻辑，`rustc --test` 能单跑）和探针（碰 Win32 / COM / 文件）。
+// 只在启动和设置页显式刷新时跑，**没有定时器** —— 理由写在 `capability_probe.rs` 头部
+pub mod capability_policy;
+pub mod capability_probe;
 pub mod catalogue_policy;
 pub mod crash;
 pub mod crash_policy;
@@ -59,8 +63,12 @@ pub mod occlusion;
 pub mod occlusion_policy;
 pub mod open;
 pub mod open_policy;
+pub mod pet;
+pub mod pet_policy;
 pub mod power;
 pub mod power_policy;
+pub mod presence;
+pub mod presence_policy;
 pub mod protocol;
 pub mod runner;
 pub mod screen_policy;
@@ -170,10 +178,18 @@ pub fn run() {
             // 听写：磁盘上说开着才建浮钮、才注册热键（默认关，和 agent 端点同一条规矩）。
             // 关着的时候**不碰麦克风**、不建窗口、不占热键
             dictation::boot(app.handle());
+            // 能力体检：启动探一次，结果存着。设置页要刷新时自己再问一次
+            // （`capability_probe(true)`）。放后台线程 —— 它要枚举音频设备，
+            // 十几毫秒，够让主窗口晚一帧出来
+            capability_probe::boot(app.handle().clone());
+            // 桌宠：有可用皮肤且没被藏起来就建窗（LAT-0041）。**没有皮肤就什么都不做**
+            // —— 一个空窗口不是"在加载"，是一块吃点击的透明区域。
+            pet::boot(app.handle());
             Ok(())
         })
         // 用户组件不在前端资源里，得靠自定义协议把 %APPDATA% 下的文件发给 iframe
         .register_uri_scheme_protocol(protocol::SCHEME, protocol::handle)
+        .register_uri_scheme_protocol(protocol::PET_SCHEME, protocol::handle_pet)
         .invoke_handler(tauri::generate_handler![
             widgets::list_widgets,
             widgets::widgets_dir,
@@ -270,6 +286,16 @@ pub fn run() {
             assistant_window::assistant_window_sidebar,
             assistant_window::assistant_window_font_scale,
             assistant_window::assistant_window_save_rect,
+            presence::presence_report,
+            presence::presence_get,
+            pet::pet_skins,
+            pet::pet_state,
+            pet::pet_choose,
+            pet::pet_set_hidden,
+            pet::pet_save_rect,
+            pet::pet_boot,
+            pet::pet_act,
+            pet::pet_set_region,
             usage::usage_read,
             usage::usage_clear,
             term::term_write,
@@ -289,6 +315,8 @@ pub fn run() {
             dictation::dictation_settings,
             dictation::dictation_settings_set,
             dictation::dictation_open_settings,
+            // 能力体检。`refresh` 为真才重探，否则给启动时那一份
+            capability_probe::capability_probe,
             quit_app,
             show_main_window,
             restart_app,

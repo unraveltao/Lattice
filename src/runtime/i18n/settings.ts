@@ -183,4 +183,42 @@ export const SETTINGS_ZH: Record<string, string> = {
   Fri: "五",
   "Clear usage history": "清除使用记录",
   "Clear the local activity record? Your profile stays.": "清除本机使用记录？档案会保留。",
+
+  // —— 诊断（能力体检）——
+  Diagnostics: "诊断",
+  "Assistant hands": "助手的手",
+  "MCP servers": "MCP 服务器",
+  Platform: "平台",
+  Files: "文件",
+  Commands: "命令",
+  // "Web pages" 已经在 assistant.ts 里（那六组开关的名字），不重复写
+  Screen: "屏幕",
+  "Keyboard and mouse": "键鼠",
+  "Model access": "模型",
+  "Audio level": "音量",
+  "Key store": "密钥库",
+  "MCP: {name}": "MCP：{name}",
+  Ready: "可用",
+  "Not available": "不可用",
+  "Last checked {time}": "最后检查：{time}",
+  "Not checked yet": "还没检查过",
+  "{count} need attention": "{count} 项要处理",
+  "Check again": "重新检查",
+  "Switched off in Assistant settings": "在助手设置里关着",
+  "Missing command: {name}": "缺命令：{name}",
+  "Not set up yet": "还没配好",
+  "The active model profile has no base URL": "当前模型档没有填地址",
+  "The active model profile has no model name": "当前模型档没有填模型名",
+  "No API key for the current model": "当前模型没有 key",
+  "No audio output device": "没有默认输出设备",
+  "This setting cannot work: {detail}": "这个配置跑不起来：{detail}",
+  "Windows refused: {detail}": "Windows 拒绝了：{detail}",
+  "The key store cannot be opened: {detail}": "密钥库打不开：{detail}",
+  "A snapshot, taken at launch and whenever you press the button. Nothing here is polled — a row that turns red stays red until you look again.":
+    "这是一份快照：启动时探一次，之后只有你按下那颗按钮才会重探。这里没有任何轮询，所以一行变红之后会一直红到你再看它一眼。",
+  "A green row means this side is fine: if it still does nothing, the cause is outside Lattice (a window running as administrator, a site refusing the request, a path outside the widget's folder).":
+    "绿的那一行说明平台这边没问题。要是还是没反应，原因在棂外面：对方窗口是以管理员身份跑的、站点拒绝了这次请求、或者路径不在组件自己的目录里。",
+  "Probe again now. This is the only way the list changes — there is no timer.":
+    "现在重新探一次。这是这张表唯一的更新方式，没有定时器。",
+  "The capability probe needs the desktop app.": "能力体检要在桌面应用里跑。",
 };

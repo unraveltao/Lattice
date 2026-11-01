@@ -583,15 +583,20 @@ pub fn toggle(app: &AppHandle) -> Result<bool, String> {
             window
                 .hide()
                 .map_err(|error| format!("could not hide the assistant window: {error}"))?;
+            // 小窗走了，桌宠回自己那个位置（LAT-0041 §4.5）
+            crate::pet::avoid_assistant(app);
             return Ok(false);
         }
         window
             .show()
             .map_err(|error| format!("could not show the assistant window: {error}"))?;
         window.set_focus().ok();
+        // 小窗回来了，桌宠让开 —— 否则她会压着聊天框，而她的层级改不了
+        crate::pet::avoid_assistant(app);
         return Ok(true);
     }
     create(app)?;
+    crate::pet::avoid_assistant(app);
     Ok(true)
 }
 
@@ -599,6 +604,8 @@ pub fn hide(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(LABEL) {
         let _ = save_current_rect(app, &window);
         let _ = window.hide();
+        // 小窗走了，桌宠回自己那个位置
+        crate::pet::avoid_assistant(app);
     }
 }
 

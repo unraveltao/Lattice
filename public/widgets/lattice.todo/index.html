@@ -7,23 +7,42 @@
   </head>
   <body>
     <main class="todo">
+      <!--
+        顶上这条 22px 不是装饰：桌面窗口的窗饰（拖动/层级/别针/重载/收回）浮在
+        右上角 6px 处、约 120×28，而且能点。所以它只有左边 136px 可用，
+        写的是"此刻"的东西（哪一档、还剩几条），不写组件名 —— 名字平台标题条上有。
+      -->
       <header class="todo-head">
-        <h1 class="todo-title">待办清单</h1>
+        <span class="todo-level" id="levelName"></span>
         <span class="todo-meta" id="meta"></span>
       </header>
+
+      <!-- 三档页签：一次只看一档，另外两档压成两个名字 -->
+      <div class="todo-tabs" role="tablist" id="tabs" aria-label="层级">
+        <button class="todo-tab" type="button" role="tab" data-level="1" aria-selected="false">
+          L1
+        </button>
+        <button class="todo-tab" type="button" role="tab" data-level="2" aria-selected="false">
+          L2
+        </button>
+        <button class="todo-tab" type="button" role="tab" data-level="3" aria-selected="true">
+          L3
+        </button>
+      </div>
+
       <form class="todo-form" id="form">
         <input
           class="todo-input"
           id="input"
           type="text"
-          placeholder="添加一条待办，回车确认"
+          placeholder="加一条 L3"
           autocomplete="off"
           maxlength="120"
         />
       </form>
       <div class="todo-body">
         <ul class="todo-list" id="list"></ul>
-        <p class="todo-empty" id="empty">还没有待办</p>
+        <p class="todo-empty" id="empty">还没有 L3 · 执行</p>
       </div>
     </main>
     <script src="widget.js"></script>

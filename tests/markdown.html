@@ -75,7 +75,8 @@
       // ---- 6. 表格 ----
       const table = renderMarkdown("| 甲 | 乙 |\n| --- | ---: |\n| 1 | `a\\|b` |");
       has(table, "<thead>", "表格有表头");
-      has(table, "text-align:right", "右对齐被认出来");
+      has(table, 'class="lattice-align-right"', "右对齐被认出来（走类名，不走内联 style）");
+      lacks(table, "style=", "表格里不许出现内联 style 属性（主窗口 CSP 没有 'unsafe-inline'）");
       has(table, "<td>1</td>", "表体单元格");
       has(table, "a|b", "单元格里的转义竖线还原");
       log((table.match(/<tr>/g) || []).length === 2, "表格行数对得上");

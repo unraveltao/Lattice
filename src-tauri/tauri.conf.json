@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https: http://lattice-widget.localhost http://lattice-pet.localhost; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://lattice-pet.localhost; media-src 'self'; frame-src 'self' http://lattice-widget.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     }
   },
   "bundle": {

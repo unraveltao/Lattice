@@ -59,6 +59,8 @@ export const MISC_ZH: Record<string, string> = {
     'id "{id}" 不是反向域名格式，例如 lattice.clock',
   'version "{version}" is not a valid semver string': '版本号 "{version}" 不是合法的语义化版本',
   'missing required field "{field}"': '缺少必填字段 "{field}"',
+  'needs a newer Lattice: manifest wants SDK "{required}", this build speaks {actual}':
+    '需要更新版本的棂：清单要求 SDK "{required}"，这一版是 {actual}',
   "Unknown author": "未知作者",
 
   // —— assistant：工具循环走到步数上限 ——

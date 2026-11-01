@@ -120,6 +120,22 @@ pub fn mode_now(app: &AppHandle) -> &'static str {
     hands_policy::normalize_mode(&llm::hands_state(app).mode)
 }
 
+/// 这一轮真的能用的六组手。
+///
+/// 完全访问下**六组一律算开**（只算，不写盘）。这个折算被两处用：真正跑手的时候
+/// （`run`）和体检探针（`capability_probe.rs`）。写两遍的症状是"体检说这一组开着、
+/// 实际调不通"，而两边都不会报错 —— 所以收成一个函数，**入参就是已经读好的那份
+/// 状态**，不给第二次读配置的机会（读完再读，中间文件被改过就是两份不一样的事实）。
+fn effective_hands_for(state: &llm::HandsState) -> hands_policy::Hands {
+    let forced = hands_policy::everything_overrides(state.approval, &state.mode);
+    hands_policy::effective_hands(state.hands, if forced { "everything" } else { "internal" })
+}
+
+/// 探针用的那一份：自己读一次配置
+pub(crate) fn effective_hands_now(app: &AppHandle) -> hands_policy::Hands {
+    effective_hands_for(&llm::hands_state(app))
+}
+
 /// 跑一只手。返回 `AgentReply` 形状的 JSON。
 #[tauri::command]
 pub async fn assistant_tool(
@@ -246,10 +262,9 @@ fn run(app: &AppHandle, name: &str, raw_args: &str, cancel: Arc<AtomicBool>) -> 
     // 界面会把开关画成"由模式强制打开"，但这里才是那条真正的判定：
     // 一次渲染进程的 bug 不该变成"模式开着但我没拨开关，所以照跑"。
     // 注意是**每次调用现查模式**，不是每轮开头查一次：会话里正在飞的那一轮
-    // 会拿着一张旧工具表，用户切回内部之后它不该还能读文件
-    let mode = mode_now(app);
-    let effective = hands_policy::everything_overrides(state.approval, mode);
-    let hands = hands_policy::effective_hands(state.hands, if effective { "everything" } else { "internal" });
+    // 会拿着一张旧工具表，用户切回内部之后它不该还能读文件。`state` 就是这一下
+    // 现读的，所以折算直接用它，不再单独读一次配置
+    let hands = effective_hands_for(&state);
     if !hands.enabled(group) {
         return fail(
             "disabled",
@@ -622,7 +637,11 @@ fn shell_program() -> String {
     format!("{system}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
 }
 
-fn find_on_path(exe: &str) -> Option<String> {
+/// 在 PATH 里找一个可执行文件。
+///
+/// `pub(crate)` 是为了 `capability_probe.rs` —— 体检说"有没有 shell / MCP 命令在不在"
+/// 必须和真正执行时用的是同一套查找，两套各写一遍，症状是"体检说没有、实际跑得动"。
+pub(crate) fn find_on_path(exe: &str) -> Option<String> {
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join(exe);
@@ -1005,7 +1024,12 @@ fn screen_windows() -> String {
 ///
 /// `BitBlt(GetDC(NULL))` 拿的是"屏幕上此刻可见的东西"（这正好是截图的定义，
 /// 和壁纸那条路不同 —— 壁纸要的是"没有窗口的桌面"）。
-fn grab_screen(left: i32, top: i32, width: i32, height: i32) -> Result<Vec<u8>, String> {
+/// 把屏幕上一块矩形拷成 RGBA。
+///
+/// `pub(crate)` 是为了 `capability_probe.rs` 的 1×1 试拷 —— 体检要问的正是
+/// "这条路径现在通不通"，而唯一的诚实问法就是真拷一次。用别的判据（比如
+/// 有没有桌面）会给出"能用"而调用失败，那比不报还糟。
+pub(crate) fn grab_screen(left: i32, top: i32, width: i32, height: i32) -> Result<Vec<u8>, String> {
     unsafe {
         let screen = GetDC(std::ptr::null_mut());
         if screen.is_null() {

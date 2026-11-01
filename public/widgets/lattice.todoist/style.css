@@ -1,0 +1,462 @@
+/*
+ * Todoist（只读镜像）
+ *
+ * 三条约束决定了这里的写法：
+ *   1. 颜色一律从 `--lattice-*` 变量来（平台注入），下面 `:root` 里那组是
+ *      深色兜底 —— 在浏览器预览里没有平台，也不能画成一片白。
+ *   2. 顶栏留 `padding-right: 120px` 给窗饰。桌面窗口的按钮浮在右上角且能点，
+ *      不腾这块地方，用户点"收起"的时候以为自己在点刷新。
+ *   3. 行高 26px 固定、正文单行省略。任务是用户自己的字，长度不可控；
+ *      让它换行的话，卡片高度会跟着数据抖。
+ */
+
+:root {
+  --fg: #ecebe6;
+  --muted: #97978f;
+  --surface: #1d1d21;
+  --accent: #5dcaa5;
+  --border: rgba(255, 255, 255, 0.12);
+  --radius: 10px;
+  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+
+  /* 优先级三色和 lattice.todo 保持一致：同一个语义在两张卡片里不该是两个红 */
+  --pri-high: #e2564d;
+  --pri-med: #d9a12a;
+  --pri-low: #3f9e6a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+  /*
+   * 刻意不写 -webkit-font-smoothing: antialiased：Windows 上它会关掉
+   * ClearType 次像素渲染，中文小字立刻变细发灰，像没对上焦。
+   */
+}
+
+.tz {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px;
+  gap: 6px;
+}
+
+/* ---------- 顶栏（同时给窗饰让位） ---------- */
+
+.tz-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding-right: 120px;
+  min-width: 0;
+}
+
+.tz-meta {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 一次性提示（连上之后本地还有几条） ---------- */
+
+.tz-note {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  /*
+   * 一层灰底，不是纯描边：只描边的话它和下面的输入框长得一样，
+   * 而这里说的是"已经发生的事"，不是"等你填的东西"。灰用 127 中点，
+   * 深浅两套主题都成立（同一个写法在 .tz-icon:hover 那里已经用过）。
+   */
+  background: rgba(127, 127, 127, 0.08);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.tz-note-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * 做成一颗小药丸，不是一条带下划线的字：两行文字时它会紧贴第一行的末尾，
+ * 只有下划线的话读起来像句子的一部分（"…不会同步；断 知道了"）。
+ * 边框 + 无下划线 + 内边距，一眼看得出是能点的东西。
+ */
+.tz-note .tz-link {
+  flex: none;
+  align-self: flex-start;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  line-height: 14px;
+  text-decoration: none;
+}
+
+.tz-note .tz-link:hover {
+  color: var(--fg);
+  border-color: var(--muted);
+}
+
+/* ---------- 列表 ---------- */
+
+.tz-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.tz-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tz-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.tz-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tz-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 2px;
+  border-radius: 6px;
+}
+
+/* 本地那一档的行可以点（勾掉 / 放回），远端那档不能 */
+.tz-row.is-local {
+  cursor: pointer;
+}
+
+.tz-row.is-local:hover {
+  background: rgba(127, 127, 127, 0.12);
+}
+
+/*
+ * 勾选框自己画：沙箱文档的 color-scheme 被强制成 normal，原生 checkbox
+ * 会按浅色主题画成一个几乎看不见的小白块（和 lattice.todo 同一个理由）。
+ */
+.tz-check {
+  flex: none;
+  position: relative;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tz-check[aria-checked="true"] {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.tz-check[aria-checked="true"]::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 1px;
+  width: 4px;
+  height: 7px;
+  /*
+   * 勾用 --surface 上色，不是白也不是黑：深色主题里 accent 是浅绿（#5dcaa5），
+   * 勾该是深的；浅色主题里 accent 是深绿（#0f6e56），勾该是白的。
+   * surface 恰好两边都对 —— 和 lattice.todo 同一个理由。
+   */
+  border: solid var(--surface);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(42deg);
+}
+
+.tz-del {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  /*
+   * 静止时压到 0.32：三条并排的 × 在 280px 里看起来像一排"关闭标签"，
+   * 而这里删除是次要动作（勾掉才是主要的）。压下去但不藏起来 ——
+   * 藏到 hover 才出现，触屏和键盘就够不着了。
+   */
+  opacity: 0.32;
+}
+
+.tz-row.is-local:hover .tz-del,
+.tz-del:focus-visible {
+  opacity: 1;
+}
+
+.tz-del:hover {
+  color: var(--pri-high);
+  opacity: 1;
+}
+
+.tz-row.is-done .tz-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.tz-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.tz-row[data-p="high"] .tz-dot {
+  background: var(--pri-high);
+  border-color: transparent;
+}
+
+.tz-row[data-p="med"] .tz-dot {
+  background: var(--pri-med);
+  border-color: transparent;
+}
+
+.tz-row[data-p="low"] .tz-dot {
+  background: var(--pri-low);
+  border-color: transparent;
+}
+
+.tz-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tz-due {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 过期用优先级那个红：它在两张卡片里是同一个意思 */
+.tz-row.is-late .tz-due {
+  color: var(--pri-high);
+}
+
+.tz-empty {
+  margin: 0;
+  padding: 8px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ---------- 第一次用 ---------- */
+
+.tz-setup {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  /* 三条链接 + 一行说明在 170 高的最小尺寸里会顶出去，让它自己滚 */
+  overflow-y: auto;
+}
+
+.tz-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+/* 本地草稿本的输入框：贴着底栏，和列表之间隔一条 */
+.tz-add {
+  flex: none;
+}
+
+.tz-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.tz-form {
+  display: flex;
+  gap: 6px;
+}
+
+.tz-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.tz-input:focus {
+  border-color: var(--accent);
+}
+
+.tz-btn {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  /* 用 surface 而不是写死白/黑：浅色主题下 accent 偏深，深色主题下偏亮 */
+  color: var(--surface);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tz-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tz-error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pri-high);
+}
+
+.tz-link {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---------- 底栏 ---------- */
+
+.tz-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+}
+
+.tz-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tz-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tz-icon:hover:not(:disabled) {
+  color: var(--fg);
+  background: rgba(127, 127, 127, 0.16);
+}
+
+.tz-icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/*
+ * 刷新中让箭头转起来。`prefers-reduced-motion` 下不转 —— 卡片上唯一的
+ * 持续动画，对晕动敏感的人是纯干扰，而"同步中…"那几个字已经说清楚了。
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .tz-icon.is-spin svg {
+    animation: tz-spin 900ms linear infinite;
+  }
+}
+
+@keyframes tz-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 键盘 ---------- */
+
+/*
+ * 卡片里五类可点的东西（勾选框、×、链接、底栏图标、连接按钮）默认都没有
+ * 焦点圈：`outline: none` 是输入框为了自己画边框，而按钮们只是没写。
+ * 键盘用户 Tab 一圈什么都看不见，等于这张卡片只能用鼠标。
+ *
+ * 用 :focus-visible 而不是 :focus：鼠标点一下不留圈，否则每勾一条都多一圈光。
+ */
+.tz-check:focus-visible,
+.tz-del:focus-visible,
+.tz-link:focus-visible,
+.tz-icon:focus-visible,
+.tz-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

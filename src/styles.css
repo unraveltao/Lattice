@@ -5807,6 +5807,21 @@ button.lattice-chip[aria-pressed="true"] {
   margin-top: 0;
 }
 
+/* Markdown 表格的对齐（`runtime/markdown.ts` 的 `renderTable`）。
+   写成类而不是 `style="text-align:…"`：主窗口有 CSP，内联 style 属性会把
+   `style-src` 逼着放开 `'unsafe-inline'`。见那个文件里的注释。 */
+.lattice-doc-body .lattice-align-center {
+  text-align: center;
+}
+
+.lattice-doc-body .lattice-align-right {
+  text-align: right;
+}
+
+.lattice-doc-body .lattice-align-left {
+  text-align: left;
+}
+
 .lattice-doc-body h1 {
   margin: 4px 0 14px;
   font-size: 20px;
@@ -6743,4 +6758,105 @@ button.lattice-chip[aria-pressed="true"] {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/*
+ * 能力体检（设置 → 诊断）。
+ *
+ * 一行 = 一个点 + 名字 + 右边那句"为什么"。就这三样：没有折叠、没有"详情"、
+ * 没有图标按钮 —— 这一页的全部价值是**一眼扫完**，多一层展开就等于把
+ * "为什么没反应"藏进了第二次点击，而那正是这个功能要消灭的东西。
+ *
+ * 点的颜色走 `--lattice-accent` / `--lattice-danger` 两个变量，不写死：浅色和
+ * 深色两套里这两个颜色的分量差得远，写死的话总有一套会刺眼。
+ *
+ * 那句原因**允许折行**（不裁成省略号）：它可能就是"Windows refused: BitBlt
+ * could not copy the screen"，而裁掉后半句正好裁掉唯一有用的那半。
+ */
+.lattice-diag-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lattice-diag-stamp {
+  font-size: 12px;
+  color: var(--lattice-text-muted);
+}
+
+.lattice-diag-stamp b {
+  font-weight: 500;
+  color: var(--lattice-danger);
+}
+
+.lattice-diag-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/*
+ * 组标题用大写小字。三组（手 / 服务器 / 平台）之间只有这一行在分界 ——
+ * 加边框或留大片空白都会让这一页看着像三张表，而它其实是一张表。
+ */
+.lattice-diag-group h3 {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lattice-text-faint);
+}
+
+.lattice-diag-group ul {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lattice-diag-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 隔行不铺底色，只在悬停时亮一下：这一页大多数时候没人动，斑马纹只是噪音 */
+.lattice-diag-row:hover {
+  background: var(--lattice-surface-2);
+}
+
+.lattice-diag-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  /* `baseline` 对齐会让 6px 的圆坐在文字基线上，往下沉一截 */
+  align-self: center;
+  border-radius: 50%;
+  background: var(--lattice-accent);
+}
+
+.lattice-diag-row[data-ok="0"] .lattice-diag-dot {
+  background: var(--lattice-danger);
+}
+
+.lattice-diag-name {
+  flex: none;
+  color: var(--lattice-text);
+}
+
+.lattice-diag-note {
+  margin-left: auto;
+  color: var(--lattice-text-faint);
+  text-align: right;
+}
+
+.lattice-diag-note.is-bad {
+  color: var(--lattice-danger);
 }

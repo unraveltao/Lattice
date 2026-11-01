@@ -1,0 +1,199 @@
+name: verify
+
+# 完整的验证门禁，**只有一份命令清单**。
+#
+# 为什么要单独一个文件：`ci.yml` 和 `release.yml` 都要跑同一套检查，而抄两份清单
+# 一定会漂 —— 漂的方式还很安静（某次在 ci 里加了一条，release 那边没加，于是
+# "发得出去"和"测过了"重新变成两件事）。`workflow_call` 让两边调同一个定义。
+#
+# 2026-10-31 之前的样子：`release.yml` 只跑 `npm run typecheck`，测试一条都不跑，
+# 也不 `needs` 任何 job。同一提交上 release 成功、ci 失败真的发生过（40882357297
+# 对 40882358315）—— 那说明"构建成功"从来不等于"这个提交通过了门禁"。
+#
+# 三个 job 分开，谁红看谁：
+#   frontend —— 类型 + 构建 + 六个 node:test + 文档体检 + 三张对账
+#   browser  —— tests/*.html 里的全部断言（要 dev server）
+#   rust     —— policy 单测（`rustc --test` 单跑）+ cargo test
+#
+# 这里**不写具体条数**。要数字就看 `npm run test:browser` 的输出或 README，
+# 那个有 `check:docs` 盯着。
+
+on:
+  workflow_call:
+
+# 门禁只读仓库。写权限留给调用方（release 那条要发 Release），
+# 被调用的工作流只能收窄、不能放大 —— 所以这里显式写 read。
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # build 会先跑 widgets:index 生成 public/widgets/index.json（该文件不入库）
+      - run: npm run build
+      # 两个都是 node:test，不需要 dev server，跑一遍不到一秒
+      - run: npm run test:injection
+      - run: npm run test:sdk
+      # agent CLI：起一个假端点，测请求形状和退出码。不需要应用在跑
+      - run: npm run test:agent
+      # 三张表（字号 / 圆角 / 间距）的守门人。规矩写在 styles.css 头部，
+      # 但注释拦不住人 —— 收敛完的当天下午，同一个文件里就又长回了 10.5px。
+      # test:tokens 钉规则本身（半像素、豁免、font 简写），check:tokens 钉仓库现状。
+      - run: npm run test:tokens
+      - run: npm run check:tokens
+      # winget 清单生成器的形状（哈希大小写、直链与附件名、Publisher 取哪个名字）。
+      # 它不读安装包，只需要一个假字节串 —— 真清单在 release.yml 那一侧从真 exe 上生成
+      - run: npm run test:winget
+      # 浏览器预览那条 assistant 通道（dev server 的 `/api/llm`）。起一个假 provider
+      # 在 `127.0.0.1:0` 上（端口由系统给，runner 上不撞），测请求形状、失败抬头、
+      # 以及 `assistant.json` 的往返 —— 那是同一个文件的**第二个写者**，洗掉过一次
+      # 字段（`skills`），所以这条不该只在本机跑
+      - run: npm run test:llm-proxy
+      # 文档体检：相对链接是否可达、每份 md 是不是恰好有一个归属、代码量那六行。
+      # 这几件事过期了不会报错，只能靠一条命令盯着
+      - run: npm run check:docs
+      # 数字对账：README / ARCHITECTURE / WIDGET_SPEC / AGENTS / ROADMAP / design
+      # 里每一处"现在有多少条 X"都要和 scripts/stats.mjs 数出来的对上。
+      # 历史数（某一版的快照）可以旧，但必须带版本或日期 —— 否则它和"写错了"
+      # 是同一串字符，读者分不出来。这条盯的就是那个区别。
+      - run: npm run check:stats
+      # 版本对账：三处配置（package.json / Cargo.toml / tauri.conf.json）必须同一个数，
+      # 三份入口文档（两份 README + AGENTS）必须写着那个数。2026-10-31 之前没有这条，
+      # 于是"配置都是 0.3.0、文档写着 0.2.0"能一路绿到发布
+      - run: npm run check:version
+      # 门禁自己：workflow 里点名的脚本是否真存在（拼错一个字母本机不红）、
+      # 命令清单是不是还只有这一份、release 的构建有没有 needs 门禁、
+      # 每个 `scripts/guards/*.mjs` 是不是既在 check:guards 链里也在这里。
+      # 上一条那个 `check:version` 就是靠它才被接进 CI 的 —— 没有这一条，
+      # 新写的守门人只会在 pre-push 里跑，CI 那边永远是绿的
+      - run: npm run check:gates
+      # 平台页面的 CSP（`tauri.conf.json` 的 app.security.csp）。这条盯的是
+      # "为了修一个白屏顺手放开策略"：'unsafe-inline' / 'unsafe-eval' / 外部代码 /
+      # 外部连接、入口 HTML 里的内联脚本与 style 属性、平台代码直连外网、
+      # 以及 tests/csp.html 里那份用来证明"不会白屏"的策略是否和配置一致。
+      # 它读 dist/，所以必须排在 build 之后
+      - run: npm run check:csp
+      # 桥对账：一个权限要落六处（联合类型 / PERMISSION_READY / 文案 / 商店清单 /
+      # WIDGET_SPEC §3 / defineMethod），其中三处漏了**不会报错**，只是那条桥方法
+      # 永远 permission_denied。顺带对 WIDGET_SPEC §4 的方法表和 ARCHITECTURE 的
+      # 那两个"现在 N 条"
+      - run: npm run check:bridge
+      # 命令对账：invoke("x") ↔ #[tauri::command] ↔ generate_handler!。
+      # 拼错一个名字、或声明了忘了注册，都只在运行时 reject 一句
+      # `Command x not found`，界面上表现成"这块数据没加载出来"
+      - run: npm run check:commands
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # 测试页 import 的是 .ts/.tsx，必须有 dev server 转译。
+      # `npm run dev` 顺带生成 widgets:index / store:index，测试页用得上。
+      - name: Start the dev server
+        run: |
+          npm run dev -- --port 1420 > /tmp/vite.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -sf http://localhost:1420/tests/semver.html > /dev/null; then
+              echo "dev server is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the dev server never came up"
+          cat /tmp/vite.log
+          exit 1
+
+      # runner 上自带 Chrome；没有就报清楚，别让脚本报一句"找不到 Chrome"
+      - name: Find Chrome
+        run: |
+          CHROME_BIN=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)
+          if [ -z "$CHROME_BIN" ]; then
+            echo "::error::no Chrome on this runner"
+            exit 1
+          fi
+          echo "CHROME=$CHROME_BIN" >> "$GITHUB_ENV"
+          echo "chrome: $CHROME_BIN"
+
+      - name: Run every self-check page
+        run: |
+          # `run:` 默认是 `bash -e`：pipeline 一失败就整步退出，后面的 annotation
+          # 代码根本不会执行（上一轮就是这样，注解里一条都没出现）。先关掉 -e。
+          set +e
+          npm run test:browser -- --base http://localhost:1420 2>&1 | tee /tmp/browser.log
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            # 把最后十几行写成 annotation。
+            # 理由很实在：runner 上的完整日志要登录才看得到，而 annotation 走
+            # `/check-runs/<id>/annotations` 是公开可读的 —— 下次排查不用再找人贴日志。
+            # 用 tail 而不是 grep：脚本自己崩掉时，要看的正是那段堆栈。
+            tail -12 /tmp/browser.log | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          fi
+
+      # 失败时把 dev server 的日志一起打出来 —— 页面渲染不出来最常见的原因在那边
+      - name: Dump the dev server log
+        if: failure()
+        run: tail -50 /tmp/vite.log || true
+
+  rust:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+      # tauri-build 要读 frontendDist（`../dist`），先把它建出来
+      - run: npm run build
+
+      # 每个 `*_policy.rs` 都要能 `rustc --test` 单跑、并且跑绿。
+      # 这条**必须在 rust job 里**：frontend 那个是 ubuntu、没装 rustc，而这里
+      # 恰好有 —— 而它盯的正是"policy 层悄悄变得不再零依赖"那件事：一旦有人
+      # `use crate::state;`，本机就再也跑不了那些断言（`cargo test` 在开发机上
+      # 起不来），而 CI 的 cargo test 会红在别的层，看不出是这个原因
+      - run: npm run check:policy-tests
+
+      - name: cargo test
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          # 测试二进制在 target/debug/deps/，而 WebView2Loader.dll 在 target/debug/ ——
+          # 一度以为 DLL 搜不到会让进程起不来（0xc0000135），实测不需要：
+          # 97 条断言跑起来了，唯一红的是断言本身。
+          $output = cargo test --lib 2>&1
+          $code = $LASTEXITCODE
+          $output | Tee-Object -FilePath ../cargo-test.log
+
+          if ($code -ne 0) {
+            # 最后十几行才是重点（编译错误的 error、测试失败的 failures 列表）。
+            # 写成 annotation 是为了不登录也能读到，见 browser job 里那段说明。
+            Get-Content ../cargo-test.log -Tail 12 | ForEach-Object { Write-Host "::error::$_" }
+            exit 1
+          }

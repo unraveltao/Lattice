@@ -272,6 +272,34 @@ export default function App() {
   }, []);
 
   /**
+   * 桌宠（伴侣）在不在桌面上。`null` = 还没问过平台。
+   *
+   * **它不是一个组件**（LAT-0041）：桌宠是平台自己的一扇窗，和 assistant 小窗、
+   * 听写浮钮同一类。所以顶栏这里是它**唯一**的入口 —— 用户没法"摆上去"，
+   * 只能从这里放出来或收起来。
+   *
+   * 状态归 `pet-state.json` 所有，这里只是读一份镜像。两颗按钮（这里和设置页
+   * 的 Companion 一节）写的是同一个字段，所以关掉再回来不会出现两边说法不同。
+   */
+  const [petHidden, setPetHidden] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    void invoke<{ hidden: boolean }>("pet_state")
+      .then((state) => setPetHidden(state.hidden))
+      // 读不到就当"不知道"，按钮退回"放出来"那一种说法 —— 比假装她藏起来了安全
+      .catch(() => setPetHidden(null));
+  }, []);
+
+  const toggleCompanion = useCallback(() => {
+    if (!isTauri()) return;
+    const next = petHidden !== false;
+    void invoke<{ hidden: boolean }>("pet_set_hidden", { hidden: next })
+      .then((state) => setPetHidden(state.hidden))
+      .catch((error) => console.error("failed to toggle the companion", error));
+  }, [petHidden]);
+
+  /**
    * 把设置打开到"Widgets"那一页 —— 首次引导里"加一个源"的那颗按钮。
    *
    * 源列表只有一个家（`SettingsMenu.tsx`），所以这里不复制一份编辑器，只做"送去"。
@@ -636,7 +664,8 @@ export default function App() {
       removePlacement(payload.instanceId);
     });
     /*
-     * 组件自己把窗口关了（`lattice.pet` 右键就是这条，见 `runner.rs::widget_close`）。
+     * 组件自己把窗口关了（见 `runner.rs::widget_close`；当初 `lattice.pet`
+     * 右键就是这条，那个组件已经不在仓库里了，机制还在）。
      *
      * placement 不动 —— 那是用户摆好的布局；只把"这一份已经没有窗口"记下来，
      * 画布拿它决定要不要挂活的那一份（`canvasNeedsLiveFrame`）。少了这一条，
@@ -1345,6 +1374,33 @@ export default function App() {
           >
             <Glyph d={ICON.agent} />
           </button>
+
+          {/*
+            伴侣（桌宠）的入口。
+            
+            **这是它唯一的入口**：她不是组件，用户没法从组件库里把她摆上来
+            （LAT-0041）。所以这一颗按钮的职责就是"把 agent 的样子叫出来 / 收起来"
+            —— 和右边那颗助手按钮是一对：那颗管"跟她说话"，这颗管"看得见她"。
+
+            浏览器预览里没有这扇窗，所以那里干脆不画 —— 画了也只会是一颗点了
+            没反应的按钮。
+          */}
+          {isTauri() ? (
+            <button
+              type="button"
+              className={`lattice-icon-btn is-large${petHidden === false ? " is-active" : ""}`}
+              onClick={toggleCompanion}
+              aria-pressed={petHidden === false}
+              title={
+                petHidden === false
+                  ? t("Companion — she is on your desktop; click to hide her")
+                  : t("Companion — hidden; click to bring her back")
+              }
+              aria-label={t("Toggle the companion")}
+            >
+              <Glyph d={ICON.companion} />
+            </button>
+          ) : null}
 
           {/*
             听写的顶栏入口（0027 §4）：光标在这个窗口的某个输入框里时，按它

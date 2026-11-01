@@ -453,6 +453,35 @@ export function AssistantPanel({ open, onClose, records, catalogue, variant = "d
     decide(true);
   }, [approval, decide]);
 
+  /**
+   * 报姿态（LAT-0041 §4.4）—— 桌宠那张脸的唯一来源。
+   *
+   * **一处算，不散在五个地方。** 开轮、等审批、出错、收尾各报一次听起来更直接，
+   * 但那意味着同一个判断写在四条代码路径上，而它们迟早会不一致（症状是
+   * "她永远一脸呆滞"，没有任何地方会报错）。这里从已经存在的三个状态**推**：
+   * `error` / `approval` / `busy`，它们本来就是这一轮的真相。
+   *
+   * `done` 要单独记一笔 `wasBusy`：`busy` 从 true 变 false 的那一刻，界面已经
+   * 回到"可以再发一句"的样子，而"她刚干完活"这件事只有那一瞬间知道。平台那边
+   * 会让 `done` 在 4 秒后自己回落到 `idle`（`presence_policy::tick`），
+   * 所以这里不用管过期。
+   *
+   * 出错的优先级最高：一轮里先出错再收尾，她应该记住"这轮崩了"，而不是"干完了"。
+   */
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let posture: "idle" | "working" | "waiting" | "done" | "error";
+    if (error) posture = "error";
+    else if (approval) posture = "waiting";
+    else if (busy) posture = "working";
+    else posture = wasBusy.current ? "done" : "idle";
+    wasBusy.current = busy;
+    void invoke("presence_report", { posture, detail: null }).catch(() => {
+      // 报不上去只影响她的表情，不该在界面上留一行红字
+    });
+  }, [busy, approval, error]);
+
   // —— 会话（0003 §4）：一份对话一个文件 ——
   //
   // 三样东西分得很清楚，混起来就出错：

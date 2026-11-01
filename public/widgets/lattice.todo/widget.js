@@ -4,6 +4,10 @@
  * 数据全部走 storage 桥，组件自己不碰 localStorage ——
  * 沙箱 iframe 是不透明源，localStorage 本来就不可用，
  * 这样也顺带保证了"同一组件的多个实例共享同一份数据"。
+ *
+ * 0.3.0 起一件事分三档：L1 想法 / L2 目标 / L3 执行（见 docs/design/LAT-0038）。
+ * 档位是每条待办自己的一个字段（`level`），不是父子挂靠 —— 升格就是改这个数字，
+ * 条目的 id 不变。三档在界面上是页签，一次只看一档。
  */
 (function () {
   "use strict";
@@ -45,7 +49,7 @@
   /*
    * 界面语言。
    *
-   * 卡片上的字都是这个组件自己的（"还剩 2 项"、"优先级"），平台只负责告诉
+   * 卡片上的字都是这个组件自己的（"还剩 2 项"、"升格"），平台只负责告诉
    * 我们现在是哪一门。两件事都要做：启动时问一次 `lang.get`，用户中途换
    * 语言再收 `language` 推送 —— 只读一次，换语言卡片就不动。
    *
@@ -59,24 +63,42 @@
     return lang === "en" ? en : zh;
   }
 
-  function applyLanguage(info) {
-    var next = info && info.lang === "en" ? "en" : "zh";
-    if (next === lang) return;
-    lang = next;
-    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
-    document.title = say("待办", "Todo");
-    titleEl.textContent = say("待办清单", "To-do");
-    inputEl.placeholder = say("添加一条待办，回车确认", "Add a to-do, press Enter");
-    emptyEl.textContent = say("还没有待办", "Nothing here yet");
-    // 标题、占位符、圆点的 aria 都散在 render / paintMeta 里，重画一遍最省事。
-    // 正拖着的时候不能重画 —— 手里那个 li 会变成离树的死节点
-    if (drag) paintMeta();
-    else render();
+  /*
+   * ---------- 三档 ----------
+   *
+   * L1 想法 / L2 目标 / L3 执行，是**具体化程度**，不是时间视野、也不是父子挂靠。
+   * 一条待办永远只在一档里，升格是改 `level`，不是另加一条 —— 所以 id 不变、
+   * 优先级不变、勾没勾也不变。
+   *
+   * 认不出来一律当 3（执行层）：老数据没有这个字段，脏值也不该让整条消失。
+   * 这和 readPriority 是同一个写法 —— 认不出就当没设，不抛、不猜。
+   */
+  var LEVEL_NAME = {
+    1: { zh: "想法", en: "Idea" },
+    2: { zh: "目标", en: "Goal" },
+    3: { zh: "执行", en: "Action" },
+  };
+  var DEFAULT_LEVEL = 3;
+
+  function readLevel(value) {
+    var n = typeof value === "number" ? value : Number(value);
+    return n === 1 || n === 2 || n === 3 ? n : DEFAULT_LEVEL;
+  }
+
+  function levelName(n) {
+    return LEVEL_NAME[n][lang];
+  }
+
+  /** 标题栏左边那一格：「L3 · 执行」—— 三档的含义只有这一个地方说 */
+  function levelTag(n) {
+    return "L" + n + " · " + levelName(n);
   }
 
   // ---------- 业务 ----------
   var STORAGE_KEY = "items";
+  var VIEW_KEY = "view";
   var items = [];
+  var level = DEFAULT_LEVEL;
 
   /*
    * 优先级：三级，红 / 黄 / 绿，用一个小圆点表示。
@@ -87,6 +109,8 @@
    * 没设的那一档画成空心圈而不是不画：一来整列对得齐，二来空心的圈
    * 本身就是"这儿可以点"的提示 —— 只在 hover 时才出现的按钮，用户
    * 永远发现不了。
+   *
+   * 它和档位是**两个正交的轴**：一条 L3 的执行项照样可以是红色。
    */
   var PRIORITY_ORDER = ["high", "med", "low"];
   var PRIORITY_LABEL = {
@@ -96,8 +120,8 @@
   };
 
   /** 圆点读给屏幕阅读器听的那一档，跟着界面语言走 */
-  function priorityLabel(level) {
-    return PRIORITY_LABEL[level][lang];
+  function priorityLabel(key) {
+    return PRIORITY_LABEL[key][lang];
   }
 
   /** 磁盘上的老数据没有这个字段，也可能有脏值 —— 认不出来就当没设 */
@@ -127,6 +151,7 @@
       var key = data.payload && data.payload.key;
       // 空 key = 整份文件被替换过，什么都要重读
       if (!key || key === STORAGE_KEY) reload();
+      if (!key || key === VIEW_KEY) reloadView();
       return;
     }
     if (data.type !== "response") return;
@@ -147,7 +172,8 @@
   var listEl = document.getElementById("list");
   var emptyEl = document.getElementById("empty");
   var metaEl = document.getElementById("meta");
-  var titleEl = document.querySelector(".todo-title");
+  var levelEl = document.getElementById("levelName");
+  var tabsEl = document.getElementById("tabs");
 
   /*
    * 同一个组件可能在画布上有一个实例、桌面上又有一个，各自持一份内存列表。
@@ -168,7 +194,27 @@
    */
   var saveError = false;
 
+  /** 当前这一档的条目，按 items 里的相对顺序 —— DOM 里那几行和它一一对应 */
+  function viewItems() {
+    return items.filter(function (item) {
+      return readLevel(item.level) === level;
+    });
+  }
+
+  function paintInput() {
+    inputEl.placeholder = say("加一条 L" + level, "Add to L" + level);
+  }
+
+  function paintTabs() {
+    Array.prototype.forEach.call(tabsEl.children, function (tab) {
+      var n = Number(tab.dataset.level);
+      tab.setAttribute("aria-selected", n === level ? "true" : "false");
+    });
+  }
+
   function paintMeta() {
+    levelEl.textContent = levelTag(level);
+
     if (saveError) {
       metaEl.textContent = say("未保存", "Not saved");
       metaEl.classList.add("is-error");
@@ -176,12 +222,22 @@
     }
     metaEl.classList.remove("is-error");
     metaEl.title = "";
-    if (items.length === 0) {
+
+    var list = viewItems();
+    if (list.length === 0) {
       metaEl.textContent = "";
       return;
     }
+    // 想法没有"完成"这回事（那一档不画勾选框），所以它的计数就是总条数
+    if (level === 1) {
+      metaEl.textContent = say(
+        list.length + " 条",
+        list.length + (list.length === 1 ? " item" : " items"),
+      );
+      return;
+    }
     var left = 0;
-    items.forEach(function (item) {
+    list.forEach(function (item) {
       if (!item.done) left += 1;
     });
     // 中文没有复数，别照搬 "left" 的结构：还剩几项，全勾完就是全部完成
@@ -238,6 +294,28 @@
       .catch(function () {});
   }
 
+  /*
+   * 当前看哪一档也落盘（键 `view`）。它不是"界面状态"，是"这个人现在在干哪一档"，
+   * 所以重启之后要回到原处。代价：它按 widgetId 存，两个宿主会跟着一起切档 ——
+   * 同一份清单本来就该长一个样，和 store-changed 一个语义。
+   */
+  function persistView() {
+    call("storage.set", { key: VIEW_KEY, value: { level: level } }).catch(function () {
+      /* 存不下去只影响"下次重启回到哪档"，内存里照样能切 */
+    });
+  }
+
+  function reloadView() {
+    call("storage.get", { key: VIEW_KEY })
+      .then(function (value) {
+        var next = readLevel(value && value.level);
+        if (next === level) return;
+        level = next;
+        render();
+      })
+      .catch(function () {});
+  }
+
   /**
    * 用户是否已经动过这份列表。
    *
@@ -254,6 +332,142 @@
     persist();
   }
 
+  function setView(next) {
+    if (next === level) return;
+    level = next;
+    render();
+    persistView();
+  }
+
+  /*
+   * ---------- 换档 ----------
+   *
+   * 页签把另外两档藏起来了，所以"跨档拖动"没有落点。换档只有两条路：
+   * 行尾 ⋯ 菜单（保证有的那条），和"拖到页签上松手"（快捷手势）。
+   */
+
+  /** 升格 / 降格。id 不变，所以优先级、勾没勾都跟着走 */
+  function moveTo(item, target) {
+    if (!item) return false;
+    var from = readLevel(item.level);
+    if (from === target) return false;
+    item.level = target;
+    // 换档后插到目标档最上面：切过去第一眼就看见它
+    items = [item].concat(
+      items.filter(function (candidate) {
+        return candidate !== item;
+      }),
+    );
+    if (target !== level) bumpTab(target);
+    commit();
+    return true;
+  }
+
+  var bumpTimer = 0;
+  function bumpTab(target) {
+    Array.prototype.forEach.call(tabsEl.children, function (tab) {
+      tab.classList.toggle("is-bumped", Number(tab.dataset.level) === target);
+    });
+    window.clearTimeout(bumpTimer);
+    bumpTimer = window.setTimeout(function () {
+      Array.prototype.forEach.call(tabsEl.children, function (tab) {
+        tab.classList.remove("is-bumped");
+      });
+    }, 600);
+  }
+
+  function removeItem(item) {
+    items = items.filter(function (candidate) {
+      return candidate !== item;
+    });
+    commit();
+  }
+
+  /*
+   * ---------- 行尾的 ⋯ ----------
+   *
+   * 菜单挂在 body 上而不是行里：列表有 overflow-y: auto，挂进去一靠近底边
+   * 就被裁掉半截。关闭有三条路 —— 点别处、按 Esc、重画。
+   */
+  var menuEl = null;
+  var openMore = null;
+
+  function closeMenu() {
+    if (!menuEl) return;
+    menuEl.remove();
+    menuEl = null;
+    if (openMore) {
+      openMore.setAttribute("aria-expanded", "false");
+      openMore = null;
+    }
+  }
+
+  function openMenu(item, row, moreBtn) {
+    closeMenu();
+    var from = readLevel(item.level);
+    var entries = [
+      { label: say("升格", "Promote"), to: from + 1, disabled: from >= 3 },
+      { label: say("降格", "Demote"), to: from - 1, disabled: from <= 1 },
+      { label: say("删除", "Delete"), to: 0, danger: true },
+    ];
+
+    var el = document.createElement("div");
+    el.className = "todo-menu";
+    el.setAttribute("role", "menu");
+
+    entries.forEach(function (entry) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "todo-menu-item" + (entry.danger ? " is-danger" : "");
+      btn.setAttribute("role", "menuitem");
+      btn.disabled = !!entry.disabled;
+      btn.textContent = entry.label;
+      if (entry.to && !entry.disabled) {
+        var key = document.createElement("span");
+        key.className = "todo-menu-key";
+        key.textContent = "L" + entry.to;
+        btn.appendChild(key);
+      }
+      btn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        closeMenu();
+        if (entry.danger) removeItem(item);
+        else moveTo(item, entry.to);
+      });
+      el.appendChild(btn);
+    });
+
+    document.body.appendChild(el);
+    // 记账。少了这一行，closeMenu 永远早退（menuEl 恒为 null），
+    // 每开一次就多留一个菜单在 DOM 里 —— 点第三行的时候第一行的菜单还在。
+    menuEl = el;
+
+    // 贴着行的右下角。放不下就**往上收**，而不是整个翻到行上方 ——
+    // 卡片只有 240 高，翻上去会盖住页签，而换档正是从这个菜单发起的。
+    var rect = row.getBoundingClientRect();
+    var box = el.getBoundingClientRect();
+    var left = Math.max(4, Math.min(rect.right - box.width, window.innerWidth - box.width - 4));
+    var top = rect.bottom + 4;
+    if (top + box.height > window.innerHeight - 4) {
+      top = Math.max(4, Math.min(rect.top, window.innerHeight - box.height - 4));
+    }
+    el.style.left = left + "px";
+    el.style.top = top + "px";
+
+    openMore = moreBtn;
+    moreBtn.setAttribute("aria-expanded", "true");
+  }
+
+  document.addEventListener(
+    "pointerdown",
+    function (event) {
+      if (!menuEl) return;
+      if (menuEl.contains(event.target)) return;
+      closeMenu();
+    },
+    true,
+  );
+
   /*
    * ---------- 拖动排序 ----------
    *
@@ -264,9 +478,11 @@
    * 三个容易翻车的地方：
    *   1. 整行可拖，但整行也"点一下勾掉" —— 必须过阈值才认成拖动，而且抬手
    *      之后浏览器还会补一次 click，得把它吃掉，否则拖完那条被顺手勾上。
-   *   2. 圆点 / 勾选框 / 删除按钮自己有点击语义，从它们身上按下不许起拖。
+   *   2. 圆点 / 勾选框 / ⋯ 自己有点击语义，从它们身上按下不许起拖。
    *   3. 列表能滚。指针停在上下边缘要自动滚；滚了之后"跟手"的位移必须跟着
    *      scrollTop 一起算，否则指针没动、行却在往回跑。
+   *
+   * 0.3.0 多一条：指针停在页签上 = 松手换档，这时候不排序、不滚列表。
    */
   var DRAG_SLOP = 4;
   var EDGE_SCROLL = 20;
@@ -290,16 +506,32 @@
     return Math.max(0, rects[1].top - rects[0].top - rects[0].h);
   }
 
-  function beginDrag(event, row) {
+  /** 指针落在哪颗页签上；不在页签区返回 null（0 不能当哨兵 —— 0 会被 readLevel 吃成 3） */
+  function tabAt(y) {
+    for (var i = 0; i < tabsEl.children.length; i += 1) {
+      var box = tabsEl.children[i].getBoundingClientRect();
+      if (y >= box.top && y <= box.bottom) return Number(tabsEl.children[i].dataset.level);
+    }
+    return null;
+  }
+
+  function paintTabHint(target) {
+    Array.prototype.forEach.call(tabsEl.children, function (tab) {
+      tab.classList.toggle("is-drop", Number(tab.dataset.level) === target);
+    });
+  }
+
+  function beginDrag(event, row, item) {
     if (event.button !== 0) return;
-    // 只剩一条时没有"换位"可言，别让整行变成抓不动的假手柄
-    if (items.length < 2) return;
+    // 只剩一条时没有"换位"可言，但**换档**还得能拖 —— 所以这里不按条数早退
     var from = Array.prototype.indexOf.call(listEl.children, row);
     if (from < 0) return;
     drag = {
       row: row,
+      item: item,
       from: from,
       to: from,
+      tabLevel: null,
       pointerId: event.pointerId,
       startY: event.clientY,
       startScroll: listEl.scrollTop,
@@ -318,8 +550,24 @@
 
   function paintDrag() {
     var state = drag;
-    var dy = lastPointerY - state.startY + (listEl.scrollTop - state.startScroll);
-    state.row.style.transform = "translateY(" + dy + "px)";
+    var rawDy = lastPointerY - state.startY + (listEl.scrollTop - state.startScroll);
+    // 拖到页签上时，行会顶出列表上沿被 overflow 裁掉 —— 夹在列表里，
+    // 靠页签的虚线框说明"松手就换档"
+    var minDy = -(state.row.offsetTop - listEl.scrollTop);
+    state.row.style.transform = "translateY(" + Math.max(rawDy, minDy) + "px)";
+
+    var target = tabAt(lastPointerY);
+    state.tabLevel = target;
+    if (target) {
+      // 页签区不是排序落点：其余行回原位，只留页签高亮
+      state.to = state.from;
+      Array.prototype.forEach.call(listEl.children, function (row) {
+        if (row !== state.row) row.style.transform = "";
+      });
+      paintTabHint(target);
+      return;
+    }
+    paintTabHint(null);
 
     // 指针换算到内容坐标：比"每条的中点"低几条，就落在第几位
     var box = listEl.getBoundingClientRect();
@@ -345,6 +593,11 @@
   function dragTick() {
     dragRaf = 0;
     if (!drag || !drag.moved) return;
+    // 停在页签上时不该再滚列表 —— 那会让"松手换档"变成"顺手滚走"
+    if (drag.tabLevel) {
+      dragRaf = window.requestAnimationFrame(dragTick);
+      return;
+    }
     var box = listEl.getBoundingClientRect();
     var delta = 0;
     if (lastPointerY < box.top + EDGE_SCROLL) delta = -EDGE_SPEED;
@@ -371,10 +624,31 @@
     paintDrag();
   }
 
+  /**
+   * 在当前这一档里换位。
+   *
+   * 传进来的是**这一档的位次**，而 items 是三档混在一起的一根数组 ——
+   * 所以不能直接 splice，得先找到目标那条在 items 里的位置。
+   */
+  function reorderWithinLevel(from, to) {
+    var view = viewItems();
+    var moved = view[from];
+    var anchor = view[to];
+    if (!moved || !anchor) return;
+    items.splice(items.indexOf(moved), 1);
+    var at = items.indexOf(anchor);
+    if (at < 0) {
+      items.unshift(moved);
+      return;
+    }
+    items.splice(from < to ? at + 1 : at, 0, moved);
+  }
+
   function endDrag(keepOrder) {
     if (!drag) return;
     var state = drag;
     drag = null;
+    paintTabHint(null);
     if (dragRaf) {
       window.cancelAnimationFrame(dragRaf);
       dragRaf = 0;
@@ -398,8 +672,12 @@
       suppressClick = false;
     }, 0);
 
+    if (keepOrder && state.tabLevel) {
+      moveTo(state.item, state.tabLevel);
+      return;
+    }
     if (keepOrder && state.to !== state.from) {
-      items.splice(state.to, 0, items.splice(state.from, 1)[0]);
+      reorderWithinLevel(state.from, state.to);
       commit();
       return;
     }
@@ -419,97 +697,116 @@
     endDrag(false);
   });
   document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape" && drag) endDrag(false);
+    if (event.key !== "Escape") return;
+    if (drag) endDrag(false);
+    closeMenu();
   });
 
-  function render() {
-    listEl.textContent = "";
+  function buildRow(item) {
+    var itemLevel = readLevel(item.level);
+    // 想法没有"完成"这回事：它只有两个出口 —— 变成目标，或者删掉
+    var isAction = itemLevel !== 1;
 
-    items.forEach(function (item) {
-      var li = document.createElement("li");
-      li.className = "todo-item" + (item.done ? " is-done" : "");
+    var li = document.createElement("li");
+    li.className = "todo-item" + (isAction && item.done ? " is-done" : "");
 
-      // 自绘勾选框：原生 checkbox 在沙箱 iframe 里会被画成浅色小方块，看不见
-      var check = document.createElement("input");
+    var priority = readPriority(item.priority);
+    var upcoming = nextPriority(priority);
+    var dot = document.createElement("button");
+    dot.type = "button";
+    dot.className = "todo-dot";
+    if (priority) dot.dataset.level = priority;
+    dot.title = priority
+      ? say(
+          "优先级：" + priorityLabel(priority) + "，点一下切换",
+          "Priority: " + priorityLabel(priority) + " — click to change",
+        )
+      : say("设置优先级", "Set priority");
+    dot.setAttribute(
+      "aria-label",
+      (priority ? say("优先级：", "Priority: ") + priorityLabel(priority) : say("没有优先级", "No priority")) +
+        say("。点一下", ". Click to ") +
+        (upcoming
+          ? say("设为" + priorityLabel(upcoming), "set " + priorityLabel(upcoming).toLowerCase())
+          : say("清除", "clear it")) +
+        say("。", "."),
+    );
+    dot.addEventListener("click", function (event) {
+      event.stopPropagation();
+      // 重读一次而不是用闭包里的 priority：同一行被点了好几下时，
+      // 闭包里那个值是上一轮渲染的，已经过期了
+      var next = nextPriority(readPriority(item.priority));
+      if (next) item.priority = next;
+      else delete item.priority;
+      commit();
+    });
+
+    // 自绘勾选框：原生 checkbox 在沙箱 iframe 里会被画成浅色小方块，看不见
+    var check = null;
+    if (isAction) {
+      check = document.createElement("input");
       check.type = "checkbox";
       check.className = "todo-check";
-      check.checked = item.done;
+      check.checked = !!item.done;
       check.title = item.done ? say("标为未完成", "Mark as not done") : say("标为完成", "Mark as done");
       check.setAttribute("aria-label", item.text);
       check.addEventListener("change", function () {
         item.done = check.checked;
         commit();
       });
+    }
 
-      var priority = readPriority(item.priority);
-      var upcoming = nextPriority(priority);
-      var dot = document.createElement("button");
-      dot.type = "button";
-      dot.className = "todo-dot";
-      if (priority) dot.dataset.level = priority;
-      dot.title = priority
-        ? say(
-            "优先级：" + priorityLabel(priority) + "，点一下切换",
-            "Priority: " + priorityLabel(priority) + " — click to change",
-          )
-        : say("设置优先级", "Set priority");
-      dot.setAttribute(
-        "aria-label",
-        (priority ? say("优先级：", "Priority: ") + priorityLabel(priority) : say("没有优先级", "No priority")) +
-          say("。点一下", ". Click to ") +
-          (upcoming
-            ? say("设为" + priorityLabel(upcoming), "set " + priorityLabel(upcoming).toLowerCase())
-            : say("清除", "clear it")) +
-          say("。", "."),
-      );
-      dot.addEventListener("click", function (event) {
-        event.stopPropagation();
-        // 重读一次而不是用闭包里的 priority：同一行被点了好几下时，
-        // 闭包里那个值是上一轮渲染的，已经过期了
-        var next = nextPriority(readPriority(item.priority));
-        if (next) item.priority = next;
-        else delete item.priority;
-        commit();
-      });
+    var text = document.createElement("span");
+    text.className = "todo-text";
+    text.textContent = item.text;
 
-      var text = document.createElement("span");
-      text.className = "todo-text";
-      text.textContent = item.text;
+    var more = document.createElement("button");
+    more.type = "button";
+    more.className = "todo-more";
+    more.textContent = "⋯";
+    more.title = say("更多", "More");
+    more.setAttribute("aria-label", say("「" + item.text + "」的更多操作", 'More actions for "' + item.text + '"'));
+    more.setAttribute("aria-haspopup", "menu");
+    more.setAttribute("aria-expanded", "false");
+    more.addEventListener("click", function (event) {
+      event.stopPropagation();
+      if (menuEl && openMore === more) {
+        closeMenu();
+        return;
+      }
+      openMenu(item, li, more);
+    });
 
-      var remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "todo-remove";
-      remove.textContent = "×";
-      remove.title = say("删除", "Delete");
-      remove.setAttribute("aria-label", say("删除「" + item.text + "」", 'Delete "' + item.text + '"'));
-      remove.addEventListener("click", function (event) {
-        event.stopPropagation();
-        items = items.filter(function (candidate) {
-          return candidate.id !== item.id;
-        });
-        commit();
-      });
+    // 点整行都能勾：文字比那个小方框好点得多。
+    // 勾选框、优先级圆点和 ⋯ 自己处理过事件，这里要让开，否则状态会翻两次。
+    li.addEventListener("click", function (event) {
+      if (suppressClick) return;
+      if (event.target === check || event.target === more || event.target === dot) return;
+      if (!isAction) return;
+      item.done = !item.done;
+      commit();
+    });
 
-      // 点整行都能勾：文字比那个小方框好点得多。
-      // 勾选框、优先级圆点和删除按钮自己处理过事件，这里要让开，否则状态会翻两次。
-      li.addEventListener("click", function (event) {
-        if (suppressClick) return;
-        if (event.target === check || event.target === remove || event.target === dot) return;
-        item.done = !item.done;
-        commit();
-      });
+    // 整行都能拖起来排序 / 拖到页签上换档；那三个控件自己有点击语义，从它们身上按下不算拖
+    li.addEventListener("pointerdown", function (event) {
+      if (event.target === check || event.target === more || event.target === dot) return;
+      beginDrag(event, li, item);
+    });
 
-      // 整行都能拖起来排序；那三个控件自己有点击语义，从它们身上按下不算拖
-      li.addEventListener("pointerdown", function (event) {
-        if (event.target === check || event.target === remove || event.target === dot) return;
-        beginDrag(event, li);
-      });
+    li.appendChild(dot);
+    if (check) li.appendChild(check);
+    li.appendChild(text);
+    li.appendChild(more);
+    return li;
+  }
 
-      li.appendChild(dot);
-      li.appendChild(check);
-      li.appendChild(text);
-      li.appendChild(remove);
-      listEl.appendChild(li);
+  function render() {
+    closeMenu();
+
+    var list = viewItems();
+    listEl.textContent = "";
+    list.forEach(function (item) {
+      listEl.appendChild(buildRow(item));
     });
 
     /*
@@ -523,17 +820,46 @@
       else el.removeAttribute("title");
     });
 
-    emptyEl.classList.toggle("is-visible", items.length === 0);
+    // 空态按档各说各的：用户得知道"这一档是什么"，而不是一句通用的"没有内容"
+    emptyEl.textContent = say("还没有 L" + level + " · " + levelName(level), "Nothing in L" + level + " yet");
+    emptyEl.classList.toggle("is-visible", list.length === 0);
+
+    paintInput();
+    paintTabs();
     paintMeta();
+  }
+
+  function applyLanguage(info) {
+    var next = info && info.lang === "en" ? "en" : "zh";
+    if (next === lang) return;
+    lang = next;
+    document.documentElement.lang = next === "en" ? "en" : "zh-CN";
+    document.title = say("待办", "Todo");
+    tabsEl.setAttribute("aria-label", say("层级", "Level"));
+    // 正拖着的时候不能重画 —— 手里那个 li 会变成离树的死节点
+    if (drag) paintMeta();
+    else render();
   }
 
   formEl.addEventListener("submit", function (event) {
     event.preventDefault();
     var text = inputEl.value.trim();
     if (!text) return;
-    items.unshift({ id: String(Date.now()) + Math.random().toString(16).slice(2, 6), text: text, done: false });
+    // 落点跟着当前页签走：页签已经声明了"你在看哪一档"，在那里按回车就该落那儿
+    items.unshift({
+      id: String(Date.now()) + Math.random().toString(16).slice(2, 6),
+      text: text,
+      done: false,
+      level: level,
+    });
     inputEl.value = "";
     commit();
+  });
+
+  tabsEl.addEventListener("click", function (event) {
+    var tab = event.target.closest ? event.target.closest(".todo-tab") : null;
+    if (!tab) return;
+    setView(Number(tab.dataset.level));
   });
 
   // 先问一次语言（首帧已经按 HTML 里的中文画好了）。独立一条链：问不到语言
@@ -546,7 +872,9 @@
       /* 拿不到就按中文画 */
     });
 
-  call("storage.get", { key: STORAGE_KEY })
+  // 列表和当前档各读一次，两条都落地之后才报 ready ——
+  // 早报的话，测试点开页签时 view 可能还没回来，会把用户刚点的档盖掉
+  var loadItems = call("storage.get", { key: STORAGE_KEY })
     .then(function (value) {
       if (touched) return;
       if (Array.isArray(value)) {
@@ -555,9 +883,17 @@
         });
       }
     })
-    .catch(function () {})
-    .then(function () {
-      render();
-      parent.postMessage({ __lattice: 1, type: "ready" }, "*");
-    });
+    .catch(function () {});
+
+  var loadView = call("storage.get", { key: VIEW_KEY })
+    .then(function (value) {
+      // 老数据里没有这个键（读到 null）、或者读到别的东西（脏值），都按 3
+      level = readLevel(value && value.level);
+    })
+    .catch(function () {});
+
+  Promise.all([loadItems, loadView]).then(function () {
+    render();
+    parent.postMessage({ __lattice: 1, type: "ready" }, "*");
+  });
 })();

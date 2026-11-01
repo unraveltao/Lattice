@@ -313,7 +313,7 @@ interface LatticeState {
    */
   paused: boolean;
   /**
-   * 本次运行里**窗口被组件自己关掉**的那几份实例（`lattice.pet` 右键关窗就走这条）。
+   * 本次运行里**窗口被组件自己关掉**的那几份实例（组件调 `window.close()` 就走这条）。
    *
    * 真相在 Rust 那边（`Runner::suppressed`：窗口不再重建，placement 留着 ——
    * 见不变量 11 与 `runner.rs::widget_close`），这里只是它的镜像，靠

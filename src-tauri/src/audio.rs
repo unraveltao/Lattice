@@ -246,3 +246,27 @@ pub fn audio_level() -> AudioLevel {
         running: METER.running.load(Ordering::Relaxed),
     }
 }
+
+/// 这台机器有没有默认输出设备 —— **只读**，不开流。
+///
+/// 给能力体检用（`capability_probe.rs`）。为什么不看 `METER.running`：那个标志
+/// 要等采集线程起来才有意义，而探针**不许**为了体检把那条线程拉起来（一次
+/// `Initialize` + `Start` 就是真开了一路采集）。所以这里只问系统"有没有一块
+/// 默认的扬声器"，那件事一次枚举就够。
+///
+/// 枚举本身要 COM：命令跑在 tokio 的阻塞线程池上，那些线程没初始化过。
+/// 同一模式重复初始化返回 `S_FALSE`，无害；主线程上已经用别的模式初始化过时
+/// 返回 `RPC_E_CHANGED_MODE`，那种情况下枚举照样能用 —— 所以这里不看返回值
+/// （和 `media.rs` 同一条理由）。
+pub fn output_device() -> Result<(), String> {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                .map_err(|error| format!("no audio device enumerator: {error}"))?;
+        enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .map(|_| ())
+            .map_err(|error| format!("no default output device: {error}"))
+    }
+}

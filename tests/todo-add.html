@@ -108,13 +108,13 @@
         const input = doc.getElementById("input");
         const form = doc.getElementById("form");
 
-        // 切英文之前先证明默认那门是对的
+        // 切英文之前先证明默认那门是对的。0.3.0 起默认档是 L3，空态按档说话
         log(
-          input.placeholder === "添加一条待办，回车确认",
+          input.placeholder === "加一条 L3",
           `默认占位符是「${input.placeholder}」`,
         );
         log(
-          doc.getElementById("empty").textContent === "还没有待办",
+          doc.getElementById("empty").textContent === "还没有 L3 · 执行",
           `默认空态是「${doc.getElementById("empty").textContent}」`,
         );
 
@@ -158,8 +158,10 @@
         log(todo.state.stored[0].done === true, "点文字也能勾上");
         log(doc.getElementById("meta").textContent === "All done", `全勾完计数是「${doc.getElementById("meta").textContent}」`);
 
-        // ---- 场景 5：删除 ----
-        doc.querySelectorAll(".todo-remove")[0].click();
+        // ---- 场景 5：删除（0.3.0 起 × 变成 ⋯ 菜单里的一项） ----
+        doc.querySelectorAll(".todo-more")[0].click();
+        await sleep(60);
+        doc.querySelector(".todo-menu-item.is-danger").click();
         await sleep(120);
         log(texts(doc).join("|") === "Buy milk", `删完剩下「${texts(doc).join("|")}」`);
         log(todo.state.stored.length === 1, `落盘条数 ${todo.state.stored.length}`);

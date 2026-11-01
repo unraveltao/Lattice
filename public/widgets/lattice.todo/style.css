@@ -66,17 +66,30 @@ body {
   padding-right: 120px;
 }
 
-.todo-title {
-  margin: 0;
-  /* 拉到最窄（200px）时，标题栏只剩 80px：标题该让位给计数，被省略号截掉 */
+/*
+ * 左边这格写「L3 · 执行」。三档的含义只有这一个地方说 ——
+ * 页签上只有 L1/L2/L3（用户定的显示方式），含义放那儿就放不下三颗。
+ * 拉到最窄（200px）时可用宽度只剩 56px，它先让位给计数，被省略号截掉。
+ */
+.todo-level {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  letter-spacing: 0.02em;
   color: var(--muted);
+}
+
+/*
+ * 窄到 240 以下就别画这一格了：56px 里它只能剩下一个「L」，既没说明什么，
+ * 又把计数挤瘦。这时候"现在是哪一档"由页签的高亮负责，那已经够了。
+ * 媒体查询在这里量的是 iframe 自己的宽度 —— 也就是卡片宽度。
+ */
+@media (max-width: 239px) {
+  .todo-level {
+    display: none;
+  }
 }
 
 .todo-meta {
@@ -89,6 +102,77 @@ body {
 
 .todo-meta.is-error {
   color: #f09595;
+}
+
+/* ---------- 页签（L1 / L2 / L3） ---------- */
+
+/*
+ * 三颗页签均分一整行，而不是各给 48px：卡片最窄 200px 时行宽 176px，
+ * 均分下来每颗约 57px，仍然放得下 "L3" 两个字符；宽的时候也不会缩成
+ * 三颗小胶囊挤在左边。
+ *
+ * 高度 22px 是量出来的：`.todo` 的内边距 12 + 标题 22 + 输入 34 + 三道 8px
+ * 间距之后，240 高的卡片里列表还剩 114px —— 按行 31px（30 + 1 缝）算
+ * 是 3.7 行。页签再高一点就要吃掉第二行。
+ */
+.todo-tabs {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  height: 22px;
+}
+
+.todo-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.todo-tab:hover {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--fg) 26%, transparent);
+}
+
+/* 当前档：实心。勾的颜色用 --surface，和勾选框同一个理由（两边主题都对） */
+.todo-tab[aria-selected="true"] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+/*
+ * 升格之后那一条从眼前消失了，用户会以为删了。目标页签闪一下，
+ * 说明"它去这儿了" —— 计数在标题栏那头，隔了半个卡片，闪页签更近。
+ */
+.todo-tab.is-bumped {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 拖着一条行停在页签上：这就是"松手换档"的落点提示 */
+.todo-tab.is-drop {
+  border-color: var(--accent);
+  border-style: dashed;
+  color: var(--accent);
+}
+
+.todo-tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
 }
 
 /* ---------- 输入 ---------- */
@@ -333,9 +417,15 @@ body {
   text-decoration-thickness: 1px;
 }
 
-/* ---------- 删除 ---------- */
+/* ---------- 行尾的 ⋯ 与它的小菜单 ---------- */
 
-.todo-remove {
+/*
+ * 这个按钮**常显**（opacity .45），不像以前的 × 只在 hover 时冒出来。
+ * 理由：升格是这一版的核心动词，而页签把目标档藏起来了 —— 唯一看得见的
+ * 入口如果也要 hover 才出现，等于没有。淡一点是为了不抢文字的视觉重量，
+ * 指针进到行里就恢复。
+ */
+.todo-more {
   flex: none;
   display: grid;
   place-items: center;
@@ -346,22 +436,82 @@ body {
   border-radius: 5px;
   background: transparent;
   color: var(--muted);
-  font-size: 14px;
+  font-family: inherit;
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.45;
   transition:
     opacity 0.12s ease,
     color 0.12s ease;
 }
 
-.todo-item:hover .todo-remove,
-.todo-remove:focus-visible {
+.todo-item:hover .todo-more,
+.todo-more:focus-visible,
+.todo-more[aria-expanded="true"] {
   opacity: 1;
+  color: var(--fg);
 }
 
-.todo-remove:hover {
+.todo-more:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/*
+ * 菜单挂在 body 上，不在列表里 —— 列表有 overflow-y: auto，
+ * 挂进去的话一靠近底边就被裁掉半截。
+ */
+.todo-menu {
+  position: fixed;
+  z-index: 10;
+  min-width: 104px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.todo-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.todo-menu-item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+/* 顶档的"升格"和底档的"降格"灰掉而不是不画：位置稳定才点得准 */
+.todo-menu-item:disabled {
+  color: var(--muted);
+  opacity: 0.4;
+  cursor: default;
+}
+
+.todo-menu-item.is-danger {
   color: #f09595;
+}
+
+.todo-menu-key {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 空状态 ---------- */

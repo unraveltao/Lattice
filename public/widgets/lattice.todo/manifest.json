@@ -1,19 +1,48 @@
 {
   "id": "lattice.todo",
   "name": { "zh": "待办", "en": "Todo" },
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": {
-    "zh": "极简待办清单：拖动排序，红 / 黄 / 绿优先级圆点，按组件保存",
-    "en": "A minimal to-do list: drag rows to reorder, red / amber / green priority dots, stored per widget"
+    "zh": "极简待办清单：L1 想法 / L2 目标 / L3 执行三档，拖动排序，红 / 黄 / 绿优先级圆点，按组件保存",
+    "en": "A minimal to-do list in three tiers — L1 ideas, L2 goals, L3 actions — with drag to reorder and red / amber / green priority dots"
   },
   "author": "Lattice",
   "entry": "index.html",
   "icon": "icon.svg",
-  "size": { "w": 280, "h": 240, "minW": 200, "minH": 140 },
+  "size": { "w": 280, "h": 240, "minW": 200, "minH": 170 },
   "layer": "top",
   "permissions": ["storage"],
   "help": {
     "sections": [
+      {
+        "title": { "zh": "L1 / L2 / L3 是什么", "en": "What L1 / L2 / L3 mean" },
+        "items": [
+          {
+            "zh": "一件事从「还没想清楚」到「现在就能做」，中间过三档：L1 想法、L2 目标、L3 执行。",
+            "en": "Something moves through three tiers as it gets concrete: L1 ideas, L2 goals, L3 actions."
+          },
+          {
+            "zh": "顶上三颗页签切档，一次看一档；输入框加的那条落在你正在看的这一档。",
+            "en": "The three tabs switch tiers, one at a time; a new item lands in the tier you are looking at."
+          },
+          {
+            "zh": "L1 没有勾选框 —— 想法只有两个出口：升格成目标，或者删掉。「想法完成了」没有意义。",
+            "en": "L1 has no checkbox: an idea has two exits — promote it to a goal, or delete it."
+          },
+          {
+            "zh": "行尾的 ⋯ 里有升格 / 降格 / 删除；也可以把一行直接拖到页签上松手。",
+            "en": "The ⋯ at the end of a row holds Promote / Demote / Delete — or drag a row onto a tab."
+          },
+          {
+            "zh": "档位和优先级是两个轴：一条 L3 的执行项照样可以是红色。",
+            "en": "Tier and priority are separate axes: an L3 action can still be red."
+          },
+          {
+            "zh": "0.2.1 的老待办都在 L3。升级之后 L1、L2 是空的，不是数据丢了。",
+            "en": "Old to-dos from 0.2.1 all land in L3. Empty L1 and L2 after upgrading is expected."
+          }
+        ]
+      },
       {
         "title": { "zh": "添加与完成", "en": "Adding and finishing" },
         "items": [
@@ -22,16 +51,16 @@
             "en": "Type in the box at the bottom and press Enter."
           },
           {
-            "zh": "点一行的任意位置就能勾掉 —— 整行都可点，不只是那个小方框。",
-            "en": "Click anywhere on a row to tick it off — the whole row is the target, not just the small box."
+            "zh": "点一行的任意位置就能勾掉 —— 整行都可点，不只是那个小方框。L2、L3 才有勾选框。",
+            "en": "Click anywhere on a row to tick it off — the whole row is the target, not just the small box. Only L2 and L3 have checkboxes."
           },
           {
             "zh": "再点一下放回列表。",
             "en": "Click it again to put it back on the list."
           },
           {
-            "zh": "标题栏的计数会说还剩几项，全勾完就是「全部完成」。",
-            "en": "The counter in the title bar says how many are left, or All done."
+            "zh": "标题栏的计数说的是这一档还剩几项，全勾完就是「全部完成」；L1 那档数的是总条数。",
+            "en": "The counter says how many are left in this tier, or All done; on L1 it counts every idea."
           }
         ]
       },
@@ -77,8 +106,8 @@
             "en": "Every Todo widget you place shows the same list — it is stored per widget, not per copy."
           },
           {
-            "zh": "并排两个待办是同一份清单的两个视图，不是两份清单。",
-            "en": "Two Todos side by side are two views of one list, not two separate lists."
+            "zh": "并排两个待办是同一份清单的两个视图，不是两份清单。切页签也一样：这边切到 L2，那边跟着切 —— 它们看的是同一份东西。",
+            "en": "Two Todos side by side are two views of one list, not two separate lists. Switching tabs is the same: pick L2 here and the other follows."
           },
           {
             "zh": "想要第二份清单，就换个 id 再装一份。",
@@ -102,6 +131,28 @@
     ]
   },
   "changelog": [
+    {
+      "version": "0.3.0",
+      "date": "2026-10-29",
+      "changes": [
+        {
+          "zh": "一件事分三档：L1 想法 / L2 目标 / L3 执行。顶上三颗页签切档，加的那条落在当前档。",
+          "en": "Three tiers now: L1 ideas, L2 goals, L3 actions. Tabs switch tiers, and new items land in the current one."
+        },
+        {
+          "zh": "行尾的 × 换成 ⋯：升格 / 降格 / 删除都在里面，也可以把一行拖到页签上松手。",
+          "en": "The × at the end of a row became ⋯: promote, demote and delete live there — or drag a row onto a tab."
+        },
+        {
+          "zh": "L1 没有勾选框 —— 想法要么升格成目标，要么删掉。",
+          "en": "L1 has no checkbox: an idea is either promoted to a goal or deleted."
+        },
+        {
+          "zh": "老待办一条不丢，全部落在 L3。",
+          "en": "No old to-do is lost — they all land in L3."
+        }
+      ]
+    },
     {
       "version": "0.2.1",
       "date": "2026-10-25",

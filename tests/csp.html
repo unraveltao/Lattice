@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>platform CSP test</title>
+    <!--
+      这一页的唯一目的：证明 `tauri.conf.json` 里那份 CSP **不会把平台页面打白**。
+
+      为什么值得一个断言页：CSP 的失效方式是白屏，而白屏的第一反应是"先放开再说"。
+      放开之后没人收回来。有了这一页，"要不要放开"就变成一个能回答的问题 ——
+      下面每一条断言都是"在这份策略下，某个具体机制还能不能用"。
+
+      `content` 必须和 `tauri.conf.json` 的 `app.security.csp` **逐字一致**（除了
+      `frame-ancestors`：meta 形式不支持它，浏览器会忽略并报一句警告）。
+      `npm run check:csp` 会对账这两处，改一处忘了另一处会红。
+
+      另外：这一页**故意**没有内联 <style> —— 策略里 style-src 只有 'self'，
+      写了也只是一条控制台错误，不如让它干净。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https: http://lattice-widget.localhost http://lattice-pet.localhost; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://lattice-pet.localhost; media-src 'self'; frame-src 'self' http://lattice-widget.localhost; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <!-- 脚本必须外链：这一页要证明的正是 script-src 'self' —— 内联脚本连自己都跑不起来 -->
+    <script type="module" src="./csp.mjs"></script>
+  </body>
+</html>
