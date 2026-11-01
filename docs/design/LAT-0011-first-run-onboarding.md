@@ -57,7 +57,7 @@ code: src/runtime/onboarding.ts, src/platform/LibraryPanel.tsx, src/platform/Cat
    所以它不可能变成一块常驻广告。
 3. **"加别人的目录"是一步到位的动作，不是一句说明**。按钮直接打开 Settings → Widgets
    （源列表就在那一页）。**不把源编辑器复制一份到组件库**：源列表的事实家在 `SettingsMenu.tsx`
-   （不变量 19 的"一个东西一个名字"，也是 0010 §4 已经定下的家）。实现是一条
+   （INV-19 的"一个东西一个名字"，也是 0010 §4 已经定下的家）。实现是一条
    `openAt: { section, nonce }` prop —— 带 `nonce` 是因为"从引导点一次、关掉、再点一次"这
    两次要都生效，而 `setSection` 收到同一个值什么都不会发生。
 4. **"没得装"的两种情形都说同一句，但都不删原有信息**。① 源里真的一条没有（`rows === 0`）；

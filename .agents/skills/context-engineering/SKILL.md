@@ -21,12 +21,12 @@ whenToUse: 开工一个不熟的区域、上下文快满或刚被压缩过、准
 grep -n "要搜的东西" src/xxx.ts     # 拿到行号
 ```
 
-然后 `read` 带 `offset` / `limit`，只取那一段 ±40 行。`src/styles.css` 有五千多行、`AGENTS.md` 七百多行 —— 整份读一遍花掉的是后面改代码的预算。
+然后 `read` 带 `offset` / `limit`，只取那一段 ±40 行。`src/styles.css` 有五千多行、`AGENTS.md` 这一页也不短 —— 整份读一遍花掉的是后面改代码的预算。
 
 | 想读 | 先这样 |
 | --- | --- |
 | 某个符号在哪、被谁用 | `grep` 符号名，看命中的行号与文件分布 |
-| 某个能力现在做到哪 | `AGENTS.md` 第 8 节缺口表 + `ROADMAP` 进度表（各读几十行） |
+| 某个能力现在做到哪 | `docs/reference/known-gaps.md` + `ROADMAP` 进度表（各读几十行） |
 | 某段历史为什么这样 | `git log --oneline -8 -- <path>`，比翻 `history.md` 快 |
 | 某个词的意思 | `GLOSSARY.md` 搜一行 |
 

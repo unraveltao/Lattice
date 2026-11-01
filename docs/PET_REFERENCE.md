@@ -7,7 +7,10 @@
 - 更早还有一份 **DaFeiYu-ZhuoChong-Alpha**（`github.com/kiven72/DaFeiYu-ZhuoChong-Alpha`，
   `D:\GitDev\DaFeiYu-ZhuoChong-Alpha`）—— 同一套美术的 Electron 快照，代码更短、更易读，**已被取代**，
   只当参考留着。
-- **鲸鱼贴图不在任何一个开源许可里**（见 §4），所以 `public/widgets/lattice.pet/` 一直**不进仓库**。
+- **鲸鱼贴图不在任何一个开源许可里**（见 §4）。它们曾经被提交进仓库（`git ls-files
+  public/widgets/lattice.pet | grep -c png` 数出来是 **84 张**，`dist/` 里也有），
+  这是 LAT-0041 §1.1 记下来的那条矛盾；现在已从工作树移除，只留在 `pets/` 里，**不进 git**。
+  历史里还在 —— 要真正清掉得改写历史，那是另一件事。
 
 ---
 
@@ -70,8 +73,8 @@ if (Math.abs(this.x) > lim) { this.x = Math.sign(this.x) * lim; this.v = 0; }  /
 | 每帧按包围盒 `setBounds` 裁窗口 | **不动窗口形状**，一次 `window.setRegion` 裁出轮廓，走动 = 整个窗口平移 | 每帧调 Win32 重建区域会掉帧；区域相对窗口是常量 |
 | `setIgnoreMouseEvents(!interactive, {forward:true})` | 不需要：区域外的像素**根本不存在** | `SetWindowRgn` 连命中测试一起裁了 |
 | 主进程 `screen.getCursorScreenPoint()` 拖动 | 组件自己算位移 → `window.moveBy`（主线，见 WIDGET_SPEC §2.6） | 宿主页看不到沙箱 iframe 里的指针 |
-| 常驻 rAF 自循环 | 画帧用 rAF；**心跳类判断**走 `schedule.every`（不变量 10） | 窗口不可见时整条时间轴要能停 |
-| `localStorage` 存偏好 | 清单的 `config`（按实例）+ `storage` 桥 | 不变量 5 / 13 |
+| 常驻 rAF 自循环 | 画帧用 rAF；**心跳类判断**走 `schedule.every`（INV-10） | 窗口不可见时整条时间轴要能停 |
+| `localStorage` 存偏好 | 清单的 `config`（按实例）+ `storage` 桥 | INV-5 / 13 |
 | `pet://local/` + CSP | 平台已经包好（`protocol.rs` / `csp.rs` / `egress.rs`） | — |
 | 托盘 / 自启动 / 单实例 | 平台已经有，组件别再要 | — |
 
@@ -92,23 +95,31 @@ if (Math.abs(this.x) > lim) { this.x = Math.sign(this.x) * lim; this.v = 0; }  /
 
 ---
 
-## 3. 组件里现在有什么
+## 3. 素材现在放在哪
+
+桌宠**不再是组件**（[LAT-0041](./design/LAT-0041-desktop-pet-as-platform-feature.md)），
+素材也跟着从 `public/widgets/lattice.pet/` 搬进了**皮肤目录** —— 平台自己的那套约定，
+和 `pets/<id>/pet.json` 一一对应：
 
 ```
-public/widgets/lattice.pet/
-  whale/model.json          25 个部件 + pivots + feat + outfits（3 套）
-  whale/tex/                30 张（身体拆件，deepseek 配色）
-  whale/feat/               25 张（6 种极端表情的眼睛，其余是别的配色才用的）
-  whale/outfits/cape/       20 张   冬装（斗篷 + 围巾）
-  whale/outfits/crew/        9 张   店员装（马尾 + 制服）
-  art/build-masks.py        构建期轮廓生成
-  art/rig-data.js           17 KB，骨骼 + 三套轮廓（构建产物，别再手改）
+<app_data_dir>/pets/whale/          Windows 上是 %APPDATA%\com.iron-tom.lattice\pets\whale\
+  pet.json                  皮肤描述符：格式、尺寸、六个姿态各画哪张脸、点她干什么
+  model.json                25 个部件 + pivots + feat + outfits（3 套）
+  tex/                      30 张（身体拆件，deepseek 配色）
+  feat/                     25 张（表情：眼球 / 虹膜 / 睫毛 / 整张的嘴）
 ```
 
-- 合计 85 个文件 / **2.71 MB**。单一配色（`deepseek`）+ 三套服装。
-- **为什么不带 8 套配色**：`model.json` 里 8 个 scheme 是同一批拆件的 8 次上色导出（逐像素 alpha 一致、
-  颜色不同），全带 ≈ 15 MB，**贴着商店 16 MB 的下载上限**，而 `store_download` 那道上限是硬的。
-- **服装贴图不跟着配色变**：上游也是这么导出的，所以披风在任何配色下都一个颜色。
+`app_data_dir` 由 Tauri 给：Windows 是 `%APPDATA%\<bundle id>`，macOS 是
+`~/Library/Application Support/<bundle id>`，Linux 是 `~/.local/share/<bundle id>`。
+
+- 合计 **1.9 MB**（55 张 PNG + 两份 JSON）。
+- **这份素材不进仓库**（理由见 §4）—— 换句话说"装了才有，clone 下来没有"。
+  换机器时从旧机器拷一份过去，或者换成自己的形象。
+- 服装（`outfits/cape`、`outfits/crew`）**没有一起搬**：现在的渲染器只画基础那一套，
+  换装属于动画那一层。要用就把这两个目录拷进 `pets/whale/outfits/` ——
+  `model.json` 里那几条 `outfits` 原样有效，渲染器按 `partsFor(model, "cape")` 取。
+- 换素材的三档代价见 LAT-0041 §5：**换贴图 = 只改这个目录**（不重新构建、不改一行代码），
+  换结构 = 换 `model.json`，换画法 = 才需要加一个渲染器 id。
 
 ---
 
@@ -127,8 +138,9 @@ public/widgets/lattice.pet/
   （`style.css` 的 `#bubble`、`pet.js` 的 `placeBubble`）：坐标、`clip-path` 的三角形、
   缓动曲线都是自己算的，没有一段是从上游复制的。理由和上面那条一样 —— 棂是 MIT，
   抄一段 AGPL 进来等于给整个项目换许可证。
-- 所以：**代码结论可查，贴图只在本地**。`public/widgets/lattice.pet/` 不进 git，
-  要发布就换成原创形象（或者在许可清晰的前提下重新画一套拆件）。
+- 所以：**代码结论可查，贴图只在本地**。素材活在 `pets/` 里、不进 git，
+  仓库里那 84 张也已经从工作树移除（历史里还在，见 §3 开头那条）。
+  要公开发布形象就换成原创的一套拆件 —— 按 LAT-0041 §5，那件事的成本是"改一个目录"。
 
 ---
 

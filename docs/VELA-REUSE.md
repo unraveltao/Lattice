@@ -206,12 +206,12 @@ Lattice 现在没有任何提醒通道。要做的话，这两条判定必须一
 | --- | --- | --- |
 | `WidgetInstance`（含 x/y/w/h/z） | `Placement` | Lattice 的坐标是逻辑像素，跨屏重取 `scaleFactor` |
 | `localStorage["focus-desk.widget.<id>"]` | `storage.get` / `storage.set`（按 `widgetId`） | 键名要重排：Lattice 一个组件一个文件 |
-| `useEffect` + `setInterval` 轮询 | `schedule.every` + `tick` 推送 | **不许自己 `setInterval`**（不变量 10）：窗口藏起来要停 |
+| `useEffect` + `setInterval` 轮询 | `schedule.every` + `tick` 推送 | **不许自己 `setInterval`**（INV-10）：窗口藏起来要停 |
 | `invoke("cmd", args)` | 桥方法 `defineMethod` + 权限闸门 | 权限没给要返回结构化错误，组件自己降级 |
 | `zod` schema 校验配置 | `manifest.json` 的 `config`（5 类字段） | 组件不画设置 UI，属性面板渲染 |
 | `t("中文")` | 清单里写 `{ "zh": …, "en": … }`，卡片里 `call("lang.get")` 拿初值 + 收 `language` 推送重画 | **别在组件里自建字典** —— 两门文案的家是清单和 `runtime/i18n/`，见 `WIDGET_SPEC` §2.7 |
 | `lucide-react` 图标 | 内联 `<svg><path d="…"/></svg>` | 别引图标库 |
-| `--vela-*` CSS 变量 | `--lattice-*` 令牌（`surface` / `text` / `muted` / `accent` / `border` / `radius` / `font`） | **不许写死颜色**（不变量 6），底板一变浅平台会整体翻 |
+| `--vela-*` CSS 变量 | `--lattice-*` 令牌（`surface` / `text` / `muted` / `accent` / `border` / `radius` / `font`） | **不许写死颜色**（INV-6），底板一变浅平台会整体翻 |
 | `.test.ts`（vitest） | `tests/*.html` 浏览器断言 | Lattice 不引测试框架，断言写进 `#out` |
 
 ---

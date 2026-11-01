@@ -103,7 +103,7 @@ agentTools(handlers: AgentToolHandlers): () => void;
 ```
 
 - **没有新的落盘字段、没有新权限**。权限仍是清单声明 + `agent:tools` 那一条独立的授权轴
-  （`AGENTS.md` 不变量 4 / §3.6），SDK 不参与授权判断 —— 没授权时平台根本不会发 `agent-call`。
+  （`AGENTS.md` INV-4 / §3.6），SDK 不参与授权判断 —— 没授权时平台根本不会发 `agent-call`。
 - **`context` 里带 `tool`**：一个函数挂两个名字时（通常不该有，但别名很常见）不用闭包再包一层。
   `callId` 原样透传，作者写日志时能对上平台那一侧。
 - **`args` 已经是对象**。`payload.args` 缺省时 SDK 给 `{}`，所以 `args.text` 不会 TypeError；

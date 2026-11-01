@@ -59,7 +59,7 @@ A 被否：三档已经把"问不问"表达完了（`ask` 全问 / `auto` 只问
   "workspace": "D:\\写作", "skills": { "enabled": ["weekly-report"] }, "profiles": [ … ] }
 ```
 
-v3 读到时就地补 `mode: "internal"` 与 `skills: { enabled: [] }` —— 升级既不开全权模式，也不替用户启用任何技能（和不变量 15 的"新权限不自动授予"同一条规矩）。临时文件 + 原子替换。
+v3 读到时就地补 `mode: "internal"` 与 `skills: { enabled: [] }` —— 升级既不开全权模式，也不替用户启用任何技能（和INV-15 的"新权限不自动授予"同一条规矩）。临时文件 + 原子替换。
 
 **Tauri 命令**（技能目录归 Rust，前端一条文件也读不到）
 

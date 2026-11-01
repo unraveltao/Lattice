@@ -33,7 +33,7 @@ whenToUse: 用户丢来一句范围不明的话（"搞一下""优化优化""这�
 
 | 问题 | 先查 |
 | --- | --- |
-| 这件事现在做到哪 | `AGENTS.md` 第 8 节缺口表、`ROADMAP` 进度表 |
+| 这件事现在做到哪 | `docs/reference/known-gaps.md`、`ROADMAP` 进度表 |
 | 这一步该按什么顺序 | `.agents/skills/`（`invariants` / `verify` / `new-widget`） |
 | 这个词指什么 | `GLOSSARY.md` |
 | 以前踩过吗 | `docs/PITFALLS.md`（搜症状） |

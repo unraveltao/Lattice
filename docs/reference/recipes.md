@@ -7,12 +7,12 @@
 
 ## 加一个桥方法
 
-1. 需要新权限 → **五处一起改**：`runtime/manifest.ts` 的 `Permission` 联合类型、`PERMISSION_READY`（`normalizePermissions` 读它，别另抄名单）、`PERMISSION_LABELS`、`runtime/catalogue.ts` 的 `KNOWN_PERMISSIONS`、以及 `docs/WIDGET_SPEC.md` 的权限表
+1. 需要新权限 → **这一步五处，加上第 2 步的 `defineMethod` 一共六处**：`runtime/manifest.ts` 的 `Permission` 联合类型、`PERMISSION_READY`（`normalizePermissions` 读它，别另抄名单）、`PERMISSION_LABELS`、`runtime/catalogue.ts` 的 `KNOWN_PERMISSIONS`、以及 `docs/WIDGET_SPEC.md` 的权限表。以及这六处里漏哪一处会静默失效，记在 [`verify.md`](./verify.md) 的 `check:bridge` 那一条
 2. `runtime/bridge.ts` 里 `defineMethod("ns.method", "permission-or-null", handler)`；参数校验失败抛 `BridgeError("bad_params", ...)`
 3. 要碰系统/文件 → 写 Rust 命令，注册进 `lib.rs` 的 `invoke_handler`
 4. `docs/WIDGET_SPEC.md` 的方法表补一行（第三方只认这张表）
 5. 权限未授予时**返回结构化错误**，不要抛异常——组件要能降级
-6. 方法要"边跑边有话说"（流式输出、常驻进程、长任务）→ 先读不变量 20：桥只回编号，正文走事件，补发缓冲 + 两条收尸路，一个都不能省
+6. 方法要"边跑边有话说"（流式输出、常驻进程、长任务）→ 先读INV-20：桥只回编号，正文走事件，补发缓冲 + 两条收尸路，一个都不能省
 
 ## 加一项组件配置
 
@@ -63,7 +63,7 @@ if (data.type === "language") { lang = data.payload.lang; repaint(); }
 
 1. **两件事都要做**（`lang.get` + `language` 推送）。只读一次 = 换语言组件不动；只听推送 = 组件的语言停在建文档那一刻（权限变更重载、热更新都会碰上）。
 2. **`lang` 只有 `zh` / `en`**。"跟随系统"是**平台**在设置里解析掉的（`runtime/i18n.ts::resolveLang`），组件不要去猜系统区域、也不要自己读 `navigator.language` 当权威。
-3. **首帧先按一门画**（不变量 18）：HTML 里写死一份、`lang.get` 回来再换。等桥的那几十毫秒里画"加载中"是把同一个等待画得更久。
+3. **首帧先按一门画**（INV-18）：HTML 里写死一份、`lang.get` 回来再换。等桥的那几十毫秒里画"加载中"是把同一个等待画得更久。
 4. **清单那边的双语是 `{ zh, en }` 对象**，走 `normalizeText` / `pickText`（`runtime/widget-text.ts`）—— 字段清单和上限见 WIDGET_SPEC §2.7。搜索是两种语言都建索引的（`textVariants`），别只挑当前语言。
 5. **SDK 已经把这两件事包好了**：`lattice.language` + `lattice.on("language")`，启动时自动拉一次。手写桥的组件（内置组件全是手写的）照上面四行做。
 6. **内置组件必须真做到**，不是"建议"。24 个官方组件的清单文案、`<html lang>`、卡片里画出去的字（星期 / 月份 / 上午下午 / 计数 / 按钮 / 提示行）全是双语，写死的那一门是**中文**。`tests/help.html` 第 5 段钉着两件事：清单里该双语的字段两门齐全；每个组件的源码里既有 `lang.get` 也有 `language` 推送。只做一半的症状很隐蔽 —— 只听推送的，热重载之后就停在旧语言；只读一次的，用户换语言卡片一动不动。
@@ -78,8 +78,8 @@ if (data.type === "language") { lang = data.payload.lang; repaint(); }
 3. **模型能力按名字前缀查，不按用户填的服务商查**。`runtime/llm-models.ts` 的 `knownModel()` 取最长前缀：`deepseek-reasoner` 不能调工具也不能给 temperature、`o1` / `o3` 同理、`gpt-4o` 上下文 128k，**认不出来的一律从宽**（`{tools: true, temperature: true, context: 32_000}`）。所以界面上"这个模型不能调工具"是一条**警告**，不是禁用——猜错的代价是不许用户用，那比多试一次 API 更糟。`historyChars()` 把上下文折成字符预算（1 token ≈ 1 字符，上限 60k），`trimHistory` 的 `maxChars` 就吃它。
 4. **加一个工具要改两处，且必须相等**：`platform/agent.ts` 的 `AGENT_ACTIONS`（真执行器）+ `runtime/assistant.ts` 的 `TOOL_SPECS`（名字、参数名、类型、required）。`tests/assistant.html` 会比对两边——名字集合相等、每个动作的参数键与执行器的 `EXECUTOR_KEYS` 对得上、`required` 是子集。**别在 `AGENT_ACTIONS` 之外新写一个"给模型用的"执行器**：那等于给模型开一条不受审计、不走 store 的旁路。**组件声明的工具是第四条路**（数据平面）：schema 从 `manifest.agent.tools` 来、执行走画布那个 iframe，四路都只从 `allTools` 这一个口进表，裁决仍然是 `approvalFor` —— 协议与限额见 WIDGET_SPEC §3.6，取舍见 AGENT_ACCESS §2。
 5. **工具循环只在 `platform/assistant.ts`**：≤24 步（`MAX_STEPS`）、每步把执行器返回的 JSON 字符串当 `tool` 消息回填、`shouldStop` 让"停止"立刻断掉；一轮还带两道预算 —— 300 秒（`MAX_TURN_MS`）与 20 万字符（`MAX_TURN_TOKENS`），`overBudget()` 返回 `"time" | "tokens" | null`，到点了就把这一轮收尾而不是继续调工具。步数从 6 抬到 24 是因为"读三个文件再改一个"这种正经任务在 6 步里做不完。Rust 侧另有两道闸：`MAX_TOOL_STEPS = 8`（单条请求里模型一口气要调几个工具）、请求间 300ms（`MIN_GAP`，在 `spawn_blocking` 里 sleep）。
-6. **工具只借不送**。`llm.chat` 永远 `tools: null`（模型真要调工具就抛 `internal`，"widgets cannot use tools"）；组件想要手，只有 `assistant.ask` 这一条（权限 `desktop:control`，标签 "Rearrange my desktop"）。它是**借**：整轮循环仍然只在主窗口里跑，桥那边只是一次转发，工具表用 `toolsFor("widget")` 砍掉 `placement.remove`（用户能自己按 ✕，"让桌宠替我删组件"不行），系统提示里另加一句告诉模型这件事。三条别拆：① 组件宿主里不许跑执行器 —— 桌面窗口连 store 都没有，跑了就是拿旧快照往回写（和下面第 11 条小窗那个坑同源）；② 同一窗口上一轮没回来时新的直接拒，不排队；③ 它慢，180 秒（`ASK_TIMEOUT`）不是 8 秒，SDK 那侧也单独给了 185 秒。这条是不变量 2 的延伸：**能改变桌面的是平台，不是组件**，否则"你信不信任这段代码"就变成"你敢不敢让它动你的布局"。
-7. **错误话要分得清是谁的错**。`describe_status` 把 401/403 说成"provider 拒了这把 key（HTTP 401）—— 去 Assistant settings 换一把"、404 提 `/v1`、429 说配额。别统一成"网络问题"——那条教训是拿更新器换来的（见不变量 16）。
+6. **工具只借不送**。`llm.chat` 永远 `tools: null`（模型真要调工具就抛 `internal`，"widgets cannot use tools"）；组件想要手，只有 `assistant.ask` 这一条（权限 `desktop:control`，标签 "Rearrange my desktop"）。它是**借**：整轮循环仍然只在主窗口里跑，桥那边只是一次转发，工具表用 `toolsFor("widget")` 砍掉 `placement.remove`（用户能自己按 ✕，"让桌宠替我删组件"不行），系统提示里另加一句告诉模型这件事。三条别拆：① 组件宿主里不许跑执行器 —— 桌面窗口连 store 都没有，跑了就是拿旧快照往回写（和下面第 11 条小窗那个坑同源）；② 同一窗口上一轮没回来时新的直接拒，不排队；③ 它慢，180 秒（`ASK_TIMEOUT`）不是 8 秒，SDK 那侧也单独给了 185 秒。这条是INV-2 的延伸：**能改变桌面的是平台，不是组件**，否则"你信不信任这段代码"就变成"你敢不敢让它动你的布局"。
+7. **错误话要分得清是谁的错**。`describe_status` 把 401/403 说成"provider 拒了这把 key（HTTP 401）—— 去 Assistant settings 换一把"、404 提 `/v1`、429 说配额。别统一成"网络问题"——那条教训是拿更新器换来的（见INV-16）。
 8. **审计只记形状不记内容**：`assistant.chat` 记模型名与字符数，`assistant.models` 记主机，`assistant.tool` 记工具名 + 那次调用的形状（路径 / 命令第一行 / 成不成），**不记文件内容、不记命令输出**。`agent.rs::audit` 已改成 `pub(crate)`，三条都只此一处复用。
 9. **`llm_policy.rs` 必须保持不引 crate**。它要能在写不了 `target/debug/deps` 的机器上用 `rustc --test` 单独跑（把文件 `#[path]` 进一个壳子即可）——所以 JSON 读取是手写的（深度上限 32），`llm.rs` 才引 `serde_json` 拼返回值。往 `llm_policy.rs` 里加 `use serde::…` 会让那 50 条测试整批失去可运行性。
 10. **一个面板，两块画布**。`AssistantPanel.tsx` 是唯一实现（两态：对话 / 设置），主窗口拿它当右下角抽屉（`variant="drawer"`，浏览器里也走这条），桌面小窗拿它当整块内容（`variant="window"`，壳是 `AssistantWindow.tsx` + 独立入口 `assistant.html` / `src/assistantMain.tsx`）。Ctrl+K 在 `App.tsx` 里只做一件事：Tauri 下 `invoke("assistant_window_toggle")`，浏览器下落回抽屉。样式只追加 `.lattice-assistant*`（`.is-window` 修饰类给窗内布局）。设置里"测试连接"打的是 `llm_models`，它同时是唯一一处验证 key 的地方；它既能打已存的档（传 `profileId`，缺的字段回退到文件里那份），也能打正在编辑的草稿（传 `baseUrl` / `auth` / `key`）——**没有 `profileId` 时才去信草稿**，否则等于让一次拼错的请求把已存的档盖掉。
@@ -88,14 +88,14 @@ if (data.type === "language") { lang = data.payload.lang; repaint(); }
 13. **流式只改"怎么读"，不改"谁在说"**。`llm_chat_stream` 和 `llm_chat` 共用 `prepare()` / `check_messages` / `build_body`，唯一多出来的是"边读边把增量发出去"。五条别踩回去：
     - **切帧按字节**（`llm_policy::take_line` / `SseBuffer`）。按 `String` 拼分片的症状是中文出现替换符、一半句子消失 —— `WinHttpReadData` 完全可能把三个字节的汉字从中间切开，而 `\n` 永远不会出现在多字节序列内部，所以"先按字节找 `\n`、再解码整行"是唯一安全的顺序。
     - **取消靠 1 秒读超时 + 标志位**。WinHTTP 是阻塞 API，正在 `WinHttpReadData` 的句柄**不能关**（未定义行为）。`network::stream` 把读超时设成 `STREAM_READ_TIMEOUT_MS = 1000`，超时后用 `sink.idle` 问一句还要不要继续。别改成"关句柄"或"另起一条线程去 close"。
-    - **增量的载荷必须带 `requestId`**（不变量 9：`emit` 是广播），前端按 id 过滤 —— 否则抽屉和桌面小窗同时各跑一轮时，两句话会串台。
+    - **增量的载荷必须带 `requestId`**（INV-9：`emit` 是广播），前端按 id 过滤 —— 否则抽屉和桌面小窗同时各跑一轮时，两句话会串台。
     - **增量只用来画，不参与拼装**。前端最后拿命令的返回值**整条覆盖**气泡。这样拼增量这一步写错最多闪一下，不会留下一句错话 —— 而"用增量拼最终消息"是这类实现最常见的错法。
     - **工具参数不进事件、按 `index` 累加**，拼完整才解析；用户按停止后**不再执行任何工具**（半截参数可能解析成功但少一个字段，模型会拿错的值去改桌面）。
-14. **给 assistant 加一只手（文件 / 命令 / 网页 / 屏幕 / 输入 / MCP）**。设计在 [docs/design/LAT-0004-agent-hands.md](./docs/design/LAT-0004-agent-hands.md)，落地分两处：前端的 **schema 与审批**（`runtime/hands.ts` + `platform/assistant.ts`），Rust 的 **执行与开关**（`hands.rs`）。要动的文件就这六个：`runtime/hands.ts` 的 `HAND_SPECS`（名字 + JSON Schema）和 `HAND_LABELS`（界面上那一行字）、`runtime/hands.ts` 的 `handGroup` / `needsApproval`、`runtime/i18n/assistant.ts` 的中文、`hands.rs` 的 `run()` 加一个分支、`hands_policy.rs` 的 `group_of`（工具名 → 能力组），再补 `tests/hands.html` 一条断言。八条别踩回去：
+14. **给 assistant 加一只手（文件 / 命令 / 网页 / 屏幕 / 输入 / MCP）**。设计在 [docs/design/LAT-0004-agent-hands.md](../design/LAT-0004-agent-hands.md)，落地分两处：前端的 **schema 与审批**（`runtime/hands.ts` + `platform/assistant.ts`），Rust 的 **执行与开关**（`hands.rs`）。要动的文件就这六个：`runtime/hands.ts` 的 `HAND_SPECS`（名字 + JSON Schema）和 `HAND_LABELS`（界面上那一行字）、`runtime/hands.ts` 的 `handGroup` / `needsApproval`、`runtime/i18n/assistant.ts` 的中文、`hands.rs` 的 `run()` 加一个分支、`hands_policy.rs` 的 `group_of`（工具名 → 能力组），再补 `tests/hands.html` 一条断言。八条别踩回去：
     - **能力组默认全关，而且两边都要判**。前端 `handsTools()` 只把"开着的组"的 schema 递给模型，Rust `run()` 再查一次 `Hands::enabled` —— 少了前者的后果是模型一直调一个永远被拒的工具、白烧步数；少了后者的后果是把安全边界交给一个前端 bug。**永远不要为了"少写一处"让 Rust 只信前端送来的组名。**
     - **读自动放行，写 / 命令 / 点击 / MCP 都要问**。`needsApproval` 的兜底是 `true`：**没列进白名单的名字一律要问**（新增工具忘了归类，代价是多一次确认；反过来忘了就要了一次静默提权）。只有 `file.list/read/search`、`web.fetch`、`screen.windows`、`screen.capture` 是只读的。
     - **审批必须在 `assistant_tool` 之前 `await` 完**。`platform/assistant.ts` 的 `approve()` 返回一个 Promise，用户按 Allow / Always this turn / Deny 才 resolve；**Deny 不抛异常**，回 `{ok:false, code:"denied"}` 的 tool 消息 —— 模型要能从"我不干"里继续，而不是整轮崩掉。`Always this turn` 的键是**工具名**，`send()` 里清空（跨轮记住等于用户以为关掉的一扇门还开着）。
-    - **`requestId` 每个手调用都要带，并且真的能取消**。不变量 9：`emit` 是广播。`hands_cancel{requestId}` 和 `llm_chat_cancel` 是两条独立通道（一轮里可能同时有流式回答和一条跑着的命令），`cancelActiveTurn()` 两条都发。`shell.run` 每 25ms 查一次标志，取消/超时都**真的 `kill()`**，不是"忽略结果"。
+    - **`requestId` 每个手调用都要带，并且真的能取消**。INV-9：`emit` 是广播。`hands_cancel{requestId}` 和 `llm_chat_cancel` 是两条独立通道（一轮里可能同时有流式回答和一条跑着的命令），`cancelActiveTurn()` 两条都发。`shell.run` 每 25ms 查一次标志，取消/超时都**真的 `kill()`**，不是"忽略结果"。
     - **额度写在 `*_policy.rs` 里，不写进 `hands.rs` 的分支里**。文件是 `fs_policy.rs`（4MB 读 / 2MB 写 / 一次 200 行 ~ 4000 行硬上限、二进制判定、搜索跳过 12 个目录）、命令是 `shell_policy.rs`（60 秒默认 / 1–300 秒夹紧 / 输出 16k 字符按行截断）。它们**不引 crate**，就是为了能在本机用 `rustc --test` 跑 —— 数值散进执行代码里等于这批断言从此测不到。
     - **`spawn_blocking` 里跑，别占异步运行时**。文件系统和 `Child::wait` 都是阻塞的；一条 `shell.run` 跑满 60 秒会把整个 IPC 拖着不动，界面上表现出来是"assistant 小窗卡死"。
     - **审计只记形状**：`agent::audit(app, "assistant.tool", <工具名> + 路径 / 命令首行, status, ms)`。**文件内容、命令输出一个字符都不许进审计日志** —— 那是用户的数据，而审计日志会在 `%APPDATA%` 里躺很久。
@@ -141,7 +141,7 @@ public/widgets/<id>/
 - **图标只当形状用**：平台拿它当 CSS 遮罩、用 `currentColor` 上色，所以 SVG 里 `fill` 写什么色都行，深色浅色自动对。也因此**永远不要**把组件的 SVG 内容直接塞进主窗口的 DOM（第三方内容，`<script>` 会跟着跑），只让它以图片身份参与遮罩。
 - **不要用原生表单控件**。沙箱文档的 `color-scheme` 被强制成 `normal`，原生 checkbox/radio 会按浅色主题画，在深色卡片上几乎看不见。用 `appearance: none` 自绘。
 - **"整行可拖"和"整行可点"必须分得开**。`lattice.todo` 的行既能拖起来排序，又能点一下勾掉：判据是 4px 阈值，且抬手后浏览器补的那次 `click` 要吃掉（`suppressClick` 用 `setTimeout(..., 0)` 复位 —— click 在它之前同步派发）。别用 HTML5 拖放：沙箱是不透明源，跨文档的 `dataTransfer` 靠不住；自己算还能控制让位动画。
-- **要定时器就用 `schedule.every`，不要 `setInterval`**。组件里开定时器等于绕开平台的"不可见就停摆"（不变量 10）。`schedule.every({ every: 1000 })` 拿一个订阅号，`tick` 消息里带着它，认准自己那一条再刷新；组件卸载 / 重载时 `schedule.clear(id)`。第一次要立刻显示的话（速率类指标靠两次采样做差）在 `every()` 之后自己先调一次数据方法建基线 —— Rust 侧第一次采样一定返回 0，那是设计，不是 bug。
+- **要定时器就用 `schedule.every`，不要 `setInterval`**。组件里开定时器等于绕开平台的"不可见就停摆"（INV-10）。`schedule.every({ every: 1000 })` 拿一个订阅号，`tick` 消息里带着它，认准自己那一条再刷新；组件卸载 / 重载时 `schedule.clear(id)`。第一次要立刻显示的话（速率类指标靠两次采样做差）在 `every()` 之后自己先调一次数据方法建基线 —— Rust 侧第一次采样一定返回 0，那是设计，不是 bug。
 - **卡片顶上给窗饰让位**。桌面窗口右上角那排按钮浮在组件内容之上且**能点**，通栏的输入框 / 第一行文字会被它压住。标题栏留出 `padding-right: 120px`（待办 / 便签 / 音乐都是这个数）或顶上一条 24px 状态条，见 WIDGET_SPEC §5.1。
 - **组件拿不到 `localStorage`、读不到 `parent` 的 DOM，一切能力走桥。**
 - **组件里所有颜色从 `--lattice-*` 变量来，别硬编码明暗。**
@@ -167,7 +167,7 @@ public/widgets/<id>/
 
 - **签名只有一份实现**：`scripts/sign-widget.mjs` 用 Node 的 `crypto.sign(null, bytes, key)`，Rust 侧 `signature.rs` 用 `ed25519-dalek` —— 同一套算法。要换其中一边，先跑 `npm run sign:widget -- --selftest`，它里面有一条两边都认的向量。
 - **`publisher` 写在目录根上**（一处写、所有条目共用），条目级也可以覆盖。`parseCatalogue` 是"条目级优先、没有就继承根级" —— 改格式时两处一起改，只改一边的症状是"每个条目都说没有 publisher key"。
-- **目录地址是一个列表**（设置菜单 → `Widget catalogue`）：`store.sources: [{ id, kind, url, enabled }]`（`state.json` v2，见 [design/0010](./docs/design/LAT-0010-multi-source-catalogue.md)）。官方那份 id 固定 `official`，其余由地址算（`runtime/catalogue.ts::sourceIdFor`）。并发读、合并成一张表，**同 id 按列表顺序先到先得**（不挑版本高的 —— 两个源里的同 id 是两段代码两把钥匙）。`enabled: false` 的源不发请求、不进合并。远端地址只允许 http/https，取目录走 `store_load_catalogue`（2MB 上限 + 按 URL 分文件的磁盘缓存 + ETag），取包走 `store_download`（16MB，缓存到 `store-cache/<sha256>.lattice`）。**别在渲染进程里直接 `fetch` 远端目录**：那样 CSP 和出网白名单都得为平台自己开一个口子。**退回内置那份只给官方源** —— 让演示目录的包顶在一个第三方源的名字底下，等于把包挂在错误的发布者名下，界面上还看不出来。
+- **目录地址是一个列表**（设置菜单 → `Widget catalogue`）：`store.sources: [{ id, kind, url, enabled }]`（`state.json` v2，见 [design/0010](../design/LAT-0010-multi-source-catalogue.md)）。官方那份 id 固定 `official`，其余由地址算（`runtime/catalogue.ts::sourceIdFor`）。并发读、合并成一张表，**同 id 按列表顺序先到先得**（不挑版本高的 —— 两个源里的同 id 是两段代码两把钥匙）。`enabled: false` 的源不发请求、不进合并。远端地址只允许 http/https，取目录走 `store_load_catalogue`（2MB 上限 + 按 URL 分文件的磁盘缓存 + ETag），取包走 `store_download`（16MB，缓存到 `store-cache/<sha256>.lattice`）。**别在渲染进程里直接 `fetch` 远端目录**：那样 CSP 和出网白名单都得为平台自己开一个口子。**退回内置那份只给官方源** —— 让演示目录的包顶在一个第三方源的名字底下，等于把包挂在错误的发布者名下，界面上还看不出来。
 - **目录缓存有四种结局，别只测一种**：200（正常）、304（`If-None-Match` 命中，用缓存文本）、网络失败但有缓存（`stale: true` + 原因，界面上多一行 "Showing an older copy"）、网络失败且没缓存（`Err`，退回内置那份并标 "Offline"）。缓存文件在 `%APPDATA%\com.iron-tom.lattice\catalogue-cache\<sha256(url)[..16]>.json`，删掉它就能回到"第一次装"的状态。纯逻辑在 `catalogue_policy.rs`（有单测），网络那半只能在真机验。
 - 本地钉住的钥匙在 `store.trustedKeys`（`widgetId → key`），跟着 `state.json` 走。要重来一遍"第一次安装"，删掉那个组件再装。
 
@@ -177,7 +177,7 @@ public/widgets/<id>/
 
 **"能不能打字"由清单的 `interactive` 决定，不要按组件名硬编码。** `interactive: true`（默认）的组件不挂 WorkerW、去掉 `WS_EX_NOACTIVATE`、压到 `HWND_BOTTOM`，并且挂一个**底层守卫**（子类化拦 `WM_WINDOWPOSCHANGING`，给"往上提"的请求加上 `SWP_NOZORDER` —— 原地不动）。守卫是关键：Windows 激活窗口时会顺手把它提到最前，点一下便签它就窜到浏览器上面、切走再掉回去 —— 一进一出就是"闪来闪去"。拦掉 z 序不影响激活，键盘照样进得来（实测：窗口不动、`SendInput` 的字符照样落进 textarea 并落盘）。改了这块要同时看三处：`desktop::apply` / `desktop::set_sink` / `install_guard`、`manifest.ts` 的归一化、以及 `apply_to` 里的线程与顺序问题（见下）。
 
-**"窗口看不看得见"由 `visibility.rs` 说，不由 `document.visibilityState` 说。** 主窗口最小化之后 `visibilityState` 仍然是 `visible`（实测），所以可见性从 Rust 观测、按窗口下发 `lattice:window-visible`。触发点有两个，**少一个就会出现"最小化能停、收起不能停"**：`WindowEvent::Resized`（最小化/还原在 Windows 上都是 `WM_SIZE`）+ `hide()` / `show()` 之后显式 `sync()`（这两条不动尺寸，不触发 Resized）。`sync()` 自己按 label 去重，只在**变化**时发 —— 拖边缩放会连着触发几十次 Resized，每次都发等于让组件把心跳重排几十遍。载荷带 `label`，因为 `emit_to` 是广播（不变量 9）。
+**"窗口看不看得见"由 `visibility.rs` 说，不由 `document.visibilityState` 说。** 主窗口最小化之后 `visibilityState` 仍然是 `visible`（实测），所以可见性从 Rust 观测、按窗口下发 `lattice:window-visible`。触发点有两个，**少一个就会出现"最小化能停、收起不能停"**：`WindowEvent::Resized`（最小化/还原在 Windows 上都是 `WM_SIZE`）+ `hide()` / `show()` 之后显式 `sync()`（这两条不动尺寸，不触发 Resized）。`sync()` 自己按 label 去重，只在**变化**时发 —— 拖边缩放会连着触发几十次 Resized，每次都发等于让组件把心跳重排几十遍。载荷带 `label`，因为 `emit_to` 是广播（INV-9）。
 
 **页面这边还得自己拉一次初始状态。** 事件是"变了才发"，而页面可能是在窗口**已经**最小化之后才加载的（热更新、权限变更重载、改完 Rust 重启），那一次变化早就过去了。所以 `hookWindowVisibility` 在订阅之后补一句 `isMinimized()`，把初始状态对齐 —— 少了它，热更新一次就要等用户再最小化一遍才会重新停摆。
 

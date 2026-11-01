@@ -1,6 +1,6 @@
 # 改了什么，就怎么验
 
-> 这是 [`AGENTS.md`](../AGENTS.md) 第 11 节的正文。**按区查，别通读** —— 找到你动的那一块，跑它那几条，再看"只能真机"那一段有没有你。
+> 这是 [`AGENTS.md`](../../AGENTS.md) 第 11 节的正文。**按区查，别通读** —— 找到你动的那一块，跑它那几条，再看"只能真机"那一段有没有你。
 >
 > 根文件里只有底线四条（`typecheck` / `check:guards` / `test:browser` / 真机）和"交付要说清什么"。这一页是逐区的命令、断言页和验法。
 
@@ -8,7 +8,7 @@
 - **`npm run check:tokens`** —— 三张表（字号 / 圆角 / 间距）的守门人，扫 `src/**/*.css`，越界就红并指出行号；`npm run test:tokens` 钉规则本身（半像素、`font` 简写、豁免、以及"仓库现状是干净的"）。改样式前后各跑一次，比肉眼数 `10.5px` 靠谱。真要写规矩外的值，行尾加 `/* token-ok 理由 */`，理由不写会被报。
 - **`npm run check:guards`** —— 七条"不报错、只是不工作"的对账，pre-push 一次串完；CI 里逐条拆开跑（`check:policy-tests` 在 rust job，其余在 frontend job），所以**链里加了新的、`verify.yml` 里也得加一行** —— 只进链不进 CI，就是 pre-push 红、CI 绿，两边说的不是一回事。这个状态由 `check:gates` 拦。
   - `check:stats`：文档里每一处"现在有多少条 X"都要和 `scripts/stats.mjs` 数出来的对上。**数的实现只有那一份** —— 以前 `check:docs` / `check:bridge` / `check:commands` 各写了一条正则，先失配的那份会打印 0 并退出 0（体检全绿、数字全错）。它同时管**历史数**：`docs/design/` 靠 front matter 的 `date:` 说话（没有就红），其余文档靠那一行或所在小节的版本号 / 日期 / "当时"。分不清的后果是历史数和写错的数是**同一串字符**，读者没法分辨。**全局 vs 局部**也在这里：`agentActions` 是局部数，写的时候必须带主语（"agent 的九个动作"），不带就红。
-  - `check:bridge`：一个权限要落**六处**（`Permission` 联合类型 / `PERMISSION_READY` / `PERMISSION_LABELS` / `KNOWN_PERMISSIONS` / WIDGET_SPEC §3 表 / `defineMethod`），其中三处漏了不会报错 —— `PERMISSION_READY` 少一条，`normalizePermissions` 就**静默丢掉**那个名字，组件清单里写着、平台当没有。顺带对 WIDGET_SPEC §4 的方法表（方法名和每条的权限）与 ARCHITECTURE §3 那两个"现在 N 条"。
+  - `check:bridge`：一个权限要落**六处**（哪六处见 [`recipes`](./recipes.md) 第 1 节，这里不重述），其中三处漏了不会报错 —— `PERMISSION_READY` 少一条，`normalizePermissions` 就**静默丢掉**那个名字，组件清单里写着、平台当没有。顺带对 WIDGET_SPEC §4 的方法表（方法名和每条的权限）与 ARCHITECTURE §3 那两个"现在 N 条"。
   - `check:commands`：`invoke("cmd")` 拼错、`#[tauri::command]` 声明了没进 `generate_handler!` —— 两者都只在运行时 reject 一句 `Command x not found`，界面上表现成"这块数据没加载出来"。命令名是变量的（`devLlm.ts` 那处）跳过并打印出来。
   - `check:policy-tests`：`*_policy.rs` 的存在意义就是零依赖、能 `rustc --test` 单跑（本机跑不了 `cargo test`）。谁在里面 `use crate::state;`，这条就红 —— 否则那些断言会悄悄退回成"只有 CI 跑"。需要兄弟模块的会自动拼一个 shim 根；`catalogue_policy.rs` 因为用 `serde_json` 在豁免名单里，**它一旦能单跑也要红**（名单不腐烂）。
   - `check:version`：三处配置（`package.json` / `Cargo.toml` / `tauri.conf.json`）必须同一个数，两份 README + 这一页的"源码版本"那句话必须写着那个数。**它不管"能下载到的是哪个版本"** —— 那个数在 GitHub Releases 上，写进仓库就一定会脱钩。改版本时四处一起改，改完这条会告诉你漏了哪处。
@@ -41,9 +41,9 @@
   - **目录里显示的名字 / 描述 / 图标取自最新那一版包的清单**（`build.mjs` 里按版本挑，不是按文件名）。所以"本地清单改成 `{ zh, en }` 了、商店里还是英文名"只有一个原因：新版本还没发上去。三个连带事实：改了名要发新版本，只改本地清单不够；图标要另放一份 `registry/icons/<id>.svg`（包里的 `icon.svg` 不会被目录读）；`registry.json` 的排序遇到 `{ zh, en }` 先挑 `en` 再比，别把 `localeCompare` 直接用在对象上。
 - 改了**调试面板**：`tests/debug.html`（43 条，总线 + 过滤 / 统计纯函数）+ `tests/debug-panel.html`（15 条，把真组件挂起来点按钮）。后者**必须 `import "../src/styles.css"`**，否则面板渲染成裸 HTML。它同时也是一张验收图：`--screenshot` 出来的就是面板长什么样。
 - 改了**媒体控制 / 声音折线**：`tests/music.html`（71 条）自带假宿主，覆盖"有会话 / 没会话 / 权限被拒 / 直播没时长 / 点按钮 / 改轮询间隔"。它替身的坑记住一条：`setConfig()` 要 `Object.assign` 到 handler 捕获的那个对象上，否则 `config.get` 回的还是启动时那份，用例会假通过。
-- 改了**数据平面**（`agent.tools` / `agent-call`）：纯逻辑跑 `tests/widget-tools.html`（55 条：归一化逐条丢、名字从右边拆、多份实例合成一条、授权轴、回话超长拒绝），接缝跑 `tests/agent.html`（70 条：`runWidgetCall` 的第二道校验 + 小窗那份 `widget-call` 信封）与 `tests/assistant.html`（合表 / 审批三档 / 提示词那一段），清单与执行的归属按 [0013](./docs/design/LAT-0013-widget-tools-across-windows.md) —— **列清单与跑工具都归 `AssistantSurface`**，主窗口与小窗只递参数。**端到端只能在真机**：给一个组件加上 `agent.tools` 与 `agent:tools` 权限，在抽屉里说一句"往待办里加一条"，看它是不是调了 `widget.<id>.<tool>`、确认条上写着工具名、加完之后组件真的变了。
+- 改了**数据平面**（`agent.tools` / `agent-call`）：纯逻辑跑 `tests/widget-tools.html`（55 条：归一化逐条丢、名字从右边拆、多份实例合成一条、授权轴、回话超长拒绝），接缝跑 `tests/agent.html`（70 条：`runWidgetCall` 的第二道校验 + 小窗那份 `widget-call` 信封）与 `tests/assistant.html`（合表 / 审批三档 / 提示词那一段），清单与执行的归属按 [0013](../design/LAT-0013-widget-tools-across-windows.md) —— **列清单与跑工具都归 `AssistantSurface`**，主窗口与小窗只递参数。**端到端只能在真机**：给一个组件加上 `agent.tools` 与 `agent:tools` 权限，在抽屉里说一句"往待办里加一条"，看它是不是调了 `widget.<id>.<tool>`、确认条上写着工具名、加完之后组件真的变了。
 - 改了组件库（列表 / 搜索 / 安装态）：`tests/library-search.html`（36 条）钉的是**判定规则与顺序**（空查询不筛、大小写与空白归一、多词 AND、权限名算命中、不做模糊匹配、档位 > 字段权重、同分保持原顺序）。判据只在 `runtime/library-search.ts` 里写一份（`matchScore` → `matchesWidget` / `rankWidgets`），组件里别再复制一遍 —— 复制的后果是"测试过了，界面上还是不对"；加字段就改 `scoredFields` 那一张表并补权重，别在调用点另算一遍分。
-- 改了错误通道 / 兜底页：`tests/diagnostics.html`（识别边界、两条通道不撞、去重指纹、主错误选择）。注入规则本身跑 `npm run test:injection`（9 条，`node:test`，**不需要 dev server**，fixture 和 Rust 单测是同一批：`<head>` 带属性、`<header>` 别认错、doctype 兜底、幂等、压行后行号不变、多字节安全）。Rust 那边 14 条单测在 `diagnostics.rs` 里，但**这台机器跑不了 `cargo test`**（安全策略拦 `target/debug/deps` 下新写的 exe，见 [docs/PITFALLS.md](./docs/PITFALLS.md)「构建、工具链与验证」）。绕法：写个只有一行的壳子 `#[path = "../src-tauri/src/diagnostics.rs"] mod diagnostics;`，然后 `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe` —— 断言还是模块里那一份，不复制。
+- 改了错误通道 / 兜底页：`tests/diagnostics.html`（识别边界、两条通道不撞、去重指纹、主错误选择）。注入规则本身跑 `npm run test:injection`（9 条，`node:test`，**不需要 dev server**，fixture 和 Rust 单测是同一批：`<head>` 带属性、`<header>` 别认错、doctype 兜底、幂等、压行后行号不变、多字节安全）。Rust 那边 14 条单测在 `diagnostics.rs` 里，但**这台机器跑不了 `cargo test`**（安全策略拦 `target/debug/deps` 下新写的 exe，见 [docs/PITFALLS.md](../PITFALLS.md)「构建、工具链与验证」）。绕法：写个只有一行的壳子 `#[path = "../src-tauri/src/diagnostics.rs"] mod diagnostics;`，然后 `rustc --test 壳子.rs -o 壳子.exe && ./壳子.exe` —— 断言还是模块里那一份，不复制。
 - 改了内置组件的注入：**两条路都要看**。dev 下 `curl -s http://localhost:1420/widgets/lattice.clock/index.html | grep -c 'data-lattice="diagnostics"'` 应该是 `1`（不是 `2`：中间件要幂等，否则 vite 自己把 `public/` 也注一遍就重了）；`npm run build` 之后再看 `dist/widgets/*/index.html`，构建日志末尾会有一行 `[lattice] 错误上报已注入 N 份内置组件文档`，`N` 要等于内置组件个数。**行数也要对**：`wc -l dist/widgets/<id>/index.html` 必须和 `public/widgets/<id>/index.html` 一样多，多一行就是压行失效、行号全错。
 - **驱动真机 UI**：键盘事件能进 WebView2（`SetForegroundWindow` 之后发 `Ctrl+R` 能刷新、往输入框打字能落盘）；`mouse_event` 的点击**在宿主页的窗饰和错误卡上是生效的**（重载按钮就是这么验的），只是要先 `SetCursorPos` 再等 200–400ms —— 窗饰是 `body:hover` 才淡入的，移过去立刻点会点在还没出现的按钮上。往组件 iframe 里点则不可靠。
 - **CDP 连真机：这台机器上已经开不出来了。** 加 `--remote-debugging-port` 之后应用会起来、窗口标题也在，但**一个 `msedgewebview2` 子进程都没有**，端口不监听，日志里只有两行 watcher —— 看起来像"卡住"，其实是 WebView2 创建直接失败了。判据：`Get-Process msedgewebview2` 里没有带 `com.iron-tom` 的那个；去掉环境变量立刻正常。**别在这上面耗时间**，改用下面的替代验法。
@@ -72,10 +72,10 @@
 - **验联网用一次性的探针组件，内容全英文**：在 `%APPDATA%\com.iron-tom.lattice\widgets\<探针id>\` 放一份 manifest（`"permissions": ["network"]` + `"network": {"hosts": ["127.0.0.1:8787"]}`）和两个文件，**别用真实组件、别填任何个人信息**。配套起一个本地服务（一个 `/ok` 回 JSON、一个 `/redirect` 302 到另一个端口），再在"另一个端口"上挂一个只要被请求就打日志的端点 —— **重定向有没有被跟随，看的是那个端点的日志，不是响应的状态码**。验完删目录、把 `state.json` 从备份还原。
 - **托盘在不在，不用点菜单**：`EnumWindows` 枚举该进程的窗口，出现 `tray_icon_app` 这个类名就说明图标建成了（菜单项本身调的就是 `toggle_paused` / `show_main` / `app.exit`，那三个另有验法）。
 - 抓真机窗口用 `PrintWindow(hwnd, hdc, 2 /*PW_RENDERFULLCONTENT*/)`，被别的窗口盖住也能抓到；配合 `ShowWindow(h, 4 /*SHOWNOACTIVATE*/)` 不抢用户焦点。
-- **§8.1 那些待验的行，验完之后要留东西，否则等于没验。** `ROADMAP` 写着"每条验收要么变成一条断言，要么变成 §8.1 里被划掉的一行，没有第三种结局"—— 这句话是对的，但它漏了中间那一步：**验的那一次本身要有痕迹**。换个人接手时，一堆待验会变成"从头想一遍怎么验"，而六个版本正是这么一直挂着的。所以每验完一条，同时留三样：
+- **[`known-gaps`](./known-gaps.md) 的 8.1 那些待验的行，验完之后要留东西，否则等于没验。** `ROADMAP` 写着"每条验收要么变成一条断言，要么变成 [`known-gaps`](./known-gaps.md) 的 8.1 里被划掉的一行，没有第三种结局"—— 这句话是对的，但它漏了中间那一步：**验的那一次本身要有痕迹**。换个人接手时，一堆待验会变成"从头想一遍怎么验"，而六个版本正是这么一直挂着的。所以每验完一条，同时留三样：
   1. **一条能重跑的东西** —— 一个脚本路径（`.scratch/<name>-probe` 是现成的先例，终端那次就是这么留的），或者验的是窗口行为、写不出脚本时，就写清"手点的顺序 + 看哪个窗口的哪个位置"；
   2. **那一次的实际输出** —— 数字、时间戳、截图路径。落在 `docs/reference/history.md` 对应版本那一段，或者 §8.4 那条"已修"里，**不要只写在提交信息里**（提交信息会被 `git log --oneline` 折叠掉）；
-  3. **划掉 §8.1 那一行** —— 不是标"已验"。§8.1 的定义就是"还没验"，留着它只会让下一个人重验一遍。
-  两条禁令：**不许为了让断言变绿去改行为**（§8.1 的抬头已经写了，这里再钉一次）；**不许把"输出出现了"当通过** —— 终端那四处要验的是顺序与收尸，`dir` 打出东西来只证明它跑起来了。
-  一个正例：终端"四处没验"那条，按新规矩应当留下的是 `.scratch/term-probe` 的路径 + 三次 `Start-Sleep 350ms` 的到齐时间戳 + 划掉 §8.1 那一行；验完 Stop 按钮之后再加一条"任务管理器里那只 `powershell.exe` 真没了"。
+  3. **划掉 [`known-gaps`](./known-gaps.md) 8.1 那一行** —— 不是标"已验"。[`known-gaps`](./known-gaps.md) 的 8.1 的定义就是"还没验"，留着它只会让下一个人重验一遍。
+  两条禁令：**不许为了让断言变绿去改行为**（[`known-gaps`](./known-gaps.md) 8.1 的抬头已经写了，这里再钉一次）；**不许把"输出出现了"当通过** —— 终端那四处要验的是顺序与收尸，`dir` 打出东西来只证明它跑起来了。
+  一个正例：终端"四处没验"那条，按新规矩应当留下的是 `.scratch/term-probe` 的路径 + 三次 `Start-Sleep 350ms` 的到齐时间戳 + 划掉 [`known-gaps`](./known-gaps.md) 的 8.1 那一行；验完 Stop 按钮之后再加一条"任务管理器里那只 `powershell.exe` 真没了"。
 - 提交信息用 `feat:` / `fix:` / `docs:` / `chore:` 前缀，一句话说清"改了什么"，不写"update file"。

@@ -6,9 +6,10 @@ whenToUse: 在这个仓库动手写代码之前，尤其是改桥、事件、权
 
 # 改动前闸门
 
-不变量全文在 [AGENTS.md](../../../AGENTS.md) 第 4 节 —— 那一页很长，但改代码前只有这一段必须读。这里只做一件事：**你正要改的东西，对应哪几条，会连带改哪些文件**。其中五条（2、7、8、11、17）踩一次的代价是"静默坏"，不是报错。
+[AGENTS.md](../../../AGENTS.md) 第 4 节是**一行一条**的规则表（带 `INV-n` 稳定编号），全文（边界 / 例外 / 破了会怎样）在 [docs/INVARIANTS.md](../../../docs/INVARIANTS.md)。这里只做一件事：**你正要改的东西，对应哪几条，会连带改哪些文件**。其中五条（`INV-2/7/8/11/17`）踩一次的代价是"静默坏"，不是报错。
 
 **一次改动命中好几行是常态 —— 取并集，别挑一行。** 按"这次算哪一类任务"只挑一行必漏：加一条 `terminal:exec` 同时动了清单的联合类型、桥、两个宿主、Rust、i18n、能力体检和四处测试，横跨下面五行。组合起来的漏项在这个仓库里几乎全是**静默**的（`LABELS` 少一行只显示内部 id、i18n 少一句只永远说英文），所以宁可多读一行。
+
 
 ## 先回答两个问题
 
@@ -25,6 +26,7 @@ whenToUse: 在这个仓库动手写代码之前，尤其是改桥、事件、权
 | 加平台状态字段 | — | 一路加到底：`store.ts`（interface + 初始值 + action）→ `partialize`（不加 = 不持久化）→ `buildSpecs` → `WidgetWindowSpec`(TS) → `WidgetWindowSpec`(Rust) → `HostConfig` → **`Applied`**。最后那个最容易漏，不在里面的字段永远不触发窗口更新 |
 | 关窗口 / 删 placement | **11** | `widget_close` 的 `reason` **必须显式传**，只有 `reason == "user"` 才让主窗口删 placement；其余只关窗口并记进 `Runner.suppressed`。那行 `eprintln!` 不许删。别在 `removePlacement` 之外直接 `filter` 掉 placement——那等于绕开 8 秒 `Undo` |
 | 组件 CSP / 出网 | **12**、14 | `'self'` 在沙箱里是废的（文档源 opaque）；协议源必须显式写，且与 `runtime/registry.ts::widgetSchemeBase` 一字不差（Windows 是 `http://lattice-widget.localhost`）。`connect-src` 收在组件自己的 origin 上，不是 `'none'`。CSP 管不了自我导航，那一半在 `egress.rs` |
+| 平台页面 CSP / `tauri.conf.json` | **24** | 主窗口这份**不是**组件那份（12）：它写在 `app.security.csp`，护的是我们自己的 UI。不许出现 `'unsafe-inline'` / `'unsafe-eval'` / 外部源 —— 内联 `<style>` 由 Tauri 发 nonce、内联 `<script>` 按哈希加，所以"要内联样式"的正确解法是改类名（`runtime/markdown.ts` 的表格对齐就是这么改的）。`frame-src` **必须**留组件协议（画布和 widget-host 都要嵌 iframe），`img-src` 那个 `https:` 是整份唯一的让步。改完跑 `npm run check:csp`，它同时盯着入口 HTML 里的内联脚本 / style 属性和平台代码有没有直连外网，并对账 `tests/csp.html` 里那份"证明不会白屏"的策略 —— **改一处就要两处一起改** |
 | 加联网主机 / 改白名单 | 14 | 三道闸顺序不能换：权限 → `manifest.network.hosts` → 请求形状。**没有通配符，这是故意的**；端口算身份；重定向必须关（否则白名单失效）；组件桥上的 `shell.open` 也只开 http/https（`open_policy.rs`） |
 | 组件渲染 / 底板 / 主题 | 6、18 | 组件里不写死颜色，全取 `--lattice-*`；宿主页三层顺序（`canvas` z0 / `veil` z1 / `iframe` z2 / 内描边 `body::after` z5）。外观变更只有两条路：`widget_set_appearance`（拖滑杆）+ `sync_widget_windows`（兜底） |
 | 错误通道 / 注入 | **7** | `__lattice_diag` 与 `__lattice` 两条消息，两个宿主要**先认错误再认桥**，且来源校验在 `isWidgetErrorReport` 之前。改 `runtime/widget-reporter.js` 的 `tag` 要同步改 `runtime/diagnostics.ts` 的 `REPORT_TAG`（`tests/diagnostics.html` 钉着字面量） |
@@ -35,11 +37,11 @@ whenToUse: 在这个仓库动手写代码之前，尤其是改桥、事件、权
 
 ## 五条一踩就静默坏的
 
-1. **不变量 2**：分叉的宿主。症状是"预览好、桌面不对"或反过来。
-2. **不变量 7**：错误通道和桥混在一起。症状是组件能靠伪造"错误"骗到宿主一次回话，或者每次加载弹一张错误卡。
-3. **不变量 8**：权限是活快照。症状是撤了权限，已经开着的窗口还在用。
-4. **不变量 11**：`reason` 省略。症状是用户的布局被静默删掉（真实发生过三次）。
-5. **不变量 17**：`help` 与 `changelog` 与行为脱钩。症状是用户看到的说明是上一版的。
+1. **INV-2**：分叉的宿主。症状是"预览好、桌面不对"或反过来。
+2. **INV-7**：错误通道和桥混在一起。症状是组件能靠伪造"错误"骗到宿主一次回话，或者每次加载弹一张错误卡。
+3. **INV-8**：权限是活快照。症状是撤了权限，已经开着的窗口还在用。
+4. **INV-11**：`reason` 省略。症状是用户的布局被静默删掉（真实发生过三次）。
+5. **INV-17**：`help` 与 `changelog` 与行为脱钩。症状是用户看到的说明是上一版的。
 
 ## 另外三条不是不变量、但同样硬的
 

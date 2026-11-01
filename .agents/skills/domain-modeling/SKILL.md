@@ -31,7 +31,7 @@ whenToUse: 要新增命令 / 字段 / 事件 / 权限 / 组件字段，或者发
 
 - **Rust**：命令名、结构体字段、`serde` 的 `rename`（存储格式里的键名一旦发出去就不能随便改 —— 老用户的 `assistant.json` / `state.json` 里还是旧键）。
 - **前端**：IPC 包装、Zustand 字段、组件 props。
-- **事件**：`lattice:*` 的名字与载荷键（载荷里带身份，见不变量 9）。
+- **事件**：`lattice:*` 的名字与载荷键（载荷里带身份，见INV-9）。
 - **文案**：界面中文、`i18n` 表、`GLOSSARY` 的定义 —— 三处说的是不是同一个东西。
 - **文档**：`WIDGET_SPEC` / `AGENTS` / `ROADMAP` 里的用法。
 

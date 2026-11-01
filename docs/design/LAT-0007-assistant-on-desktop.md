@@ -30,7 +30,7 @@ code: src-tauri/src/assistant_window.rs, src-tauri/src/desktop.rs, src/platform/
   而用户把它当"桌面的一部分"用（一边看它一边动壁纸上的组件）。
 - **底板是死的不透明面板**，而组件有 appearance（`runtime/appearance.ts`：tint / alpha / blur，
   三层是 canvas 壁纸 + veil + 内容）。用户要的是"跟组件一样能调"—— 同一套控件、同一套语义，
-  包括"出厂外观下不覆盖任何令牌"（不变量 6）。
+  包括"出厂外观下不覆盖任何令牌"（INV-6）。
 - **不能缩放**。`400×580` 是为"六七轮对话 + 输入框"排的，但有人在桌面上想把它拉成一条窄边，
   也有人想拉到 900 宽看代码块。自绘 resize 这套交互组件那边已经有了（`widgetHost.ts`）。
 - **没有锁**。放在桌面上之后，拖它/拖边很容易失手；主窗口的卡片有锁（`locked`），它没有。
@@ -83,7 +83,7 @@ A 否得再补一句：`runner` 的窗口表是按 placement 生成的，assista
 
 **底板（appearance）**：`{tint, alpha, blur}`，语义与组件完全一致（`runtime/appearance.ts`
 的 `normalizeAppearance` / `isPlainAppearance` / `luminance`，上限 `MAX_BLUR = 40`）。
-出厂值 `auto / 1 / 0` = 不覆盖任何令牌、不截图、和今天的窗口一像素不差（不变量 6）。
+出厂值 `auto / 1 / 0` = 不覆盖任何令牌、不截图、和今天的窗口一像素不差（INV-6）。
 三层和 `widgetHost.ts` 同一秩序：`canvas`（`widget_wallpaper`，`pad = MAX_BLUR × 2`）→ `veil`
 （`rgba(tint, alpha)`）→ 内容。控件放在标题栏那颗"底板"按钮里（浮窗与桌面都有）：
 **一个明暗开关**（`runtime/appearance.ts::isDarkTint`）+ 浓度 + 模糊，和属性面板的语义一一对应。

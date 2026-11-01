@@ -148,17 +148,23 @@ npm run test:winget            # 只测生成器的形状，不需要安装包
 
 ## 七、CI 跑什么
 
-推上去之后 `.github/workflows/ci.yml` 分三个 job，谁红看谁：
+命令清单**只有一份**：`.github/workflows/verify.yml`。`ci.yml`（push / PR）和 `release.yml`（打 tag）都调它 —— 所以"发得出去"和"测过了"永远是同一件事。两个 caller 各自只管自己的触发条件与权限：`ci` 只读、允许连推取消；`release` 要写 Release、中途不能取消。
+
+三个 job，谁红看谁：
 
 | job | 跑什么 | 为什么在这儿 |
 | --- | --- | --- |
-| `frontend` | `typecheck` → `build` → `test:injection` → `test:sdk` → `test:agent` → `test:tokens` → `check:tokens` → `test:winget` → `check:docs` | 都不需要 dev server，几秒钟跑完 |
+| `frontend` | `typecheck` → `build` → 六个 node:test → `check:tokens` → `check:docs` → `check:stats` → `check:version` → `check:csp` → `check:bridge` → `check:commands` → `check:gates` | 都不需要 dev server |
 | `browser` | 起 dev server → `test:browser`（全部 `tests/*.html`） | 页面 import 的是 `.ts` / `.tsx`，必须有转译；本机也能跑，只是慢 |
-| `rust` | `cargo test --lib` | **本机跑不了**（安全策略拦 `target/debug/deps` 下的 exe），runner 是唯一的机会 —— 而 `release.yml` **不跑**这一格，所以动过没有壳子的 `#[cfg(test)]` 就先推 `main` 等它绿，再打 tag |
+| `rust` | `check:policy-tests` + `cargo test --lib` | **本机跑不了**（安全策略拦 `target/debug/deps` 下的 exe），runner 是唯一的机会 |
 
-`ci.yml` 里有一句话值得抄在这儿：**不写具体条数**。写过一次，写的时候就已经过期了 —— 没有人会去核一个注释。要数字就跑命令，或者看 README（那个有 `check:docs` 盯着）。
+`release.yml` 里 `build` 的 `needs` 是 `[guard, verify]`：门禁红了就没有安装包。`guard` 只做一件事 —— 拒绝 `workflow_dispatch` 手动发版（那一次的 `github.ref_name` 是分支名，会建出一个 tag 叫 `main` 的 release）；要重跑某一次发版，用那次 run 上的 **Re-run all jobs**。
 
-`check:docs` 管两件事：**相对链接是否可达**，以及 **README 的数字和代码对不对得上**。计数类（组件 / 权限 / 命令 / 坑）必须精确相等；六项代码行数按 **1% 容差** —— 行数每次提交都动，精确相等会让每个 PR 都得改 README，而一张没人愿意维护的表最后会被删掉。改完文档先在本地跑一次，别等 CI 告诉你。
+**这份清单本身也有人看着**：`check:gates`（`scripts/guards/gates.mjs`）查四件事 —— 这里点名的每个 npm 脚本在 `package.json` 里真的存在（拼错一个字母，本机 `npm run` 不出声、YAML 也合法，只有 CI 会红）、`ci.yml` 里没有多写命令（多写就又变成两份清单）、`build` 的 `needs` 里确实有 `verify`、以及 `scripts/guards/` 下的每个守门人既在 `check:guards` 链里又在这一页有一行。最后一条最实用：新写一个守门人忘了接链，它永远不会被跑到，而"没跑"和"跑绿了"在终端里长得一模一样。
+
+`verify.yml` 里有一句话值得抄在这儿：**不写具体条数**。写过一次，写的时候就已经过期了 —— 没有人会去核一个注释。要数字就跑命令，或者看 README（那个有 `check:stats` 盯着）。
+
+两条命令各管一半，别混：`check:docs` 管**结构**（相对链接是否可达、锚点指到的那一节标题在不在、每份 md 是否恰好有一个归属、「获取帮助」的清单是否还和 catalog 对得上、六项代码行数按 1% 容差）；`check:stats` 管**数字**（组件 / 权限 / 命令 / 坑必须精确相等，历史数必须带版本或日期）。改完文档先在本地跑一次，别等 CI 告诉你。
 
 ## 八、发版的三条规矩
 

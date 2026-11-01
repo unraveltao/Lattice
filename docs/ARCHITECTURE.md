@@ -37,11 +37,13 @@
 
 | # | 动哪 | 文件 | 漏了会怎样 |
 | --- | --- | --- | --- |
-| 1 | **桥方法表** | `src/runtime/bridge.ts` 的 `defineMethod(name, permission, handler)`（现在 27 条；数法：`grep -cE '^defineMethod\(' src/runtime/bridge.ts`，别估） | 组件调不到，`unknown_method` |
-| 2 | **权限清单** | `src/runtime/catalogue.ts` 的 `KNOWN_PERMISSIONS` + `src/runtime/manifest.ts` 的 `Permission` 联合类型与文案（现在 13 项；`npm run check:docs` 会数） | 清单校验把它当"未知权限"只警告不拦，于是装得上、永远授权不了 |
-| 3 | **Rust 命令** | `src-tauri/src/<module>.rs` + `src-tauri/src/lib.rs` 的 `generate_handler!`（现在 99 条；`npm run check:docs` 会数） | 前端以为能用，一点就 `internal` |
+| 1 | **桥方法表** | `src/runtime/bridge.ts` 的 `defineMethod(name, permission, handler)`（现在 31 条；`npm run check:bridge` 会数，别估） | 组件调不到，`unknown_method` |
+| 2 | **权限清单** | `src/runtime/catalogue.ts` 的 `KNOWN_PERMISSIONS` + `src/runtime/manifest.ts` 的 `Permission` 联合类型与文案（现在 15 项；`npm run check:bridge` 会数） | 清单校验把它当"未知权限"只警告不拦，于是装得上、永远授权不了 |
+| 3 | **Rust 命令** | `src-tauri/src/<module>.rs` + `src-tauri/src/lib.rs` 的 `generate_handler!`（现在 128 条；`npm run check:commands` 会数） | 前端以为能用，一点就 `internal` |
 | 4 | **落盘** | `state.json` 或 `widget-data/<widgetId>.json` | 重启后数据没了，或者旧数据读不出来（要迁移） |
 | 5 | **断言与文档** | `tests/*.html`、`*_policy.rs`、`WIDGET_SPEC` 对应节、`AGENTS` 模块表 | 下一个人改坏没人拦，三个月后没人记得为什么这么写 |
+
+前三条那三个"现在 N 条"都是**全局数**（整座桥 / 全部权限 / 全部命令），由 `npm run check:stats` 盯着 —— 别在别处再抄一遍。局部数（agent 那 9 个白名单动作、终端那几条命令）不属于这一节，写的时候必须带主语，否则读者会当成全局数。
 
 第 2 处最容易漏，因为漏了**不会报错**：清单解析遇到不认识的权限只记一条 warning，照装不误。症状是"组件装好了，点授权没反应"。
 
@@ -130,6 +132,8 @@ z 序守卫是为了治"闪来闪去"：可激活的窗口被点中时，Windows
 
 ## 7. 数据
 
+**这一节只回答"为什么这么存"。** 每个文件的字段、版本号、谁负责写，家在 [`reference/state.md`](./reference/state.md) —— 改持久化字段时读那边，别在这里找 schema。
+
 | 数据 | 位置 | 说明 |
 | --- | --- | --- |
 | 摆放、层级、授权、主题、网格吸附、本机档案、桌面矩形、目录地址、钉住的钥匙、评分 | `%APPDATA%\com.iron-tom.lattice\state.json` | Zustand persist 的自定义 `StateStorage` → `state_write` |
@@ -167,7 +171,7 @@ z 序守卫是为了治"闪来闪去"：可激活的窗口被点中时，Windows
 - **补发缓冲是必需品，不是优化。** 窗口藏起来回来、权限变更重载 iframe，中间那段事件会缺。只有序号没有正文的"对账"是假的 —— 组件缺的正是那几行字。所以有环形缓冲 + 按序号重发。
 - **收尸必须两条路。** 一条是实例销毁，一条是应用退出。只挂前者，"组件早删了、进程还在"；只挂后者，关一张卡片多一个孤儿进程，而任务管理器里没人知道它是谁的。
 
-这条轴对后来者的约束是：任何"边跑边有话说"的能力都按这个形状做（`llm_chat_stream` 同一条），不要发明第二套。硬约束在 `AGENTS.md` 不变量 20，组件契约在 `WIDGET_SPEC` §4.9。
+这条轴对后来者的约束是：任何"边跑边有话说"的能力都按这个形状做（`llm_chat_stream` 同一条），不要发明第二套。硬约束在 `AGENTS.md` INV-20，组件契约在 `WIDGET_SPEC` §4.9。
 
 ## 9. 性能预算
 
@@ -182,7 +186,7 @@ z 序守卫是为了治"闪来闪去"：可激活的窗口被点中时，Windows
 
 手段：不可见组件暂停渲染、动画只走 CSS `transform` / `opacity`、组件定时器统一由平台调度（最小 250 ms）、暂停全部时直接 `hide()` 窗口。纯显示刷新用 `requestAnimationFrame` 是允许的 —— 状态由时间戳推导时（秒表、倒计时），藏起来 rAF 自停、回来重算即可。
 
-**"每组件内存"那一格为什么空着**：一个 placement 一个 `WebviewWindow`（见第 10 节第一行），所以内存随组件数线性涨，而**没有人量过斜率**。官方组件已经 21 个，第三方位进来之后 40–60 个是常态。在量出 1 / 5 / 10 / 20 个组件的实测值之前，任何"合并 WebView"或"池化"的方案都只是猜 —— 而这三样代价都不小（合并会一起换掉崩溃隔离、独立 DPI、独立输入焦点）。所以这一版的处理是**先把空格留在明处**，不去填一个看着像结论的数。测量协议与触发条件见 [ROADMAP「接下来做什么」§四](./ROADMAP.md#四v014-之后想清楚了但还没排期) 第 2 条。
+**"每组件内存"那一格为什么空着**：一个 placement 一个 `WebviewWindow`（见第 10 节第一行），所以内存随组件数线性涨，而**没有人量过斜率**。官方组件已经 24 个，第三方位进来之后 40–60 个是常态。在量出 1 / 5 / 10 / 20 个组件的实测值之前，任何"合并 WebView"或"池化"的方案都只是猜 —— 而这三样代价都不小（合并会一起换掉崩溃隔离、独立 DPI、独立输入焦点）。所以这一版的处理是**先把空格留在明处**，不去填一个看着像结论的数。测量协议与触发条件见 [ROADMAP「接下来做什么」§四](./ROADMAP.md#四v014-之后想清楚了但还没排期) 第 2 条。
 
 ## 10. 已知取舍
 

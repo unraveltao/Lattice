@@ -1,6 +1,8 @@
 # 代码签名：为什么现在不买，免费的怎么走
 
 > 结论先说：**不买证书。** 申请 [SignPath Foundation](https://signpath.org)（开源项目免费，给的是 OV 级证书），同时把 winget 当成主要分发渠道。两条都不要钱，合起来比"买一张 OV 证书"更管用。
+>
+> **2026-10-29 更新：Foundation 申请被拒**（理由与重申条件见第七节）。付费订阅最便宜的一档是 $500/年，也不买。所以现在的实际策略是 —— **不签名，先把产品打磨好**；分发信任靠 winget + README 里那句实话 + 每个 release 附 SHA-256。
 
 这份文档存在的原因：v0.7 那条 `[ ] 代码签名证书` 原本写着"要花钱买 OV/EV 证书"，这句话在 2026 年是错的 —— 付费买不到当初以为能买到的东西，而免费那条路正好对我们开着。下次想改回去之前，先把下面三节读完。
 
@@ -102,8 +104,8 @@ Lattice is an extensible desktop widget platform for Windows. Widgets are ordina
 Public since October 2026, so there is no press coverage or download statistics yet. Verifiable signals instead:
 
 - Release pipeline: every Windows installer is built and published by GitHub Actions from this repository — https://github.com/unraveltao/Lattice/releases
-- Distribution: nineteen official widgets are published as signed packages to a public catalogue on GitHub Pages — https://unraveltao.github.io/lattice-registry/registry.json
-- Quality gates: CI runs a browser assertion suite (2,726 assertions across 55 pages) and 422 Rust unit tests on every push — https://github.com/unraveltao/Lattice/actions/workflows/ci.yml
+- Distribution: 24 official widgets are published as signed packages to a public catalogue on GitHub Pages — https://unraveltao.github.io/lattice-registry/registry.json
+- Quality gates: CI runs the browser assertion suite and 618 Rust unit tests on every push — https://github.com/unraveltao/Lattice/actions/workflows/ci.yml
 - Package manager: manifest submitted to microsoft/winget-pkgs — https://github.com/microsoft/winget-pkgs/pull/461881
 ```
 
@@ -165,6 +167,8 @@ winget 的分发模型里，信任不是挂在证书上的，是挂在**清单�
 
 代价：清单里要写版本号、安装包直链（GitHub Releases 的地址可以）和 SHA-256，**每发一版都要重新提 PR**。这三样已经不用手抄了：`npm run winget:manifest` 从这次真正打出来的 exe 上现算（`release.yml` 打完包会把三份 YAML 挂成 release 附件），动作与四条边界见 [`reference/build.md`](./reference/build.md) 第五节。留下来的人工步骤只有"提 PR 并等审核"。
 
+**当前状态（2026-10-29）**：PR [#461881](https://github.com/microsoft/winget-pkgs/pull/461881) 已经提了，自动校验（`Validation-Completed`、`Azure-Pipeline-Passed`）都过，但挂着 **`Needs-CLA`** —— 贡献者许可协议没签，所以人工审核根本还没开始。**签 CLA 是几分钟的事，而且它是眼下唯一不需要任何"外部信号"就能推进的信任路径**——比签名证书管用，因为经 winget 分发的安装包不带 Mark-of-the-Web，"下载 → SmartScreen 拦"那条路根本不发生。
+
 **Scoop** 更轻：自己仓库里放一个 JSON，用户 `scoop install`。受众偏开发者，但成本几乎为零 —— 不过它要再维护一个 bucket，而且 NSIS 的静默参数没在真机上验过，所以先排在 winget 之后（同上那一节末尾）。
 
 ## 四、明确不做
@@ -181,7 +185,33 @@ winget 的分发模型里，信任不是挂在证书上的，是挂在**清单�
 | 什么时候 | 做什么 | 花钱 |
 | --- | --- | --- |
 | 现在 | README 实话 + release 附 SHA-256 | 0 |
-| 下一次发版前 | 提 SignPath 申请（审核 1–3 天，可以先提交再等） | 0 |
-| 批准后 | 填那五个值（签名步骤已经写好、休眠着），发一版签过名的，按上面的验证法验一遍 | 0 |
-| 有稳定安装包之后 | 提 winget manifest（生成器与 CI 附件已就绪，见 [`reference/build.md`](./reference/build.md) 第五节） | 0 |
+| ~~2026-10-26~~ | ~~提 SignPath 申请（审核 1–3 天）~~ → **2026-10-29 被拒**，见第七节 | 0 |
+| 现在 | **签 winget 的 CLA**，让 PR #461881 进人工审核 | 0 |
+| 每一版之后 | 重提 winget manifest（生成器与 CI 附件已就绪，见 [`reference/build.md`](./reference/build.md) 第五节） | 0 |
+| 攒够外部信号之后 | 重申 SignPath Foundation（条件见第七节） | 0 |
 | 永远 | 不买 OV/EV，不用自签名对外分发 | 0 |
+
+## 七、2026-10-29：Foundation 拒了，以及它真正的门槛
+
+申请 2026-10-26 提交，10-29 收到回复：**不予批准**。原文（Phillip）：
+
+> After reviewing your submission, we're unable to approve your application at this time. The Foundation program is designed for projects that have already established a certain level of public trust and visibility, so when evaluating applications we look for external signals such as community adoption (GitHub stars, forks, contributors), external articles, independent references or discussions (Reddit, Stack Overflow, YouTube, etc.) or institutional backing, and evidence of sustained activity and engagement.
+
+**它看的不是代码质量，是"外面有没有人在乎"。** 邮件里明确说了这不是对项目本身的判断，只是 Foundation 这个档位要求的可见度没到。
+
+对号入座，我们缺的是**全部四项**：仓库 2026-10 才公开、star/fork 个位数、单一维护者、没有任何第三方文章或讨论。这种情况下重申一次还是会被拒，**别在信号涨起来之前浪费第二次机会**。
+
+**决定（2026-10-29，用户拍板）：先打磨产品，签名这条线搁置。**
+
+付费那档也不走。查过 [signpath.io 的订阅页](https://docs.signpath.io/change-subscription)：最便宜的 Starter **$500/年**，含 20 次 release 签名、1 个项目、1 个用户；Basic Single $1000/年。对一个还没有用户的桌面工具，这笔钱买到的东西（发布者名字从"未知"变成"SignPath Foundation"，且照样先弹 SmartScreen）和它要的价钱不成比例。
+
+**重申的条件（写给未来的自己，别凭感觉判断"应该差不多了"）**：至少满足其中两条再去提——
+
+1. **GitHub 侧**：三位数 star，或 10+ 个独立 contributor，或有人 fork 出去自己改
+2. **外部文字**：至少一篇不是自己写的介绍或评测（博客、周刊、少数派/V2EX 这类社区帖都算）
+3. **外部讨论**：Reddit / Hacker News / Stack Overflow / YouTube 上有真实提问或演示，**不是自己发的推广**
+4. **活跃度**：连续 6 个月以上有发布节奏（release 列表本身就是证据，这一条最容易满足）
+
+反过来，**这四条里有三条本来也是产品该有的东西**——有人用、有人说、有人在里面提问。所以"打磨产品"和"攒重申条件"不是两件事，是同一件事的两种说法。
+
+在那之前，缺证书这件事的正确处理还是第五节那两条：README 写实话、每个 release 附 SHA-256。用户看到警告时手边正好有解释，比什么签名都省事。

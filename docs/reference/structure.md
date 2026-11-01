@@ -86,13 +86,22 @@ scripts/
   store-index.mjs         打包 + 签名所有内置组件，写 public/store/registry.json（`npm run store:index`）
   winget-manifest.mjs     一个 NSIS 安装包 → winget 的三份 YAML（`npm run winget:manifest`）：直链与 SHA-256 都从那个 exe 现算，写 `dist-winget/`（不进仓库）
   winget-manifest.test.mjs  上面那道的形状：哈希大写、直链与附件名同源、Publisher 取 identifier 第二段、两次生成逐字节相同（`npm run test:winget`，11 条）
-  dev-publisher.key       **开发用**签名种子（故意进仓库，见不变量 15）
+  dev-publisher.key       **开发用**签名种子（故意进仓库，见INV-15）
   sdk-sync.mjs            把 packages/sdk 的两个文件刷进所有内嵌副本（`--check` 只查不改）
   sdk.test.mjs            副本一致性 + SUPPORTED_SDK 版本对齐（`npm run test:sdk`）
   check-tokens.mjs        三张表（字号 / 圆角 / 间距）的守门人，只读（`npm run check:tokens`）
   check-tokens.test.mjs   上面那道的测试：规则本身 + 仓库现状（`npm run test:tokens`）
+  stats.mjs               数字的唯一真源：组件 / 权限 / 桥方法 / 命令 / 坑 / agent 动作都从这里数（`npm run stats`）
+  guards/stats.mjs        数字对账：文档里每一处"现在有多少条 X"↔ `scripts/stats.mjs`（`npm run check:stats`）
+  guards/bridge.mjs       桥对账：一个权限要落的六处 + WIDGET_SPEC §4 的方法表（`npm run check:bridge`）
+  guards/commands.mjs     命令对账：`invoke("x")` ↔ `#[tauri::command]` ↔ `generate_handler!`（`npm run check:commands`）
+  guards/policy-tests.mjs 每个 `*_policy.rs` 都要 `rustc --test` 单跑并跑绿（`npm run check:policy-tests`）
+  guards/csp.mjs          平台页面的 CSP 没被悄悄放开（`npm run check:csp`；读 `dist/`，要排在 build 之后）
+  guards/version.mjs      三处配置（package.json / Cargo.toml / tauri.conf.json）与三份入口文档的版本号必须一致（`npm run check:version`）
+  guards/gates.mjs        门禁自己：workflow 点名的脚本存在、命令清单只有 verify.yml 一份、release 的 build needs 门禁、每个守门人既在链里也在 CI 里（`npm run check:gates`）
   tauri.mjs               tauri CLI 包装（补工具链 PATH）
   lattice-agent.mjs       agent 客户端 CLI（`npm run agent -- state|act|ping`，零依赖）
+  probe-agent.mjs         agent 端点的真机探针：监听 / 令牌 / 路由 / Tauri 往返 / 只绑回环（要应用在跑）
   lattice-agent.test.mjs  上面那道的测试：起假端点，测请求形状与退出码（`npm run test:agent`）
   dev-llm-proxy.mjs       浏览器预览那条 `/api/llm` 中间件：`llm.rs` / `llm_policy.rs` 的替身（base URL、三种鉴权、失败码与那条 `@@llm:` 抬头、`assistant.json` 的读写）；**认得的归一化、不认识的顶层字段照抄回去**（0015）
   dev-llm-proxy.test.mjs  上面那道的测试：起假 provider，测请求形状、失败抬头与配置往返（`npm run test:llm-proxy`，28 条）
@@ -109,6 +118,8 @@ src-tauri/src/
   crash.rs                ICoreWebView2::add_ProcessFailed 胶水：认崩溃类型、记账、重载
   crash_policy.rs         上面那道的纯逻辑：何时重载 / 何时放弃（9 条单测）
   diagnostics.rs          组件坏了给人看的东西：兜底页 + 注入的错误上报脚本
+  capability_policy.rs    能力体检的判据（纯逻辑）：九条能力 × "缺什么" → `{ reason, detail }`；**`available` 由 `reason` 算**，所以写不出"不可用但没原因"那一行（17 条 rustc --test，**不引 crate**）
+  capability_probe.rs     上面那道的探针：shell / 1×1 BitBlt / MCP 命令是否在 PATH / 模型档 / 音频设备 / 密封库；**只在启动和设置页显式刷新时跑，没有定时器**（理由写在文件头）
   runner.rs               Placement → 真实窗口的增量同步、宿主页配置、事件回传、暂停开关
   tray.rs                 托盘图标与菜单（打开主窗口 / 暂停全部 / 退出）
   watch.rs                组件目录监听（ReadDirectoryChangesW + 300ms 静默去抖）
@@ -127,6 +138,10 @@ src-tauri/src/
   export_policy.rs        上面那道的纯逻辑：名字清洗（与 `save-file.ts` 各判一遍）、单文件还是 zip、base64 解码、CRC32、DOS 时间、zip 头字节与 EOCD（14 条 rustc --test，**不引 crate**）
   power.rs                电源读数（系统卡片上电池那一行用）：一次 `GetSystemPowerStatus` 拿交流 / 电池两态、百分比、剩余分钟与省电模式，直接调 Win32 不引 crate。0.3.0 起电池组件下架，命令仍是独立一条（卡上挂两条心跳：1000ms 指标 / 30000ms 电源）
   power_policy.rs         上面那道的纯逻辑：255 这类「不知道」的哨兵值、百分比上界、剩余时间只在放电时给（6 条 rustc --test）
+  presence.rs             姿态的运行时：一份状态 + 两条命令（`presence_report` / `presence_get`）+ 一个广播事件（`lattice:presence`）。**瞬时姿态靠一次一次性线程回落，没有常驻 ticker** —— 一件事有"发生了"这个时刻，就不该用"每隔一会儿看一眼"来实现
+  presence_policy.rs      上面那道的纯逻辑：同值重复报告不重置计时、`done`/`error` 4 秒回落、**睡着不是锁**（真正"别让我看见它"的开关是隐藏）、时钟回拨不算过期（15 条 rustc --test，**不引 crate**）
+  pet_policy.rs           桌宠皮肤的判据（LAT-0041）：六个姿态 / 六个动作 / 一个格式版本；路径不许跑出皮肤目录；**不认识的渲染器拒绝、不认识的字段和动作忽略** —— 那两条不对称是"换素材"能成立的唯一原因；另有位置夹取与让位（`avoid`）的纯几何（52 条 rustc --test，**不引 crate**）
+  pet.rs                  桌宠（**平台窗口，不是组件**）：建窗（透明 + 出生即 Top + `WS_EX_NOACTIVATE` + 区域）、扫 `pets/<id>/pet.json`、`pet-state.json`、八条命令（`pet_skins` / `pet_state` / `pet_choose` / `pet_set_hidden` / `pet_save_rect` / `pet_boot` / `pet_act` / `pet_set_region`）。**不走 placement、不查桥权限、不进 `sync_widget_windows`** —— 和 `runner.rs` 那条管线一点关系都没有。`avoid_assistant` 由 `assistant_window` 的 toggle / hide 调，让开而不是改层级。`pet_act` 是**白名单**：动作名来自皮肤数据，皮肤是用户从外面放进去的
   agent.rs                Agent 端点：只绑 127.0.0.1 的 HTTP、令牌、审计、转发给主窗口（默认关）；小窗要的 `assistant_snapshot` / `assistant_act` / `assistant_widget_tools` / `assistant_widget_call` 也复用这条转发（后两条是数据平面，见 0013）
   agent_policy.rs         上面那道的纯逻辑：HTTP 三态解析、Bearer 常量时间比对、动作白名单、`say` 的单行化与超长拒绝（26 条 rustc --test）
   llm.rs                  内置 assistant 的模型面：`assistant.json`（v4：`{version, mode, skills: {enabled}, activeId, hands, approvalMode, workspace, profiles[]}`）读写与 v1 就地升级、环境变量覆盖、十六个命令（llm_profiles / llm_profile_save / llm_profile_remove / llm_profile_activate / llm_set_key / llm_models / assistant_config_path / assistant_config_open / assistant_config_import / llm_chat / llm_chat_stream / llm_chat_cancel / assistant_hands / assistant_hands_save / assistant_mode / assistant_mode_set）、**模型档导入**（`assistant_config_import`：认三种形状 —— 裸数组 / `{profiles: […]}`（整份 `assistant.json`）/ v1 的平铺 `{baseUrl, model}`；同 id 先、其次同地址，空 key 不覆盖已有 key，手与工作区与审批一概不导 —— 语义写在 `merge_profiles` 上方）、**没带 key 的本机地址落成 `auth: none`**（空 Bearer 只会换来 401，和 `migrate_legacy` 同一句判断），**两个模式（0009）的存盘与切换也在这里**（`mode` 坏值一律落 `internal`，切换进审计）、**技能启用清单的存盘**（`skills_enabled` / `set_skills_enabled`，目录归 `skills.rs`）、出网走 `network::send` 或 `network::stream`、审计只记模型与字数

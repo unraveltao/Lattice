@@ -7,6 +7,8 @@ code: public/widgets/lattice.todoist/*, tests/todoist.html, public/widgets/index
 
 # LAT-0042 —— Todoist 只读镜像（`lattice.todoist`）
 
+> 2026-10-29 追记：这份写的是 0.1.0。同一天定的 0.2.0（没有账号也能用、改名 + 免责声明、`shell:open`、断开入口）在 [0043](./LAT-0043-todoist-local-scratch-list.md)，它推翻了 §3 的"token 门槛是唯一首屏"和 §4 的"不申请 `shell:open`"。正文按规矩不改 —— 那两处的推理仍然是 0.1.0 当时的理由；§6 的 103 条也是 0.1.0 的数字，0.2.0 是 150 条。
+
 ## 1. 问题
 
 用户的任务记在 Todoist 里，桌面上那块待办记的是另一份。想看"今天要干什么"得开浏览器 —— 于是桌面这块对这批人永远是**第二份要维护的清单**，而两份清单并存的结果是挑一份用、另一份变装饰。

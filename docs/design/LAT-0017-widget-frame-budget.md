@@ -18,7 +18,7 @@ code: src/runtime/schedule.ts, src/widgetHost.ts, src/platform/WidgetFrame.tsx, 
 - `pet.js` 的 `frame()` **无条件** `requestAnimationFrame(frame)`，每帧都 `figure.tick(dt)`；
 - `pet-rig.js` 的 `draw()` 每帧 `clearRect` 整屏再重画 25 个部件（每个部件是若干次
   `clip + drawImage`）；
-- 平台的 `schedule` 只管挂在时间轴上的定时器，`rAF` 不归它管（不变量 10 明说了
+- 平台的 `schedule` 只管挂在时间轴上的定时器，`rAF` 不归它管（INV-10 明说了
   "它画的是这一帧的读数"），所以"看不见就别跑"对帧循环**完全没生效**；
 - 同一份组件还被画了两遍：桌面窗口一份、主窗口画布一份（`Canvas.tsx` 不按 layer 过滤）。
 
@@ -68,7 +68,7 @@ code: src/runtime/schedule.ts, src/widgetHost.ts, src/platform/WidgetFrame.tsx, 
 **落盘格式与迁移**：无。
 
 **要改的文件**：上面 `code:` 那五个 + `tests/schedule.html`（5 条断言）+ 文档
-（PITFALLS / WIDGET_SPEC §4.4 / AGENTS 不变量 10）。
+（PITFALLS / WIDGET_SPEC §4.4 / AGENTS INV-10）。
 
 ## 5. 失败模式
 
@@ -117,7 +117,7 @@ iframe。判据收在一个纯函数里 —— `runtime/widget-tools.ts::canvasN
 | 这一份的窗口已被组件自己关掉（`suppressed`） | 静态卡的意思是"它在自己那个窗口里跑"，窗口不在还画静态卡，这个组件在屏幕上就**一个像素都没有了** —— 而卡片还在说它在桌面上 |
 
 第三条是实测撞出来的：`lattice.pet` 右键会 `window.close()`（组件自己关窗，
-placement 留着，见不变量 11 与 `runner.rs::widget_close`），那一刻窗口没了。
+placement 留着，见INV-11 与 `runner.rs::widget_close`），那一刻窗口没了。
 所以 `widget_close` 在 `suppressed` 分支上多广播一条 `lattice:widget-suppressed`
 （**和删摆放的那条 `lattice:widget-close` 分开**，合成一条就是当初静默删用户数据的老路），
 主窗口把它记进 store 的同名镜像（不落盘），画布据此退回活的那一份。

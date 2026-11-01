@@ -26,7 +26,7 @@
 这是这个仓库唯一接受的验证方式 —— 不是"我这儿是好的"，是"换台机器照文档走一遍也对"。
 
 1. `npm run typecheck` —— 静态的那一半，30 秒。
-2. `npm run check:tokens && npm run check:docs` —— 样式三张表，以及文档对账（相对链接、组件数、命令数、坑数、行数）。
+2. `npm run check:tokens && npm run check:docs && npm run check:guards` —— 样式三张表；文档结构（相对链接、锚点、归属、应用内清单、行数）；以及七条"不报错、只是不工作"的对账（文档里的数字与代码、三处配置与三份入口文档的版本号、权限要落的六处、`invoke` 与 `generate_handler!` 是否对得上、`*_policy.rs` 还能不能 `rustc --test` 单跑、平台页面 CSP 有没有被悄悄放开、以及门禁自己 —— `verify.yml` 里点名的脚本是否存在、命令清单是否还只有一份、新守门人有没有既接进链也接进 CI）。`*_policy.rs` 那条要 Rust 工具链，没装会自己跳过。
 3. `npm run dev` 起 dev server，另一个终端 `npm run test:browser` 跑全量断言。改过的页必须全绿。**新加的断言页不用登记**，脚本按 `tests/*.html` 自动收；只被别的页当夹具加载的，加进脚本里那个 `FIXTURES`。
 4. 只有 `npm run tauri:dev` 才看得见的那一半 —— WorkerW 置底、圆角裁剪、鼠标穿透、拖拽、开机自启 —— **浏览器里跑通不算通过**。
 
@@ -44,7 +44,7 @@
 - **用户看得见的字** → `src/runtime/i18n/` 对应分片。**同一句话只许一种译法**，`tests/i18n.html` 会查"两种译法"、占位符不一致、首尾空白。
 - **字号 / 圆角 / 间距** → 只许用那三张表里的值，`npm run check:tokens` 会拦越界并给行号。真要用表外的值，行尾写 `/* token-ok 理由 */`，理由不写会被报。
 - **文档** → 按 [`docs/README.md`](./docs/README.md) 第三节那三问决定放哪一份。同一件事别在两份里各写一半。
-- **数字**（组件数 / 权限数 / 命令数 / 断言数 / 坑数）→ 只改 `README.md` 与 `README.zh-CN.md` 里那张表。别处提到它就给链接，不要顺手再抄一个数。
+- **数字**（组件数 / 权限数 / 命令数 / 断言数 / 坑数）→ 家在哪、怎么写、当前数与历史数怎么分，全在 [`docs/README.md`](./docs/README.md) 第五节；改完跑 `npm run check:stats` 对账。**别新增一处就抄一个数** —— 抄了就会红，这正是那条命令存在的理由。
 
 ## 五、提交信息
 
@@ -66,10 +66,10 @@
 | 钩子 | 做什么 | 什么时候红 |
 | --- | --- | --- |
 | `commit-msg` | 校验上面那个形状 | type 不在表里、`feat:` 后面空着、`credits:` 这种 scope 当 type |
-| `pre-push` | `npm run typecheck` + `npm run check:docs` | 类型错、相对链接死了、README 的数字和代码对不上 |
+| `pre-push` | `npm run typecheck` + `npm run check:tokens` + `npm run check:docs` + `npm run check:guards` | 类型错、样式越界、相对链接死了、锚点指不到那一节标题（文件可达不等于那一节存在）、文档里的数字和代码对不上（含"历史数没标版本"）、版本号在配置与入口文档之间不一致、权限/命令/桥方法表和代码对不上、平台页面 CSP 被放开（多了内联脚本 / style 属性 / 外部源，或 `tests/csp.html` 那份证明与配置脱钩）、`*_policy.rs` 不能单跑或没跑绿、`verify.yml` 里点名了一个不存在的 npm 脚本、或者某个守门人没同时接进链和 CI |
 
 只拦格式和"本机能验的那一半"，不拦内容。真绕过去用 `--no-verify` —— 但 `pre-push`
-那两条正是 CI 会红的两条，绕过去只是把红推迟到别人的机器上。
+那几条正是 CI 会红的几条，绕过去只是把红推迟到别人的机器上。
 
 钩子换了机器要重装：`npm run hooks:install`（不用重装依赖）。
 

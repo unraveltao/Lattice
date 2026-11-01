@@ -60,7 +60,7 @@ llm_chat_cancel({ requestId })
 
 `ProfileView` = `{ id, label, baseUrl, auth, model, temperature, models, keyHint, configured, source }`，**没有 `apiKey`**。
 流式：增量走事件 `lattice:llm-delta`（`{ requestId, text }`），命令本身在结束时返回拼好的完整消息（和 `llm_chat` 同形状）。工具参数不进事件，Rust 里按 `index` 拼完整后随结果一次回来。
-载荷必须带 `requestId`：`emit` 是广播（不变量 9），抽屉和小窗可能同时各跑一轮。
+载荷必须带 `requestId`：`emit` 是广播（INV-9），抽屉和小窗可能同时各跑一轮。
 
 **落盘与迁移**
 

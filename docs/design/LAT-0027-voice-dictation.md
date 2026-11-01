@@ -99,7 +99,7 @@ trait Recognizer {
 | `dictation_stop` | — | `{ ok }` |
 | `dictation_cancel` | — | `{ ok }` |
 | `dictation_level` | — | `{ level }` 0..1。**这一版恒 0**：第二路 WASAPI 采集没做，界面据此不画波形（见 §5 那条兜底） |
-| `dictation_open_settings` | `{ page: "speech" \| "microphone" }` | `{ ok }`。`ms-settings:` 不在 `open_policy` 的白名单里（不变量 14），所以这是平台自己的一条专用命令，字面量写死在 Rust 里 |
+| `dictation_open_settings` | `{ page: "speech" \| "microphone" }` | `{ ok }`。`ms-settings:` 不在 `open_policy` 的白名单里（INV-14），所以这是平台自己的一条专用命令，字面量写死在 Rust 里 |
 | `dictation_settings` / `dictation_settings_set` | `{ enabled, hotkey }` | 读一次 / 回同形状 |
 
 事件 `lattice:dictation`：`{ phase: "listening" | "partial" | "done" | "error", text?, code?, error? }`。
