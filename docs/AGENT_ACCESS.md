@@ -104,9 +104,9 @@ HTTP 请求 → agent.rs → emit `lattice:agent` → platform/agent.ts 执行 �
 | `state.clear` | 一条命令清空用户桌面 |
 | `agent.set_enabled` | 自己给自己开门 |
 
-`config.set` 和"安装"这两条**不是永远不做**，是"缺一个确认流"。补确认流的时候，
-通道应该是界面上的一张卡片（谁、要干什么、点同意/拒绝），不是对话框 —— 对话框会被
-训练成无脑点掉。
+`config.set` 已加入动作白名单，按实例修改，写前校验清单 schema。
+内置 assistant 经统一审批策略；外部 HTTP `act` 不经过 assistant 确认流。
+安装仍不在白名单，未来开放需要单独设计人工确认通道。
 
 ### 1.6 威胁模型（别高估令牌）
 
@@ -117,7 +117,7 @@ HTTP 请求 → agent.rs → emit `lattice:agent` → platform/agent.ts 执行 �
 桌面应用做不到进程级隔离，所以真正的防线不是密码学，是这四条：
 
 1. 默认关，开的时候是人在界面上按的
-2. 动作只有 8 个，全是可见、可撤销的布局操作
+2. 动作限于布局、主题、暂停和按 schema 校验的实例配置；不提供原始组件存储写入
 3. 每一步都进 `agent/audit.log`（一行一条 JSON：`at` / `op` / `detail` / `status` / `ms`）
 4. 危险动作（授权、安装、卸载、清空）不在白名单里，agent 连试都试不到
 
@@ -128,7 +128,7 @@ HTTP 请求 → agent.rs → emit `lattice:agent` → platform/agent.ts 执行 �
 完全访问模式，以及 `terminal:exec`（组件能跑任意命令）。三件事要重新说清，因为读这一页
 的人最容易在这里推错：
 
-**一、手不在这个端点里。** 端点能做的仍然只有 §1.4 那 8 个布局动作 —— 跑命令、读文件、
+**一、手不在这个端点里。** 端点动作范围仍以 §1.4 白名单为准（含实例配置修改） —— 跑命令、读文件、
 点键鼠都挂在 `assistant_tool` 上，只由 assistant 面板（或小窗转给主窗口）发起，走不到
 HTTP 这条路。**"assistant 有六只手"不等于"127.0.0.1 那个口子能跑命令"**，这两件事之间
 没有代码路径。要给端点加一只真手，等于把 §1.5「永远不给的」整节重写 —— 那是另一份设计
@@ -389,18 +389,18 @@ DeepSeek / OpenAI / Kimi / Qwen / Ollama / LM Studio —— 而"再多支持一�
 `llm_policy.rs` 里一个函数的事，不是架构问题。地址归一化很宽容：`api.x.com`、
 `https://api.x.com/`、`https://api.x.com/v1`、整条 `/chat/completions` 贴进来都认。
 
-### 4.4 桌面动作：仍然只有那八个
+### 4.4 桌面动作：与端点共用白名单
 
 `runtime/assistant.ts` 的 `TOOL_SPECS` 和 `AGENT_ACTIONS` **逐字一致**（`tests/assistant.html`
 钉着），每个工具的参数名也和执行器读的键逐个对上。新增动作时**三处一起改**：
 `agent_policy::ACTIONS`、`AGENT_ACTIONS`、`TOOL_SPECS`。
 
-**这八条是"能改桌面"的全部** —— 摆、挪、缩放、删、钉、置顶、换主题、暂停组件。v0.11 的六组手
-（§4.10）不在这张表里：它们走另一条 IPC（`assistant_tool`）、另一套白名单与预算，而且**碰不到
-布局**。两张表分开是有意的 —— "能读文件"和"能挪你的卡片"不该是同一份授权里的两个参数。
+这些动作覆盖摆、挪、缩放、删、钉、置顶、换主题、暂停组件，以及按 schema 修改实例配置。
+白名单与配置校验见 [agent.ts](../src/platform/agent.ts#L288-L317)。
+六组手（§4.10）走另一条 IPC（`assistant_tool`）与执行器，不直接提供这些桌面动作。
 
-仍然不给的，和 §1.5 一样：授权、安装、卸载、`config.set`、`storage.write`、清空。模型要是
-被要求做这些，它该说"做不到" —— 系统提示里写死了这一条。
+桌面动作白名单仍不提供：授权、安装、卸载、`storage.write`、清空。
+不要把它误解为完全访问模式下的通用 shell 或文件工具也具有同样的操作范围限制。
 
 ### 4.5 三条边界，别拆
 

@@ -55,12 +55,14 @@
 
 - 读不到父窗口 DOM，`window.parent` 上什么都取不到
 - `localStorage` 直接抛 `SecurityError`
-- `fetch` 带 `Origin: null`，跨源一律被拦
+- 跨源 `fetch` 的响应读取受 CORS 约束；不透明源通常发送 `Origin: null`，**不等于请求不能发出**
 - Cookie、IndexedDB 全部不可用
 
-结论：**组件什么都干不了，除非走桥。** 这是整个安全模型的地基。
+结论：**沙箱隔离宿主，桥控制平台能力；出网限制另有防线。**
+第三方组件文档的资源与连接限制、`form-action 'none'` 在 [csp.rs](../src-tauri/src/csp.rs)；帧导航还需要 WebView2 层的闸门。
+平台页面的 CSP 是另一份策略，不能与组件文档混用；随应用分发的组件走应用资源路径，不套第三方协议响应头。
 
-`allow-forms` 是后来补的，理由不是"想开"，而是"不开就坏"：少了这一位，浏览器把表单提交整条拦掉，`submit` 事件不触发也不报错，`<form>` + 回车这种最普通的写法静默失效。它不扩大上面任何一条 —— 表单只能提交到组件自己的不透明源。
+`allow-forms` 是为了让表单交互正常工作，不保证表单只能提交到自己的源；外发提交由组件文档 CSP 禁止。
 
 鉴权靠**窗口引用比对**，不靠 origin：
 
@@ -111,12 +113,13 @@ window.addEventListener("message", (event) => {
 
 裁完区域必须补一次 `RedrawWindow(RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_ERASE)`。少了它 WebView2 会按上一次的脏区重绘，把窗口切成一行一行的横条 —— 这个症状看起来像渲染坏了，其实是没告诉系统"区域变了"。
 
-层级只有两种：
+层级以 [layer.ts](../src/runtime/layer.ts) 与 [desktop.rs](../src-tauri/src/desktop.rs) 为准：
 
-- `desktop`：`SetParent` 到 WorkerW。向 `Progman` 发 `0x052C` 让它派生 WorkerW，再找挂着 `SHELLDLL_DefView` 的那个的兄弟，把窗口挂上去。效果是组件沉在桌面图标之上、普通窗口之下 —— 这是"桌面小组件"体感的来源。
-- `top`：先 `SetParent(null)` 脱离，再 `HWND_TOPMOST`。
+- `desktop`：纯展示组件挂 WorkerW，拿不到时降级 `HWND_BOTTOM`；可输入组件不挂 WorkerW，使用可激活的底层普通窗口。
+- `normal`：普通窗口，参与正常遮挡，不置底也不置顶。
+- `top`：脱离父窗口后使用 `HWND_TOPMOST`。
 
-拿不到 WorkerW 时降级成 `HWND_BOTTOM`，至少不会浮在最上层挡住内容。
+下面的「挂哪 / z 序守卫」描述的是 `desktop` 分支，不适用于另外两个层级。
 
 窗口属性按"这个组件要不要打字"分流，由清单的 `interactive` 决定，不按组件名硬编码：
 
@@ -148,7 +151,7 @@ z 序守卫是为了治"闪来闪去"：可激活的窗口被点中时，Windows
 | 用户配的 MCP 服务 | `...\mcp.json` | `{ version, servers[] }`；stdio 起子进程或 streamable HTTP |
 | 使用记录 | `...\usage.json` | 按窗口焦点每分钟 +1，内存累加、每 5 分钟 / 退出落盘 |
 
-**不用 `localStorage`**：这台机器的 WebView2 把它整个放在内存里，进程一退就没了（见 ROADMAP「被推翻的决定」第 2 条）。文件写入走"临时文件 + 原子替换"，写到一半断电不会留下半截 JSON。
+**不用 `localStorage`**：这台机器的 WebView2 把它整个放在内存里，进程一退就没了（见 ROADMAP「被推翻的决定」第 2 条）。平台状态先写临时文件再 rename，避免直接截断目标；这不等于已经实现备份、失败恢复或断电耐久保证，具体边界见 [状态参考](./reference/state.md)。
 
 组件数据放宿主而不是组件里：将来换后端（SQLite）组件不用改；组件之间互相看不到数据；同一个组件的多个实例能通过广播收敛成同一份视图。
 

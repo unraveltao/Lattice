@@ -86,13 +86,19 @@ function stripCode(text) {
 
 function checkLinks(files) {
   const broken = [];
+  const incompatible = [];
   let total = 0;
 
   for (const file of files) {
     const text = stripCode(fs.readFileSync(file, "utf8"));
     const targets = [];
 
-    for (const match of text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) targets.push(match[1]);
+    // 应用渲染器尚不支持尖括号目标；不能只剥掉它们验磁盘路径，再给应用内坏链接报绿。
+    // 仍检查目标可达性，但兼容性错误独立阻断，外链、页内锚点与图片同样不能漏过。
+    for (const match of text.matchAll(/\]\((?:<([^>\n]+)>|([^)\s]+))(?:\s+"[^"]*")?\)/g)) {
+      if (match[1] !== undefined) incompatible.push({ file: relative(file), target: match[1] });
+      targets.push(match[1] ?? match[2]);
+    }
     for (const match of text.matchAll(/\bsrc="([^"]+)"/g)) targets.push(match[1]);
 
     for (const raw of targets) {
@@ -105,7 +111,7 @@ function checkLinks(files) {
     }
   }
 
-  return { total, broken };
+  return { total, broken, incompatible };
 }
 
 /* ------------------------------------------------------------------ 锚点 */
@@ -186,8 +192,8 @@ function checkAnchors(files) {
       // 行内代码里的链接是写法示范，不是要跳的地址（和 checkLinks 同一个口径）
       const line = raw0.replace(/`[^`\n]*`/g, "");
 
-      for (const match of line.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
-        const raw = match[1];
+      for (const match of line.matchAll(/\]\((?:<([^>\n]+)>|([^)\s]+))(?:\s+"[^"]*")?\)/g)) {
+        const raw = match[1] ?? match[2];
         if (/^(https?:|mailto:|data:)/.test(raw)) continue;
         const cut = raw.indexOf("#");
         if (cut < 0) continue;
@@ -545,8 +551,8 @@ function checkCatalog(files) {
       const word = Object.keys(LAYER_WORDS).find((candidate) => cells[1]?.includes(candidate));
       if (!word) continue; // 表头与分隔行
       const layer = LAYER_WORDS[word];
-      for (const match of line.matchAll(/\]\((\.{1,2}\/[^)\s]+)\)/g)) {
-        const resolved = relative(path.resolve(path.join(ROOT, "docs"), match[1].split("#")[0]));
+      for (const match of line.matchAll(/\]\((?:<(\.{1,2}\/[^>\n]+)>|(\.{1,2}\/[^)\s]+))\)/g)) {
+        const resolved = relative(path.resolve(path.join(ROOT, "docs"), (match[1] ?? match[2]).split("#")[0]));
         if (!resolved.endsWith(".md")) {
           // 目录链接（`./design/`）：要求 catalog 里有一条通配把它整个收下
           if (!wildcards.some((pattern) => pattern.startsWith(`${resolved}/`))) {
@@ -572,7 +578,7 @@ function checkCatalog(files) {
 /* ------------------------------------------------------------------ 输出 */
 
 const files = walk(ROOT);
-const { total, broken } = checkLinks(files);
+const { total, broken, incompatible } = checkLinks(files);
 const anchors = checkAnchors(files);
 const lineRows = checkLines();
 const design = checkDesign();
@@ -587,6 +593,13 @@ if (broken.length === 0) {
 } else {
   console.log(`  链接      ✗ ${broken.length} 条不可达`);
   for (const item of broken) console.log(`            ${item.file} → ${item.target}`);
+}
+
+if (incompatible.length === 0) {
+  console.log("  链接语法  ✓ 没有应用不支持的尖括号目标");
+} else {
+  console.log(`  链接语法  ✗ ${incompatible.length} 条尖括号目标，应用内无法正确跳转；请改用普通括号目标`);
+  for (const item of incompatible) console.log(`            ${item.file} → ${item.target}`);
 }
 
 if (anchors.problems.length === 0) {
@@ -649,10 +662,10 @@ if (longLines.length) {
   console.log("  改法：一行一句（Markdown 里单个换行不改变渲染）。新写和重写的文档按这个来，别回头批量改旧的。");
 }
 
-const blocking = broken.length + anchors.problems.length + failed.length + design.problems.length + catalog.problems.length + appList.problems.length;
+const blocking = broken.length + incompatible.length + anchors.problems.length + failed.length + design.problems.length + catalog.problems.length + appList.problems.length;
 if (blocking) {
   console.log(
-    `\n${blocking} 处要修。（链接 ${broken.length} · 锚点 ${anchors.problems.length} · 归属 ${catalog.problems.length} · 设计文档 ${design.problems.length} · 应用清单 ${appList.problems.length} · 行数 ${failed.length}）`,
+    `\n${blocking} 处要修。（链接 ${broken.length} · 链接语法 ${incompatible.length} · 锚点 ${anchors.problems.length} · 归属 ${catalog.problems.length} · 设计文档 ${design.problems.length} · 应用清单 ${appList.problems.length} · 行数 ${failed.length}）`,
   );
   process.exit(1);
 }

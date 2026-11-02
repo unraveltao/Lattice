@@ -187,4 +187,5 @@ src-tauri/capabilities/
   assistant.json          assistant 小窗权限（window "assistant"；含 `start-dragging`）
 tests/                    纯逻辑与布局的浏览器断言（tests/*.html，跑在 dev server 上）
 docs/                     架构、组件规范、路线图与踩坑、代码签名取舍
+  reference/review-2026-11-02.md  该日源码审查快照：能力链路图、风险证据、复现与验收
 ```

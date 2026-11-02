@@ -163,7 +163,7 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 三条先记住：
 
 - **全在** `%APPDATA%\com.iron-tom.lattice\` 下（`state.json` / `widget-data/` / `assistant*.json` / `widgets/` / `widget-backups/` …），**没有 localStorage** —— 这台机器的 WebView2 把它放内存里，进程一退就没了。
-- **写入一律"临时文件 + 原子替换"**，覆盖 `state.json` 前还要过 `write_atomic` 留一代 `.bak` —— 绕过它就没有退路。
+- **临时文件替换不等于已有备份或断电耐久保证。** 当前平台状态写入未调用组件存储的 `write_atomic`，没有一代备份；准确边界与失败水合风险见 [状态参考](./docs/reference/state.md)。
 - **`store.ts` 有一个 `hydrated` 闸门：水合完成前不许写盘。** 加新持久化字段要同时改 `partialize`，否则重启就丢。
 
 ---
