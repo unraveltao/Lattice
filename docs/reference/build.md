@@ -100,20 +100,23 @@ npm run publish:widget -- public/widgets/lattice.note --key ../lattice-registry/
 ## 五、发一个平台版本
 
 ```
-1. 改 tauri.conf.json 的 version
-2. 打 tag 并推：git tag v0.x.y && git push origin v0.x.y
-3. Actions 出草稿 release（不是直接发布）
-4. 下载安装包，在一台干净机器上装一遍
-5. 回 release 页面点 Publish
-6. 旧版本点 Check for updates，确认能升上来
-7. 从那条 release 里拿 winget 的三份清单，提一次 PR（见下）
+1. 把这一版写了什么记进 CHANGELOG.md，标题 `## v0.x.y`
+2. 六处版本号一起 bump（`npm run check:version` 钉着）
+3. 打 tag 并推：git tag v0.x.y && git push origin v0.x.y
+4. Actions 出草稿 release（不是直接发布）
+5. 下载安装包，在一台干净机器上装一遍
+6. 回 release 页面点 Publish
+7. 旧版本点 Check for updates，确认能升上来
+8. 从那条 release 里拿 winget 的三份清单，提一次 PR（见下）
 ```
 
-**第 3 步别勾 "Set as a pre-release"。** 勾了之后 release 页面正常、产物都在，唯独更新器会去敲的那个地址是 404，而它报出来的话是「检查你的网络」—— 症状和原因长得完全不像。完整的一条在 [`../PITFALLS.md`](../PITFALLS.md)「目录、签名与网络」。
+**第 1 步不是可选的文档活。** Release 正文由 `scripts/release-notes.mjs` 从 CHANGELOG 对应那一节生成（`npm run release:notes -- v0.x.y` 可以先本地看一眼）—— 找不到那一节，第 4 步的 CI 直接红，而不是发出一条正文只写着"看提交记录"的草稿。**正文别再往 `release.yml` 里写**：那边现在只有一行 `releaseBody: ${{ env.RELEASE_NOTES }}`。相对链接（`./docs/x.md`）会自动换成 tag 上的绝对地址，否则贴到 release 页面上就是 404。
 
-**草稿还没发布之前，打错的 tag 可以重打。** `git push --delete origin v0.x.y`，把 tag 指到修好的那个提交再推一次即可：tauri-action 是**在所有 release 里按 tag 名**找那份草稿（草稿用 `getReleaseByTag` 查不到，只能翻列表），找到就删掉同名产物重传，`### SHA-256` 那一段也先切掉旧的再写。发布之后就**不是**重打了 —— 那时候已经装上的用户手里是另一份二进制，重打等于把一个版本号对应两份东西。
+**第 4 步别勾 "Set as a pre-release"。** 勾了之后 release 页面正常、产物都在，唯独更新器会去敲的那个地址是 404，而它报出来的话是「检查你的网络」—— 症状和原因长得完全不像。完整的一条在 [`../PITFALLS.md`](../PITFALLS.md)「目录、签名与网络」。
 
-### winget 清单（第 7 步）
+**草稿还没发布之前，打错的 tag 可以重打。** `git push --delete origin v0.x.y`，把 tag 指到修好的那个提交再推一次即可：tauri-action 是**在所有 release 里按 tag 名**找那份草稿（草稿用 `getReleaseByTag` 查不到，只能翻列表），找到就删掉同名产物重传，`### SHA-256` 那一段也先切掉旧的再写。重跑也会按 CHANGELOG **重新生成正文** —— 在草稿页面上手改的正文会被覆盖，要改措辞就改 CHANGELOG 那一节。发布之后就**不是**重打了 —— 那时候已经装上的用户手里是另一份二进制，重打等于把一个版本号对应两份东西。
+
+### winget 清单（第 8 步）
 
 winget 那条路下载的包**不带 Mark-of-the-Web**，用户根本不走"浏览器下载 → 未知发布者 → 仍要运行"这条路 —— 这是免费方案里唯一真的不弹 SmartScreen 的（论证在 [`../CODE_SIGNING.md`](../CODE_SIGNING.md) 第三节）。代价是每发一版都要交一份清单，里面有版本号、安装包直链和 SHA-256。
 

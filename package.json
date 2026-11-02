@@ -13,6 +13,7 @@
     "sign:widget": "node scripts/sign-widget.mjs",
     "publish:widget": "node scripts/publish-widget.mjs",
     "winget:manifest": "node scripts/winget-manifest.mjs",
+    "release:notes": "node scripts/release-notes.mjs",
     "dev": "npm run widgets:index && npm run store:index && vite",
     "build": "npm run widgets:index && npm run store:index && tsc && vite build",
     "preview": "vite preview",

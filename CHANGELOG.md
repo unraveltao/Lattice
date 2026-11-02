@@ -22,7 +22,7 @@
 - **agent 端点**：白名单动作到 9 个（`config.set` 成为第九个）、审计日志、六组"手"默认全关（文件 / shell / 网页抓取 / 屏幕 / 键鼠 / MCP）。
 - **系统指标**：GPU 占用与显存走 PDH 与 DXGI（`PdhAddEnglishCounterW`，中文系统上也能按英文名反查）。
 - **官方组件 +6**：`lattice.mindmap`（节点可拖，摆位存成偏移）、`lattice.almanac`（农历、干支、节气与节日）、`lattice.ambience`（四种背景声现场合成）、`lattice.deadline`、`lattice.momentum`、`lattice.todoist`（只读）。补强：时钟加模拟表盘与其他时区、日历粘 `.ics` 就能导入、专注加每日目标、便签加 Markdown 预览与"清空之后找回上一版"、卡片右键菜单。
-- **工程**：`scripts/guards/` 七个守门人接进 `pre-push` 与 CI —— 数字、桥、命令、CSP、纯逻辑能不能单跑、守门人自己有没有被接进来，全部对账（INV-24 那两份 CSP 也有一条命令盯着）。文档加了 `docs/catalog.json` 坐标表、锚点校验与 `npm run docs:query`。
+- **工程**：`scripts/guards/` 七个守门人接进 `pre-push` 与 CI —— 数字、桥、命令、CSP、纯逻辑能不能单跑、守门人自己有没有被接进来，全部对账（INV-24 那两份 CSP 也有一条命令盯着）。文档加了 `docs/catalog.json` 坐标表、锚点校验与 `npm run docs:query`。**GitHub Release 的正文现在由 `scripts/release-notes.mjs` 从本文件对应那一节生成**：漏写一节，发版 CI 直接红（改 workflow 绕不开这里）。
 - **契约面**：桥方法 27 → 31，权限 13 → 15（新增 `secret`、`file:save`），Tauri 命令 99 → 128。没有移除任何一项。
 
 ### 修复
@@ -55,6 +55,7 @@
 ### 升级注意
 
 - **装法**：双击 `Lattice_0.4.0_x64-setup.exe` 覆盖安装，装完必须走应用内重启（不是退出）。用户数据在 `%APPDATA%\com.iron-tom.lattice\`，安装不碰它。
+- **已经装过 v0.1.x 的**：设置菜单里点 **Check for updates** 理论上能直接升上来 —— 但**这条自动更新链到今天没有端到端验过一次**（见上面「已知问题」段末尾那条边界）。别把它当唯一路径：升不动就用上面那个安装器覆盖装，数据还在。
 - **先备份**：真机验证或升级前，整目录复制一份 `%APPDATA%\com.iron-tom.lattice\`（重点 `state.json`、`widget-data/`、`assistant*.json`、`widgets/`、`widget-backups/`）。F2 那条风险就是这份备份的理由。
 - **老用户第一次会看到**：一次"发布者钥匙变了"的确认（内置演示目录用仓库里那把**公开的** `scripts/dev-publisher.key` 签，线上目录用另一把）—— 别把它当成被攻击，但也别拿公开钥匙去签公开发布的包。
 - **宠物与电池**：见上面「破坏性变化」两条。

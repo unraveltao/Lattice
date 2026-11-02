@@ -142,6 +142,31 @@ jobs:
           echo "TAURI_SIGNING_PRIVATE_KEY=$KEY" >> "$GITHUB_ENV"
           echo "signing key: ${#KEY} characters"
 
+      # Release 正文的真源是 CHANGELOG.md 里 `## v0.x.y` 那一节，不是这里手写的模板。
+      # 原来这段写死的是"这个版本包含什么，看仓库的提交记录" —— 而同一个提交里
+      # CHANGELOG 已经逐条写了新增 / 修复 / 破坏性变化 / 已知问题 / 升级注意。
+      #
+      # 找不到那一节时脚本自己红（不输出空正文）：漏写版本说明是一次失败的 CI，
+      # 而不是一个正文说"去看提交记录"的草稿 —— 后者会一路走到用户面前。
+      #
+      # 多行正文只能走 GITHUB_ENV：`with:` 的值在这一步跑之前就得是文本，
+      # 而正文是这一步跑出来的。分隔行带上 run id 和 attempt，是为了"正文里正好有一行
+      # 叫 EOF"时不会把正文截半、剩下的字变成一个非法的 env 赋值。
+      # 下面那段 `### SHA-256` 是追加在这份正文之后的，脚本会拒掉正文里自己出现
+      # 这一行的情况 —— 追加步骤按它切旧正文，撞上了就切掉半截。
+      - name: Build the release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release-notes.mjs "${GITHUB_REF_NAME}" > notes.md
+          MARKER="RELEASE_NOTES_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          {
+            echo "RELEASE_NOTES<<${MARKER}"
+            cat notes.md
+            echo "${MARKER}"
+          } >> "$GITHUB_ENV"
+          echo "release notes: $(wc -l < notes.md) 行，来自 CHANGELOG.md 的 ## ${GITHUB_REF_NAME}"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -152,10 +177,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Lattice ${{ github.ref_name }}
-          releaseBody: |
-            安装包在下面。已经装过旧版本的，可以在设置菜单里点 **Check for updates** 直接升级。
-
-            这个版本包含什么、修了什么，看仓库的提交记录。
+          releaseBody: ${{ env.RELEASE_NOTES }}
           # 先出草稿，人工过一眼再发布
           releaseDraft: true
           prerelease: false

@@ -86,6 +86,7 @@ scripts/
   store-index.mjs         打包 + 签名所有内置组件，写 public/store/registry.json（`npm run store:index`）
   winget-manifest.mjs     一个 NSIS 安装包 → winget 的三份 YAML（`npm run winget:manifest`）：直链与 SHA-256 都从那个 exe 现算，写 `dist-winget/`（不进仓库）
   winget-manifest.test.mjs  上面那道的形状：哈希大写、直链与附件名同源、Publisher 取 identifier 第二段、两次生成逐字节相同（`npm run test:winget`，11 条）
+  release-notes.mjs       CHANGELOG.md 里 `## v0.x.y` 那一节 → GitHub Release 的正文（`npm run release:notes -- v0.4.0`）：标题行不进正文、相对链接换成 tag 上的绝对地址、缺那一节就红（`release.yml` 用它，正文不再写在 workflow 里）
   dev-publisher.key       **开发用**签名种子（故意进仓库，见INV-15）
   sdk-sync.mjs            把 packages/sdk 的两个文件刷进所有内嵌副本（`--check` 只查不改）
   sdk.test.mjs            副本一致性 + SUPPORTED_SDK 版本对齐（`npm run test:sdk`）

@@ -115,7 +115,7 @@ Public since October 2026, so there is no press coverage or download statistics 
 Suggested by an AI coding assistant while researching free code-signing options for an open-source Windows application; the trade-offs are written up in docs/CODE_SIGNING.md in the repository.
 ```
 
-**Download URL 为什么留空**：那一栏写着"下载页必须写明本项目用 SignPath Foundation 签名"。签出第一个包之后，在 README 的安装段和 `release.yml` 的 `releaseBody` 各加一句，再把 releases 页填回去：
+**Download URL 为什么留空**：那一栏写着"下载页必须写明本项目用 SignPath Foundation 签名"。签出第一个包之后，在 README 的安装段和 `CHANGELOG.md` 那一节的「升级注意」各加一句（release 正文由 `scripts/release-notes.mjs` 从 CHANGELOG 生成，改 `release.yml` 没有用），再把 releases 页填回去：
 
 ```text
 Windows builds are code-signed by the SignPath Foundation.
