@@ -6,6 +6,7 @@
     { "path": "docs/PITFALLS.md", "layers": ["past"] },
     { "path": "docs/reference/history.md", "layers": ["past"] },
     { "path": "docs/reference/review-2026-11-02.md", "layers": ["past"] },
+    { "path": "docs/release/RELEASE-READINESS.md", "layers": ["past"] },
 
     { "path": "GLOSSARY.md", "layers": ["now"] },
     { "path": "AGENTS.md", "layers": ["now"] },
