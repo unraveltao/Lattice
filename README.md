@@ -1,4 +1,4 @@
-<!-- 改这一份就改 README.zh-CN.md。两份逐节对齐，check:docs 只校验数字，结构靠人守。 -->
+<!-- This is the authoritative README. Update README.zh-CN.md as its aligned Chinese translation. -->
 
 <div align="center">
 
@@ -185,7 +185,7 @@ A widget is untrusted code, and the platform treats it that way. Four things to 
 
 Every surface is one of four things: **shipped**, **unverified** (the code and the assertions are there; nobody has run it on a real machine yet), **experimental**, or **planned**. Which one each is, one line per surface, and what was actually run: [docs/reference/maturity.md](./docs/reference/maturity.md). Nothing is experimental today, and the next milestone adds no features — it is the one that closes the verification debt.
 
-Three numbers, three meanings, and they are never the same number: the source tree is `0.3.0` (what the next build will call itself), the newest release anyone can download is [`v0.1.3`](https://github.com/unraveltao/Lattice/releases/latest), and `v0.13` is a milestone label that will never appear in an installer. The newest milestone is v0.13: the assistant gets its own window on the desktop. The code has landed and is waiting on real-machine verification, the same gap the four milestones before it are stuck on.
+Three numbers, three meanings, and they are never the same number: the source tree is `0.3.0` (what the next build will call itself), the latest downloadable release is listed on [GitHub Releases](https://github.com/unraveltao/Lattice/releases), and `v0.13` is a milestone label that will never appear in an installer. The newest milestone is v0.13: the assistant gets its own window on the desktop. The code has landed and is waiting on real-machine verification, the same gap the four milestones before it are stuck on.
 
 <details>
 <summary>What each milestone added</summary>
