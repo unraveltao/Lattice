@@ -156,6 +156,10 @@
       "date": "2026-10-25",
       "changes": [
         {
+          "zh": "Dashboard 隐藏 Workspace 时暂停可视刷新；返回时按当前真实时间更新。",
+          "en": "Pauses the audio level visualization while Dashboard is active; media playback and session polling continue."
+        },
+        {
           "zh": "界面和说明都支持中文了：空态、按钮标题、提示行和属性面板跟着界面语言走，换语言当场重画。歌名和歌手是系统给的，不翻。",
           "en": "Interface and help are bilingual now: the empty state, button titles, hints and the inspector follow the interface language and repaint on a switch. Track and artist come from the system and are not translated."
         }

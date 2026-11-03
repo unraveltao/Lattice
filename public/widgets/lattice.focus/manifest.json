@@ -200,6 +200,10 @@
       "date": "2026-10-27",
       "changes": [
         {
+          "zh": "Dashboard 隐藏 Workspace 时暂停可视刷新；返回时按当前真实时间更新。",
+          "en": "Pauses the daily goal display refresh while Dashboard is active; running focus sessions still complete on time."
+        },
+        {
           "zh": "可以设每日目标：卡片上多一条进度，写「今日 50 / 120 分钟」，达标换成强调色。",
           "en": "A daily goal is available: a progress line reading Today 50 / 120 min, turning accent-coloured when met."
         },

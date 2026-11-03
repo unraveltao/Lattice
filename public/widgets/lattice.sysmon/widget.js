@@ -852,7 +852,7 @@
    * 电池挂在**第二条**心跳上（半分钟）。两条心跳各认各的 `tick.id`，
    * 平台的调度器一条时间轴上能挂好几条 —— 这是它存在的意义之一。
    */
-  call("schedule.every", { every: POWER_MS })
+  call("schedule.every", { every: POWER_MS, workspaceVisibleOnly: true })
     .then(function (grant) {
       powerSubscription = grant.id;
       refreshPower();
@@ -867,7 +867,7 @@
    * 建立起来，第一次心跳（1 秒后）拿到的才是真数。
    */
   resizeTrend();
-  call("schedule.every", { every: 1000 })
+  call("schedule.every", { every: 1000, workspaceVisibleOnly: true })
     .then(function (grant) {
       subscription = grant.id;
       refresh();

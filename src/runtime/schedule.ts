@@ -50,7 +50,9 @@ export interface ScheduleGrant {
 
 export interface Scheduler {
   /** 注册一条心跳；超出上限返回 null（调用方负责报错） */
-  every(intervalMs: number): ScheduleGrant | null;
+  every(intervalMs: number, options?: { workspaceVisibleOnly?: boolean }): ScheduleGrant | null;
+  /** 只影响明确选择 workspaceVisibleOnly 的订阅；旧订阅保持原有行为 */
+  setWorkspaceVisible(visible: boolean): void;
   clear(id: number): void;
   /** 宿主页换文档时调用：订阅全部作废，避免往已经销毁的文档里发消息 */
   reset(): void;
@@ -61,6 +63,7 @@ export interface Scheduler {
 interface Subscription {
   id: number;
   every: number;
+  workspaceVisibleOnly: boolean;
   /** 下一次到期时刻（`Date.now()` 毫秒） */
   next: number;
 }
@@ -200,6 +203,7 @@ export function createScheduler(post: (payload: TickMessage) => void): Scheduler
   let seq = 0;
   let timer = 0;
   let paused = pageHidden();
+  let workspaceVisible = true;
 
   hookWindowVisibility();
 
@@ -218,6 +222,7 @@ export function createScheduler(post: (payload: TickMessage) => void): Scheduler
     for (const subscription of subscriptions.values()) {
       if (subscription.next < earliest) earliest = subscription.next;
     }
+    if (!Number.isFinite(earliest)) return;
     timer = window.setTimeout(fire, Math.max(0, earliest - Date.now()));
   };
 
@@ -225,6 +230,7 @@ export function createScheduler(post: (payload: TickMessage) => void): Scheduler
     timer = 0;
     const now = Date.now();
     for (const subscription of subscriptions.values()) {
+      if (!Number.isFinite(subscription.next)) continue;
       if (subscription.next > now) continue;
       /*
        * 一次只发一拍，然后把 next 直接推到"下一个未来时刻"。
@@ -258,14 +264,36 @@ export function createScheduler(post: (payload: TickMessage) => void): Scheduler
   }
 
   return {
-    every(intervalMs: number): ScheduleGrant | null {
+    every(intervalMs: number, options = {}): ScheduleGrant | null {
       if (subscriptions.size >= MAX_SUBSCRIPTIONS) return null;
       const every = Math.min(MAX_INTERVAL, Math.max(MIN_INTERVAL, Math.round(intervalMs)));
       seq += 1;
       const id = seq;
-      subscriptions.set(id, { id, every, next: Date.now() + every });
+      const workspaceVisibleOnly = options.workspaceVisibleOnly === true;
+      subscriptions.set(id, {
+        id,
+        every,
+        workspaceVisibleOnly,
+        next: workspaceVisibleOnly && !workspaceVisible ? Number.POSITIVE_INFINITY : Date.now() + every,
+      });
       arm();
       return { id, every };
+    },
+
+    setWorkspaceVisible(visible: boolean): void {
+      if (visible === workspaceVisible) return;
+      workspaceVisible = visible;
+      const now = Date.now();
+      for (const subscription of subscriptions.values()) {
+        if (!subscription.workspaceVisibleOnly) continue;
+        if (!visible) {
+          subscription.next = Number.POSITIVE_INFINITY;
+        } else {
+          // 立刻重绘当前数据一次，然后从现在开始新周期；隐藏期间不积压补发。
+          subscription.next = now;
+        }
+      }
+      arm();
     },
 
     clear(id: number): void {

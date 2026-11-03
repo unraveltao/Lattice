@@ -382,6 +382,7 @@
   var lastPoints = null;
   var levelTimer = 0;
   var waveRunning = false;
+  var workspaceVisible = true;
   var levelBlocked = false;
 
   /**
@@ -426,7 +427,7 @@
   }
 
   function startWave() {
-    if (!showLevel || levelBlocked) return;
+    if (!showLevel || levelBlocked || !workspaceVisible) return;
     el.wave.hidden = false;
     resizeWave();
     if (!levelTimer) levelTimer = setInterval(sampleLevel, LEVEL_MS);
@@ -621,6 +622,12 @@
     // 平台界面换了语言。`lang.get` 那条是"建文档那一刻"的答案，这条是"后来变了"
     if (data.type === "language") {
       applyLanguage(data.payload);
+      return;
+    }
+    if (data.type === "workspace-visible") {
+      workspaceVisible = data.payload && data.payload.visible !== false;
+      if (workspaceVisible) startWave();
+      else stopWave();
       return;
     }
     if (data.type === "config-changed") {

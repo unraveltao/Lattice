@@ -66,6 +66,10 @@
       "date": "2026-10-25",
       "changes": [
         {
+          "zh": "Dashboard 隐藏 Workspace 时暂停可视刷新；返回时按当前真实时间更新。",
+          "en": "Pauses animation while Dashboard is active; elapsed time continues and redraws from timestamps when Workspace returns."
+        },
+        {
           "zh": "界面和说明都支持中文了：按钮、圈列表和说明都跟着平台的语言走。",
           "en": "Interface and help are bilingual now: the buttons, the lap list and the help follow the platform language."
         }

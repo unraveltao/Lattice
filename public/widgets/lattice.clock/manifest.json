@@ -161,6 +161,10 @@
       "date": "2026-10-27",
       "changes": [
         {
+          "zh": "Dashboard 隐藏 Workspace 时暂停可视刷新；返回时按当前真实时间更新。",
+          "en": "Pauses display ticks while Dashboard is active; the clock redraws from the current time when Workspace returns."
+        },
+        {
           "zh": "可以摆成模拟表盘：一张 SVG 圆盘，三根针连续走，秒针是强调色。",
           "en": "An analog face: an SVG dial with three continuously moving hands, the seconds in the accent colour."
         },

@@ -490,11 +490,15 @@ defineMethod("config.get", null, (_params, ctx) => ctx.config);
  * 时钟和指标轮询。
  */
 defineMethod("schedule.every", null, (params, ctx) => {
-  const every = (params as { every?: unknown } | undefined)?.every;
+  const options = params as { every?: unknown; workspaceVisibleOnly?: unknown } | undefined;
+  const every = options?.every;
   if (typeof every !== "number" || !Number.isFinite(every)) {
     throw new BridgeError("bad_params", "schedule.every requires a number parameter \"every\"");
   }
-  const grant = ctx.schedule.every(every);
+  if (options?.workspaceVisibleOnly !== undefined && typeof options.workspaceVisibleOnly !== "boolean") {
+    throw new BridgeError("bad_params", "schedule.every workspaceVisibleOnly must be a boolean");
+  }
+  const grant = ctx.schedule.every(every, { workspaceVisibleOnly: options?.workspaceVisibleOnly === true });
   if (!grant) {
     throw new BridgeError("bad_params", "too many timers for this widget (max 8)");
   }
