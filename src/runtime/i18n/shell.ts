@@ -4,6 +4,15 @@
  * key 就是英文原文（见 `runtime/i18n.ts`）。带 `{name}` 的句子两边占位符要一致。
  */
 export const SHELL_ZH: Record<string, string> = {
+  "Main navigation": "主导航",
+  Dashboard: "概览",
+  Workspace: "工作区",
+  "Collapse sidebar": "折叠侧栏",
+  "Expand sidebar": "展开侧栏",
+  "Sidebar is compact at this window width": "当前窗口宽度下侧栏已收窄",
+  "A calm place to start": "从这里开始",
+  "Your workspace is ready when you are.": "工作区已准备就绪。",
+  "Open workspace": "打开工作区",
   // —— 顶栏：一句"要不要送到桌面" ——
   "Turn canvas widgets into real desktop windows; the main window will step aside":
     "把画布上的组件变成真正的桌面窗口；主窗口会让到一边",

@@ -31,18 +31,18 @@
 
 :root,
 :root[data-theme="light"] {
-  --lattice-bg: #e8e6e0;
-  --lattice-surface: #fbfaf8;
-  --lattice-surface-2: #f4f2ec;
-  --lattice-surface-3: #dcd8cd;
-  --lattice-text: #1c1c1a;
-  --lattice-text-muted: #6a6a63;
-  --lattice-text-faint: #6f6f68;
-  --lattice-border: rgba(0, 0, 0, 0.11);
-  --lattice-border-strong: rgba(0, 0, 0, 0.2);
-  --lattice-grid-dot: rgba(0, 0, 0, 0.13);
-  --lattice-accent: #0f6e56;
-  --lattice-accent-soft: rgba(15, 110, 86, 0.1);
+  --lattice-bg: #f7f4ee;
+  --lattice-surface: #fffefa;
+  --lattice-surface-2: #f2efe7;
+  --lattice-surface-3: #e5e1d6;
+  --lattice-text: #262823;
+  --lattice-text-muted: #5f625c;
+  --lattice-text-faint: #676b63;
+  --lattice-border: rgba(45, 51, 42, 0.12);
+  --lattice-border-strong: rgba(45, 51, 42, 0.22);
+  --lattice-grid-dot: rgba(45, 51, 42, 0.14);
+  --lattice-accent: #55775a;
+  --lattice-accent-soft: rgba(85, 119, 90, 0.1);
   --lattice-accent-contrast: #ffffff;
   /*
    * 强调色的**三个角色**。样式表里要点色的地方只许用这三个名字 —— 品牌标记
@@ -92,9 +92,9 @@
   --lattice-border: rgba(255, 255, 255, 0.1);
   --lattice-border-strong: rgba(255, 255, 255, 0.18);
   --lattice-grid-dot: rgba(255, 255, 255, 0.085);
-  --lattice-accent: #5dcaa5;
-  --lattice-accent-soft: rgba(93, 202, 165, 0.13);
-  --lattice-accent-contrast: #06231b;
+  --lattice-accent: #8fb994;
+  --lattice-accent-soft: rgba(143, 185, 148, 0.14);
+  --lattice-accent-contrast: #102012;
   --lattice-danger: #f09595;
   --lattice-danger-soft: rgba(240, 149, 149, 0.1);
   --lattice-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -182,7 +182,75 @@ button {
   display: grid;
   grid-template-rows: 56px 1fr;
   height: 100%;
+  min-height: 0;
 }
+
+.lattice-app-body {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  min-height: 0;
+  transition: grid-template-columns 180ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.lattice-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 10px;
+  border-right: 1px solid var(--lattice-border);
+  background: var(--lattice-surface);
+}
+
+.lattice-sidebar-nav { display: grid; gap: 4px; }
+
+.lattice-nav-item,
+.lattice-sidebar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--lattice-text-muted);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lattice-nav-item:hover,
+.lattice-sidebar-toggle:hover { color: var(--lattice-text); background: var(--lattice-hover); }
+.lattice-nav-item.is-active { color: var(--lattice-accent); background: var(--lattice-accent-soft); }
+.lattice-nav-item span,
+.lattice-sidebar-toggle span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.lattice-sidebar-toggle { margin-top: auto; }
+.lattice-sidebar-toggle:disabled { cursor: default; opacity: .7; }
+
+.lattice-page-stack { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.lattice-page-layer { position: absolute; inset: 0; min-width: 0; min-height: 0; }
+.lattice-page-layer[aria-hidden="true"] { visibility: hidden; pointer-events: none; }
+.lattice-main { height: 100%; }
+
+.lattice-shell.is-sidebar-collapsed .lattice-app-body,
+.lattice-shell.is-responsive-rail .lattice-app-body { grid-template-columns: 56px minmax(0, 1fr); }
+.lattice-shell.is-sidebar-collapsed .lattice-sidebar,
+.lattice-shell.is-responsive-rail .lattice-sidebar { padding-right: 7px; padding-left: 7px; }
+.lattice-shell.is-sidebar-collapsed .lattice-nav-item,
+.lattice-shell.is-sidebar-collapsed .lattice-sidebar-toggle,
+.lattice-shell.is-responsive-rail .lattice-nav-item,
+.lattice-shell.is-responsive-rail .lattice-sidebar-toggle { justify-content: center; padding: 0; }
+.lattice-shell.is-sidebar-collapsed .lattice-nav-item span,
+.lattice-shell.is-sidebar-collapsed .lattice-sidebar-toggle span,
+.lattice-shell.is-responsive-rail .lattice-nav-item span,
+.lattice-shell.is-responsive-rail .lattice-sidebar-toggle span { display: none; }
+
+.lattice-dashboard { display: grid; place-items: center; width: 100%; height: 100%; background: var(--lattice-bg); }
+.lattice-dashboard-content { width: min(560px, calc(100% - 48px)); }
+.lattice-dashboard-eyebrow { color: var(--lattice-accent); font-size: 11px; letter-spacing: .14em; }
+.lattice-dashboard-content h2 { margin: 10px 0; font-size: 30px; font-weight: 550; }
+.lattice-dashboard-content p:not(.lattice-dashboard-eyebrow) { margin: 0 0 22px; color: var(--lattice-text-muted); }
+.lattice-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
 .lattice-topbar {
   position: relative;
