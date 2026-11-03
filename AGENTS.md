@@ -234,6 +234,7 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 - 新增正式文档或大幅重写文档时，正文默认用英文；已有中文文档和历史记录继续保留，不做批量翻译。已有中英文成对文档以英文为准，中文版本必须与其内容一致。术语、API 名称和代码标识符按 `GLOSSARY.md` 与源码统一。
 - 描述功能时明确区分 `Implemented`、`In Progress`、`Planned`，并以源码、测试和 [`reference/maturity.md`](./docs/reference/maturity.md) 为依据；尚无实现或真实数据来源的功能不得写成已实现。需要表达“代码已实现但仍待验证”时，沿用成熟度文档的 `Unverified` 状态，不把它写成 `In Progress`。
 - 新的设计推理遵循 [`design/README.md`](./docs/design/README.md) 的开文档判据；结论放在 `ROADMAP.md`，约束放在 `AGENTS.md` / 对应规范，参考步骤放在 `reference/`。不新增第二份事实的家。
+- 拆分开发任务或提交验收记录时，说明是否影响系统架构、是否需要更新架构图 / 流程图、是否产生新的 LAT 决策、同步了哪些文档，以及用哪条测试或源码证据核对文档。判据与文档归属见 [`docs/README.md`](./docs/README.md)；不要把架构正文搬进本文件。
 - 改完文档运行 `npm run check:docs`；若检查失败，修复或明确报告失败项，不得把失败说成通过。
 
 ---
@@ -273,3 +274,6 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 6. **`state.json` 是整份覆盖的。** 两个进程同时开着应用，谁后退出谁把内存那份盖上去（孤儿进程那条坑就是这么来的）。真机验一个人验，验完从备份还原，别两个 agent 各开一个实例。
 7. **冲突高发区改完立刻复核差异。** `AGENTS.md`、`GLOSSARY.md`、`docs/ROADMAP.md`、`src/styles.css`、`src/runtime/bridge.ts`、`src-tauri/src/lib.rs` —— 这几处几乎每个改动都会碰。修改后及时检查对应文件的 `git diff`，确认范围和内容准确。Git 暂存、提交和推送必须遵循当前用户的明确授权；本条不构成执行这些操作的授权。
 8. **提交粒度按"一件事"算。** 一个提交只做一件事，写清范围和理由；别把别人的改动顺手带进来（`git diff --cached` 过一眼再提交）。
+9. **每次 Git 写操作前核对目标。** 明确当前 Worktree 绝对路径、分支、HEAD 和完整暂存清单，并确认它们符合当前任务授权的目标；任一项不符就停止并报告。
+10. **并行 Agent 使用隔离工作区。** 不要让多个 Agent 同时在同一 Worktree 修改文件。新编码任务开始前，先为各自任务确定独立 Worktree 或其他明确隔离的工作目录。
+11. **Git 写操作逐次授权。** `add`、`commit`、`push`、`merge`、`rebase` 及会覆盖或丢弃修改的操作，都必须由用户针对当前任务明确授权；授权不自动延续到下一次操作。

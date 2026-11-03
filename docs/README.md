@@ -124,6 +124,8 @@ English is the default for new formal documentation. When an English document an
 
 判断方法：**这段内容如果代码改了要不要跟着改？** 要 → 它不是文档，是指针，改成链接。
 
+架构与决策也遵守同一归属：`ARCHITECTURE.md` 解释当前模块关系，已有架构图跟着模块边界变化更新；复杂行为的顺序与分支写在最接近其契约的流程 / 生命周期说明中；具有长期代价权衡的取舍按 [`design/README.md`](./design/README.md) 判据记录为 LAT。实现结论同步到 `ROADMAP.md`，约束同步到 `AGENTS.md` 或对应规范，测试步骤放 `reference/`；不要在这些位置复制同一份推理。
+
 `FAQ` 和 `PITFALLS` 都按症状分组，别混：**FAQ 回答"我该点哪儿"**（用这个应用的人，不许出现文件名和函数名），**PITFALLS 回答"这段代码为什么长成这样"**（改这个仓库的人）。同一件事两边都写，就是两处各自漂。
 
 ## 五、发版时要同步哪四处
