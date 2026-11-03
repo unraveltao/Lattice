@@ -740,7 +740,7 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
     设置页多了一区 `Dictation`（语音语言状态 + 重新检测 + 打开系统语音设置），
     `dictation_status` 多一个 `reason`（`no_engine` / `no_chinese`）—— 不可用时麦克风不再是
     `disabled`，点它是打开系统设置。见 [design/0032](./design/LAT-0032-dictation-session.md)。
-  - 断言：`tests/dictation.html` **28 条**（命令形状 + `reduceDictation` 的判据 + `reason` 三句话 +
+  - 断言：`tests/dictation.html` **29 条**（命令形状 + `reduceDictation` 的判据 + `reason` 三句话 +
     `dictation_recheck` + 桥表里搜不到 `dictation` + 没有 Rust 时不假装能听）、
     `dictation_policy.rs` **33 条** `rustc --test`（含 4 条 LCID：`lcid_tag` 认 zh-CN/TW/HK/SG、
     非中文不认、分号列表里找中文、`lcid_language` 只给文案用）、
@@ -769,6 +769,27 @@ v0.5 让**组件**能分发，v0.6 让**目录**存在，但**平台自己**一�
     `CABLE Input`、识别器从 `CABLE Output` 收，全程不出声。两条都出了中文，所以"设备输入 →
     识别事件 → 文本"整段是通的，剩下的差异只有真人嗓音。合成音认错得不少（「下午三点」→「3:00PM」），
     那是 54 MB 桌面模型对合成音的口音不匹配，不是链路问题。
+
+### 桌面 UI 重构方向（Phase 4C 第一批，2026-11-03）
+
+以下是已确定的目标方向。Phase 4C 第一批已实现 Dashboard 默认页、Zustand 页面切换、常驻 Workspace、响应式 Sidebar 与手动偏好持久化；Widgets 独立迁移、Settings 独立页面与其余产品方向仍待后续阶段。当前 UI 的实际能力与成熟度仍以源码和 [`reference/maturity.md`](./reference/maturity.md) 为准。
+
+第一批按当前验收范围收尾。`ask` 确认交互未单独验证，Provider 偶发超时的根因未确认；两项仍是开放缺口，不计作通过，详见 [`reference/known-gaps.md`](./reference/known-gaps.md)。
+
+1. **Dashboard 是默认首页。** 已实现；`activeView` 不落盘，每次启动进入 Dashboard。
+2. **Workspace 保留 Canvas。** 已实现；Canvas 在页面切换时保持挂载。
+3. **Widgets 保持为清晰可达的产品区域。** 它继续承载组件发现与管理；与 Workspace 的具体导航层级留待只读 UI 检查和规划确定。
+4. **Unravel 是产品界面的显示名。** 这项命名决策只描述目标 UI，不表示当前界面已经改名。
+5. **Settings 是独立页面。** 目标是独立设置页面，而不是把现有设置面板直接称作已完成的新页面。
+6. **Tasks 插件优先。** 待办相关体验优先通过插件承载；这表示产品方向，不表示现有待办组件已满足该目标。
+
+视觉方向采用暖米白与鼠尾草绿；第一批已落地主题 token 与响应式侧栏。Widgets 独立区域、Unravel 和 Settings 页面仍按上面的产品方向逐步迁移。
+
+第一批验收记录：用户报告 Dashboard / Sidebar、页面切换、Canvas 位置与选中状态、拖动、侧栏折叠与重启偏好、主题、Ctrl+K / Esc，以及 Assistant 独立窗口共存均通过人工验收。Assistant 使用本地 Ollama `qwen3:4b` 普通对话正常；流式回复期间切换 Dashboard / Workspace 后回复完整；关闭并重开 Assistant 后对话正常。主窗口切换为简体中文后，独立 `lattice.clock` 窗口文字同步更新。另在 Assistant 中重试 `placement.front` 成功：脱敏审计记录为 `2026-11-04 00:34:22 +08:00`，`qwen3:4b · tools: placement.front`，HTTP 200；随后 `00:34:28 +08:00` 模型结果 HTTP 200，Assistant 动作卡片显示 `ok: true`，目标实例为 `lattice.clock#7cb83e6d`。日志未记录 Tauri 的 requestId；审计证据结合动作结果确认完整请求往返成功，但不提供 requestId 级日志关联。
+
+自动化验收记录：本轮全量浏览器自动化通过，88 页 / 4,502 条断言 / 0 失败；`tests/navigation.html` 12/12、`tests/schedule.html` 31/31、`tests/dictation.html` 29/29。另有 stopwatch 60/60、focus 与 focus-goal 合计 80/80、clock-zones 41/41。Workspace 隐藏只暂停显式选择 `workspaceVisibleOnly` 的可视刷新，未选择该策略的旧订阅保持原行为；恢复时每条可视订阅立即补一拍并从恢复时刻重新计时，不累积隐藏期间的补发。Dictation 缺失的 Tauri Event Plugin Mock 仅在测试环境补齐。
+
+本轮 `typecheck`、`check:guards`、`check:tokens`、`check:docs` 均通过。跨窗口语言同步与一次 Agent 动作往返另有 Windows Tauri 人工验收证据。尚未单独验收 `ask` 模式下确认卡片的展示、允许 / 拒绝交互；Assistant 曾出现一次 Provider 超时，之后对话恢复，但超时根因尚未确认。成功的 `placement.front` 重试不代表 `ask` 确认交互专项已验收；这些未完成项不改写为通过。
 
 明确不排：账号、云同步、组件市场首页、macOS / Linux。前三个要服务端，而"没有服务端"是 v0.5 的整个前提；第四个等于重写窗口层。
 

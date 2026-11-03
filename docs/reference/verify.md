@@ -23,6 +23,12 @@
     --screenshot=out.png "http://localhost:1420/widgets/<id>/index.html"
   ```
   `--virtual-time-budget` 必须给，否则会截到 transition 的中间态。
+- 改了主窗口导航 / Workspace 保活 / Sidebar：`npm run test:browser -- --filter navigation`。该页验证 Dashboard 默认状态、Canvas DOM 身份与尺寸、非活动页 inert/ARIA 隔离、手动折叠持久化，以及 1280px 手动折叠和 980px 响应式 Rail 下偏好不变。
+- 改了 Workspace 调度兼容：`npm run test:browser -- --filter schedule`，并按当前组件行为复核 `tests/schedule.html`。该页应覆盖 opt-in 可视订阅暂停与单拍恢复、旧订阅持续运行、无隐藏期间的补发；`npm run test:browser -- --filter dictation` 验证 Dictation 的 Tauri Event Plugin Mock 与监听清理。
+- Phase 4C 第一批自动化验收（本轮运行，2026-11-04）：`npm run test:browser -- --base http://127.0.0.1:1421` 全量通过，88 页 / 4,502 条断言 / 0 失败；其中 Workspace 调度 31/31、Dictation 29/29。测试使用本地 Vite 服务端口 1421。
+- Phase 4C 第一批 Windows Tauri 人工验收（用户报告，2026-11-04）：Assistant 本地 Ollama `qwen3:4b` 对话正常；流式回复跨 Dashboard / Workspace 切换完整；Assistant 关闭重开后正常；主窗口语言切换同步到独立 `lattice.clock`。
+- Agent 动作成功重试的脱敏审计证据：`00:34:22 +08:00` 的 `qwen3:4b · tools: placement.front` 请求 HTTP 200；`00:34:28 +08:00` 模型结果 HTTP 200，Assistant 动作卡片为 `ok: true`。审计没有保存 Tauri `requestId`；动作结果与工具 / 模型日志共同支持这一次成功往返，但不是 requestId 级关联。
+- 尚未单独验收 `ask` 确认卡片的展示、允许 / 拒绝交互；Assistant 曾偶发 Provider 超时，根因未确认。二者保持为开放缺口，不能写成通过。
 - 改了桥 / 组件存储：`tests/bridge-storage.html` 与 `tests/note-save.html` 是自检页（`npm run dev` 后打开 `http://localhost:1420/tests/bridge-storage.html`）。前者验证并发写不丢键、跨窗口读到最新值；后者验证便签的保存顺序与载入竞态。动过存储或便签保存逻辑，先看这两个页面是不是全绿。
 - 改了配置链路：`tests/config.html`（归一化、默认值、夹紧、未知键、`config.get`）。这条链路**在浏览器里就能验完**：属性面板 → store → 宿主 → 组件全在前端，只有桌面窗口那一段需要 Rust 透传。用 CDP 连画布 iframe 的 target（`type: "iframe"`）读组件里的文本，就能确认"拨一下开关，组件当场变"。
 - 改了窗口行为：只能 `npm run tauri:dev` 实机看。**改 Rust 会重启应用**；`desktopMode` 与 `restoreOnLaunch` 都落盘，重启后组件窗口会自己回来（位置和数据都在），不用重新投放。

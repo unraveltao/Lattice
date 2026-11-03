@@ -142,6 +142,10 @@ public/widgets/<id>/
 - **不要用原生表单控件**。沙箱文档的 `color-scheme` 被强制成 `normal`，原生 checkbox/radio 会按浅色主题画，在深色卡片上几乎看不见。用 `appearance: none` 自绘。
 - **"整行可拖"和"整行可点"必须分得开**。`lattice.todo` 的行既能拖起来排序，又能点一下勾掉：判据是 4px 阈值，且抬手后浏览器补的那次 `click` 要吃掉（`suppressClick` 用 `setTimeout(..., 0)` 复位 —— click 在它之前同步派发）。别用 HTML5 拖放：沙箱是不透明源，跨文档的 `dataTransfer` 靠不住；自己算还能控制让位动画。
 - **要定时器就用 `schedule.every`，不要 `setInterval`**。组件里开定时器等于绕开平台的"不可见就停摆"（INV-10）。`schedule.every({ every: 1000 })` 拿一个订阅号，`tick` 消息里带着它，认准自己那一条再刷新；组件卸载 / 重载时 `schedule.clear(id)`。第一次要立刻显示的话（速率类指标靠两次采样做差）在 `every()` 之后自己先调一次数据方法建基线 —— Rust 侧第一次采样一定返回 0，那是设计，不是 bug。
+
+画布组件只有在确认订阅是纯可视刷新后，才传 `workspaceVisibleOnly: true`。切到 Dashboard 后该订阅暂停；返回 Workspace 时立即触发一拍，随后从恢复时刻重新计时，不补发隐藏期间的 tick。显示时钟或倒计时应从当前时间 / 持久起止时间重算，不累计 tick。
+
+这是显式 opt-in：未传该字段的现有调用保持原有窗口 / 文档可见性行为，不能为了统一而批量改成隐藏时暂停。Agent、自动化、到期处理及必须推进的后台工作保留旧行为；不确定用途的调用也保留旧行为并在改动记录中说明。`workspace-visible` 页面推送与 `lattice:window-visible` 窗口推送用途不同，前者只适合暂停纯视觉动画。当前选择该策略的内置可视刷新位于 `lattice.almanac`、`lattice.clock`、`lattice.countdown`、`lattice.focus`（目标进度显示）、`lattice.habit` 和 `lattice.sysmon`；其他既有调用不作推断式迁移。
 - **卡片顶上给窗饰让位**。桌面窗口右上角那排按钮浮在组件内容之上且**能点**，通栏的输入框 / 第一行文字会被它压住。标题栏留出 `padding-right: 120px`（待办 / 便签 / 音乐都是这个数）或顶上一条 24px 状态条，见 WIDGET_SPEC §5.1。
 - **组件拿不到 `localStorage`、读不到 `parent` 的 DOM，一切能力走桥。**
 - **组件里所有颜色从 `--lattice-*` 变量来，别硬编码明暗。**

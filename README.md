@@ -216,7 +216,7 @@ Three numbers, three meanings, and they are never the same number: the source tr
 | Official widgets | 24 |
 | Permissions | 15 |
 | Tauri commands | 128 |
-| Browser assertions | 4 483 over 87 pages |
+| Browser assertions | 4 502 over 88 pages |
 | Rust tests | 618 |
 | Documented pitfalls | 133 |
 
@@ -227,7 +227,7 @@ These are measured: the browser assertions start a real dev server and a real Ch
 | Area | Lines |
 | --- | --- |
 | TypeScript | 30 543 lines |
-| CSS | 7 479 lines |
+| CSS | 7 562 lines |
 | Rust | 34 096 lines |
 | SDK | 961 lines |
 | Widgets + example | 36 734 lines |
