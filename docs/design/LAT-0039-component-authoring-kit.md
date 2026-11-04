@@ -7,6 +7,8 @@ code:
 
 # LAT-0039 —— 把"教 agent 造组件"做成一个能自己证明自己的闭环
 
+> Historical context: the Skill names and routing described here reflect the draft's 2026-10-29 state. The current Skill entry point and compatibility status are documented in [Skill System](../reference/skill-system.md); this record does not define the current development workflow.
+
 ## 1. 问题
 
 一个陌生人在 r/desktop 看到 Lattice，想给自己的桌面写一块天气卡。他手上只有：一个 README、一份 `WIDGET_SPEC`、一条 `npx skills add`。

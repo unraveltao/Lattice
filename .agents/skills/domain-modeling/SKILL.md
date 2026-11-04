@@ -1,56 +1,28 @@
 ---
 name: domain-modeling
-description: Lattice 项目专用的领域建模。为命令、字段、事件、权限和组件字段定名，并与 GLOSSARY.md 及 Rust/TypeScript 源码保持一致。
-whenToUse: 在 Lattice 仓库中新增命令、字段、事件、权限或组件字段，或发现同一术语在代码、文档和界面文案中的含义不一致时。
+description: Establish consistent names and domain contracts across Lattice interfaces and implementation layers.
+whenToUse: When introducing a cross-layer concept, command, field, event, permission, or Widget contract, or when one term is used with conflicting meanings.
 ---
 
-# 先定名，再写代码
+# Domain Modeling
 
-这条是这个仓库第 19 条不变量。判据很短：**读的人（和人以外的模型）每次都要猜一次名字的时候，猜错不会报错 —— 它会一路写下去，你最终确实在一个数据丢失的 bug 里才发现两边说的不是一个东西。**
+## Purpose
 
-## 0. 四步
+Define a clear, stable concept and its names across the layers that consume it. `GLOSSARY.md` owns shared terminology; the relevant specification and source own behavior and interface details.
 
-1. **列**：把这次要碰的名词写下来（字段、命令、事件、载荷键、界面文案里的那个词）。
-2. **查**：每个词去 `GLOSSARY.md` 搜。表里有 → 用表里的含义；表里没有但代码里有 → 先看代码里怎么用。
-3. **裁**：一个词指两件事，**先裁再写**。裁法是给其中一件换名字，不是加限定词硬凑（"store 存储" / "store 商店" 这种限定词只会让下一个人继续猜）。
-4. **定**：新词当场定，写进 `GLOSSARY.md` 一句定义 + 一条指向（行为约束在规范里，表里不抄）。
+## Trigger
 
-## 1. 什么词该进表
+Use for concepts visible across Rust, TypeScript, SDK, Widget manifests, or user-facing language. Do not add local implementation names that are clear from their owning code and are not shared domain terms.
 
-边界：**组件作者能看得见，而且前端 / Rust / SDK 都会用到**。
+## Workflow
 
-| 该进 | 不该进 |
-| --- | --- |
-| `placement` / `instanceId` / `grants` / `bridge` / `目录` 这类跨块的词 | 某个 Zustand slice 的内部字段 |
-| 界面上一出现就要被问"这啥"的能力名（`完全访问`） | 单条 Rust 命令名（`llm_profiles` —— 代码就是它的家） |
-| 同一个词在规范和代码里含义必须一致的东西 | 只在某一份文件里出现的临时叫法 |
+1. State the concept, its users, and the boundary it represents.
+2. Search `GLOSSARY.md`, source, and relevant specifications for existing names and meanings.
+3. Choose one canonical term. If a term already means two different things, separate the concepts with distinct names rather than adding vague qualifiers.
+4. Map the contract across consumers: commands and payloads, persisted keys, TypeScript/Rust/SDK types, events, manifests, UI labels, and docs as applicable. Keep display wording distinct from stored identifiers.
+5. If the term is genuinely shared, add or refine its concise definition and pointer in `GLOSSARY.md`. Put behavior constraints in their owning specification; do not duplicate them in the glossary.
+6. Recheck the affected interfaces for consistent naming and report any compatibility or migration requirement to `development-workflow`.
 
-## 2. 一个东西，四处只能用同一个名字
+## Safety
 
-改一个名字时要一起改的地方（漏一处不会报错）：
-
-- **Rust**：命令名、结构体字段、`serde` 的 `rename`（存储格式里的键名一旦发出去就不能随便改 —— 老用户的 `assistant.json` / `state.json` 里还是旧键）。
-- **前端**：IPC 包装、Zustand 字段、组件 props。
-- **事件**：`lattice:*` 的名字与载荷键（载荷里带身份，见INV-9）。
-- **文案**：平台 UI 文案默认英文；核对界面文案、`i18n` 表与 `GLOSSARY` 定义是否表达同一概念。
-- **文档**：`WIDGET_SPEC` / `AGENTS` / `ROADMAP` 里的用法。
-
-**存储格式那一条最贵**：对外发出去的键名属于用户数据，改它要写迁移（`assistant.json` 从 v1 到 v4 就是这么来的），别为了"名字更准"直接改。
-
-## 3. 撞名的例子（都真实发生过）
-
-| 词 | 曾经指 | 现在 |
-| --- | --- | --- |
-| `目录` | 商店那份 JSON + 文件系统的文件夹 + 组件自己的 `manifest.json` | **目录**只指商店那份静态 JSON（代码里 `catalogue`）；组件自己的叫**清单**；读它的界面叫**商店** |
-| `store` | Zustand 容器 / 磁盘存储 / 商店 | **前端 store**（Zustand）/ **存储**（Rust 落盘的组件数据）/ **商店**（界面） |
-| `mode` | 审批档 / 两个模式 | 审批是 `approvalMode`（`ask` / `auto` / `readonly`），两个模式是 `mode`（`internal` / `everything`） |
-
-## 4. 界面叫的和存的不一样，是正常的
-
-例：界面上的「完全访问 / Full access」，存盘的 `mode` 仍然是 `internal` / `everything`。**别为了"对齐"去改存储值** —— 那是用户数据格式，不是文案。定名的时候把这两层分开写进表里：一层是**给人看的名字**，一层是**落盘的名字**，并写清哪一层不许动。
-
-## 5. 改术语表本身
-
-- **精确替换，不许整份重写**：`GLOSSARY.md` 是冲突高发区（和 `AGENTS.md` 第 12 节列的那几个文件一样）。
-- 修改后检查 `git diff -- GLOSSARY.md`。只有当前用户明确授权提交时才暂存或提交；提交时只暂存 `GLOSSARY.md`，并在提交前复核暂存差异。
-- 表被写歪不会报错，只会让后面每一份文档跟着歪。
+Do not rename persisted data or public interfaces as a wording-only cleanup; establish compatibility and a migration plan first. Follow `AGENTS.md` for project rules and authorization. This Skill does not authorize scope expansion or Git operations.

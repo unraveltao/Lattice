@@ -23,6 +23,7 @@
 | **现在** | 这个功能现在能不能靠（一个面一个词） | [`reference/maturity.md`](./reference/maturity.md) | 用这个应用的人，和任何要写"它已经能用了吗"的人 |
 | **现在** | 组件作者必须遵守什么 | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 写组件的人 |
 | **现在** | 改平台代码不许碰什么 | [`../AGENTS.md`](../AGENTS.md) 第 4 节（一行一条，带 `INV-n`）+ [`INVARIANTS.md`](./INVARIANTS.md)（同一批的全文：边界、例外、破了会怎样） | 改平台的人，人或 agent |
+| **现在** | Skill System 的当前架构、流程图和维护责任 | [`reference/skill-system.md`](./reference/skill-system.md) | 使用或维护项目 Skills 的 agent 和贡献者 |
 | **现在** | 查一下就好：文件在哪 / 改一块代码的配方 / 某件事做到哪一步 / 状态与 schema / 改一块怎么验 / agent 接入 / 签名 / 素材 / 邻仓 / 构建发版 | [`reference/structure.md`](./reference/structure.md)、[`reference/recipes.md`](./reference/recipes.md)、[`reference/known-gaps.md`](./reference/known-gaps.md)、[`reference/state.md`](./reference/state.md)、[`reference/verify.md`](./reference/verify.md)、`AGENT_ACCESS.md`、`CODE_SIGNING.md`、`PET_REFERENCE.md`、`VELA-REUSE.md`、[`reference/build.md`](./reference/build.md) | 碰到那一块的时候 |
 | **未来** | 下一版做什么、还没做的事怎么想 | [`ROADMAP.md`](./ROADMAP.md) 待办 + [`design/`](./design/)（`draft`） | 要开一件新事的人 |
 
@@ -40,16 +41,14 @@
 
 ### `.agents/skills/` 不在这张表里
 
-九份 `SKILL.md` 是**给 agent 看的工序**，不是第四种文档。头一份是总表，其余八份各管一阶或一件事：
+项目当前有七个活跃 Skill 和四个兼容入口。它们是**给 agent 看的工序**，不是技术事实的家。架构图、调用关系和维护责任见 [`Skill System`](./reference/skill-system.md)。
 
-- **总表**：[`workflow`](../.agents/skills/workflow/SKILL.md)（六阶顺序、小改 / 跨模块 / 高风险三档各走哪几阶、派活的五行模板）—— 先看它，再按它指的那一份往下走。
-- **动手前**：[`invariants`](../.agents/skills/invariants/SKILL.md)（该守哪几条不变量）/ [`new-widget`](../.agents/skills/new-widget/SKILL.md)（加组件的顺序）/ [`domain-modeling`](../.agents/skills/domain-modeling/SKILL.md)（这次要用的词怎么定）。
-- **怎么想和怎么写**：[`define-goal`](../.agents/skills/define-goal/SKILL.md)（把一句话变成可判定的目标）/ [`grilling`](../.agents/skills/grilling/SKILL.md)（交付前把方案烤一遍）/ [`context-engineering`](../.agents/skills/context-engineering/SKILL.md)（上下文怎么花、什么该落盘）。
-- **收尾**：[`verify`](../.agents/skills/verify/SKILL.md)（改完按什么阶梯验）/ [`writing-for-agents`](../.agents/skills/writing-for-agents/SKILL.md)（文档按什么工序写）。
+- **唯一开发入口**：[`development-workflow`](../.agents/skills/development-workflow/SKILL.md) 负责任务接收、分级、计划、实施、统一 Review、验证选择和交接。
+- **Git 专项检查**：[`git-safety`](../.agents/skills/git-safety/SKILL.md) 在 Git 或 Worktree 操作前核对身份、状态与逐项授权。
+- **按需调用的专项能力**：[`invariants`](../.agents/skills/invariants/SKILL.md)、[`verify`](../.agents/skills/verify/SKILL.md)、[`domain-modeling`](../.agents/skills/domain-modeling/SKILL.md)、[`writing-for-agents`](../.agents/skills/writing-for-agents/SKILL.md)、[`new-widget`](../.agents/skills/new-widget/SKILL.md)。
+- **兼容保留，不作为现行入口**：[`workflow`](../.agents/skills/workflow/SKILL.md)、[`grilling`](../.agents/skills/grilling/SKILL.md)、[`define-goal`](../.agents/skills/define-goal/SKILL.md)、[`context-engineering`](../.agents/skills/context-engineering/SKILL.md)。新开发任务从 `development-workflow` 开始；兼容入口不触发第二次完整 Review。
 
-它们不进这张表，是因为它们**不构成事实的家**。每份开头都写着"正文在哪"（`AGENTS.md` 某一节，或它指向的 `INVARIANTS.md` / `reference/verify.md`），自己只给顺序和判据。所以它们过期的方式也不同：**结论错了去改 `AGENTS.md`，工序错了才改这里**。往这些工序里补一句"权限一共 12 个"就是违规 —— 那已经是别人的家了。
-
-**写新的一份时，四个字段必填**：什么时候**不用**它、要什么**输入**、**做完的标准**、**失败怎么办**（卡住了找谁 / 什么时候停）。缺这四个，它就会退化成一段口号 —— 例子见 [`workflow`](../.agents/skills/workflow/SKILL.md) 第 6 节。
+Skill 不拥有永久规则或技术事实：规则以 `AGENTS.md` 为准，技术事实以对应源码和权威文档为准；Skill 只提供上下文判断、流程协调和专业方法。写新 Skill 或大幅修改时，必须让以下四项清晰可见：**Purpose、Trigger、Workflow、Safety**。不要求固定章节名，也不要求每个 Skill 都有通用模板中的额外字段。
 
 根目录的 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 同一类：它只写"从 clone 到 push 之间的顺序"和"什么会被拒"，一条规矩都不重复，全是链接。第一次给这个仓库提东西的人读它，不读这一页。
 
@@ -89,7 +88,7 @@ English is the default for new formal documentation. When an English document an
 | 要编译 / 打包 / 发版 | [`reference/build.md`](./reference/build.md) | 15 分钟 |
 | 要动 agent 接入 | [`AGENT_ACCESS.md`](./AGENT_ACCESS.md) | 20 分钟 |
 | 要动签名 / 发布 | [`CODE_SIGNING.md`](./CODE_SIGNING.md) + `ROADMAP` v0.7 | 15 分钟 |
-| 让 agent 按这个仓库的规矩动手 | [`.agents/skills/workflow`](../.agents/skills/workflow/SKILL.md) 先看（六阶 + 三档 + 派活模板），再按它指到的那一份走；另八份是 `invariants` / `new-widget` / `domain-modeling` / `define-goal` / `grilling` / `context-engineering` / `verify` / `writing-for-agents` | 按需 |
+| 让 agent 按这个仓库的规矩开发 | [`.agents/skills/development-workflow`](../.agents/skills/development-workflow/SKILL.md)（唯一开发入口；L1/L2/L3 与统一 Review）+ [`Skill System 架构与流程图`](./reference/skill-system.md) | 按需 |
 | **要做一件还没做的事** | [`design/README.md`](./design/README.md) | 按需 |
 
 ## 三、新内容放哪
@@ -124,7 +123,7 @@ English is the default for new formal documentation. When an English document an
 
 判断方法：**这段内容如果代码改了要不要跟着改？** 要 → 它不是文档，是指针，改成链接。
 
-架构与决策也遵守同一归属：`ARCHITECTURE.md` 解释当前模块关系，已有架构图跟着模块边界变化更新；复杂行为的顺序与分支写在最接近其契约的流程 / 生命周期说明中；具有长期代价权衡的取舍按 [`design/README.md`](./design/README.md) 判据记录为 LAT。实现结论同步到 `ROADMAP.md`，约束同步到 `AGENTS.md` 或对应规范，测试步骤放 `reference/`；不要在这些位置复制同一份推理。
+架构与决策也遵守同一归属：`ARCHITECTURE.md` 解释当前模块关系，已有产品架构图跟着模块边界变化更新；[`reference/skill-system.md`](./reference/skill-system.md) 维护 Skill 架构与开发流程图。Skill 数量、职责、入口或调用关系变化时检查 Skill 架构图；流程阶段或授权边界变化时检查工作流图。图表与其描述的实际规则和职责同步更新；Mermaid 源码是可编辑来源，采用可重复渲染流程后，生成图也必须与源码一致。复杂行为的顺序与分支写在最接近其契约的流程 / 生命周期说明中；具有长期代价权衡的取舍按 [`design/README.md`](./design/README.md) 判据记录为 LAT。实现结论同步到 `ROADMAP.md`，约束同步到 `AGENTS.md` 或对应规范，测试步骤放 `reference/`；不要在这些位置复制同一份推理。
 
 `FAQ` 和 `PITFALLS` 都按症状分组，别混：**FAQ 回答"我该点哪儿"**（用这个应用的人，不许出现文件名和函数名），**PITFALLS 回答"这段代码为什么长成这样"**（改这个仓库的人）。同一件事两边都写，就是两处各自漂。
 

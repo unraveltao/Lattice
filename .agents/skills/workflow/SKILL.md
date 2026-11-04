@@ -1,75 +1,11 @@
 ---
 name: workflow
-description: 一件活从"一句话"到"能交"的六阶顺序与三档要求：小改、跨模块、高风险各走到哪一阶，每阶的产出落在哪份文件，以及派活给 agent 时该填的那张模板。防的是"想到什么就改什么"——跳阶不会报错，只会静默地重复实现、漏测试、忘文档。
-whenToUse: 接到一件还没拆开的活、判断这次要不要先调查或先开 design 文件、发现自己正在跳过某一阶直接改代码、或者用户丢来一句"顺手把它也做了"的时候。
+description: Compatibility entry for the former six-stage workflow; current development work belongs to development-workflow.
+whenToUse: Read only when following an existing repository link. Do not use as a separate development workflow.
 ---
 
-# 一件活的六阶
+# Workflow Compatibility Notice
 
-判据不在这里：不许碰什么在 [AGENTS.md](../../../AGENTS.md) 第 4 节（`INV-n`，全文在 [docs/INVARIANTS.md](../../../docs/INVARIANTS.md)），怎么验在第 11 节 + [docs/reference/verify.md](../../../docs/reference/verify.md)，新内容写成哪份文档在 [docs/README.md](../../../docs/README.md) 第三节。这一份只给**顺序**，和**哪一档可以少走几阶**。
+The former six-stage workflow and its small / cross-module / high-risk tiers are retired. The current development workflow is [development-workflow](../development-workflow/SKILL.md), which is the only development entry point and uses L1 / L2 / L3 as the current task classification.
 
-## 0. 为什么要有个顺序
-
-这个仓库最贵的 bug 全是**静默**的：数字改了文档没改、权限少落一处、两个宿主只改了一份 —— 不报错、不红、界面照跑，只有读到那句话的人被误导。跳阶的后果是同一类：它不失败，它只是让下一个人（或下一个模型）重新踩一遍。
-
-顺序不是仪式，是**每一阶都有一个落盘物**。落不下来，说明这一阶没做，不是"心里想过了"。
-
-## 1. 六阶
-
-| # | 阶 | 干什么 | 产出落在哪 | 跳过的症状 |
-| --- | --- | --- | --- | --- |
-| 1 | **需求整理** | 把一句话变成可判定的目标：[`define-goal`](../define-goal/SKILL.md) 的五要素 | 一句 objective + **至少一条机械判据** | 做完了没人认；范围中途膨胀 |
-| 2 | **现状调查** | 先读后写：这条能力现在落在哪几处、有没有第二份实现、有没有测试钉着 | 调查结论，带 `文件:行` | 重复实现；改错那一处；把别人的未提交改动覆盖掉 |
-| 3 | **方案设计** | 有两种以上走法就先 [`grilling`](../grilling/SKILL.md) 烤一遍；命中三条判据才开 `docs/design/` | `design/` 一份（`draft`），或 `ROADMAP` 一行 | 做错了要重做；三个月后没人记得否掉了什么 |
-| 4 | **分阶段实现** | 一次一个能独立验的切片；动手前按 [`invariants`](../invariants/SKILL.md) 取并集 | 提交（一次 PR 一件事） | 一大坨 diff，review 的人只能全信或全否 |
-| 5 | **测试验证** | 按 [`verify`](../verify/SKILL.md) 的阶梯；纯逻辑先 `rustc --test` 单跑 | 命令输出（不是"我看着行"） | "看起来对" —— 这个仓库最贵的一类 bug |
-| 6 | **文档更新与总结** | 改会飘的数字、给 `PITFALLS` 加一条、把 design 的结论沉回 `ROADMAP` | 改过的文档 + 一条坑 | 下一个人重新踩；数字从此开始骗人 |
-
-第 3 阶那三条判据（动持久化格式或跨进程契约 / 有两种以上方案 / 做错了要重做）**同时成立**才开新文件 —— 只中一条就写进 `ROADMAP` 一行加代码注释。判据原文在 [`docs/design/README.md`](../../../docs/design/README.md)。
-
-## 2. 三档
-
-判据要数得出来：**改了几处**、**漏了会不会静默坏**。凭"感觉不大"分档，等于没分。
-
-| 档 | 判据 | 走哪几阶 | 额外要求 |
-| --- | --- | --- | --- |
-| **小改** | 一处文件；不碰桥 / 权限 / 持久化；漏了会**报错** | 2 → 4 → 5 | 第 1 阶压成对话里一句话；第 6 阶只在改了数字或文案时做 |
-| **跨模块** | 命中两个以上 `INV-n`，或加一条能力（要落五处） | 六阶全走 | 第 3 阶要写下"为什么不选另一种走法"；第 5 阶要有断言页，不只是 typecheck |
-| **高风险** | 动持久化格式、跨进程契约、用户数据、签名与发版，或不可逆 | 六阶全走 | 加 `design/` 文件、真机验收（浏览器里跑通不算）、回滚方案 |
-
-"加一条能力要落五处"那张表在 [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md) §3。**一次改动同时命中好几行是常态，取并集，别挑一行** —— 这是这个仓库漏项的主要来源。
-
-## 3. 派活的模板
-
-给 agent（或给自己）开一件活时，把这五行填完再动手。填不满的那一行就是这件活真正的风险。
-
-```
-目标：<一句，动词 + 对象；不许出现"优化""完善""更好看">
-判据：<能红的命令，或能看见的画面>
-不碰：<这次明确不做的事>
-已知：<相关文件:行、相关文档、之前踩过的坑>
-档位：小改 / 跨模块 / 高风险
-```
-
-- **判据**那一行只写一条也算数，但必须是机械的：`npm run typecheck` 绿、某断言页 N 条全过、`check:docs` 绿、安装包能装。
-- **不碰**空着等于没定 —— 它正是"顺手把别的模块也改了"的入口。
-- **已知**里放 `文件:行`，别放"相关代码在 store 那边"。下一轮接手的人只有这一行。
-
-## 4. 三处会退化成仪式
-
-1. **六阶不是六份文档。** 小改的第 1–3 阶就是对话里三句话，说完往下走。把它们各写成一份文件，是把流程变成税 —— 而税会被绕过。
-2. **第 2 阶不是"读一遍源码"。** 是回答三个问题：这条能力现在落在哪几处？有没有第二份实现？我改的这一处有没有测试钉着？答案要能指到行。
-3. **第 6 阶不是"重写文档"。** 是改那几个会飘的数字、加一条坑、沉一行结论。改不动就说明这次没有新事实 —— 那也是结论，写进提交说明。
-
-## 5. 一句话自检
-
-说"做完了"之前，能不能说出第 5 阶的**证据**（哪条命令、什么输出）？说不出就是跳阶了。第 6 阶则反过来问：这次改了哪个数字、加了哪条坑？两个都答不上，多半是这件活本来就没有新事实 —— 那就别硬写。
-
-## 6. 这份工序自己的四个字段
-
-写新技能时这四个必填，缺一个它就会退化成一段口号。这一份先当例子：
-
-- **什么时候不用它**：一句话能说清、改一处、跑一次 `typecheck` 就完的活（改个错字、调一行样式）。走六阶是把流程变成税，而税会被绕过。
-- **输入**：目标一句话 + 判据（"怎么算做完了"，能判定）+ 档位（小改 / 跨模块 / 高风险）。填不满的那一行，就是这件活真正的风险 —— 先补它，别急着开工。
-- **做完的标准**：第 5 阶有证据（哪条命令、什么输出）、第 6 阶说得清改了哪个数字 / 加了哪条坑 / 为什么这次没有新事实。
-- **卡住了怎么办**：判据说不清 → 回第 1 阶，别在实现里猜；发现要动的地方超出档位 → 升档并说明，别悄悄扩大范围；撞上别人的在途改动 → 停手，报出具体文件与冲突，别"顺手"解决。
+Unified Review is performed within `development-workflow`, followed by fixes and local re-review. This file remains only for compatibility with existing links; it does not define an independent development process and must not trigger a second full Review.

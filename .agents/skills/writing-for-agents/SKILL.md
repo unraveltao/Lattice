@@ -1,101 +1,27 @@
 ---
 name: writing-for-agents
-description: Lattice 项目专用的文档维护流程。用于在本仓库新建或大幅修改正式文档、AGENTS.md、GLOSSARY.md 或项目 Skill，并遵循文档归属、英文优先和 check:docs 规范。
-whenToUse: 在 Lattice 仓库中新增或大幅修改 docs/、AGENTS.md、GLOSSARY.md 或项目 Skill，或调整项目文档职责与语言规范时。
+description: Maintain Lattice project rules, Skills, and formal documentation with clear ownership and verifiable references.
+whenToUse: When creating or substantially revising AGENTS.md, a project Skill, formal docs, or the ownership and relationships between project documents.
 ---
 
-# 给 agent 写文档
+# Writing for Agents
 
-这份只给**工序和判据**。归属规则的家在 [docs/README.md](../../../docs/README.md)（三问、一份事实只有一个家、文风），约束的家在 [AGENTS.md](../../../AGENTS.md)。两边说不一样时以它们为准，并把这里改成链接。
+## Purpose
 
-## 0. 读者是谁
+Help agents put each rule, decision, procedure, and technical fact in its authoritative home and keep references maintainable.
 
-下一个来改这段代码的 agent：没有上下文、只有一份能花的注意力预算、会**照着字面执行**。
+## Trigger
 
-三条由此而来：
+Use for new or substantial edits to `AGENTS.md`, `SKILL.md`, formal project docs, or documentation responsibilities. Do not load it for routine code comments or minor copy changes unless the document's ownership or meaning changes.
 
-- **结论前置。** 第一段就要让人能动手，别把判据埋在第 4 节。
-- **写判据，不写叙述。** "什么时候不成立"比"一般来说是这样"有用；"三种情况里只有一种会重载"比"要小心重载"有用。
-- **不写"我们"。** 这个项目没有"我们"，只有"这份代码"——写"我们认为"的地方，其实是在说"这里选了这个"。
+## Workflow
 
-**"以后会补" / "大概" / "应该没问题" 一律不写** —— 下一个人会把它当事实抄进代码。
+1. Read the relevant routing and language guidance in [docs/README.md](../../../docs/README.md), plus applicable `AGENTS.md` rules.
+2. Search for the existing fact or rule. Decide its owner before editing: permanent rules in `AGENTS.md` or the relevant standard; decisions in their decision record; reference procedures in the appropriate reference doc; task methods in Skills.
+3. Write only the information owned by that file. Link to other authorities instead of copying their technical facts. Distinguish implemented behavior from planned or unverified behavior using repository evidence.
+4. For architecture, workflow, or Skill-relationship changes, check which maintained diagrams represent those relationships. Update the editable source and rendered artifact together when the depicted structure changes; keep the diagram's ownership and update rule documented with its source. If updating a diagram is outside the approved scope, report the required follow-up rather than silently leaving it stale.
+5. Check relative links and document-specific requirements with the existing `npm run check:docs` script; use other checks only when the changed document requires them.
 
-## 1. 它该不该是文档
+## Safety
 
-[docs/README.md 第三节](../../../docs/README.md) 的三问，从上往下，命中就停：
-
-1. 还没做的事、动手前的推理？→ `docs/design/` 一份，结论沉回 `ROADMAP` 一行。
-2. 三个月后还有人照着它做？→ `docs/reference/`。
-3. 别人必须遵守？→ `docs/` 根，一份，不拆。
-
-都不命中 → 它不是文档，是代码注释或 `AGENTS.md` 配方节里的一行。**别新建 `总览.md` / `说明.md` / `开发文档.md`**：那类文件名说明还没想清楚它属于哪一类，而它一旦存在就会变成第三个"事实的家"。
-
-## 2. 先找它现在的家
-
-动手之前 `grep` 一遍要写的那个词 / 那句判据 —— 十有八九已经有人写了，只是不在你要改的那份文件里。
-
-| 怀疑它已经写着 | 去哪儿搜 |
-| --- | --- |
-| 约束、不变量 | `AGENTS.md` |
-| 已知缺口 | `docs/reference/known-gaps.md` |
-| 归属、"该放哪"、文风 | `docs/README.md` |
-| 某个决定当初怎么选、被什么撞翻 | `docs/ROADMAP.md`「被推翻的十个决定」 |
-| 症状 | `docs/PITFALLS.md`（按症状分组，搜现象别搜原因） |
-| 词的意思 | `GLOSSARY.md` |
-
-判据（也是 `docs/README.md` 第四节那句）：**这段内容如果代码改了要不要跟着改？** 要 → 它不是文档，是指针，写成链接。
-
-**三段式别写重**：结论在 `ROADMAP`、推理在 `design/`、约束在 `AGENTS` —— 各写各的那一半，谁也别抄谁。
-
-## 3. 四种文件的形状
-
-| 要写的 | 形状 | 别写 |
-| --- | --- | --- |
-| `docs/design/NNNN-*.md` | front matter（`status` / `date` / `supersedes` / `code`）+ 用户的原话 + 推理与代价 + 被推翻的可能 | 结论复述（沉回 `ROADMAP` 一行就够了） |
-| `docs/PITFALLS.md` 一行 | 症状 / 真实原因 / 解法，三列都填满；放对症状分组；开头那句「现在 **N 条**」跟着改 | 猜出来的坑；只有"注意 xx"没有解法 |
-| `AGENTS.md` 一节 | 稳定事实 + 判据 + 那句「别踩回去」的几条 | 版本流水账、一次性的调试过程 |
-| 一份 `SKILL.md` | 工序：顺序、命中的表、踩空的样子 | **任何一条事实** —— 它过期的方式和 `AGENTS.md` 不一样（见 §6） |
-
-## 4. 写"症状 → 真实原因 → 解法"
-
-一句"注意别写错"没有信息。一条坑要能让人**自己确认没踩回去**：
-
-- **症状**：写成你当时看到的那句话 / 那个画面（`0xc0000139`、`412 passed; 1 failed`、"界面上那条从灰变回可点"）。
-- **真实原因**：机制层面的一句，不是"代码写错了"。
-- **解法**：动作，带着它为什么能治这个原因；如果只是收窄了门而不是根治，**把这点写出来**。
-
-`docs/PITFALLS.md` 里那些"已修（别再改回去）"的段落也是这个形状，只是细节更多——加新的之前先读一条，照着它的密度写。
-
-## 5. 数字、链接、行数：写完让脚本对账
-
-```bash
-npm run check:docs
-```
-
-它对四件事：
-
-1. 六项数字（组件 / 权限 / Tauri 命令 / 浏览器断言 / Rust 单测 / 坑）与中英两份 `README` 对账；
-2. 全仓库每一份 `.md` 的**相对链接**能不能落地（新写的链接打错一个 `../` 就红）；
-3. `Code, roughly` 那六行行数，按 **1% 容差**；
-4. `PITFALLS.md` 开头那句「现在 **N 条**」和表里的行数。
-
-**断言数只能手数**，脚本只核中英两份写的是同一个数。数字变了要**重数一遍**，别估、别拿旧值加减；改完顺手 `grep` 一遍旧数字还在不在别处。
-
-## 6. 三件只有你知道的事
-
-- **文档进应用要重新打包。** 应用里读的是打进包里的那份（`src/runtime/docs.ts` 里有一张清单），磁盘上改完不等于应用里变了。
-- **`SKILL.md` 过期的方式不同。** 结论错了去改 `AGENTS.md`，**工序**错了才改 `SKILL.md`。往工序里补一句"权限一共 12 个"就是违规 —— 那已经是别人的家了。
-- **应用里读不了只有网页才有的东西。** 远程图片会降级成 alt 文字，指向非 `.md` 的相对链接会在浏览器里打开 GitHub。写"看一眼这张图就懂了"之前，先确认图在 `docs/` 里。
-
-## 7. 语言
-
-写新文档或大幅修改现有文档时，按 [`docs/README.md` 的语言分工](../../../docs/README.md) 执行：正式文档默认英文；已有中文历史文档保持原状，不批量翻译；`README.md` 是英文权威版本，`README.zh-CN.md` 与之保持一致。
-
-术语、API 名称和代码标识符以 `GLOSSARY.md` 与实际源码为准。功能状态、事实归属和禁止虚构实现以 [`AGENTS.md` 的文档维护规则](../../../AGENTS.md) 为准；本 Skill 不重复维护这些事实。文风只对**新写和重写**的文档执行，不回头批量改旧文档。
-
-## 8. 收尾
-
-- `npm run check:docs` 绿。
-- Git 暂存、提交和推送遵循 [`AGENTS.md` 第 12 节](../../../AGENTS.md) 与当前用户的明确授权；本 Skill 本身不构成执行这些操作的授权。
-- 提交说明写 `docs(...)` 或 `feat(...)`，正文写**为什么**和判据，不写"我改了 A、B、C"的流水账。
-- **只 `git add` 你改的那几个文件。**`git add -A` / `git stash` / `git reset --hard` 一律禁用（会静默吃掉别人的活）。
+`docs/README.md` and `AGENTS.md` remain authoritative for document placement, language, and project rules. Do not create a second home for an existing fact or claim behavior without source/test evidence. Respect the approved file scope; document authorization does not authorize Git writes, which are handled separately by `git-safety`.

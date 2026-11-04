@@ -21,7 +21,7 @@
 > | `scripts/**`、商店、签名、发版 | `INV-1/15/16` + [配方 · 发一个版本](./docs/reference/recipes.md) + [CODE_SIGNING](./docs/CODE_SIGNING.md) |
 > | `src/platform/store.ts`、落盘字段 | `INV-5/13` + [`reference/state.md`](./docs/reference/state.md)（字段 / 版本 / 谁写）+ [配方 · 加一个平台状态字段](./docs/reference/recipes.md) |
 > | 找事实：文件在哪 / 某件事做到哪一步 / 这个词指什么 | [`reference/structure.md`](./docs/reference/structure.md)、[`reference/known-gaps.md`](./docs/reference/known-gaps.md)、[GLOSSARY](./GLOSSARY.md) |
-> | 卡住了 / 要开一件还没拆开的活 | [PITFALLS](./docs/PITFALLS.md)（搜现象，别搜原因）/ [`.agents/skills/workflow`](./.agents/skills/workflow/SKILL.md)（六阶顺序、三档、派活模板） |
+> | 卡住了 / 要开一件还没拆开的活 | [PITFALLS](./docs/PITFALLS.md)（搜现象，别搜原因）/ [`.agents/skills/development-workflow`](./.agents/skills/development-workflow/SKILL.md)（唯一开发入口，L1/L2/L3） |
 >
 > **一次改动同时命中好几行是常态 —— 取并集，别挑一行。** 按"任务类别"只挑一行必漏（"加一条 `terminal:exec`"同时动了清单的联合类型、桥、两个宿主、Rust、i18n、能力体检和四处测试）。漏掉的症状在这个仓库里几乎全是**静默**的 —— 不报错，只是不对。
 
@@ -234,7 +234,7 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 - 新增正式文档或大幅重写文档时，正文默认用英文；已有中文文档和历史记录继续保留，不做批量翻译。已有中英文成对文档以英文为准，中文版本必须与其内容一致。术语、API 名称和代码标识符按 `GLOSSARY.md` 与源码统一。
 - 描述功能时明确区分 `Implemented`、`In Progress`、`Planned`，并以源码、测试和 [`reference/maturity.md`](./docs/reference/maturity.md) 为依据；尚无实现或真实数据来源的功能不得写成已实现。需要表达“代码已实现但仍待验证”时，沿用成熟度文档的 `Unverified` 状态，不把它写成 `In Progress`。
 - 新的设计推理遵循 [`design/README.md`](./docs/design/README.md) 的开文档判据；结论放在 `ROADMAP.md`，约束放在 `AGENTS.md` / 对应规范，参考步骤放在 `reference/`。不新增第二份事实的家。
-- 拆分开发任务或提交验收记录时，说明是否影响系统架构、是否需要更新架构图 / 流程图、是否产生新的 LAT 决策、同步了哪些文档，以及用哪条测试或源码证据核对文档。判据与文档归属见 [`docs/README.md`](./docs/README.md)；不要把架构正文搬进本文件。
+- 拆分开发任务或提交验收记录时，说明是否影响系统架构、是否需要更新架构图 / 流程图、是否产生新的 LAT 决策、同步了哪些文档，以及用哪条测试或源码证据核对文档。Skill 数量、职责、入口或调用关系变化时检查 Skill 架构图；开发流程阶段或授权边界变化时检查工作流图。判据与文档归属见 [`docs/README.md`](./docs/README.md)；不要把架构正文搬进本文件。
 - 改完文档运行 `npm run check:docs`；若检查失败，修复或明确报告失败项，不得把失败说成通过。
 
 ---

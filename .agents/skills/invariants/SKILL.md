@@ -1,54 +1,38 @@
 ---
 name: invariants
-description: 改棂（Lattice）代码前的一道闸——按"我要动什么"查出必须遵守的不变量、会连带改的文件，以及几条一踩就静默坏的坑。
-whenToUse: 在这个仓库动手写代码之前，尤其是改桥、事件、权限、关闭窗口、CSP、联网、签名、配置、文案中的任何一条。
+description: Map a planned Lattice code change to the applicable project invariants and connected implementation surfaces.
+whenToUse: Before changing code in Lattice, especially when touching bridges, permissions, events, persistence, windows, widgets, security boundaries, or cross-layer contracts.
 ---
 
-# 改动前闸门
+# Invariants
 
-[AGENTS.md](../../../AGENTS.md) 第 4 节是**一行一条**的规则表（带 `INV-n` 稳定编号），全文（边界 / 例外 / 破了会怎样）在 [docs/INVARIANTS.md](../../../docs/INVARIANTS.md)。这里只做一件事：**你正要改的东西，对应哪几条，会连带改哪些文件**。其中五条（`INV-2/7/8/11/17`）踩一次的代价是"静默坏"，不是报错。
+## Purpose
 
-**一次改动命中好几行是常态 —— 取并集，别挑一行。** 按"这次算哪一类任务"只挑一行必漏：加一条 `terminal:exec` 同时动了清单的联合类型、桥、两个宿主、Rust、i18n、能力体检和四处测试，横跨下面五行。组合起来的漏项在这个仓库里几乎全是**静默**的（`LABELS` 少一行只显示内部 id、i18n 少一句只永远说英文），所以宁可多读一行。
+Identify which project invariants apply to a code change and which connected files, callers, tests, or documents need inspection. The rules themselves are owned by [AGENTS.md](../../../AGENTS.md) and [docs/INVARIANTS.md](../../../docs/INVARIANTS.md).
 
+## Trigger
 
-## 先回答两个问题
+Use before code changes when an invariant may constrain the behavior or when the change crosses a platform, widget, host, persistence, security, or API boundary. Do not load this Skill for unrelated questions or purely editorial changes.
 
-1. **这段代码属于哪个宿主？** 画布（`WidgetFrame.tsx`）和桌面（`widgetHost.ts`）都要走 `runtime/bridge.ts` 的同一张方法表。任何"只在预览能用"或"只在桌面能用"的分叉都是 bug，不是特性。
-2. **这个状态属于哪一层？** `grants` 的键是 `widgetId`（信不信任这段代码），`configs` 的键是 `instanceId`（这一份怎么显示）。两者互相借用的后果分别是"两个时钟共享 12/24 小时制"和"同一个组件要授权两遍"。
+## Workflow
 
-## 按改动类型查
+1. Describe the intended behavior and the implementation area that will change.
+2. Use the starting map below, then search the relevant code and docs. These are entry points, not a complete impact analysis.
+3. Read the full text of each applicable `INV-n` in `docs/INVARIANTS.md`; take the union when several areas match.
+4. Trace connected implementations, shared state, hosts, callers, tests, and owned documentation. Check both sides of any duplicated contract.
+5. Before implementation, record the applicable INV IDs and the surfaces that must remain consistent. Report uncertainty or an uncovered boundary to `development-workflow`.
 
-| 你要动的 | 必读 | 连带必改 / 必查 |
-|---|---|---|
-| 加桥方法 | 2 | 权限要新增的话**五处一起改**：`runtime/manifest.ts` 的 `Permission`、`PERMISSION_READY`、`PERMISSION_LABELS`、`runtime/catalogue.ts` 的 `KNOWN_PERMISSIONS`、`docs/WIDGET_SPEC.md` 权限表。碰系统就写 Rust 命令并注册进 `lib.rs` 的 `invoke_handler`。权限未授予时**返回结构化错误**，不抛异常 |
-| 发一个"给某个窗口"的事件 | **9** | `emit_to` 是**广播**：JS 侧监听器 target 是 `Any`，任何 emit 都会送到每个窗口。所以载荷必须带 `instanceId` 或 `label`，收件人自己比一次。不带的后果是串味不是报错（拖 A 的底板滑杆四张卡一起变色、撤 A 的权限四个组件一起重载）。`lattice:theme` 是唯一故意全局的 |
-| 权限生效 / 撤销 | **8** | 四条同时满足：① 比对**先排序去重**（顺序变了不算变，否则点一下开关就重载一次）；② 载荷带 `instanceId`；③ 宿主收到后既换集合**也** `reloadWidget()`；④ `create()` 登记 `HostConfig` 时也用排好序的那份。画布卡片上那句 `Needs …` 要按最新 `grants` 过滤 |
-| 加平台状态字段 | — | 一路加到底：`store.ts`（interface + 初始值 + action）→ `partialize`（不加 = 不持久化）→ `buildSpecs` → `WidgetWindowSpec`(TS) → `WidgetWindowSpec`(Rust) → `HostConfig` → **`Applied`**。最后那个最容易漏，不在里面的字段永远不触发窗口更新 |
-| 关窗口 / 删 placement | **11** | `widget_close` 的 `reason` **必须显式传**，只有 `reason == "user"` 才让主窗口删 placement；其余只关窗口并记进 `Runner.suppressed`。那行 `eprintln!` 不许删。别在 `removePlacement` 之外直接 `filter` 掉 placement——那等于绕开 8 秒 `Undo` |
-| 组件 CSP / 出网 | **12**、14 | `'self'` 在沙箱里是废的（文档源 opaque）；协议源必须显式写，且与 `runtime/registry.ts::widgetSchemeBase` 一字不差（Windows 是 `http://lattice-widget.localhost`）。`connect-src` 收在组件自己的 origin 上，不是 `'none'`。CSP 管不了自我导航，那一半在 `egress.rs` |
-| 平台页面 CSP / `tauri.conf.json` | **24** | 主窗口这份**不是**组件那份（12）：它写在 `app.security.csp`，护的是我们自己的 UI。不许出现 `'unsafe-inline'` / `'unsafe-eval'` / 外部源 —— 内联 `<style>` 由 Tauri 发 nonce、内联 `<script>` 按哈希加，所以"要内联样式"的正确解法是改类名（`runtime/markdown.ts` 的表格对齐就是这么改的）。`frame-src` **必须**留组件协议（画布和 widget-host 都要嵌 iframe），`img-src` 那个 `https:` 是整份唯一的让步。改完跑 `npm run check:csp`，它同时盯着入口 HTML 里的内联脚本 / style 属性和平台代码有没有直连外网，并对账 `tests/csp.html` 里那份"证明不会白屏"的策略 —— **改一处就要两处一起改** |
-| 加联网主机 / 改白名单 | 14 | 三道闸顺序不能换：权限 → `manifest.network.hosts` → 请求形状。**没有通配符，这是故意的**；端口算身份；重定向必须关（否则白名单失效）；组件桥上的 `shell.open` 也只开 http/https（`open_policy.rs`） |
-| 组件渲染 / 底板 / 主题 | 6、18 | 组件里不写死颜色，全取 `--lattice-*`；宿主页三层顺序（`canvas` z0 / `veil` z1 / `iframe` z2 / 内描边 `body::after` z5）。外观变更只有两条路：`widget_set_appearance`（拖滑杆）+ `sync_widget_windows`（兜底） |
-| 错误通道 / 注入 | **7** | `__lattice_diag` 与 `__lattice` 两条消息，两个宿主要**先认错误再认桥**，且来源校验在 `isWidgetErrorReport` 之前。改 `runtime/widget-reporter.js` 的 `tag` 要同步改 `runtime/diagnostics.ts` 的 `REPORT_TAG`（`tests/diagnostics.html` 钉着字面量） |
-| 清单 `help` / 配置项 | **17** | 说明写清单不写 README；坏条目逐条丢；**改了行为同一次提交补当前版本那条 changelog**；每个 `config` 字段要么自带 `help` 要么在正文被提到（`tests/help.html` 两种情况都钉着） |
-| 界面文案 | 19 | 英文原句就是 key，中文进 `runtime/i18n/*.ts` 的对应分片（纯数据，一个 import 都不许有）。组件里用 `useT()`，模块级用 `t()`；模块顶层常量数组**不能**在初始化时 `t()` |
-| 装包 / 签名 / 更新 | **15**、16 | 三道校验顺序：`sha256` → ed25519 签名 → 钥匙等于**首次安装钉住**的那把。**先验签名再看版本**（反过来换钥匙的包会被当成普通更新静默装进去）。换钥匙要用户点头并印两把指纹。平台更新与组件更新是两套（`.keys/updater.key` 保密，`scripts/dev-publisher.key` 故意公开） |
-| 引入新名字 | 19 | 仓库里已有名字就用那个；没有就当场定一个写进 [GLOSSARY.md](../../../GLOSSARY.md) 再写代码。撞名先裁再写——"靠上下文能分清"的代价是猜错不会报错 |
+| Change area | Start with |
+|---|---|
+| Bridge, host, permissions, or network capability | INV-2, INV-3, INV-4, INV-7, INV-8, INV-14 |
+| Event routing or per-window behavior | INV-9, INV-11 |
+| Persisted platform state, placement, or per-instance configuration | INV-5, INV-13 |
+| Rendering, scheduling, or widget appearance | INV-6, INV-10, INV-18 |
+| Component CSP, platform CSP, or navigation boundaries | INV-12, INV-14, INV-24 |
+| Diagnostics and injected error reporting | INV-7 |
+| Manifest help, changelog, or cross-layer terminology | INV-17, INV-19 |
+| Package trust, signatures, or update paths | INV-15, INV-16 |
 
-## 五条一踩就静默坏的
+## Safety
 
-1. **INV-2**：分叉的宿主。症状是"预览好、桌面不对"或反过来。
-2. **INV-7**：错误通道和桥混在一起。症状是组件能靠伪造"错误"骗到宿主一次回话，或者每次加载弹一张错误卡。
-3. **INV-8**：权限是活快照。症状是撤了权限，已经开着的窗口还在用。
-4. **INV-11**：`reason` 省略。症状是用户的布局被静默删掉（真实发生过三次）。
-5. **INV-17**：`help` 与 `changelog` 与行为脱钩。症状是用户看到的说明是上一版的。
-
-## 另外三条不是不变量、但同样硬的
-
-- **落盘不用 `localStorage`**（这台机器上 WebView2 把它放内存，进程一退就没）。走 `state.json` / `widget-data/*.json`，临时文件 + 原子替换。
-- **`store.ts` 有 `hydrated` 闸门**：水合完成前不许写盘，否则默认空状态会盖到磁盘上。
-- **`sync_widget_windows` / `close_widget_windows` / `widget_close` 必须 `async fn`**：同步命令占着主线程等 `build()`，而 `build()` 要把建窗口投递回主线程——直接死锁。`assistant_window_*` 三个同理。
-
-## 收尾
-
-改完先跑 `verify` 这个 skill 的阶梯（`typecheck` + 对应断言页 + 纯逻辑壳子）。这条闸放行不等于验过。
+Do not copy invariant definitions into this Skill or treat this mapping as the complete rule. Follow `AGENTS.md` for permanent constraints and stop if an applicable rule or connected boundary cannot be established. This Skill identifies risks; it does not authorize scope changes or Git operations.
