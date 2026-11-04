@@ -226,7 +226,7 @@ npm run tauri:build  # NSIS 安装包 + 更新产物
 
 | 部分 | 行数 |
 | --- | --- |
-| TypeScript | 30 543 行 |
+| TypeScript | 30 912 行 |
 | CSS | 7 562 行 |
 | Rust | 34 096 行 |
 | SDK | 961 行 |
