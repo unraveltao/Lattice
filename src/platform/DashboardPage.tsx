@@ -92,7 +92,7 @@ export function DashboardPage({ onOpenSearch, onOpenAssistant }: DashboardPagePr
               <div><b>{t("No agent connection")}</b><small>{t("No live agents, tasks, or activity are available.")}</small></div>
             </div>
             <div className="lattice-dashboard-concepts">
-              <span>{t("Schedules")}</span><span>{t("Approvals")}</span><span>{t("Activity")}</span>
+              <span>{t("Schedules")}</span><span>{t("Approvals")}</span><span>{t("Agent Activity")}</span>
               <small>{t("Future concept")}</small>
             </div>
           </section>

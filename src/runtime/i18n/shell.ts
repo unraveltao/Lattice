@@ -42,7 +42,7 @@ export const SHELL_ZH: Record<string, string> = {
   "No live agents, tasks, or activity are available.": "当前没有已连接的 Agent、任务或活动。",
   Schedules: "计划",
   Approvals: "审批",
-  Activity: "活动",
+  "Agent Activity": "Agent 活动",
   "Future concept": "未来概念",
   // —— 顶栏：一句"要不要送到桌面" ——
   "Turn canvas widgets into real desktop windows; the main window will step aside":
