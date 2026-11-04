@@ -9,7 +9,12 @@ const SECTIONS = [
   { id: "agent-overview", title: "Agent Overview", icon: ICON.agent },
 ] as const;
 
-export function DashboardPage() {
+interface DashboardPageProps {
+  onOpenSearch: () => void;
+  onOpenAssistant: () => void;
+}
+
+export function DashboardPage({ onOpenSearch, onOpenAssistant }: DashboardPageProps) {
   const setActiveView = useLattice((state) => state.setActiveView);
   const t = useT();
 
@@ -37,14 +42,14 @@ export function DashboardPage() {
                 <span><b>{t("Open Workspace")}</b><small>{t("Arrange and manage widgets")}</small></span>
                 <Glyph d={ICON.chevron} />
               </button>
-              <button className="lattice-dashboard-action" type="button" disabled aria-describedby="dashboard-search-hint">
+              <button className="lattice-dashboard-action" type="button" onClick={onOpenSearch}>
                 <span className="lattice-dashboard-action-icon" aria-hidden="true"><Glyph d={ICON.search} /></span>
-                <span><b>{t("Global Search")}</b><small id="dashboard-search-hint">{t("Connects to Search in the next implementation slice.")}</small></span>
+                <span><b>{t("Global Search")}</b><small>{t("Search widgets and the catalogue.")}</small></span>
                 <kbd>Ctrl+Shift+F</kbd>
               </button>
-              <button className="lattice-dashboard-action" type="button" disabled aria-describedby="dashboard-assistant-hint">
+              <button className="lattice-dashboard-action" type="button" onClick={onOpenAssistant}>
                 <span className="lattice-dashboard-action-icon" aria-hidden="true"><Glyph d={ICON.agent} /></span>
-                <span><b>{t("Open Assistant")}</b><small id="dashboard-assistant-hint">{t("Connects to Assistant in the next implementation slice.")}</small></span>
+                <span><b>{t("Open Assistant")}</b><small>{t("Ask your assistant about your desktop.")}</small></span>
                 <kbd>Ctrl+K</kbd>
               </button>
             </div>

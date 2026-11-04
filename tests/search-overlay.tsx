@@ -21,6 +21,8 @@ import { SearchOverlay } from "../src/platform/SearchOverlay";
 import type { SearchTarget } from "../src/runtime/global-search";
 import { setLanguage } from "../src/runtime/i18n";
 
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
 const lines: string[] = [];
 const log = (pass: boolean, text: string) => lines.push((pass ? "PASS " : "FAIL ") + text);
 /*

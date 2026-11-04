@@ -1,29 +1,30 @@
-import { act } from "react";
+import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import "../src/styles.css";
-import { AppShell } from "../src/platform/AppShell";
-import { Canvas } from "../src/platform/Canvas";
-import { DashboardPage } from "../src/platform/DashboardPage";
-import { WorkspacePage } from "../src/platform/WorkspacePage";
+import App from "../src/App";
 import { useLattice } from "../src/platform/store";
 
-Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
+}
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const lines: string[] = [];
 const log = (pass: boolean, message: string) => lines.push(`${pass ? "PASS" : "FAIL"} ${message}`);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function pressShortcut(key: string, shiftKey = false) {
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, shiftKey, bubbles: true }));
+  });
+}
+
 async function run() {
   useLattice.setState({ sidebarExpanded: true });
   const root = createRoot(document.querySelector<HTMLDivElement>("#app")!);
   await act(async () => {
-    root.render(
-      <AppShell
-        topbar={null}
-        dashboard={<DashboardPage />}
-        workspace={<WorkspacePage libraryOpen inspectorOpen><Canvas records={new Map()} installedIds={new Set()} onDropWidget={() => {}} /></WorkspacePage>}
-      />,
-    );
+    root.render(createElement(App));
   });
   await act(async () => wait(30));
 
@@ -58,6 +59,37 @@ async function run() {
   const canvas = document.querySelector<HTMLElement>(".lattice-canvas");
   log(canvas !== null, "Canvas is mounted inside Workspace");
   const originalCanvas = canvas;
+
+  const quickAction = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>(".lattice-dashboard-actions button")]
+      .find((button) => button.querySelector("b")?.textContent?.trim() === label);
+  await act(async () => quickAction("Global Search")?.click());
+  log(document.querySelector(".lattice-search-overlay") !== null, "Dashboard Global Search opens the existing Search Overlay");
+  log(useLattice.getState().activeView === "dashboard", "Dashboard Global Search leaves the active page unchanged");
+  log(document.querySelector(".lattice-canvas") === originalCanvas, "Dashboard Global Search preserves the Canvas DOM instance");
+  await act(async () => document.querySelector<HTMLInputElement>(".lattice-search-field input")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  log(document.querySelector(".lattice-search-overlay") === null, "Escape closes the Search Overlay opened from Dashboard");
+
+  pressShortcut("f", true);
+  log(document.querySelector(".lattice-search-overlay") !== null, "Ctrl+Shift+F opens the existing Search Overlay");
+  log(useLattice.getState().activeView === "dashboard", "Ctrl+Shift+F leaves the active page unchanged");
+  log(document.querySelector(".lattice-canvas") === originalCanvas, "Ctrl+Shift+F preserves the Canvas DOM instance");
+  pressShortcut("f", true);
+  log(document.querySelector(".lattice-search-overlay") === null, "Ctrl+Shift+F closes the Search Overlay");
+
+  await act(async () => quickAction("Open Assistant")?.click());
+  log(document.querySelector(".lattice-assistant") !== null, "Dashboard Open Assistant opens the existing Assistant drawer");
+  log(useLattice.getState().activeView === "dashboard", "Dashboard Open Assistant leaves the active page unchanged");
+  log(document.querySelector(".lattice-canvas") === originalCanvas, "Dashboard Open Assistant preserves the Canvas DOM instance");
+  pressShortcut("k");
+  log(document.querySelector(".lattice-assistant") === null, "Ctrl+K closes the Assistant drawer");
+
+  pressShortcut("k");
+  log(document.querySelector(".lattice-assistant") !== null, "Ctrl+K opens the existing Assistant drawer");
+  log(useLattice.getState().activeView === "dashboard", "Ctrl+K leaves the active page unchanged");
+  log(document.querySelector(".lattice-canvas") === originalCanvas, "Ctrl+K preserves the Canvas DOM instance");
+  pressShortcut("k");
+  log(document.querySelector(".lattice-assistant") === null, "Ctrl+K closes the Assistant drawer after reopening it");
 
   const openWorkspaceAction = dashboardCards[0]?.querySelector<HTMLButtonElement>(".lattice-dashboard-action");
   await act(async () => openWorkspaceAction?.click());
