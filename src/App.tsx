@@ -1093,7 +1093,7 @@ export default function App() {
    */
   return (
     <AppShell
-      dashboard={<DashboardPage />}
+      dashboard={<DashboardPage onOpenSearch={toggleSearchShortcut} onOpenAssistant={toggleAssistant} />}
       topbar={<Topbar
         libraryOpen={libraryOpen}
         onToggleLibrary={() => {
