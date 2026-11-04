@@ -1,0 +1,34 @@
+flowchart LR
+  subgraph state[未来方案：pet-state.json v2；不属于 P0.4 基础阶段]
+    character[characterId]
+    skin[skinId]
+    voice[voiceId - 仅偏好；TTS 待决]
+    personality[personalityId]
+    placement[hidden / 显示器位置 / scale]
+  end
+  v1[现有 pet-state.json v1：skinId、hidden、rect、scale]
+  mapping[校验过的 v1 skin 到 character 映射表]
+  v2[校验后的 v2 状态；保留 hidden 与 scale]
+  v1 --> mapping --> v2
+  character --> v2
+  skin --> v2
+  voice --> v2
+  personality --> v2
+  placement --> v2
+  missing[未知 ID、不兼容 Skin 或素材缺失]
+  placeholder[通用缺失素材占位；保留原 ID；不执行第三方代码]
+  invalidVoice[无效 voiceId -> 禁用语音输出]
+  invalidPersonality[无效 personalityId -> 默认性格]
+  missing --> placeholder
+  voice --> invalidVoice
+  personality --> invalidPersonality
+  session[(Assistant 会话文件 - 独立归属)]
+  task[(Agent Runtime 任务状态 - 独立归属)]
+  character -. 不重置 .- session
+  skin -. 不重置 .- session
+  voice -. 不重置 .- session
+  personality -. 不重置 .- session
+  character -. 不重置 .- task
+  skin -. 不重置 .- task
+  voice -. 不重置 .- task
+  personality -. 不重置 .- task

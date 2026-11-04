@@ -26,6 +26,7 @@
     { "path": "docs/reference/state.md", "layers": ["now"] },
     { "path": "docs/reference/verify.md", "layers": ["now"] },
     { "path": "docs/reference/maturity.md", "layers": ["now"] },
+    { "path": "docs/reference/desktop-pet-architecture.md", "layers": ["now"] },
     { "path": "docs/design/README.md", "layers": ["now"] },
     { "path": "design/logo/README.md", "layers": ["now"] },
     { "path": "examples/counter/README.md", "layers": ["now"] },

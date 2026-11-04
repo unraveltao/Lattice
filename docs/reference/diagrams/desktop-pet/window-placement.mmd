@@ -1,0 +1,28 @@
+flowchart TD
+  pet[Pet 当前物理矩形]
+  monitor[按 Pet 中心匹配当前可用显示器]
+
+  work[读取 Tauri Monitor.work_area：物理像素]
+  scale[读取当前显示器缩放比例 s]
+  convert[运行时转换：物理像素 = work_area.origin + round(DIP × s)；不持久化 Monitor.name]
+  left{Quick Chat 能放在桌宠左侧？}
+  right{左侧不够时，右侧能放下？}
+  vertical{两侧都不够时，上方或下方能放下？}
+  clamp[夹入同一工作区；桌宠位置保持不变]
+  compact[缩小面板并滚动消息区；标题、输入框、关闭入口保持可见]
+  full[紧凑面板仍放不下控件时，打开完整 Assistant；保留会话与桌宠位置]
+  show[显示窗口，不裁切必要控件]
+
+  pet --> monitor
+
+  monitor --> work
+  work --> scale --> convert --> left
+  left -->|是 - 左侧优先| clamp
+  left -->|否| right
+  right -->|是 - 翻转到右侧| clamp
+  right -->|否| vertical
+  vertical -->|是 - 选择空间较大的一侧| clamp
+  vertical -->|否| compact
+  clamp --> show
+  compact -->|可容纳| show
+  compact -->|仍无法容纳交互控件| full --> show

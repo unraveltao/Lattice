@@ -305,3 +305,18 @@ label 固定 `pet`，不走 runner、不查桥权限、不进 placement。
 4. 换素材演练（**这条是这份设计的核心验收**）：把 `pets/whale/` 复制成 `pets/test/`，
    改 `pet.json` 的 `id`/`name`、换两张 PNG，重启后能选中并正常显示 —— **全程不碰任何构建脚本、不改一行代码**。
 5. `git ls-files public/widgets/lattice.pet | grep -c png` = 0。
+
+## 8. P0.4 架构审查补充（2026-11-05）
+
+本节标注源码现状与待决边界，不改变 front matter 中的 `status: draft`，也不批准 LAT-0041。当前架构细节见[桌宠架构参考](../reference/desktop-pet-architecture.md)。
+
+| 事项 | 状态 |
+| --- | --- |
+| 桌宠为平台原生窗口，不是普通 Widget | 当前实现已确认。 |
+| Quick Chat 复用 AssistantPanel；Agent 任务和 Approval 复用现有 Runtime 与授权判据 | 当前实现已确认。 |
+| Pet 姿态来自唯一 Presence 服务 | 当前实现已确认，桌宠呈现 Presence 快照 / 事件。 |
+| Skin 资源不执行第三方代码 | 已确认的设计边界。 |
+| Quick Chat 围绕 Pet 定位且不移动 Pet | 已批准方向；运行时使用当前显示器信息，不持久化 `Monitor.name`。 |
+| Agent 六状态任务模型 | 未来概念方案；P0.4 不建设持久化任务系统，授权拒绝不等于 Task Cancelled。 |
+| Character / Skin / Voice / Personality 独立配置 | 目标架构已批准；PetState v2 与迁移仅属未来方案，不纳入 P0.4。 |
+| Dictation 与 TTS | Dictation 已实现；TTS 是独立待决能力，不属于 P0.4 已实现或基础依赖。 |

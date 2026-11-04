@@ -1,0 +1,31 @@
+flowchart LR
+  pet[桌宠原生窗口]
+  petApi[原生 Pet 命令]
+  skin[纯数据 Skin 资源]
+  presence[Pet Presence 服务 - 姿态唯一来源]
+  assistant[Assistant 窗口]
+  panel[AssistantPanel / Quick Chat]
+  sessions[持久化会话]
+  runtime[现有 Assistant / Agent Runtime]
+  approval[approvalFor 授权判据]
+  dictation[用户主动触发的 Dictation]
+  voice[独立 Voice 偏好]
+  tts[TTS 能力 - 待决，不属于 P0.4 基础能力]
+  studio[Character Studio - 计划中]
+
+  pet -->|点击 / 桌宠动作| petApi
+  petApi -->|打开或关闭| assistant
+  petApi -->|读取描述符与素材| skin
+  panel -->|报告姿态| presence
+  presence -->|lattice:presence + 快照| pet
+  assistant -->|呈现| panel
+  panel -->|读取与保存消息| sessions
+  panel -->|聊天 / Agent 轮次| runtime
+  runtime -->|高风险操作授权判定| approval
+  approval -->|ask / allow / deny| panel
+  dictation -->|明确启动后返回转录文字| panel
+  voice -.->|未来的偏好选择| tts
+  panel -.->|未来的语音输出| tts
+  studio -.->|选择独立配置维度 - 计划中| petApi
+  studio -.->|不重置| sessions
+  studio -.->|不重置| runtime

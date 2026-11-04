@@ -24,6 +24,7 @@
 | **现在** | 组件作者必须遵守什么 | [`WIDGET_SPEC.md`](./WIDGET_SPEC.md) | 写组件的人 |
 | **现在** | 改平台代码不许碰什么 | [`../AGENTS.md`](../AGENTS.md) 第 4 节（一行一条，带 `INV-n`）+ [`INVARIANTS.md`](./INVARIANTS.md)（同一批的全文：边界、例外、破了会怎样） | 改平台的人，人或 agent |
 | **现在** | 查一下就好：文件在哪 / 改一块代码的配方 / 某件事做到哪一步 / 状态与 schema / 改一块怎么验 / agent 接入 / 签名 / 素材 / 邻仓 / 构建发版 | [`reference/structure.md`](./reference/structure.md)、[`reference/recipes.md`](./reference/recipes.md)、[`reference/known-gaps.md`](./reference/known-gaps.md)、[`reference/state.md`](./reference/state.md)、[`reference/verify.md`](./reference/verify.md)、`AGENT_ACCESS.md`、`CODE_SIGNING.md`、`PET_REFERENCE.md`、`VELA-REUSE.md`、[`reference/build.md`](./reference/build.md) | 碰到那一块的时候 |
+| **现在** | 桌宠当前架构与 P0.4 决策边界 | [`reference/desktop-pet-architecture.md`](./reference/desktop-pet-architecture.md) | 规划桌宠集成、核对 LAT-0041 决策状态的人 |
 | **未来** | 下一版做什么、还没做的事怎么想 | [`ROADMAP.md`](./ROADMAP.md) 待办 + [`design/`](./design/)（`draft`） | 要开一件新事的人 |
 
 「现在」这一层分四块：`GLOSSARY` 是**前提**（词先定，别的才谈得上），`WIDGET_SPEC` / `AGENTS` 是**契约**（不遵守就出错），`maturity` 是**结论**（现在能不能用，一个面一个词，四个词之外不许有形容词），其余是**参考**（查一下，不构成约束）。契约只有两份，别再加第三份 —— **不变量在 `AGENTS`（一行一条）与 `INVARIANTS.md`（同一批的全文）里是同一份契约的两层，不是两份**：改规则改 `AGENTS`，补边界补 `INVARIANTS.md`，别在两处各写一句。

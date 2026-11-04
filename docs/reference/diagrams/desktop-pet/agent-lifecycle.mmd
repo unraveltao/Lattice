@@ -1,0 +1,56 @@
+flowchart LR
+  title[未来概念模型：六种任务展示状态；非 P0.4 持久任务系统]
+  subgraph runtime[未来方案：Agent Task 执行状态]
+    queued[Queued - 队列接受事件；当前基线没有队列调度器]
+    running[Running - 执行器启动事件]
+    completed[Completed - 执行器成功结果]
+    failed[Failed - 执行器错误结果]
+    cancelled[Cancelled - 仅显式用户 / Runtime 取消事件]
+    queued -->|执行器启动| running
+    running -->|执行器报告成功| completed
+    running -->|执行器报告错误| failed
+    queued -->|显式取消事件| cancelled
+    running -->|显式取消事件| cancelled
+  end
+  subgraph gate[授权决定 - 与任务结果分开]
+    pending[授权请求待处理]
+    allowed[用户允许此操作]
+    denied[用户拒绝此操作]
+    denialResult[拒绝结果返回 Agent 轮次]
+    nextResult[Agent 轮次继续；执行器随后报告真实结果]
+    pending -->|用户确认| allowed
+    pending -->|用户拒绝| denied --> denialResult --> nextResult
+    allowed -->|允许操作结果| nextResult
+  end
+  subgraph display[未来方案：任务卡片展示状态]
+    queuedView[Queued]
+    runningView[Running]
+    waitingView[Awaiting Approval - 任务仍在执行]
+    completedView[Completed]
+    failedView[Failed]
+    cancelledView[Cancelled]
+  end
+  queued -. 未来方案：队列事件 .-> queuedView
+  running -. 未来方案：执行器事件 .-> runningView
+  pending -. 待处理授权请求（展示覆盖）.-> waitingView
+  completed -. 未来方案：执行器结果 .-> completedView
+  failed -. 未来方案：执行器结果 .-> failedView
+  cancelled -. 未来方案：显式任务取消事件 .-> cancelledView
+  nextResult -. 未来方案：轮次成功可映射为展示完成 .-> completedView
+  nextResult -. 未来方案：轮次失败可映射为展示失败 .-> failedView
+  subgraph presence[Pet Presence 姿态映射]
+    idle[Idle]
+    working[Working]
+    waiting[Waiting]
+    done[Done - 短暂姿态]
+    error[Error - 短暂姿态]
+  end
+  queuedView -. 经 presence_report 映射 .-> idle
+  runningView -. 经 presence_report 映射 .-> working
+  waitingView -. 经 presence_report 映射 .-> waiting
+  completedView -. 经 presence_report 映射 .-> done
+  failedView -. 经 presence_report 映射 .-> error
+  cancelledView -. 经 presence_report 映射 .-> idle
+  done -. 平台超时回落 .-> idle
+  error -. 平台超时回落 .-> idle
+  presence -->|lattice:presence 快照| pet[桌宠只呈现姿态，不推断任务状态]
