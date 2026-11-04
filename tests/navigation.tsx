@@ -28,9 +28,41 @@ async function run() {
   await act(async () => wait(30));
 
   log(useLattice.getState().activeView === "dashboard", "new session opens Dashboard by default");
+  const dashboardCards = [...document.querySelectorAll<HTMLElement>(".lattice-dashboard-card")];
+  log(dashboardCards.length === 4, "Dashboard renders all four P0.2 sections");
+  log(
+    dashboardCards.map((card) => card.querySelector("h2")?.textContent?.trim()).join("|") ===
+      "Quick Actions|My Widgets|Recent Projects|Agent Overview",
+    "Dashboard section order matches the frozen design",
+  );
+  const dashboardGrid = document.querySelector<HTMLElement>(".lattice-dashboard-grid");
+  const gridCards = dashboardGrid
+    ? [...dashboardGrid.querySelectorAll<HTMLElement>(".lattice-dashboard-card")]
+    : [];
+  const firstCard = gridCards[0]?.getBoundingClientRect();
+  const secondCard = gridCards[1]?.getBoundingClientRect();
+  const renderedTwoColumns = Boolean(firstCard && secondCard && Math.abs(firstCard.top - secondCard.top) < 1);
+  log(
+    renderedTwoColumns === (window.innerWidth > 760),
+    "Dashboard column count matches the narrow breakpoint at the actual browser viewport",
+  );
+  log(
+    !document.querySelector(".lattice-dashboard")?.textContent?.includes("SAMPLE DATA") &&
+      document.querySelector(".lattice-dashboard-card[aria-labelledby='dashboard-recent-projects']")?.textContent?.includes("No project data source is connected."),
+    "Dashboard does not present sample widget or project records as real data",
+  );
+  log(
+    document.querySelector(".lattice-dashboard-card[aria-labelledby='dashboard-agent-overview']")?.textContent?.includes("DEMO · NOT CONNECTED"),
+    "Agent section is explicitly marked demo and not connected",
+  );
   const canvas = document.querySelector<HTMLElement>(".lattice-canvas");
   log(canvas !== null, "Canvas is mounted inside Workspace");
   const originalCanvas = canvas;
+
+  const openWorkspaceAction = dashboardCards[0]?.querySelector<HTMLButtonElement>(".lattice-dashboard-action");
+  await act(async () => openWorkspaceAction?.click());
+  log(useLattice.getState().activeView === "workspace", "Dashboard Open Workspace action navigates to Workspace");
+  log(document.querySelector(".lattice-canvas") === originalCanvas, "Dashboard Open Workspace action preserves the Canvas DOM instance");
 
   await act(async () => {
     [...document.querySelectorAll<HTMLButtonElement>(".lattice-nav-item")]
