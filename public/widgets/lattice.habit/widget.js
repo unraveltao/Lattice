@@ -572,7 +572,7 @@
 
   // 每分钟问一次"今天变了吗"。用时间轴而不是 `setInterval`：窗口不可见时
   // 整条时间轴停摆，回来只补一拍 —— 那一拍照样会认出新的今天（不变量 10）
-  call("schedule.every", { every: 60000 }).catch(function () {});
+  call("schedule.every", { every: 60000, workspaceVisibleOnly: true }).catch(function () {});
 
   call("storage.get", { key: "habits" })
     .then(function (value) {

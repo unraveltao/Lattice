@@ -115,6 +115,7 @@ export interface DesktopRect {
 }
 
 export type ThemeMode = "light" | "dark" | "system";
+export type AppView = "dashboard" | "workspace";
 
 /**
  * 目录源的形状住在 `runtime/catalogue.ts`（0010）：那一侧要拿它做合并的纯逻辑，
@@ -216,6 +217,8 @@ export interface Profile {
 }
 
 interface LatticeState {
+  activeView: AppView;
+  sidebarExpanded: boolean;
   placements: Placement[];
   /**
    * 已启用的组件包 id。
@@ -364,6 +367,8 @@ interface LatticeState {
   permissionReviews: Record<string, PermissionReview>;
 
   setPanelOpen: (panel: "library" | "inspector", open: boolean) => void;
+  setActiveView: (view: AppView) => void;
+  setSidebarExpanded: (expanded: boolean) => void;
 
   addPlacement: (placement: Placement) => void;
   /**
@@ -613,6 +618,8 @@ export function migrateState(persisted: unknown, version: number): Record<string
 export const useLattice = create<LatticeState>()(
   persist(
     (set) => ({
+      activeView: "dashboard",
+      sidebarExpanded: true,
       placements: [],
       installedIds: [],
       grants: {},
@@ -640,6 +647,8 @@ export const useLattice = create<LatticeState>()(
 
       setPanelOpen: (panel, open) =>
         set(panel === "library" ? { libraryOpen: open } : { inspectorOpen: open }),
+      setActiveView: (activeView) => set({ activeView }),
+      setSidebarExpanded: (sidebarExpanded) => set({ sidebarExpanded }),
 
       addPlacement: (placement) =>
         set((state) => ({
@@ -1023,6 +1032,7 @@ export const useLattice = create<LatticeState>()(
         ratings: state.ratings,
         permissionReviews: state.permissionReviews,
         trash: state.trash,
+        sidebarExpanded: state.sidebarExpanded,
       }),
     },
   ),

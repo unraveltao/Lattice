@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Navigation and Workspace lifecycle</title>
+    <style>
+      html, body, #app { width: 100%; height: 100%; margin: 0; }
+      #out { position: fixed; z-index: 100; top: 0; left: 0; margin: 0; font: 11px monospace; }
+    </style>
+  </head>
+  <body>
+    <pre id="out">running…</pre>
+    <div id="app"></div>
+    <script type="module" src="/tests/navigation.tsx"></script>
+  </body>
+</html>

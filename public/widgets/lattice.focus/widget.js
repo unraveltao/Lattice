@@ -433,7 +433,7 @@
     var wanted = goalOf(config) > 0;
 
     if (wanted && !goalTickId) {
-      call("schedule.every", { every: 60000 })
+      call("schedule.every", { every: 60000, workspaceVisibleOnly: true })
         .then(function (grant) {
           goalTickId = grant.id;
           // 回来的时候目标可能已经被关掉了

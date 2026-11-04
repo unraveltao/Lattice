@@ -1,7 +1,7 @@
 ---
 name: writing-for-agents
-description: 在这个仓库里写文档的工序——读者是下一个 agent，不是翻网页的人：先定它该不该是文档、再找它现在的家、按判据写、最后让 check:docs 对账。
-whenToUse: 要新增或改写 docs/ 下任何一份、AGENTS.md 的一节、GLOSSARY 的一条、一份 SKILL.md，或者写下一条会被人当依据的坑 / 注释 / 提交说明之前。
+description: Lattice 项目专用的文档维护流程。用于在本仓库新建或大幅修改正式文档、AGENTS.md、GLOSSARY.md 或项目 Skill，并遵循文档归属、英文优先和 check:docs 规范。
+whenToUse: 在 Lattice 仓库中新增或大幅修改 docs/、AGENTS.md、GLOSSARY.md 或项目 Skill，或调整项目文档职责与语言规范时。
 ---
 
 # 给 agent 写文档
@@ -89,12 +89,13 @@ npm run check:docs
 
 ## 7. 语言
 
-`AGENTS.md`、`docs/**`、`GLOSSARY.md` 一律中文；根 `README.md` 英文、`README.zh-CN.md` 中文，**两份是同一份东西，改一份就得改另一份**；`docs/` 不做全量翻译（[语言分工表](../../../docs/README.md)）。
+写新文档或大幅修改现有文档时，按 [`docs/README.md` 的语言分工](../../../docs/README.md) 执行：正式文档默认英文；已有中文历史文档保持原状，不批量翻译；`README.md` 是英文权威版本，`README.zh-CN.md` 与之保持一致。
 
-文风只对**新写和重写**的文档执行，不回头批量改旧文档 —— 那种 diff 会淹掉真正的改动。
+术语、API 名称和代码标识符以 `GLOSSARY.md` 与实际源码为准。功能状态、事实归属和禁止虚构实现以 [`AGENTS.md` 的文档维护规则](../../../AGENTS.md) 为准；本 Skill 不重复维护这些事实。文风只对**新写和重写**的文档执行，不回头批量改旧文档。
 
 ## 8. 收尾
 
 - `npm run check:docs` 绿。
+- Git 暂存、提交和推送遵循 [`AGENTS.md` 第 12 节](../../../AGENTS.md) 与当前用户的明确授权；本 Skill 本身不构成执行这些操作的授权。
 - 提交说明写 `docs(...)` 或 `feat(...)`，正文写**为什么**和判据，不写"我改了 A、B、C"的流水账。
 - **只 `git add` 你改的那几个文件。**`git add -A` / `git stash` / `git reset --hard` 一律禁用（会静默吃掉别人的活）。

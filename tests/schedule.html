@@ -29,7 +29,8 @@
        *   2. 订阅上限（一个组件最多 8 条）
        *   3. 心跳真的按间隔到、clear 之后不再来
        *   4. 页面藏起来 / 窗口最小化都停摆（后者是桌面端唯一能用的信号）
-       *   5. `system.metrics` 必须被 `system:monitor` 挡住
+       *   5. Workspace 页面活跃状态只暂停主动选择的刷新，旧订阅和后台任务继续
+       *   6. `system.metrics` 必须被 `system:monitor` 挡住
        *
        * 时间相关的断言全部用真实 setTimeout —— headless 的虚拟时间会把它们
        * 快进，所以整页跑完只要几百毫秒。
@@ -137,7 +138,35 @@
         scheduler.reset();
       }
 
-      // ---- 5. 窗口被最小化也停摆 ----
+      // ---- 5. Workspace 页面状态与窗口状态分离，旧订阅向后兼容 ----
+      {
+        const foreground = [];
+        const background = [];
+        const scheduler = createScheduler((message) => {
+          (message.payload.id === visual.id ? foreground : background).push(message.payload.at);
+        });
+        const visual = scheduler.every(250, { workspaceVisibleOnly: true });
+        const legacy = scheduler.every(250);
+        await sleep(300);
+        const beforeForeground = foreground.length;
+        const beforeBackground = background.length;
+        log(beforeForeground >= 1 && beforeBackground >= 1, "切页前新策略与旧订阅都在运行");
+
+        scheduler.setWorkspaceVisible(false);
+        const hiddenForeground = foreground.length;
+        await sleep(600);
+        log(foreground.length === hiddenForeground, "Workspace 隐藏后可视刷新暂停");
+        log(background.length >= beforeBackground + 2, "旧 schedule.every 后台心跳保持原行为");
+
+        scheduler.setWorkspaceVisible(true);
+        await sleep(120);
+        log(foreground.length === hiddenForeground + 1, "返回 Workspace 后只补一拍并恢复刷新");
+        scheduler.clear(visual.id);
+        scheduler.clear(legacy.id);
+        scheduler.reset();
+      }
+
+      // ---- 6. 窗口被最小化也停摆 ----
       {
         /*
          * 这一条对应真机上的一个坑：主窗口最小化之后 `document.visibilityState`
@@ -163,7 +192,7 @@
         scheduler.reset();
       }
 
-      // ---- 6. 可见性订阅：组件自己的帧循环靠这条停役 ----
+      // ---- 7. 可见性订阅：组件自己的帧循环靠这条停役 ----
       {
         /*
          * `schedule` 停的只是它自己的定时器。组件里那条 `requestAnimationFrame`
@@ -196,18 +225,25 @@
         log(seen.length === afterUnsubscribe, `退订之后不再推（仍然 ${seen.length} 次）`);
       }
 
-      // ---- 7. 桥：参数校验与权限 ----
+      // ---- 8. 桥：参数校验与权限 ----
       {
         const scheduler = createScheduler(() => {});
 
         const ok = await ask(scheduler, "schedule.every", { every: 10 });
         log(ok.ok === true && ok.result.every === MIN_INTERVAL, `桥上 10ms 也被夹到 ${ok.result?.every}ms`);
 
+        const scoped = await ask(scheduler, "schedule.every", { every: 250, workspaceVisibleOnly: true });
+        log(scoped.ok === true && scheduler.count() === 2, "桥接受可选的 Workspace 可见刷新策略");
+
         const bad = await ask(scheduler, "schedule.every", { every: "soon" });
         log(bad.ok === false && bad.code === "bad_params", `非数字间隔被拒（${bad.code}）`);
 
+        const badPolicy = await ask(scheduler, "schedule.every", { every: 250, workspaceVisibleOnly: "sometimes" });
+        log(badPolicy.ok === false && badPolicy.code === "bad_params", "未知策略形状被拒绝而不是静默执行");
+
         const cleared = await ask(scheduler, "schedule.clear", { id: ok.result.id });
-        log(cleared.ok === true && scheduler.count() === 0, "schedule.clear 释放了订阅");
+        await ask(scheduler, "schedule.clear", { id: scoped.result.id });
+        log(cleared.ok === true && scheduler.count() === 0, "schedule.clear 释放了旧订阅与 Workspace 可见订阅");
 
         const denied = await ask(scheduler, "system.metrics", {});
         log(

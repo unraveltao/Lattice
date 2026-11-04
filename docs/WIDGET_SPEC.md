@@ -842,7 +842,7 @@ parent.postMessage(
 | `clipboard.write` | `clipboard:write` | `{ text }` | `{ ok: true }` |
 | `system.metrics` | `system:monitor` | — | `{ cpu, memory, disk, network, system, sampledAt }`，见 4.2 |
 | `power.status` | `system:monitor` | — | `{ ac, percent, charging, noBattery, critical, saver, minutesLeft }`，没有电池的机器照样回（`noBattery: true`），见 §4.3。**和 `system.metrics` 仍是两条**：合的是卡片，不是每次要搬的字节 |
-| `schedule.every` | — | `{ every }` | `{ id, every }`；`every` 会被夹到 250ms–24h，订阅满 8 条返回 `bad_params` |
+| `schedule.every` | — | `{ every, workspaceVisibleOnly? }` | `{ id, every }`；`every` 会被夹到 250ms–24h，订阅满 8 条返回 `bad_params`。`workspaceVisibleOnly: true` 只在主窗口 Workspace 活跃时触发；省略该字段保持旧行为 |
 | `schedule.clear` | — | `{ id }` | `{ ok: true }` |
 | `config.get` | — | — | 这个实例的配置，已按清单 schema 合并出厂值，见 §2.3 |
 | `theme.get` | — | — | CSS 变量字典，见下 |
@@ -883,12 +883,19 @@ parent.postMessage(
 ```js
 const grant = await call("schedule.every", { every: 1000 });   // { id, every }
 
+// 仅用于可视刷新；Workspace 隐藏时暂停，返回时只刷新一拍并从此刻重置周期
+const visual = await call("schedule.every", { every: 1000, workspaceVisibleOnly: true });
+
 // 收到 tick 时刷新。一条时间轴上可能挂着好几条心跳，认准自己那一条
 if (data.type === "tick" && data.payload.id === grant.id) refresh();
 
 // 组件自己不再需要时（比如切成静态视图）
 await call("schedule.clear", { id: grant.id });
 ```
+
+`workspaceVisibleOnly` 是显式 opt-in。它只用于纯可视刷新：隐藏期间暂停，返回 Workspace 时立即触发一拍，随后从恢复时刻重新开始完整间隔，不补发隐藏期间累积的 tick。显示时钟或倒计时必须从当前时间或持久的起止时间重算，不能通过累计 tick 推进时间。
+
+省略该选项的旧组件和后台任务不受 Dashboard / Workspace 页面切换影响，仍遵守原有的整个窗口 / 文档可见性规则。迁移旧调用前必须先确认它只是可视刷新；Agent 执行、自动化、到期处理及其他必须持续推进的工作不得标成可视刷新。`workspace-visible` 推送只表示主窗口 Workspace 页面是否活跃，适合暂停纯视觉动画；它不等同于 Tauri 窗口可见性，也不应用来取消后台工作。独立桌面 Widget 不受主窗口页面切换影响。
 
 为什么不是 `setInterval`：平台把**一个组件实例的所有心跳收进一条时间轴**，一次只有一个计时器在飞（永远取最近的到期时刻）。窗口被最小化 / 收起时整条时间轴停摆，用户看不见的东西不烧电；回来只补一拍，不会补一串。
 
@@ -953,6 +960,7 @@ await call("schedule.clear", { id: grant.id });
 | `{ __lattice: 1, type: "language", payload }` | 界面语言切换、组件加载完成 | `{ lang: "zh" \| "en", locale }`，见下 |
 | `{ __lattice: 1, type: "tick", payload }` | `schedule.every` 到期 | `{ id, at }`，`id` 就是订阅号 |
 | `{ __lattice: 1, type: "visible", payload }` | 窗口被最小化 / 收起 / 整个盖住，再露出来，以及加载完成 | `{ visible: boolean }`。**自己开 `requestAnimationFrame` 的组件必须处理它**，见下 |
+| `{ __lattice: 1, type: "workspace-visible", payload }` | 主窗口切换 Dashboard / Workspace，以及组件加载完成 | `{ visible: boolean }`。只影响画布组件；独立桌面窗口不受页面切换影响 |
 | `{ __lattice: 1, type: "store-changed", payload }` | 本组件的私有存储被**任意**实例写入了 | `{ key }`，`key` 为空串表示整份文件被替换 |
 | `{ __lattice: 1, type: "config-changed", payload }` | 这个实例的配置被改了（属性面板） | `{ config }`，完整对象，见 §2.3 |
 | `{ __lattice: 1, type: "agent-call", payload }` | agent / assistant 调了你声明的工具 | `{ callId, tool, args }`；**必须**回一条 `agent-result` 带上同一个 `callId`，见 §3.6 |

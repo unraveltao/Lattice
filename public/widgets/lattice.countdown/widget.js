@@ -241,7 +241,7 @@
     })
     .then(function () {
       render();
-      return call("schedule.every", { every: 1000 });
+      return call("schedule.every", { every: 1000, workspaceVisibleOnly: true });
     })
     .then(function (grant) {
       tickId = grant && typeof grant.id === "number" ? grant.id : 0;

@@ -1,4 +1,4 @@
-<!-- 改这一份就改 README.md。两份逐节对齐，check:docs 只校验数字，结构靠人守。 -->
+<!-- README.md is authoritative. Keep this Chinese translation aligned with it. -->
 
 <div align="center">
 
@@ -185,7 +185,7 @@ npm run tauri:build  # NSIS 安装包 + 更新产物
 
 每个面只有四种状态之一：**已实现**、**未验证**（代码和断言都在，只是没人在真机上走过）、**实验中**、**计划中**。哪个是哪个、真机上验到哪一步，一个面一行：[功能成熟度](./docs/reference/maturity.md)。今天没有"实验中"的东西；下一个里程碑不加功能，它专门用来还这笔验收债。
 
-三个数，三种意思，永远不是同一个数：源码是 `0.4.0`（下一次构建会这么叫自己），能下载到的最新一版是 [`v0.1.3`](https://github.com/unraveltao/Lattice/releases/latest)，`v0.13` 是里程碑标签、不会出现在安装包里。最新的里程碑是 v0.13：assistant 有了自己的桌面小窗。代码已经落地，还差一次真机验收，前面那四个"进行中"也卡在同一处。
+三个数，三种意思，永远不是同一个数：源码是 `0.4.0`（下一次构建会这么叫自己），最新可下载版本请查看 [GitHub Releases](https://github.com/unraveltao/Lattice/releases)，`v0.13` 是里程碑标签、不会出现在安装包里。最新的里程碑是 v0.13：assistant 有了自己的桌面小窗。代码已经落地，还差一次真机验收，前面那四个"进行中"也卡在同一处。
 
 <details>
 <summary>每个版本加了什么</summary>
@@ -216,7 +216,7 @@ npm run tauri:build  # NSIS 安装包 + 更新产物
 | 官方组件 | 24 |
 | 权限 | 15 |
 | Tauri 命令 | 128 |
-| 浏览器断言 | 87 页 4 483 条 |
+| 浏览器断言 | 88 页 4 502 条 |
 | Rust 单测 | 618 |
 | 记下来的坑 | 133 |
 
@@ -227,7 +227,7 @@ npm run tauri:build  # NSIS 安装包 + 更新产物
 | 部分 | 行数 |
 | --- | --- |
 | TypeScript | 30 543 行 |
-| CSS | 7 479 行 |
+| CSS | 7 562 行 |
 | Rust | 34 096 行 |
 | SDK | 961 行 |
 | 官方组件 + 示例 | 36 734 行 |

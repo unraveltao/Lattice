@@ -60,11 +60,17 @@
       let plan = () => null;
       let callbackSeq = 0;
       const callbacks = new Map();
+      const eventListeners = new Map();
+      const unregisteredListeners = [];
       window.__TAURI_INTERNALS__ = {
         invoke: async (command, args) => {
           calls.push({ command, args });
           // 事件注册走插件命令，回一个 id 就够了
-          if (command === "plugin:event|listen") return ++callbackSeq;
+          if (command === "plugin:event|listen") {
+            const id = ++callbackSeq;
+            eventListeners.set(id, { event: args.event, handler: args.handler });
+            return id;
+          }
           if (command === "plugin:event|unlisten") return null;
           return plan(command, args);
         },
@@ -74,6 +80,12 @@
           return id;
         },
         unregisterCallback: (id) => callbacks.delete(id),
+      };
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener: (event, id) => {
+          unregisteredListeners.push({ event, id });
+          eventListeners.delete(id);
+        },
       };
 
       const reset = (next) => {
@@ -162,6 +174,13 @@
       );
       const handler = callbacks.get(listenCall?.args?.handler);
       stopListening();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const unlistenCall = calls.find((call) => call.command === "plugin:event|unlisten");
+      log(
+        unregisteredListeners.some((entry) => entry.event === "lattice:dictation" && entry.id === unlistenCall?.args?.eventId) &&
+          Boolean(unlistenCall),
+        "注销同时清理 Event Plugin listener 并调用 unlisten",
+      );
 
       // --- 11–18. 事件 → 面板该做什么（纯函数）------------------------------
       const listening = reduceDictation(IDLE_DICTATION, { phase: "listening", target: "panel" });

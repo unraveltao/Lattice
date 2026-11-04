@@ -220,13 +220,22 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 ## 10. 代码风格
 
 - **注释解释"为什么"，不解释"是什么"**。这个仓库的注释密度偏高，是刻意的：每个不直观的决定旁边都写了代价。改逻辑时同步改注释，过期的注释比没有注释更糟。
-- **UI 文案一律英文**：界面、按钮、提示、错误信息、组件内容都算。代码注释用中文，文档用中文。
-  README 分两版（`README.md` 英文、`README.zh-CN.md` 中文），`docs/` 只有中文。
+- **UI 文案一律英文**：界面、按钮、提示、错误信息、组件内容都算。代码注释用中文。
+  文档语言遵循下方“文档维护”和 [`docs/README.md`](./docs/README.md) 的分工：新建或大幅修改的正式文档默认英文，已有中文历史文档保留，不批量翻译。
   加新文案时别在中文里混英文，也别为了"亲切"把按钮写成中文——这条是被明确要求过的。
 - 不引 Tailwind、不引 UI 库。平台 UI 用 CSS 变量 + 语义类；组件只认 `--lattice-*` 变量。
 - 组件不需要构建步骤。**保持这一点**——"会写 HTML 就能写组件"是这个项目的门槛承诺。
 - Rust 侧不 panic 到用户面前：命令返回 `Result<_, String>`，层级失败只 `eprintln!` 不中断同步。
 - 新增交互前先问：这是平台该做的，还是组件该做的？窗饰（拖动/缩放/别针/收回）全部由宿主画，组件不参与。
+
+### 文档维护
+
+- 改功能时先查 `docs/README.md`、对应规范和参考文档；行为、状态格式或边界变了，就在同一改动里更新真正拥有这条事实的文档。不要复制桥签名、命令表或状态字段清单到第二个地方。
+- 新增正式文档或大幅重写文档时，正文默认用英文；已有中文文档和历史记录继续保留，不做批量翻译。已有中英文成对文档以英文为准，中文版本必须与其内容一致。术语、API 名称和代码标识符按 `GLOSSARY.md` 与源码统一。
+- 描述功能时明确区分 `Implemented`、`In Progress`、`Planned`，并以源码、测试和 [`reference/maturity.md`](./docs/reference/maturity.md) 为依据；尚无实现或真实数据来源的功能不得写成已实现。需要表达“代码已实现但仍待验证”时，沿用成熟度文档的 `Unverified` 状态，不把它写成 `In Progress`。
+- 新的设计推理遵循 [`design/README.md`](./docs/design/README.md) 的开文档判据；结论放在 `ROADMAP.md`，约束放在 `AGENTS.md` / 对应规范，参考步骤放在 `reference/`。不新增第二份事实的家。
+- 拆分开发任务或提交验收记录时，说明是否影响系统架构、是否需要更新架构图 / 流程图、是否产生新的 LAT 决策、同步了哪些文档，以及用哪条测试或源码证据核对文档。判据与文档归属见 [`docs/README.md`](./docs/README.md)；不要把架构正文搬进本文件。
+- 改完文档运行 `npm run check:docs`；若检查失败，修复或明确报告失败项，不得把失败说成通过。
 
 ---
 
@@ -263,5 +272,8 @@ registry.ts  entryUrl = http://lattice-widget.localhost/<id>/index.html
 4. **`cargo` 会锁 `target/`。** 别人在编的时候起第二个 build 只会排队等到超时，看起来像"卡住"。真机验界面优先用已经编好的 `src-tauri/target/debug/lattice.exe`，先比一下它的时间戳和源码谁新。
 5. **生成物由脚本写，但别和别人抢。** `public/widgets/index.json` 和 `public/store/registry.json` 分别是 `widgets:index` / `store:index` 的产物；`registry.json` 是**跟踪文件**，跑完看一眼 `git diff` 是不是只多了自己那一条。别人正在发版（改了版本号、正要 `store:index`）时不要跑。
 6. **`state.json` 是整份覆盖的。** 两个进程同时开着应用，谁后退出谁把内存那份盖上去（孤儿进程那条坑就是这么来的）。真机验一个人验，验完从备份还原，别两个 agent 各开一个实例。
-7. **冲突高发区改完立刻提交。** `AGENTS.md`、`GLOSSARY.md`、`docs/ROADMAP.md`、`src/styles.css`、`src/runtime/bridge.ts`、`src-tauri/src/lib.rs` —— 这几处几乎每个改动都会碰。别攒着，改完就 `git add <这几个文件> && git commit`。
+7. **冲突高发区改完立刻复核差异。** `AGENTS.md`、`GLOSSARY.md`、`docs/ROADMAP.md`、`src/styles.css`、`src/runtime/bridge.ts`、`src-tauri/src/lib.rs` —— 这几处几乎每个改动都会碰。修改后及时检查对应文件的 `git diff`，确认范围和内容准确。Git 暂存、提交和推送必须遵循当前用户的明确授权；本条不构成执行这些操作的授权。
 8. **提交粒度按"一件事"算。** 一个提交只做一件事，写清范围和理由；别把别人的改动顺手带进来（`git diff --cached` 过一眼再提交）。
+9. **每次 Git 写操作前核对目标。** 明确当前 Worktree 绝对路径、分支、HEAD 和完整暂存清单，并确认它们符合当前任务授权的目标；任一项不符就停止并报告。
+10. **并行 Agent 使用隔离工作区。** 不要让多个 Agent 同时在同一 Worktree 修改文件。新编码任务开始前，先为各自任务确定独立 Worktree 或其他明确隔离的工作目录。
+11. **Git 写操作逐次授权。** `add`、`commit`、`push`、`merge`、`rebase` 及会覆盖或丢弃修改的操作，都必须由用户针对当前任务明确授权；授权不自动延续到下一次操作。

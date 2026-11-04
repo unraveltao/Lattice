@@ -96,6 +96,10 @@
       "date": "2026-10-25",
       "changes": [
         {
+          "zh": "Dashboard 隐藏 Workspace 时暂停可视刷新；返回时按当前真实时间更新。",
+          "en": "Pauses display ticks while Dashboard is active; countdown values redraw from the target time when Workspace returns."
+        },
+        {
           "zh": "界面和说明都支持中文了：日期按中文习惯写「2027年1月1日」，文案、天数和报错都跟着界面语言走。",
           "en": "Interface and help are bilingual now: the date reads 2027年1月1日 in Chinese, and the caption, day count and errors follow the interface language."
         }

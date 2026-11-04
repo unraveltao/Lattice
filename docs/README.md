@@ -64,11 +64,12 @@
 
 | 文件 | 语言 | 谁读 |
 | --- | --- | --- |
-| `README.md` | 英文 | 第一次来的外部读者 |
-| `README.zh-CN.md` | 中文 | 同上 —— **和英文那份是同一份东西**，改一份就得改另一份 |
-| `AGENTS.md`、`docs/**`、`GLOSSARY.md` | 中文 | 要改这个仓库的人（含 agent） |
+| `README.md` | English; authoritative | First-time external readers |
+| `README.zh-CN.md` | Chinese translation of `README.md` | Chinese-speaking readers; keep its content aligned with the English source |
+| New or substantially revised formal documents | English by default | Contributors and agents |
+| Existing Chinese documents, including `AGENTS.md`, `docs/**`, and `GLOSSARY.md` | Retained in Chinese; translate only when substantially revised | Existing readers, contributors, and agents |
 
-不给 `docs/` 做全量翻译：翻译是最贵的维护成本，三个月后必然只有一半是新的，而读者分不清哪一半。外部读者要深入，读根 `README` 的 *How it works* 和 *Is it safe?* 两节；推理只写中文，代码是最终依据。
+English is the default for new formal documentation. When an English document and a Chinese translation are maintained as a pair, the English document is authoritative and the Chinese version must stay aligned. Existing Chinese documents are retained as historical project documentation; do not translate them in bulk. Translate a document when it is substantially revised, and keep technical terms, API names, and code identifiers consistent with `GLOSSARY.md` and the source code. Source code remains authoritative for implementation facts. For project details, start with the root `README.md`, especially *How it works* and *Is it safe?*.
 
 ## 二、按你要做的事找
 
@@ -96,7 +97,7 @@
 三问，从上往下，命中就停：
 
 1. **它是"还没做的事"动手前的推理吗？** → 未来。写 `design/` 一份，结论沉回 `ROADMAP` 一行。
-2. **三个月后还有人要照着它做吗？** 没有 → 参考。放 `docs/reference/`（现在有六份：`build.md` 构建发版、`history.md` 每个版本当时怎么做的、`recipes.md` 改一块代码要动哪几处、`known-gaps.md` 某件事做到哪一步、`state.md` 状态存在哪 / 谁写 / 版本怎么升、`verify.md` 改了什么就怎么验 —— 都是「照着做一次 / 查一次就不再翻」的东西）。
+2. **三个月后还有人要照着它做吗？** 没有 → 参考。放 `docs/reference/`。这里的文档是按需查询的操作参考、历史记录、状态说明和验证指南；具体文件及职责见第一节的归属表。新增参考文档时，先确认没有既有文档拥有同一事实。
 3. **它是别人必须遵守的吗？** → 契约。`docs/` 根，一份，不拆。
 
 三问都不命中 → 它大概不该是文档，是代码注释或 `AGENTS.md` 配方节里的一行。
@@ -122,6 +123,8 @@
 | 构建与发版的步骤 | `docs/reference/build.md` | `ROADMAP` 只写为什么这么定 |
 
 判断方法：**这段内容如果代码改了要不要跟着改？** 要 → 它不是文档，是指针，改成链接。
+
+架构与决策也遵守同一归属：`ARCHITECTURE.md` 解释当前模块关系，已有架构图跟着模块边界变化更新；复杂行为的顺序与分支写在最接近其契约的流程 / 生命周期说明中；具有长期代价权衡的取舍按 [`design/README.md`](./design/README.md) 判据记录为 LAT。实现结论同步到 `ROADMAP.md`，约束同步到 `AGENTS.md` 或对应规范，测试步骤放 `reference/`；不要在这些位置复制同一份推理。
 
 `FAQ` 和 `PITFALLS` 都按症状分组，别混：**FAQ 回答"我该点哪儿"**（用这个应用的人，不许出现文件名和函数名），**PITFALLS 回答"这段代码为什么长成这样"**（改这个仓库的人）。同一件事两边都写，就是两处各自漂。
 

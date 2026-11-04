@@ -8,13 +8,19 @@
 
 ```
 src/
-  App.tsx                 平台外壳：顶栏、编排、桌面窗口回传事件的处理
+  App.tsx                 主窗口协调：平台数据、业务操作与页面内容的连接
   main.tsx                React 入口（平台外壳）
   assistantMain.tsx       React 入口（assistant 小窗）：只挂 `AssistantWindow`，**不加载 store**
   styles.css              平台样式层（CSS 变量 + 语义类，不引 Tailwind）
   widgetHost.ts           桌面窗口的宿主页：装 iframe、画窗饰、处理拖拽缩放
   widgetHost.css          窗饰与缩放手柄样式
   platform/
+    AppShell.tsx          主窗口根布局、导航与页面层；Workspace 常驻挂载，导航状态来自 Zustand store
+    DashboardPage.tsx     Dashboard 默认页的轻量占位界面
+    WorkspacePage.tsx     组件库、Canvas、Inspector 三栏工作台的页面容器
+    Topbar.tsx            主窗口顶栏；接收 App 提供的状态与操作回调
+    useAppShortcuts.ts    主窗口快捷键注册与清理
+    usePlatformEvents.ts  桌面窗口事件回传与调试记录订阅
     store.ts              Zustand + 文件落盘适配器（Placement / 授权 / 主题 / desktopRects / 回收站）；`instanceIdFor` 是新实例 id 的唯一拼法
     Canvas.tsx            画布：放置、空态、缺失组件占位
     WidgetFrame.tsx       画布里的一个组件实例 = 一个沙箱 iframe + 拖拽缩放；**也是数据平面答话的那一份**（挂载时登记 `agent-call` 处理器，卸载按 handler 身份删）；`desktopMode` 下另有一份真窗口在跑时它退成静态卡（`poster`，判据 `canvasNeedsLiveFrame`），不挂 iframe

@@ -10,9 +10,15 @@
 
 判断一段代码该放哪，只问一句：**它需要 Win32 句柄或磁盘路径吗？** 需要就下到 Rust，不需要就留前端。布局、主题、权限界面都属于后者 —— 改它们不用重编译。
 
+## 1.1 主窗口页面与 Workspace 生命周期
+
+`AppShell` 持有 Sidebar、Dashboard 和 Workspace 两个页面层。启动时 Zustand 的 `activeView` 默认是 `dashboard`；切换页面只改变可见层，不卸载另一层。Workspace 因而持续保留原来的三栏布局、Canvas、WidgetFrame 与 iframe 实例。非活动层同时设为 `inert` 和 `aria-hidden`，并由样式隐藏且禁用指针交互。
+
+Workspace 页面活跃状态与 Tauri 主窗口可见性是两条独立信号。页面切换只暂停显式选择 `workspaceVisibleOnly` 的可视刷新；主窗口最小化、隐藏或被遮挡仍由窗口可见性调度规则处理。没有选择该选项的旧订阅保留原行为，让后台工作和计时逻辑不因切换 Dashboard 而被意外终止。生命周期取舍与失败边界见 [LAT-0044](./design/LAT-0044-workspace-widget-lifecycle.md)；组件作者契约见 [WIDGET_SPEC](./WIDGET_SPEC.md)。
+
 ## 2. 四层，两个宿主
 
-![模块架构：左侧四层（主窗口、组件运行时、两个宿主、沙箱组件），右侧 Rust 侧；组件运行时经 Tauri 命令、宿主经 Win32 与 Rust 通信](./architecture.svg)
+![模块架构：React AppShell 中 Sidebar、Topbar、Dashboard 和常驻 Workspace；组件运行时与宿主通过权限桥连接沙箱组件，前端通过 Tauri 命令连接 Rust 后端](./architecture.svg)
 
 颜色是固定的：**紫 = 前端，蓝 = Rust 与桥，虚线 = 沙箱**。
 

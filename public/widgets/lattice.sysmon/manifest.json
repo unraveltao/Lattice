@@ -232,6 +232,10 @@
       "date": "2026-10-28",
       "changes": [
         {
+          "zh": "Dashboard 隐藏 Workspace 时暂停可视刷新；返回时按当前真实时间更新。",
+          "en": "Pauses metric and battery display refresh while Dashboard is active and refreshes when Workspace returns."
+        },
+        {
           "zh": "电池那个独立组件并进来了：电量和充电状态成了这一张卡上的一行，`lattice.battery` 从商店下架。",
           "en": "The separate battery widget is folded in: charge and charging state are one row here now, and lattice.battery is gone from the store."
         },

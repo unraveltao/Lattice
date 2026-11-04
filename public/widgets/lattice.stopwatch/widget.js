@@ -111,6 +111,15 @@
       applyLanguage(data.payload);
       return;
     }
+    if (data.type === "workspace-visible") {
+      workspaceVisible = data.payload && data.payload.visible !== false;
+      if (!workspaceVisible || document.hidden) stopLoop();
+      else {
+        renderTime();
+        ensureLoop();
+      }
+      return;
+    }
     if (data.type !== "response") return;
     var entry = pending.get(data.id);
     if (!entry) return;
@@ -229,6 +238,7 @@
   /** 用户按过按钮之后，迟到的 storage.get 不许把界面倒回去 */
   var touched = false;
   var frameId = 0;
+  var workspaceVisible = true;
 
   function now() {
     return Date.now();
@@ -323,7 +333,7 @@
    * 60 次。回来的时候按时间戳重算一次，读数就是对的，不用补帧。
    */
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) {
+    if (document.hidden || !workspaceVisible) {
       stopLoop();
       return;
     }

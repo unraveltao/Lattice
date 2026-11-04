@@ -115,6 +115,10 @@
       "version": "0.1.0",
       "changes": [
         {
+          "zh": "Dashboard 隐藏 Workspace 时暂停可视刷新；返回时按当前真实时间更新。",
+          "en": "Pauses its date refresh while Dashboard is active and refreshes when Workspace returns."
+        },
+        {
           "zh": "第一个版本：农历月日、干支生肖、下一个节气、下一个法定节日。",
           "en": "First release: lunar month and day, sexagenary year and animal, the next solar term and the next public holiday."
         },

@@ -7,7 +7,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Canvas, type CanvasFocus } from "./platform/Canvas";
@@ -15,7 +14,6 @@ import { startAgentBridge, type AgentReply, type AgentRequest } from "./platform
 import { runWidgetTurn } from "./platform/assistant";
 import { normalizeAskMessages, parseAskMessages, MAX_PERSONA } from "./runtime/assistant";
 import { AssistantPanel } from "./platform/AssistantPanel";
-import { DictationButton } from "./platform/DictationButton";
 import { DebugPanel } from "./platform/DebugPanel";
 import { InspectorPanel } from "./platform/InspectorPanel";
 import { LibraryPanel, type InstallNotice } from "./platform/LibraryPanel";
@@ -45,27 +43,19 @@ import {
 } from "./runtime/catalogue";
 import { buildSpecs, closeDesktop, minimizeMain, syncDesktop } from "./platform/desktop";
 import { buildSearchTargets, hopFor, type SearchTarget } from "./runtime/global-search";
-import { Glyph, ICON, ThemeGlyph } from "./platform/icons";
-import { SettingsMenu, type SettingsSection } from "./platform/SettingsMenu";
-import { instanceIdFor, nextFreeSlot, useLattice, type ThemeMode } from "./platform/store";
+import type { SettingsSection } from "./platform/SettingsMenu";
+import { AppShell } from "./platform/AppShell";
+import { DashboardPage } from "./platform/DashboardPage";
+import { WorkspacePage } from "./platform/WorkspacePage";
+import { Topbar } from "./platform/Topbar";
+import { instanceIdFor, nextFreeSlot, useLattice } from "./platform/store";
 import { permissionLabel } from "./runtime/manifest";
 import { isTauri, loadRegistry, type WidgetLoadError, type WidgetRecord } from "./runtime/registry";
-import { DEBUG_EVENT, ingest } from "./runtime/debug";
 import { lang, setLanguage, subscribe, t, useT, watchSystemLanguage } from "./runtime/i18n";
 import { pickText } from "./runtime/widget-text";
-import type { Permission, WidgetLayer } from "./runtime/manifest";
-
-/** 顶栏那颗按钮的循环顺序：浅色 → 深色 → 跟随系统 → 浅色 */
-const THEME_CYCLE: ThemeMode[] = ["light", "dark", "system"];
-const THEME_LABEL: Record<ThemeMode, string> = {
-  light: "Light",
-  dark: "Dark",
-  system: "System",
-};
-
-function nextTheme(current: ThemeMode): ThemeMode {
-  return THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
-}
+import type { Permission } from "./runtime/manifest";
+import { useAppShortcuts } from "./platform/useAppShortcuts";
+import { useDebugEvents, usePlatformEvents, type CrashEvent } from "./platform/usePlatformEvents";
 
 /**
  * 给 IPC 调用加一道超时。
@@ -99,44 +89,6 @@ function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T>
       },
     );
   });
-}
-
-/** 桌面窗口回传的事件载荷 */
-interface RectEvent {
-  instanceId: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-interface PinnedEvent {
-  instanceId: string;
-  pinned: boolean;
-}
-interface LayerEvent {
-  instanceId: string;
-  layer: WidgetLayer;
-}
-interface InstanceEvent {
-  instanceId: string;
-}
-
-/**
- * 组件目录里有文件变了（`watch.rs` 发过来的）。
- *
- * 载荷里带的是相对路径，但主窗口只用它当"有事发生了"的信号 —— 它要重读的
- * 是清单，而清单可能被改的就是任意一个文件。真正按路径过滤的是宿主页那边
- * （只有自己那份文件变了才重载），见 `widgetHost.ts`。
- */
-interface WidgetsChangedEvent {
-  files: string[];
-}
-
-/** 渲染进程整个挂掉（`crash.rs`）。`gaveUp` 为真表示自动重载已经放弃了 */
-interface CrashEvent {
-  instanceId: string;
-  kind: "render" | "gpu" | "browser" | "unresponsive" | "other";
-  gaveUp: boolean;
 }
 
 export default function App() {
@@ -361,6 +313,17 @@ export default function App() {
    * 两者互斥（下面开一个就关另一个）：同时叠两层浮层，Esc 到底关哪一层没有答案。
    */
   const [overviewOpen, setOverviewOpen] = useState(false);
+  const toggleDebug = useCallback(() => setDebugOpen((value) => !value), []);
+  const toggleSearch = useCallback(() => setSearchOpen((value) => !value), []);
+  const toggleSearchShortcut = useCallback(() => {
+    setSearchOpen((value) => !value);
+    setOverviewOpen(false);
+  }, []);
+  const toggleOverview = useCallback(() => {
+    setOverviewOpen((value) => !value);
+    setSearchOpen(false);
+  }, []);
+
   /**
    * 从搜索跳过去之后，画布要滚到的那一份；以及组件库要翻到的那一个。
    *
@@ -373,105 +336,13 @@ export default function App() {
     null,
   );
 
-  /*
-   * 桌面窗口发来的调试记录。
-   *
-   * 画布上那些实例的记录本来就在本进程里（`WidgetFrame` 直接写总线），这里
-   * 收的是**桌面窗口**那一份 —— 两个 webview 各自跑一套桥，只能靠事件汇合。
-   *
-   * 订阅放在这里而不是面板里：面板关着的时候也得收，不然打开面板只看得到
-   * 打开之后发生的事，而"组件刚启动时那几下调用"恰恰是最想看的。
-   */
-  useEffect(() => {
-    if (!isTauri()) return;
-    let dispose: (() => void) | undefined;
-    let disposed = false;
-
-    void listen<unknown>(DEBUG_EVENT, (event) => ingest(event.payload))
-      .then((unlisten) => {
-        if (disposed) unlisten();
-        else dispose = unlisten;
-      })
-      .catch(() => {
-        /* 事件通道不可用就当没有桌面窗口 —— 画布记录照常工作 */
-      });
-
-    return () => {
-      disposed = true;
-      dispose?.();
-    };
-  }, []);
-
-  // Ctrl+Shift+D 开关面板。组件窗口里的日志常常是"看一眼就走"，鼠标去顶栏太远
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || !event.shiftKey || event.altKey) return;
-      if (event.key.toLowerCase() !== "d") return;
-      event.preventDefault();
-      setDebugOpen((value) => !value);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  /*
-   * Ctrl+K 开关 assistant。
-   *
-   * 不用 Ctrl+Space（输入法会吃掉）、不用 Ctrl+/（编辑器里太常见）。Ctrl+K 是
-   * 聊天框的肌肉记忆，而这台机器上它没有被别的东西占用。
-   *
-   * 桌面上那个独立小窗优先：它能在主窗口收起来之后继续用（"一边干别的、
-   * 一边让它改桌面"才是这东西的用途）。浏览器里没有窗口可开，退回抽屉预览。
-   */
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.shiftKey || event.altKey) return;
-      if (event.key.toLowerCase() !== "k") return;
-      event.preventDefault();
-      void toggleAssistant();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [toggleAssistant]);
-
-  /*
-   * Ctrl+Shift+O 开画布总览。
-   *
-   * O 是 "overview"，也和 Ctrl+Shift+F / Ctrl+Shift+D 同一个修饰键组合。它和
-   * 搜索互斥：打开一个就关掉另一个，免得 Esc 该关哪一层没有答案。
-   */
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || !event.shiftKey || event.altKey) return;
-      if (event.key.toLowerCase() !== "o") return;
-      event.preventDefault();
-      setOverviewOpen((value) => !value);
-      setSearchOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  /*
-   * Ctrl+Shift+F 开全局搜索。
-   *
-   * 用 F 而不是 Ctrl+F：Ctrl+F 在 webview 里是"找这一页里的字"，而这里找的是
-   * 组件和商店条目 —— 两件事，抢同一个键会让"我就想找页面上这个词"落空。
-   * 也刻意**不带 Shift 的 Ctrl+F 留给浏览器**（预览里还能用原生查找）。
-   *
-   * 和 Ctrl+Shift+D 同一个修饰键组合，用户不用记两套。
-   */
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || !event.shiftKey || event.altKey) return;
-      if (event.key.toLowerCase() !== "f") return;
-      event.preventDefault();
-      setSearchOpen((value) => !value);
-      setOverviewOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  useDebugEvents();
+  useAppShortcuts({
+    toggleDebug,
+    toggleAssistant,
+    toggleOverview,
+    toggleSearch: toggleSearchShortcut,
+  });
 
   useEffect(() => {
     if (notice?.kind !== "ok") return;
@@ -565,6 +436,7 @@ export default function App() {
   const pickSearchTarget = useCallback(
     (target: SearchTarget) => {
       setSearchOpen(false);
+      useLattice.getState().setActiveView("workspace");
       const hop = hopFor(target, placements);
       if (hop.kind === "canvas") {
         setCanvasFocus((prev) => ({ instanceId: hop.instanceId, nonce: (prev?.nonce ?? 0) + 1 }));
@@ -628,73 +500,15 @@ export default function App() {
       .catch(() => {});
   }, [setPaused]);
 
-  /**
-   * 桌面窗口 → 主窗口的回传通道。
-   *
-   * 组件窗口是独立 webview，改不了这里的 store。用户在桌面上拖了、缩了、
-   * 锁了、换层级了，都由 Rust 转成事件送回来，在这里落到状态里。
-   */
-  useEffect(() => {
-    if (!isTauri()) return;
-    const disposers: Array<() => void> = [];
-    let disposed = false;
-
-    const bind = <T,>(name: string, handler: (payload: T) => void) => {
-      void listen<T>(name, (event) => handler(event.payload)).then((unlisten) => {
-        if (disposed) unlisten();
-        else disposers.push(unlisten);
-      });
-    };
-
-    bind<RectEvent>("lattice:widget-rect", (payload) => {
-      setDesktopRect(payload.instanceId, {
-        x: payload.x,
-        y: payload.y,
-        w: payload.w,
-        h: payload.h,
-      });
-    });
-    bind<PinnedEvent>("lattice:widget-pinned", (payload) => {
-      updatePlacement(payload.instanceId, { pinned: payload.pinned });
-    });
-    bind<LayerEvent>("lattice:widget-layer", (payload) => {
-      updatePlacement(payload.instanceId, { layer: payload.layer });
-    });
-    bind<InstanceEvent>("lattice:widget-close", (payload) => {
-      removePlacement(payload.instanceId);
-    });
-    /*
-     * 组件自己把窗口关了（见 `runner.rs::widget_close`；当初 `lattice.pet`
-     * 右键就是这条，那个组件已经不在仓库里了，机制还在）。
-     *
-     * placement 不动 —— 那是用户摆好的布局；只把"这一份已经没有窗口"记下来，
-     * 画布拿它决定要不要挂活的那一份（`canvasNeedsLiveFrame`）。少了这一条，
-     * 桌面模式下这个组件会变成一张说"它在桌面上跑"的静态卡，而桌面上什么都没有。
-     */
-    bind<InstanceEvent>("lattice:widget-suppressed", (payload) => {
-      suppressWindow(payload.instanceId);
-    });
-    // 组件目录里有人动了文件（编辑器存盘、手工拷进去、脚本生成）。
-    // 重读一遍清单：新增的包要出现在组件库里，删掉的要消失，
-    // 改了 manifest 的尺寸/权限要跟着变
-    bind<WidgetsChangedEvent>("lattice:widgets-changed", () => {
-      void refresh();
-    });
-    // 托盘菜单也能暂停/恢复，主窗口得跟着变 —— 否则设置里那个开关是死的
-    bind<{ paused: boolean }>("lattice:paused", (payload) => {
-      setPaused(payload.paused);
-    });
-    // 崩溃已经自动重载的不打扰用户（只有连着崩才值得说一句）
-    bind<CrashEvent>("lattice:widget-crashed", (payload) => {
-      if (payload.gaveUp) setCrash(payload);
-    });
-
-    return () => {
-      disposed = true;
-      for (const dispose of disposers) dispose();
-    };
-  }, [refresh, removePlacement, setDesktopRect, setPaused, suppressWindow, updatePlacement]);
-
+  usePlatformEvents({
+    refresh,
+    setDesktopRect,
+    updatePlacement,
+    removePlacement,
+    suppressWindow,
+    setPaused,
+    setCrash,
+  });
   // 主题落到 <html data-theme>，CSS 变量与组件都从这里取色
   useEffect(() => {
     const root = document.documentElement;
@@ -1278,175 +1092,41 @@ export default function App() {
    *     刷新只剩设置菜单里那一行，所以那一行不许再被折叠起来。
    */
   return (
-    <div className="lattice-shell">
-      <header className="lattice-topbar">
-        <div className="lattice-brand">
-          {/*
-            左上那颗三线：开合组件库那一栏，和 Claude / VS Code 那颗同一个意思
-            —— 它管的是**侧栏**，不是一个什么都装的抽屉菜单。
-
-            三条规矩：
-              · **放在最左、品牌标记之前**。它是"窗口的开关区"，先定位再读名字；
-                窗饰那排按钮在右上角（`padding-right: 108px`），左边全空着。
-              · **它是左栏唯一的命名入口**。左栏标题行那颗"收起"已经删掉 ——
-                同一个开关同时出现在两头，等于告诉用户这里有两个东西。
-              · **收起之后那条 40px 竖条整条都能点**（见 `.lattice-panel.is-collapsed`），
-                所以从窄条回来不用先跑回顶栏；那颗三线的 `aria-expanded` 跟着状态走。
-          */}
-          <button
-            type="button"
-            className="lattice-icon-btn is-large"
-            onClick={() => setPanelOpen("library", !libraryOpen)}
-            aria-expanded={libraryOpen}
-            title={t("Toggle the widget library")}
-            aria-label={t("Toggle the widget library")}
-          >
-            <Glyph d={ICON.menu} />
-          </button>
-          <span className="lattice-brand-mark" aria-hidden />
-          <span className="lattice-brand-name">Lattice</span>
-        </div>
-
-        <div className="lattice-topbar-actions">
-          <button
-            type="button"
-            className={`lattice-btn${desktopMode ? " is-active" : " is-primary"}`}
-            onClick={() => void toggleDesktop()}
-            disabled={!isTauri() || desktopBusy}
-            title={
-              isTauri()
-                ? t("Turn canvas widgets into real desktop windows; the main window will step aside")
-                : t("Not available in browser preview — run npm run tauri:dev")
-            }
-          >
-            {desktopMode ? t("Bring back") : t("Send to desktop")}
-          </button>
-
-          {/*
-            一条竖线：左边是"把画布送到桌面"（这个窗口唯一的正经事），右边是
-            三颗工具按钮（助手 / 主题 / 设置）。它们不是一类东西 —— 挤成一排
-            时用户得逐个读过去才知道哪个会改变桌面。
-          */}
-          <span className="lattice-topbar-split" aria-hidden />
-
-          {/*
-            全局搜索（第一层）。放在这条竖线右边，因为它是"看"而不是
-            "把画布送出去"—— 和助手 / 主题 / 设置同一类。
-
-            它搜的是**清单里的元数据**（名字、id、说明、作者、权限），
-            不搜用户数据；范围那句话直接复用库里那一句，两处共用一份。
-          */}
-          <button
-            type="button"
-            className={`lattice-icon-btn is-large${searchOpen ? " is-active" : ""}`}
-            onClick={() => setSearchOpen((value) => !value)}
-            aria-expanded={searchOpen}
-            title={t("Search widgets and the catalogue (Ctrl+Shift+F)")}
-            aria-label={t("Search widgets and the catalogue")}
-          >
-            <Glyph d={ICON.search} />
-          </button>
-
-          {/*
-            画布总览（只读）。放在搜索旁边：两件事是同一个需求的两半 ——
-            "东西太多找不着"（搜）和"东西太多看不清"（退后一步看全）。
-          */}
-          <button
-            type="button"
-            className={`lattice-icon-btn is-large${overviewOpen ? " is-active" : ""}`}
-            onClick={() => {
-              setOverviewOpen((value) => !value);
-              setSearchOpen(false);
-            }}
-            aria-expanded={overviewOpen}
-            title={t("Show the whole canvas at once (Ctrl+Shift+O)")}
-            aria-label={t("Overview")}
-          >
-            <Glyph d={ICON.grid} />
-          </button>
-
-          <button
-            type="button"
-            className={`lattice-icon-btn is-large${assistantOpen ? " is-active" : ""}`}
-            onClick={toggleAssistant}
-            title={t("Assistant — tell it what to change on your desktop (Ctrl+K, separate window)")}
-            aria-label={t("Toggle assistant")}
-          >
-            <Glyph d={ICON.agent} />
-          </button>
-
-          {/*
-            伴侣（桌宠）的入口。
-            
-            **这是它唯一的入口**：她不是组件，用户没法从组件库里把她摆上来
-            （LAT-0041）。所以这一颗按钮的职责就是"把 agent 的样子叫出来 / 收起来"
-            —— 和右边那颗助手按钮是一对：那颗管"跟她说话"，这颗管"看得见她"。
-
-            浏览器预览里没有这扇窗，所以那里干脆不画 —— 画了也只会是一颗点了
-            没反应的按钮。
-          */}
-          {isTauri() ? (
-            <button
-              type="button"
-              className={`lattice-icon-btn is-large${petHidden === false ? " is-active" : ""}`}
-              onClick={toggleCompanion}
-              aria-pressed={petHidden === false}
-              title={
-                petHidden === false
-                  ? t("Companion — she is on your desktop; click to hide her")
-                  : t("Companion — hidden; click to bring her back")
-              }
-              aria-label={t("Toggle the companion")}
-            >
-              <Glyph d={ICON.companion} />
-            </button>
-          ) : null}
-
-          {/*
-            听写的顶栏入口（0027 §4）：光标在这个窗口的某个输入框里时，按它
-            说完就把字落进那个框。它和浮钮、热键、面板里那颗是同一个引擎 ——
-            只是"人在哪"不同。组件够不到麦克风，所以它只能活在平台这一层。
-          */}
-          <DictationButton />
-
-          <button
-            type="button"
-            className="lattice-icon-btn is-large"
-            onClick={() => setTheme(nextTheme(theme))}
-            title={t("Theme: {current} — click for {next}", {
-              current: t(THEME_LABEL[theme]),
-              next: t(THEME_LABEL[nextTheme(theme)]),
-            })}
-            aria-label={t("Theme: {current}", { current: t(THEME_LABEL[theme]) })}
-          >
-            <ThemeGlyph mode={theme} />
-          </button>
-
-          <SettingsMenu
-            installedCount={installedSet.size}
-            placementCount={placements.length}
-            debugOpen={debugOpen}
-            onToggleDebug={() => setDebugOpen((value) => !value)}
-            refreshing={loading}
-            onRefresh={() => void refresh()}
-            onQuit={() => {
-              if (isTauri()) void invoke("quit_app");
-            }}
-            onOpenAssistant={toggleAssistant}
-            openAt={settingsAt}
-          />
-        </div>
-      </header>
-
-      <main
-        className={[
-          "lattice-main",
-          libraryOpen ? "" : "is-left-collapsed",
-          inspectorOpen ? "" : "is-right-collapsed",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      >
+    <AppShell
+      dashboard={<DashboardPage />}
+      topbar={<Topbar
+        libraryOpen={libraryOpen}
+        onToggleLibrary={() => {
+          const currentView = useLattice.getState().activeView;
+          if (currentView !== "workspace") {
+            useLattice.getState().setActiveView("workspace");
+            setPanelOpen("library", true);
+          } else {
+            setPanelOpen("library", !libraryOpen);
+          }
+        }}
+        desktopMode={desktopMode}
+        desktopBusy={desktopBusy}
+        onToggleDesktop={() => void toggleDesktop()}
+        searchOpen={searchOpen}
+        onToggleSearch={toggleSearch}
+        overviewOpen={overviewOpen}
+        onToggleOverview={toggleOverview}
+        assistantOpen={assistantOpen}
+        onToggleAssistant={toggleAssistant}
+        petHidden={petHidden}
+        onToggleCompanion={toggleCompanion}
+        theme={theme}
+        onSetTheme={setTheme}
+        installedCount={installedSet.size}
+        placementCount={placements.length}
+        debugOpen={debugOpen}
+        onToggleDebug={toggleDebug}
+        refreshing={loading}
+        onRefresh={() => void refresh()}
+        settingsAt={settingsAt}
+      />}
+      workspace={<WorkspacePage libraryOpen={libraryOpen} inspectorOpen={inspectorOpen}>
         <LibraryPanel
           widgets={widgets}
           installedIds={installedSet}
@@ -1489,8 +1169,8 @@ export default function App() {
           open={inspectorOpen}
           onToggle={() => setPanelOpen("inspector", !inspectorOpen)}
         />
-      </main>
-
+      </WorkspacePage>}
+    >
       {/*
         调试面板浮在画布下沿，不占三栏的位置。开关它不会改变画布尺寸，
         也就不会触发桌面窗口那套"尺寸变了重铺壁纸"的连锁反应。
@@ -1520,6 +1200,7 @@ export default function App() {
           installedIds={installedSet}
           onPick={(instanceId) => {
             setOverviewOpen(false);
+            useLattice.getState().setActiveView("workspace");
             setCanvasFocus((prev) => ({ instanceId, nonce: (prev?.nonce ?? 0) + 1 }));
           }}
           onClose={() => setOverviewOpen(false)}
@@ -1643,6 +1324,6 @@ export default function App() {
         onClose={closeReport}
         onSubmit={(input) => void submitReport(input)}
       />
-    </div>
+    </AppShell>
   );
 }

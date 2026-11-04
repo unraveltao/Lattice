@@ -218,7 +218,7 @@
 
   refresh();
 
-  call("schedule.every", { every: 60000 })
+  call("schedule.every", { every: 60000, workspaceVisibleOnly: true })
     .then(function (grant) {
       tickId = grant && typeof grant.id === "number" ? grant.id : 0;
     })

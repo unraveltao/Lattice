@@ -96,6 +96,7 @@ export function WidgetFrame({
   flash = false,
 }: WidgetFrameProps) {
   const t = useT();
+  const workspaceActive = useLattice((state) => state.activeView === "workspace");
   /** 组件名是作者写的（可能两门），按当前语言取一份 */
   const text = useText();
   /** 组件自己画的字跟着它走（推给 iframe，见下面的 `language` 一条） */
@@ -222,6 +223,12 @@ export function WidgetFrame({
    */
   const scheduler = useMemo(() => createScheduler(post), [post]);
 
+  // Workspace 页面状态独立于 Tauri 窗口可见性；只暂停显式选择该策略的心跳。
+  useEffect(() => {
+    scheduler.setWorkspaceVisible(workspaceActive);
+    post({ [BRIDGE_TAG]: 1, type: "workspace-visible", payload: { visible: workspaceActive } });
+  }, [post, scheduler, workspaceActive]);
+
   /*
    * 窗口看不看得见，也推给画布里的组件。
    *
@@ -301,6 +308,7 @@ export function WidgetFrame({
         post({ [BRIDGE_TAG]: 1, type: "theme", payload: readThemeTokens() });
         post({ [BRIDGE_TAG]: 1, type: "language", payload: languagePayload() });
         post({ [BRIDGE_TAG]: 1, type: "visible", payload: { visible: windowVisibleNow() } });
+        post({ [BRIDGE_TAG]: 1, type: "workspace-visible", payload: { visible: workspaceActive } });
         return;
       }
       if (!isBridgeRequest(data)) return;
@@ -336,7 +344,7 @@ export function WidgetFrame({
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [placement.instanceId, record.manifest.id, post, remove, scheduler]);
+  }, [placement.instanceId, record.manifest.id, post, remove, scheduler, workspaceActive]);
 
   // 主题切换时主动通知组件，避免组件各自去猜明暗
   useEffect(() => {

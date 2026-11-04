@@ -105,6 +105,10 @@
       "version": "0.1.0",
       "changes": [
         {
+          "zh": "Dashboard 隐藏 Workspace 时暂停可视刷新；返回时按当前真实时间更新。",
+          "en": "Pauses the date display refresh while Dashboard is active and refreshes when Workspace returns."
+        },
+        {
           "zh": "第一个版本：一行一个习惯、一周七格、连续天数，记的是本地日期。",
           "en": "First release: one habit per row, seven cells a week, a streak, all keyed on the local date."
         },

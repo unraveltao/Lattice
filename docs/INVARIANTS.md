@@ -44,7 +44,7 @@
 
 ## INV-10 看不见就别跑
 
-组件的心跳一律挂在 `runtime/schedule.ts` 的时间轴上，不自己 `setInterval`。窗口不可见时整条时间轴停摆，回来只补一拍。**"不可见"有两个来源**：`document.visibilityState` 和 Rust 发来的 `lattice:window-visible` —— 前者对"窗口最小化"完全无感（实测最小化前后都是 `visible`），只盯它等于没停。加了新的"窗口状态"判断，先想清楚该不该停摆，别在组件里各写一套。
+组件的周期心跳挂在 `runtime/schedule.ts`，不自己 `setInterval`。窗口不可见时整条时间轴停摆，回来只补一拍。**窗口不可见**有两个来源：`document.visibilityState` 和 Rust 发来的 `lattice:window-visible`；前者对窗口最小化无感，只盯它等于没停。Dashboard / Workspace 页面活跃状态是另一个维度：仅 `workspaceVisibleOnly: true` 的可视订阅随 Workspace 隐藏而暂停，返回时立即补一拍并从此刻重置周期；未声明该选项的旧订阅保持原有行为。不要把页面隐藏当成取消 Agent、自动化或计时任务的信号。
 - **`requestAnimationFrame` 不是例外，是另一件事**：它画的是"这一帧的读数"，正确性不依赖它跑多少拍 —— 秒表存的是按下去的那一刻，卡片藏起来时 rAF 自然停，回来按时间戳重算一次就是对的。需要**平台在不可见时也保持节奏**、或者要**多组件对齐同一拍**的，才必须走时间轴。另外时间轴的最小间隔是 250ms（`MIN_INTERVAL`），拿它刷百分秒会每帧跳 25 个数，看着像卡了而不是在计时。
 - **但它照样要有停的条件**："卡片藏起来时 rAF 自然停"只在**整个 webview 被藏起来**时成立，窗口被收起 / 最小化 / 盖住时它照跑。所以宿主把可见性当推送下发（`{ type: "visible" }`，`schedule.ts` 的 `subscribeWindowVisible` → 两个宿主 → SDK 的 `on("visible")`），自己开帧循环的组件**必须接**。还闲着的时候要降帧：桌宠每帧整屏重绘 25 个部件，60fps 空转实测 1 核，20fps 呼吸看不出区别（`dt` 夹在 0.05 正好对上 20fps 的步长，动画速度不变）。见 PITFALLS「可见性与调度」。
 
