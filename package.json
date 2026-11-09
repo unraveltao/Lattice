@@ -1,0 +1,1 @@
+{"name":"dsh-reliability","version":"0.1.0","type":"module","private":true,"scripts":{"test":"node --test --test-concurrency=1 --disable-warning=ExperimentalWarning test/*.test.mjs"}}
