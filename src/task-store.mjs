@@ -50,11 +50,13 @@ CREATE TABLE IF NOT EXISTS artifacts(
   task_id TEXT NOT NULL, stage TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL,
   PRIMARY KEY(task_id, stage, path));
 CREATE TABLE IF NOT EXISTS effects(
-  key TEXT PRIMARY KEY, task_id TEXT, result TEXT NOT NULL, created_at INTEGER NOT NULL);
+  key TEXT PRIMARY KEY, task_id TEXT, result TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'DONE',
+  lease_until INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox(
   id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE,
   channel TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING',
-  attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, last_error TEXT);
+  attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, claim_until INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT);
 CREATE TABLE IF NOT EXISTS events(
   id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, at INTEGER NOT NULL, kind TEXT NOT NULL, detail TEXT);
 `;
@@ -63,6 +65,15 @@ export class TaskStore {
   constructor(file, { now = () => Date.now() } = {}) {
     this.db = new DatabaseSync(file);
     this.db.exec(SCHEMA);
+    // Upgrade databases created by the pre-integration toolkit without replacing data.
+    const addColumn = (table, column, definition) => {
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all().map((x) => x.name);
+      if (!columns.includes(column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    };
+    addColumn("effects", "status", "TEXT NOT NULL DEFAULT 'DONE'");
+    addColumn("effects", "lease_until", "INTEGER NOT NULL DEFAULT 0");
+    addColumn("effects", "updated_at", "INTEGER NOT NULL DEFAULT 0");
+    addColumn("outbox", "claim_until", "INTEGER NOT NULL DEFAULT 0");
     this.now = now;
   }
   close() {
@@ -183,12 +194,35 @@ export class TaskStore {
   }
 
   // ── 幂等副作用 ──
-  async once(key, taskId, fn) {
-    const ex = this.db.prepare("SELECT result FROM effects WHERE key=?").get(key);
-    if (ex) return { ran: false, value: JSON.parse(ex.result) };
-    const value = await fn();
-    const ins = this.db.prepare("INSERT OR IGNORE INTO effects(key,task_id,result,created_at) VALUES(?,?,?,?)").run(key, taskId, JSON.stringify(value ?? null), this.now());
-    return { ran: Number(ins.changes) === 1, value };
+  async once(key, taskId, fn, { leaseMs = 30_000, waitMs = 50, maxWaitMs = 5_000 } = {}) {
+    const started = this.now();
+    for (;;) {
+      const now = this.now();
+      const claim = this.#tx(() => {
+        const ex = this.db.prepare("SELECT result,status,lease_until FROM effects WHERE key=?").get(key);
+        if (ex?.status === "DONE") return { kind: "done", value: JSON.parse(ex.result) };
+        if (ex?.status === "RUNNING" && ex.lease_until > now) return { kind: "wait" };
+        if (ex) {
+          const r = this.db.prepare("UPDATE effects SET task_id=?,status='RUNNING',lease_until=?,updated_at=? WHERE key=? AND (status!='RUNNING' OR lease_until<=?)").run(taskId, now + leaseMs, now, key, now);
+          return Number(r.changes) === 1 ? { kind: "owner" } : { kind: "wait" };
+        }
+        this.db.prepare("INSERT INTO effects(key,task_id,result,status,lease_until,created_at,updated_at) VALUES(?,?,?,'RUNNING',?,?,?)").run(key, taskId, "null", now + leaseMs, now, now);
+        return { kind: "owner" };
+      });
+      if (claim.kind === "done") return { ran: false, value: claim.value };
+      if (claim.kind === "owner") {
+        try {
+          const value = await fn();
+          this.#tx(() => this.db.prepare("UPDATE effects SET result=?,status='DONE',lease_until=0,updated_at=? WHERE key=? AND task_id=? AND status='RUNNING'").run(JSON.stringify(value ?? null), this.now(), key, taskId));
+          return { ran: true, value };
+        } catch (error) {
+          this.db.prepare("DELETE FROM effects WHERE key=? AND task_id=? AND status='RUNNING'").run(key, taskId);
+          throw error;
+        }
+      }
+      if (now - started >= maxWaitMs) throw new Error(`effect ${key} is already running`);
+      await new Promise((resolve) => setTimeout(resolve, Math.min(waitMs, maxWaitMs - (now - started))));
+    }
   }
 
   // ── 本地确定性报告：不依赖模型，同样的库内容 → 逐字节相同的输出 ──
@@ -219,20 +253,20 @@ export class TaskStore {
    * 绝不会重跑任务阶段。成功且该任务没有别的待发项 → DELIVERED。
    */
   async deliver(sender, { maxAttempts = 5, baseMs = 1000, limit = 20 } = {}) {
-    const due = this.db.prepare("SELECT * FROM outbox WHERE status='PENDING' AND next_at<=? ORDER BY id LIMIT ?").all(this.now(), limit);
+    const due = this.db.prepare("SELECT * FROM outbox WHERE ((status='PENDING' AND next_at<=?) OR (status='SENDING' AND claim_until<=?)) ORDER BY id LIMIT ?").all(this.now(), this.now(), limit);
     const out = { sent: 0, failed: 0, dead: 0 };
     for (const m of due) {
       // 认领这一条：避免两个投递进程同时发同一封
-      const claim = this.db.prepare("UPDATE outbox SET status='SENDING' WHERE id=? AND status='PENDING'").run(m.id);
+      const claim = this.db.prepare("UPDATE outbox SET status='SENDING', claim_until=? WHERE id=? AND (status='PENDING' OR (status='SENDING' AND claim_until<=?))").run(this.now() + 60_000, m.id, this.now());
       if (Number(claim.changes) !== 1) continue;
       try {
         await sender({ channel: m.channel, payload: m.payload, dedupeKey: m.dedupe_key, taskId: m.task_id });
-        this.db.prepare("UPDATE outbox SET status='SENT', attempts=attempts+1, last_error=NULL WHERE id=?").run(m.id);
+        this.db.prepare("UPDATE outbox SET status='SENT', attempts=attempts+1, claim_until=0, last_error=NULL WHERE id=?").run(m.id);
         out.sent++;
       } catch (e) {
         const attempts = m.attempts + 1;
         const dead = attempts >= maxAttempts;
-        this.db.prepare("UPDATE outbox SET status=?, attempts=?, next_at=?, last_error=? WHERE id=?").run(dead ? "DEAD" : "PENDING", attempts, this.now() + baseMs * 2 ** (attempts - 1), String(e.message ?? e).slice(0, 300), m.id);
+        this.db.prepare("UPDATE outbox SET status=?, attempts=?, next_at=?, claim_until=0, last_error=? WHERE id=?").run(dead ? "DEAD" : "PENDING", attempts, this.now() + baseMs * 2 ** (attempts - 1), String(e.message ?? e).slice(0, 300), m.id);
         dead ? out.dead++ : out.failed++;
       }
       const left = Number(this.db.prepare("SELECT COUNT(*) c FROM outbox WHERE task_id=? AND status!='SENT'").get(m.task_id).c);
