@@ -63,7 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # 和 ci.yml 一致：发出去的包要用**被测过的那一个** Node 打出来。
           # 这里原本写 20，而 CI 和 CONTRIBUTING 都是 22 —— 等于发版和测试
