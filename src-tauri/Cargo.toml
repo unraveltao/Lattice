@@ -49,7 +49,7 @@ sha2 = "0.10"
 getrandom = "0.2"
 # 浮钮那四张图是 PNG。PNG 解码不自己写 —— 那是图像格式，不是布局
 # （和 flate2 / ed25519 同一条理由）；这个 crate 纯 Rust、无 C 依赖
-png = "0.17"
+png = "0.18"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
