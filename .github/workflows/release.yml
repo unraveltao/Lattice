@@ -167,7 +167,7 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "release notes: $(wc -l < notes.md) 行，来自 CHANGELOG.md 的 ## ${GITHUB_REF_NAME}"
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 密钥来自上一步写进 GITHUB_ENV 的那份（已去掉换行）。
