@@ -61,7 +61,7 @@ jobs:
     # 习惯还短；120 是"卡住了别占着 runner"的上限，不是预期耗时。
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
